@@ -6,6 +6,8 @@ import { addCreatedPostToCaches } from '../../features/feed/utils/postCache';
 import { patchCommunityMemberRole } from '../utils/communityCache';
 import { openVerificationModal } from '../stores/verificationModalStore';
 import { createSubmissionKey } from '../lib/idempotencyKey';
+import { assertOnline, blockIfOffline } from '../lib/offlineGuard';
+import { useGuardedMutation } from './useGuardedMutation';
 
 /**
  * The community / post write actions `useData` used to define inline.
@@ -22,13 +24,14 @@ export function useCommunityActions() {
   const [communityKey] = useState(createSubmissionKey);
   const [postKey] = useState(createSubmissionKey);
 
-  const createCommMutation = useMutation({
+  // Refused offline, with the form left as it is (see lib/offlineGuard).
+  const createCommMutation = useGuardedMutation(useMutation({
     mutationFn: (data) => communitiesApi.create(data, { idempotencyKey: communityKey.keyFor(data) }),
     onSuccess: () => {
       communityKey.done();
       return queryClient.invalidateQueries({ queryKey: ['communities'] });
     },
-  });
+  }), 'community');
 
   const checkVerification = () => {
     try {
@@ -70,6 +73,7 @@ export function useCommunityActions() {
 
   const addPost = async (text, poll, communityId, media, mentions) => {
     try {
+      assertOnline('post');
       const mediaKeys = Array.isArray(media) 
         ? media.map(m => m.mediaKey || m.url || (typeof m === 'string' ? m : undefined)).filter(Boolean)
         : [];
@@ -104,6 +108,7 @@ export function useCommunityActions() {
 
   const updateCommunity = async (id, data) => {
     try {
+      assertOnline('action');
       const updated = await communitiesApi.updateGroupInfo(id, data);
       // Seed the cache immediately so the UI reflects the change before the
       // re-fetch lands — but MERGE it. The update endpoint returns the bare
@@ -149,6 +154,8 @@ export function useCommunityActions() {
    * convenience, not the authorization.
    */
   const setMemberRole = async (communityId, memberId, role, currentUserId) => {
+    // Nothing to flip, and nothing to put back, when there is no network.
+    if (blockIfOffline('action')) return false;
     // Optimistic: the badge flips immediately.
     patchCommunityMemberRole(queryClient, communityId, memberId, role, currentUserId);
     try {

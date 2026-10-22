@@ -33,6 +33,8 @@ import { showToast } from '@shared/utils/toast';
 import { insertActivityIntoCache, replaceActivityInCache } from '@shared/utils/mapActivity';
 import { idbDelete } from '@shared/lib/idb';
 import { createSubmissionKey } from '@shared/lib/idempotencyKey';
+import { blockIfOffline, submitErrorMessage } from '@shared/lib/offlineGuard';
+import { isNetworkLevelFailure } from '@shared/utils/networkErrors';
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const DAYS_OF_WEEK = ['S','M','T','W','T','F','S'];
 
@@ -820,6 +822,11 @@ export default function CreateActivityPage() {
     const { startD: finalStart, endD: finalEnd, fd } = getCorrectedDates();
     if (finalEnd <= finalStart) return;
 
+    // Before anything optimistic: offline, the activity would appear everywhere,
+    // the invite sheet would open, and a failure would take it all back. The
+    // form stays as it is, so nothing is lost.
+    if (blockIfOffline('activity')) return;
+
     // ── Optimistic update (Twitter/Instagram pattern) ──────────────────────
     // Inject a fake activity into the cache RIGHT NOW so it appears instantly
     // everywhere in the app. No loading, no waiting.
@@ -927,7 +934,9 @@ export default function CreateActivityPage() {
           ? 'Cover image upload failed. Please reselect the image and try again.'
           : isValidationError
             ? raw
-            : 'Could not create the activity. Please try again.',
+            : isNetworkLevelFailure(err)
+              ? submitErrorMessage(err)
+              : 'Could not create the activity. Please try again.',
         'error',
       );
       throw err;

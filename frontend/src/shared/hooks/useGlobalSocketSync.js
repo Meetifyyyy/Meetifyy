@@ -104,13 +104,15 @@ export function useGlobalSocketSync() {
       // nothing to recover; every later one refreshes what may have changed:
       // notifications and the unread badge, group membership, and the chat on
       // screen (edits, deletes and reactions are not part of catch-up).
+      // Everything below arrives only as a push, so ANY disconnect, however
+      // short, can have missed some: a notification, the unread badge, a group
+      // change. These are single cheap requests, refetched on every reconnect.
+      // Only the open chat waits for a real absence: it refetches every page
+      // it has loaded, and edits, deletes and reactions are all that catch-up
+      // does not bring.
       if (connectedBeforeRef.current) {
         queryClient.invalidateQueries({ queryKey: ['notifications'] });
         queryClient.invalidateQueries({ queryKey: ['groupDetails'] });
-        // The open chat refetches every page it has loaded, so only after a
-        // real gap. The app drops its socket 30s into the background and
-        // reconnects on every return; a quick return has missed nothing that
-        // catch-up does not already bring.
         const away = Date.now() - (useGlobalSocketStore.getState().lastDisconnectAt || Date.now());
         if (away > CHAT_REFRESH_AFTER_MS) {
           queryClient.invalidateQueries({ queryKey: ['messages'], refetchType: 'active' });
@@ -165,7 +167,8 @@ export function useGlobalSocketSync() {
         }
         if (!complete) queryClient.invalidateQueries({ queryKey: ['messages'] });
         // Unconditionally: a read, a clear or a leave elsewhere changes the
-        // list without any new message to carry it.
+        // list without any new message to carry it, and a disconnect of any
+        // length can have missed that event.
         queryClient.invalidateQueries({ queryKey: ['conversations'] });
         // A server that predates paging sends no `syncedAt`; its single page
         // is all it can give, so this device's clock is the best there is.

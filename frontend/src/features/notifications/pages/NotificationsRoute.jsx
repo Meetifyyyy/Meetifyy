@@ -8,7 +8,8 @@ import { useAuth } from '@shared/context/AuthContext';
 import { activitiesApi } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
 import { timeAgo } from '@shared/utils/time';
-import { ErrorState } from '@shared/components/ui/StateViews';
+import { ErrorState, OfflineState } from '@shared/components/ui/StateViews';
+import { useOnlineStatus } from '@shared/lib/networkStatus';
 import PageHeader from '@layout/PageHeader';
 import PullToRefresh from '@shared/components/PullToRefresh';
 import { useSystemBars } from '@shared/hooks/useSystemBars';
@@ -28,6 +29,7 @@ import {
   patchInviteNotification,
   resolveInviteStatus,
 } from '../utils/inviteLifecycle';
+import { useGuardedMutation } from '@shared/hooks/useGuardedMutation';
 
 /**
  * Pure, and identical on every render — so it lives out here rather than being
@@ -64,6 +66,7 @@ export default function NotificationsRoute() {
   const usersMap = useUsersMap();
   const getUserById = (id) => usersMap[id] || null;
   const navigate = useNavigate();
+  const online = useOnlineStatus();
   const loadMoreRef = useRef(null);
   const lastReadBatch = useRef('');
   // State, not a ref: the list's virtualizer needs this element, and a ref is
@@ -242,7 +245,7 @@ export default function NotificationsRoute() {
     showToast('Something went wrong. Please try again.', 'error');
   };
 
-  const acceptMutation = useMutation({
+  const acceptMutation = useGuardedMutation(useMutation({
     mutationFn: (invitationId) => activitiesApi.acceptInvitation(invitationId),
     onMutate: (invitationId) => settleInvitationOptimistically(invitationId, INVITE_STATUS.ACCEPTED),
     onError: restoreInvitations,
@@ -271,9 +274,9 @@ export default function NotificationsRoute() {
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['activity-pending-invitations'] });
     },
-  });
+  }), 'action');
 
-  const declineMutation = useMutation({
+  const declineMutation = useGuardedMutation(useMutation({
     mutationFn: (invitationId) => activitiesApi.declineInvitation(invitationId),
     onMutate: (invitationId) => settleInvitationOptimistically(invitationId, INVITE_STATUS.DECLINED),
     onError: restoreInvitations,
@@ -283,7 +286,7 @@ export default function NotificationsRoute() {
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['activity-pending-invitations'] });
     },
-  });
+  }), 'action');
 
   const [readInvitations, setReadInvitations] = useState(() => {
     try {
@@ -549,6 +552,9 @@ export default function NotificationsRoute() {
             <NotificationsLoading
               label={activeTab === 'invitations' ? 'Loading invitations' : 'Loading notifications'}
             />
+          ) : !online && (activeTab === 'invitations' ? invitations.length === 0 : notifications.length === 0) ? (
+            // Offline with nothing saved: not an empty "all caught up" list.
+            <OfflineState message="Your notifications will load when you are back online." />
           ) : error ? (
             <ErrorState onRetry={retry} />
           ) : activeTab === 'invitations' ? (

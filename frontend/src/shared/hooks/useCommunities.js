@@ -14,6 +14,7 @@ import { idbGet, idbSet, idbDelete, idbEpoch } from '@shared/lib/idb';
 import { useHasCampusAccess, useCampusDeniedHandler } from './useCampusAffiliation';
 import { useAuth } from '@shared/context/AuthContext';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
+import { useGuardedMutation } from '@shared/hooks/useGuardedMutation';
 
 // A stable empty list. `query.data || []` handed every consumer a brand-new
 // array on each render, which re-ran every `useMemo` keyed on it — including
@@ -391,18 +392,20 @@ function invalidateCommunity(queryClient, id) {
 
 export function useJoinCommunity() {
   const queryClient = useQueryClient();
-  return useMutation({
+  const mutation = useMutation({
     mutationFn: (id) => communitiesApi.join(id),
     onSuccess: (_data, id) => invalidateCommunity(queryClient, id),
   });
+  return useGuardedMutation(mutation, 'action');
 }
 
 export function useLeaveCommunity() {
   const queryClient = useQueryClient();
-  return useMutation({
+  const mutation = useMutation({
     mutationFn: (id) => communitiesApi.leave(id),
     onSuccess: (_data, id) => invalidateCommunity(queryClient, id),
   });
+  return useGuardedMutation(mutation, 'action');
 }
 
 export function useCreateCommunity() {
@@ -410,13 +413,14 @@ export function useCreateCommunity() {
   // Same key across retries of one submission: a retry after a lost response
   // replays the first create instead of making a second community.
   const [submissionKey] = useState(createSubmissionKey);
-  return useMutation({
+  const mutation = useMutation({
     mutationFn: (data) => communitiesApi.create(data, { idempotencyKey: submissionKey.keyFor(data) }),
     onSuccess: (created) => {
       submissionKey.done();
       return invalidateCommunity(queryClient, created?.id);
     },
   });
+  return useGuardedMutation(mutation, 'community');
 }
 
 /**

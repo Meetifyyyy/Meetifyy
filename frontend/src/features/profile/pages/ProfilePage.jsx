@@ -15,6 +15,8 @@ import Post from '@features/feed/components/post/Post';
 import UserListModal from '@shared/components/modals/UserListModal';
 import Avatar from '@shared/components/avatar/Avatar';
 import NotFoundState from '@shared/components/ui/NotFoundState';
+import { OfflineState } from '@shared/components/ui/StateViews';
+import { useOnlineStatus } from '@shared/lib/networkStatus';
 import s from './ProfilePage.module.css';
 import MediaCropper from '@shared/components/media/MediaCropper';
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
@@ -303,7 +305,9 @@ export default function ProfilePage() {
     profile: profileUser, 
     isLoading: isLoadingProfile,
     isError: profileError, 
+    error: profileFetchError,
   } = useProfile(targetUsername);
+  const online = useOnlineStatus();
 
   // Query User Posts
   const postsEnabled = !!targetUsername && targetUsername !== 'unknown';
@@ -399,7 +403,21 @@ export default function ProfilePage() {
   }
 
 
-  if (profileError || !profileUser) {
+  // Offline with no saved copy of this profile: say so, instead of "user not
+  // found" (a paused query has neither data nor an error).
+  if (!profileUser && !online) {
+    return (
+      <main className="centre centre-wide">
+        <OfflineState message="This profile will load when you are back online." />
+      </main>
+    );
+  }
+
+  // "Not found" is the server's answer (a 4xx), or no profile at all. A network
+  // failure on a refresh must not replace a profile that is already on screen.
+  const statusCode = profileFetchError?.status;
+  const profileRefused = profileError && typeof statusCode === 'number' && statusCode >= 400 && statusCode < 500;
+  if (profileRefused || !profileUser) {
     return (
       <main className="centre centre-wide">
         <NotFoundState
@@ -705,11 +723,15 @@ export default function ProfilePage() {
                 <h3 className={s.emptyStateTitle}>This Account is Private</h3>
                 <p className={s.emptyStateDesc}>Follow this account to see their posts and updates.</p>
               </div>
-            ) : postsLoading ? (
+            ) : postsLoading && online ? (
               <>
                 <PostSkeleton />
                 <PostSkeleton />
               </>
+            ) : posts.length === 0 && !online ? (
+              // Not "No posts yet": none are saved on this device, and a
+              // skeleton would never resolve.
+              <OfflineState title="You're offline" message="Posts will load when you are back online." />
             ) : posts.length === 0 ? (
               <div className={s.emptyState}>
                 <svg className={s.emptyStateIcon} width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">

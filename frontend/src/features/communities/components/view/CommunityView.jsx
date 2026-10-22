@@ -7,6 +7,7 @@ import { useAuth } from '@shared/context/AuthContext';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { communitiesApi, postsApi, getMediaUrl } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
+import { blockIfOffline } from '@shared/lib/offlineGuard';
 import { isImageUrl, resolveCommunityAvatar } from '@shared/utils/avatar';
 import CollapsingHeader from '@shared/components/CollapsingHeader/CollapsingHeader';
 import PullToRefresh from '@shared/components/PullToRefresh';
@@ -1036,6 +1037,8 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
       setShowLeaveModal(true);
       return;
     }
+    // Offline: refused with a reason before any intent is recorded.
+    if (blockIfOffline('action')) return;
     const entityKey = `joinCommunity:${communityId}`;
     const nextJoined = toggleRegistry.getNextToggleIntent(entityKey, rawJoined);
 

@@ -167,3 +167,11 @@ describe('message catch-up is never silently dropped', () => {
     await waitFor(() => expect(localStorage.getItem(LAST_SYNC_KEY)).toBe('b'));
   });
 });
+
+describe('what a reconnect refetches', () => {
+  it('always refreshes the conversation list, which a disconnect may have missed changes to', async () => {
+    const { socket } = fakeSocket([{ status: 'ok', messages: [], hasMore: false, cursor: null, syncedAt: 's' }]);
+    const { invalidate } = mount(socket);
+    await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['conversations'] }));
+  });
+});

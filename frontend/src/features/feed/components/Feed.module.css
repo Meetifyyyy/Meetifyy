@@ -4,3 +4,12 @@
   gap: 0.5rem;
   padding-bottom: 2.5rem;
 }
+
+/* Under the posts, in place of the "loading more" spinner, while offline. */
+.offlineFoot {
+  margin: 0;
+  padding: 1.25rem 1rem;
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}

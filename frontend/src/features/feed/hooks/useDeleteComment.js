@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postsApi } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
+import { useGuardedMutation } from '@shared/hooks/useGuardedMutation';
 
 /**
  * Applies a delete to the flat comment array the way the server will.
@@ -48,7 +49,7 @@ export function applyOptimisticDelete(comments, commentId) {
 export function useDeleteComment() {
   const queryClient = useQueryClient();
 
-  return useMutation({
+  const mutation = useMutation({
     mutationFn: ({ commentId }) => postsApi.deleteComment(commentId),
 
     onMutate: async ({ commentId, postId }) => {
@@ -123,4 +124,5 @@ export function useDeleteComment() {
       queryClient.invalidateQueries({ queryKey: ['post', postId] });
     },
   });
+  return useGuardedMutation(mutation, 'action');
 }

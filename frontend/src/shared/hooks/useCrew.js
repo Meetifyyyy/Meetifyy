@@ -12,6 +12,7 @@ import { createSubmissionKey } from '@shared/lib/idempotencyKey';
 import { idbGet, idbSet, idbDelete, idbEpoch } from '@shared/lib/idb';
 import { useAuth } from '@shared/context/AuthContext';
 import { mapActivity } from '@shared/utils/mapActivity';
+import { useGuardedMutation } from '@shared/hooks/useGuardedMutation';
 
 // ── Query keys ───────────────────────────────────────────────────────────────
 export const CREW_KEYS = {
@@ -363,7 +364,7 @@ export function useActivityAttendees(activityId, { enabled = false } = {}) {
 
 export function useJoinActivity() {
   const queryClient = useQueryClient();
-  return useMutation({
+  const mutation = useMutation({
     mutationFn: (id) => activitiesApi.join(id),
     onSuccess: (data, id) => {
       // Clear IDB so next session doesn't restore stale pre-join state
@@ -373,11 +374,12 @@ export function useJoinActivity() {
       if (id) queryClient.invalidateQueries({ queryKey: CREW_KEYS.byId(id), refetchType: 'active' });
     },
   });
+  return useGuardedMutation(mutation, 'action');
 }
 
 export function useLeaveActivity() {
   const queryClient = useQueryClient();
-  return useMutation({
+  const mutation = useMutation({
     mutationFn: (id) => activitiesApi.leave(id),
     onSuccess: (data, id) => {
       idbDelete('activities', 'all_page1');
@@ -386,6 +388,7 @@ export function useLeaveActivity() {
       if (id) queryClient.invalidateQueries({ queryKey: CREW_KEYS.byId(id), refetchType: 'active' });
     },
   });
+  return useGuardedMutation(mutation, 'action');
 }
 
 export function useCreateActivity() {
@@ -393,7 +396,7 @@ export function useCreateActivity() {
   // Same key across retries of one submission, so a retry after a lost
   // response replays the first create instead of making a second activity.
   const [submissionKey] = useState(createSubmissionKey);
-  return useMutation({
+  const mutation = useMutation({
     mutationFn: (data) => activitiesApi.create(data, { idempotencyKey: submissionKey.keyFor(data) }),
     onSuccess: () => {
       submissionKey.done();
@@ -401,6 +404,7 @@ export function useCreateActivity() {
       queryClient.invalidateQueries({ queryKey: ['activity'] });
     },
   });
+  return useGuardedMutation(mutation, 'activity');
 }
 
 /**

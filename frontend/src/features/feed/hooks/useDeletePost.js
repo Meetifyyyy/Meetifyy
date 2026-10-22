@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postsApi } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
 import { isPostListQuery } from '../utils/postCache';
+import { useGuardedMutation } from '@shared/hooks/useGuardedMutation';
 
 /** Field the card reads to render its "Deleting post…" state. */
 export const DELETING_FLAG = '__deleting';
@@ -81,7 +82,7 @@ const dropPost = () => null;
 export function useDeletePost() {
   const queryClient = useQueryClient();
 
-  return useMutation({
+  const mutation = useMutation({
     mutationFn: ({ postId }) => postsApi.deletePost(postId),
 
     onMutate: async ({ postId }) => {
@@ -145,4 +146,5 @@ export function useDeletePost() {
       showToast(err?.message || "Couldn't delete post", 'error');
     },
   });
+  return useGuardedMutation(mutation, 'action');
 }

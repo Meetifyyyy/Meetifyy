@@ -38,3 +38,31 @@ export function ErrorState({ title = 'Something went wrong', message = 'There wa
 
 export { default as NotFoundState } from './NotFoundState';
 
+
+/**
+ * A screen opened offline with nothing saved on this device for it. Shown
+ * instead of a skeleton that never ends or a generic "something went wrong";
+ * the data loads by itself when the connection returns (queries resume), so
+ * there is nothing to tap.
+ */
+export function OfflineState({ title = "You're offline", message = 'Nothing is saved on this device for this yet. It will load when you are back online.', className, style }) {
+  return (
+    <EmptyState
+      className={className}
+      style={style}
+      title={title}
+      message={message}
+      icon={
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '1rem', opacity: 0.5 }} aria-hidden="true">
+          <line x1="2" y1="2" x2="22" y2="22" />
+          <path d="M8.5 16.5a5 5 0 0 1 7 0" />
+          <path d="M2 8.8a15 15 0 0 1 4.2-2.6" />
+          <path d="M10.7 5.1A15 15 0 0 1 22 8.8" />
+          <path d="M5 12.9a10 10 0 0 1 5.2-2.7" />
+          <path d="M13.9 10.4a10 10 0 0 1 5.1 2.5" />
+          <line x1="12" y1="20" x2="12.01" y2="20" />
+        </svg>
+      }
+    />
+  );
+}

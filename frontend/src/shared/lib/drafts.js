@@ -30,12 +30,17 @@
  * storage must make drafts silently stop working, never break typing.
  */
 
+import { IS_MOBILE_BUILD } from '@config';
+
 export const DRAFT_PREFIX = 'meetifyy_draft:';
 const VERSION_PREFIX = `${DRAFT_PREFIX}v1:`;
 
 export const MAX_DRAFTS_PER_USER = 50;
 /** A week. A draft older than that is stale context, not something to resurrect. */
-export const DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+// A week on the installed app, a day on the website: a browser is more often
+// shared, and a draft left by someone who closed the tab without signing out
+// stays readable there until it expires (sign-out wipes them either way).
+export const DRAFT_TTL_MS = (IS_MOBILE_BUILD ? 7 : 1) * 24 * 60 * 60 * 1000;
 /** Ceiling when a caller names no limit of its own (the longest composer is a chat message). */
 const DEFAULT_MAX_LENGTH = 5000;
 const MAX_MENTIONS = 50;

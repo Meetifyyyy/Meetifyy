@@ -5,6 +5,7 @@ import { showToast } from '@shared/utils/toast';
 import { Devices, Smartphone, LogOut } from '@shared/components/icons';
 import styles from './DevicesPanel.module.css';
 import RowSkeleton from '@shared/components/skeletons/RowSkeleton';
+import { useGuardedMutation } from '@shared/hooks/useGuardedMutation';
 
 /**
  * The devices signed in to this account.
@@ -68,7 +69,7 @@ export default function DevicesPanel() {
     queryClient.invalidateQueries({ queryKey: ['auth', 'sessions'] });
   }, [queryClient]);
 
-  const revokeOne = useMutation({
+  const revokeOne = useGuardedMutation(useMutation({
     mutationFn: (id) => sessionsApi.revoke(id),
     onSuccess: () => {
       showToast('Signed out of that device');
@@ -80,9 +81,9 @@ export default function DevicesPanel() {
       // the list on screen is wrong, so refresh it.
       invalidate();
     },
-  });
+  }), 'action');
 
-  const revokeOthers = useMutation({
+  const revokeOthers = useGuardedMutation(useMutation({
     mutationFn: () => sessionsApi.revokeOthers(),
     onSuccess: (result) => {
       const count = result?.revoked ?? 0;
@@ -98,7 +99,7 @@ export default function DevicesPanel() {
       showToast(err?.message || "Couldn't sign out the other devices", 'error');
       setConfirmingAll(false);
     },
-  });
+  }), 'action');
 
   const intro = (
     <p className={styles.intro}>

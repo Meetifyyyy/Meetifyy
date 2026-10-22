@@ -4,6 +4,9 @@ import { showToast } from '@shared/utils/toast';
 import { postsApi } from '@shared/api/apiClient';
 import { isPostListQuery } from '../utils/postCache';
 import { createSubmissionKey } from '@shared/lib/idempotencyKey';
+import { useGuardedMutation } from '@shared/hooks/useGuardedMutation';
+import { submitErrorMessage } from '@shared/lib/offlineGuard';
+import { isNetworkLevelFailure } from '@shared/utils/networkErrors';
 
 // Monotonic, so two comments posted inside the same millisecond cannot collide
 // on `temp_<Date.now()>` and have one silently overwrite the other.
@@ -52,7 +55,7 @@ export function useAddComment() {
   // same text under another post is a different comment.
   const [submissionKey] = useState(createSubmissionKey);
 
-  return useMutation({
+  const mutation = useMutation({
     mutationFn: ({ postId, text, parentId, mentions }) => {
       const body = { text, parentId, mentions };
       return postsApi.addComment(postId, body, { idempotencyKey: submissionKey.keyFor({ postId, ...body }) });
@@ -115,7 +118,12 @@ export function useAddComment() {
         queryClient.setQueryData(context.queryKey, context.previousPost);
       }
       queryClient.setQueriesData({ predicate: isPostListQuery }, bumpCommentCount(context?.postId, -1));
-      showToast(validationMessage(err) || "Couldn't post comment", 'error');
+      // A request that never got a response says the draft is kept; the resend
+      // is safe, it carries the same idempotency key.
+      showToast(
+        validationMessage(err) || (isNetworkLevelFailure(err) ? submitErrorMessage(err) : "Couldn't post comment"),
+        'error',
+      );
     },
 
     onSuccess: (created, _variables, context) => {
@@ -150,4 +158,5 @@ export function useAddComment() {
       // comment fetched nothing new.
     },
   });
+  return useGuardedMutation(mutation, 'comment');
 }

@@ -3,7 +3,8 @@ import useUIStore from '@stores/uiStore';
 import { focusManager, onlineManager, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { postsApi } from '@shared/api/apiClient';
 import { createSubmissionKey } from '@shared/lib/idempotencyKey';
-import { EmptyState, ErrorState } from '@shared/components/ui/StateViews';
+import { EmptyState, ErrorState, OfflineState } from '@shared/components/ui/StateViews';
+import { useOnlineStatus } from '@shared/lib/networkStatus';
 import VirtualFeedList from './VirtualFeedList';
 import PostComposer from './composer/PostComposer';
 import HomePostSkeleton from './skeletons/HomePostSkeleton';
@@ -78,6 +79,7 @@ function Feed({ onPostClick, onCommentClick }) {
   }, [data?.pages]);
 
   const loadMoreRef = useRef(null);
+  const online = useOnlineStatus();
 
   // Not while the first page is being refreshed (fetching, but not a next
   // page): fetchNextPage cancels a refetch in flight, so it would drop that
@@ -191,11 +193,18 @@ function Feed({ onPostClick, onCommentClick }) {
           </>
         )}
 
-        {!isLoading && isError && (
+        {/* Opened offline with nothing saved: an offline message, not the
+            "quiet here" empty state a paused query would otherwise fall into. */}
+        {!isLoading && !hasPosts && !online && <OfflineState />}
+
+        {/* A failed refresh must not hide posts that are already on screen
+            (the saved or previously loaded feed): the error is only for a feed
+            with nothing to show. */}
+        {!isLoading && isError && !hasPosts && online && (
           <ErrorState onRetry={refetch} />
         )}
 
-        {!isLoading && !isError && allPosts.length === 0 && !hasNextPage && (
+        {!isLoading && !isError && online && !hasPosts && !hasNextPage && (
           <EmptyState
             title="It's quiet here..."
             message="Join communities or follow people to see their updates."
@@ -208,11 +217,17 @@ function Feed({ onPostClick, onCommentClick }) {
           />
         )}
 
-        {!isLoading && !isError && allPosts.length > 0 && (
+        {!isLoading && hasPosts && (
           <VirtualFeedList posts={allPosts} onPostClick={onPostClick} onCommentClick={onCommentClick} />
         )}
 
-        {!isLoading && !isError && hasNextPage && (
+        {/* The next page cannot load without a connection; a spinner that never
+            ends would say otherwise. */}
+        {!isLoading && hasPosts && hasNextPage && !online && (
+          <p className={styles.offlineFoot} role="status">You're offline. Reconnect to load more.</p>
+        )}
+
+        {!isLoading && !isError && hasNextPage && online && (
           <div ref={loadMoreRef} style={{ padding: '1.5rem', display: 'flex', justifyContent: 'center' }}>
             <div className="spinner" aria-label="Loading more posts" />
           </div>

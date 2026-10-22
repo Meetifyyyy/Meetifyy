@@ -1,6 +1,8 @@
 import { StrictMode } from 'react';
 import { clearExpiredStaleChunkMarker } from '@shared/lib/staleChunkRecovery';
 import { scheduleStorageMaintenance } from '@shared/lib/storageMaintenance';
+import { installNetworkStatus } from '@shared/lib/networkStatus';
+import { mutationDefaults } from '@shared/lib/mutationDefaults';
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from './shared/context/AuthContext';
@@ -30,8 +32,14 @@ bootWebSentry({
   release: typeof __MEETIFYY_SENTRY_RELEASE__ === 'string' ? __MEETIFYY_SENTRY_RELEASE__ : '',
 });
 
+// TanStack starts out believing it is online; make it follow the device (see
+// the module) so queries pause and resume with the same signal the UI uses.
+installNetworkStatus();
+
 const queryClient = new QueryClient({
   defaultOptions: {
+    // Fail fast offline instead of pausing silently; see the module.
+    mutations: mutationDefaults,
     queries: {
       // 5 min: switching screens or returning to the app reuses the cache instead
       // of refetching every page. Live data arrives over sockets, and queries

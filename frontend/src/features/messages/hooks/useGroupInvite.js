@@ -5,6 +5,7 @@ import { MESSAGE_KEYS } from '@shared/hooks/useMessages';
 import { useAuth } from '@shared/context/AuthContext';
 import { openVerificationModal } from '@shared/stores/verificationModalStore';
 import { isMessagingEligibleStatus } from '@shared/utils/messagingEligibility';
+import { useGuardedMutation } from '@shared/hooks/useGuardedMutation';
 
 /** What `join` resolves with when the live-selfie check stopped it client side. */
 export const JOIN_NEEDS_VERIFICATION = 'VERIFICATION_REQUIRED';
@@ -110,7 +111,7 @@ export function useJoinGroup() {
   const { currentUser } = useAuth();
   const verificationStatus = currentUser?.verificationStatus;
 
-  const mutation = useMutation({
+  const mutation = useGuardedMutation(useMutation({
     mutationFn: (groupId) => groupApi.joinGroup(groupId),
     onSuccess: (result, groupId) => {
       // Refresh the preview so the card flips to its joined/requested state
@@ -130,7 +131,7 @@ export function useJoinGroup() {
         }
       }
     },
-  });
+  }), 'action');
 
   const { mutateAsync } = mutation;
   /**

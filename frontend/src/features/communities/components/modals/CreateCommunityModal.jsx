@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
 import { showToast } from '@shared/utils/toast';
+import { blockIfOffline, submitErrorMessage } from '@shared/lib/offlineGuard';
+import { isNetworkLevelFailure } from '@shared/utils/networkErrors';
 import { useAuth } from '@shared/context/AuthContext';
 import { openVerificationModal } from '@shared/stores/verificationModalStore';
 import styles from './CreateCommunityModal.module.css';
@@ -341,6 +343,9 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
   const handleSubmit = async (e) => {
     if (e) e.preventDefault();
     if (!isCategoryValid || !isStep2Valid) return;
+    // Offline, before the avatar upload: the wizard stays on this step with
+    // everything entered, and nothing starts that could hang or half-finish.
+    if (blockIfOffline('community')) return;
 
     setIsSubmitting(true);
     try {
@@ -422,7 +427,10 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
       avatarUploadRef.current = null;
       onCreated(id);
     } catch (err) {
-      showToast("Couldn't create community", 'error');
+      showToast(
+        isNetworkLevelFailure(err) ? submitErrorMessage(err) : "Couldn't create community",
+        'error',
+      );
       console.error(err);
     } finally {
       setIsSubmitting(false);

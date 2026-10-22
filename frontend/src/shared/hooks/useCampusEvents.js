@@ -11,6 +11,7 @@ import { useMemo } from 'react';
 import { campusEventsApi } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
 import { useHasCampusAccess, useCampusDeniedHandler } from './useCampusAffiliation';
+import { useGuardedMutation } from '@shared/hooks/useGuardedMutation';
 
 export const CAMPUS_EVENT_KEYS = {
   all: ['campus-events'],
@@ -83,32 +84,36 @@ function useInvalidateCampusEvents() {
 
 export function useCreateCampusEvent() {
   const invalidate = useInvalidateCampusEvents();
-  return useMutation({
+  const mutation = useMutation({
     mutationFn: (data) => campusEventsApi.create(data),
     onSuccess: invalidate,
   });
+  return useGuardedMutation(mutation, 'event');
 }
 
 export function useUpdateCampusEvent() {
   const invalidate = useInvalidateCampusEvents();
-  return useMutation({
+  const mutation = useMutation({
     mutationFn: ({ id, data }) => campusEventsApi.update(id, data),
     onSuccess: invalidate,
   });
+  return useGuardedMutation(mutation, 'event');
 }
 
 export function usePublishCampusEvent() {
   const invalidate = useInvalidateCampusEvents();
-  return useMutation({
+  const mutation = useMutation({
     mutationFn: (id) => campusEventsApi.publish(id),
     onSuccess: invalidate,
   });
+  return useGuardedMutation(mutation, 'event');
 }
 
 export function useDeleteCampusEvent() {
   const invalidate = useInvalidateCampusEvents();
-  return useMutation({
+  const mutation = useMutation({
     mutationFn: (id) => campusEventsApi.delete(id),
     onSuccess: invalidate,
   });
+  return useGuardedMutation(mutation, 'action');
 }

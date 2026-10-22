@@ -2,6 +2,7 @@ import { useMutation } from '@tanstack/react-query';
 import { z } from 'zod';
 import { reportsApi } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
+import { useGuardedMutation } from '@shared/hooks/useGuardedMutation';
 
 // Zod schema validating backend response shape
 const reportResponseSchema = z.object({
@@ -11,7 +12,7 @@ const reportResponseSchema = z.object({
 });
 
 export function useReportMutation({ onSuccess, onError } = {}) {
-  return useMutation({
+  const mutation = useMutation({
     mutationFn: async ({ targetType, targetId, reason, description, metadata }) => {
       const response = await reportsApi.submit(targetType, targetId, reason, description, metadata);
       // Validate API response structure (apiClient returns parsed JSON directly)
@@ -34,4 +35,5 @@ export function useReportMutation({ onSuccess, onError } = {}) {
       if (onError) onError(error, variables);
     },
   });
+  return useGuardedMutation(mutation, 'action');
 }

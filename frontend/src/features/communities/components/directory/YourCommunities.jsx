@@ -1,6 +1,8 @@
 import { useMemo } from 'react';
 import { AlertCircle } from '@shared/components/icons';
 import { useMyCommunities } from '@shared/hooks/useCommunities';
+import { OfflineState } from '@shared/components/ui/StateViews';
+import { useOnlineStatus } from '@shared/lib/networkStatus';
 import CommunityRow from './CommunityRow';
 import CommunityRowSkeleton from './CommunityRowSkeleton';
 import SectionHeading from './SectionHeading';
@@ -14,6 +16,7 @@ const YOURS_SUBTITLE = 'Jump back into the groups you’re already part of.';
 export default function YourCommunities() {
   const { myCommunities, isLoading, isError, refetch } = useMyCommunities();
   const sorted = useMemo(() => [...myCommunities].sort(byRecentActivity), [myCommunities]);
+  const online = useOnlineStatus();
 
   if (isLoading) {
     return (
@@ -23,7 +26,18 @@ export default function YourCommunities() {
     );
   }
 
-  if (isError) {
+  // Offline with nothing saved: not an empty list of communities.
+  if (!online && sorted.length === 0) {
+    return (
+      <section className={styles.section} aria-label="Your communities">
+        <OfflineState message="Your communities will load when you are back online." />
+      </section>
+    );
+  }
+
+  // Only when there is nothing to show: a failed refresh must not hide the
+  // communities already on screen.
+  if (isError && sorted.length === 0) {
     return (
       <section className={styles.section}>
         <div className={styles.state} role="alert">

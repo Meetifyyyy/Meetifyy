@@ -8,6 +8,7 @@ import {
   writeConfirmedFollowState,
 } from '../utils/followState';
 import { showToast } from '../utils/toast';
+import { blockIfOffline } from '../lib/offlineGuard';
 import { requestToggle } from '../utils/serialToggle';
 import { PROFILE_KEYS } from './useProfile';
 
@@ -221,6 +222,8 @@ export function useFollowMutation(targetUsername) {
 
   const toggle = useCallback((intentFollow) => {
     if (!entityKey || !cleanTarget) return;
+    // Offline: not applied (see lib/offlineGuard), so Follow stays Follow.
+    if (blockIfOffline('action')) return;
     // Register intent for UI display (FollowButton reads this via
     // getLatestIntent). The id scopes the release to THIS tap, so an older
     // one can never clear a newer one's entry.

@@ -36,6 +36,8 @@ import { installLaunchReadiness } from './launchReadiness';
 import { warmSignedInLanding } from './warmSignedInLanding';
 import { installQuerySnapshots } from './querySnapshots';
 import { scheduleStorageMaintenance } from '../shared/lib/storageMaintenance';
+import { installNetworkStatus } from '../shared/lib/networkStatus';
+import { mutationDefaults } from '../shared/lib/mutationDefaults';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -103,8 +105,14 @@ installCapacitorSentry({
  * The rest is copied rather than shared, so the two clients can diverge on
  * mobile-data behaviour without one of them changing the other.
  */
+// The device's connectivity, handed to TanStack before anything queries; see
+// shared/lib/networkStatus.js.
+installNetworkStatus();
+
 const queryClient = new QueryClient({
   defaultOptions: {
+    // Fail fast offline instead of pausing silently; see shared/lib/mutationDefaults.js.
+    mutations: mutationDefaults,
     queries: {
       staleTime: 5 * 60_000, // see src/main.jsx
       gcTime: 1000 * 60 * 30,

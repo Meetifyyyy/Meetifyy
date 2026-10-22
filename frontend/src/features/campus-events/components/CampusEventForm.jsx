@@ -11,6 +11,7 @@ import {
   ALLOWED_IMAGE_ACCEPT,
 } from '@shared/constants/mediaLimits';
 import { showToast } from '@shared/utils/toast';
+import { blockIfOffline, offlineMessage, submitErrorMessage } from '@shared/lib/offlineGuard';
 import { useCreateCampusEvent, useUpdateCampusEvent, usePublishCampusEvent } from '@shared/hooks/useCampusEvents';
 import { toLocalDate, toLocalTime, combineDateTime, isSafeRegistrationUrl } from '../utils/formatEvent';
 import {
@@ -378,6 +379,13 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
       return;
     }
 
+    // Offline, before the poster is awaited (its failure would read as "Poster
+    // upload failed"). The form keeps every field and the chosen poster.
+    if (blockIfOffline('event')) {
+      setError(offlineMessage('event'));
+      return;
+    }
+
     // Await any in-flight poster upload
     if (posterUploadRef.current) {
       try {
@@ -426,7 +434,7 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
       showToast(isEdit ? 'Event updated' : 'Event published', 'success');
       leave(() => onSaved?.(saved));
     } catch (err) {
-      const errMsg = err?.message || "Couldn't save event";
+      const errMsg = submitErrorMessage(err, "Couldn't save event");
       setError(errMsg);
       showToast(errMsg, 'error');
     }

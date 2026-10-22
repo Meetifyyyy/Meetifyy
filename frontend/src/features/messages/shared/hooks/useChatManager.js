@@ -12,6 +12,7 @@ import { outbox } from '../utils/outboxClient';
 import { classifySendFailure } from '../utils/outbox';
 import { restorableOutboxMessages } from '../utils/outboxRestore';
 import { newIdempotencyKey } from '@shared/lib/idempotencyKey';
+import { useOnlineStatus } from '@shared/lib/networkStatus';
 
 
 // Throttles upload-progress writes so a fast XHR can't flood React state.
@@ -133,24 +134,28 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
     }
   }, [type]);
 
+  const online = useOnlineStatus();
   const [_idbLoaded, setIdbLoaded] = useState(false);
-  // IDB messages are stored here as placeholder — they are NOT injected into the
-  // TanStack cache directly (which would set isLoading:false prematurely).
-  // Instead they are passed as placeholderData so the query still reports isLoading:true
-  // until the network confirms. Once network responds, its data takes over seamlessly.
-  const idbPlaceholderRef = useRef(null);
+  // The saved copy of this chat's history, built from IndexedDB, tagged with
+  // the chat it belongs to. Online it is NOT put in the TanStack cache (that
+  // would report the chat as loaded before the network confirms it): the brief
+  // fetch shows a skeleton instead of flashing a copy that may be old. OFFLINE
+  // there is no fetch to wait for, so it is written to the cache (see the
+  // effect below) and the chat reads from what this device saved, instead of an
+  // empty "No messages in this chat" for a chat that has hundreds.
+  const [idbPlaceholder, setIdbPlaceholder] = useState(null);
 
   useEffect(() => {
     if (!activeChatId) {
       setIdbLoaded(false);
-      idbPlaceholderRef.current = null;
+      setIdbPlaceholder(null);
       return;
     }
     let cancelled = false;
     const targetChatId = activeChatId;
 
     // Reset placeholder for the new chat
-    idbPlaceholderRef.current = null;
+    setIdbPlaceholder(null);
 
     // If TanStack cache already has NETWORK data for this chat, skip IDB entirely.
     // Network data is identified by having a non-placeholder source — we just check
@@ -186,8 +191,8 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
           pages.push({ messages: pageMsgs, nextCursor });
           pageParams.push(pages.length === 1 ? undefined : nextCursor);
         }
-        // Store as placeholder — will be used by useInfiniteQuery's placeholderData option
-        if (!cancelled) idbPlaceholderRef.current = { pages, pageParams };
+        // Kept for the offline case — see idbPlaceholder above.
+        if (!cancelled) setIdbPlaceholder({ chatId: targetChatId, pages, pageParams });
       }
 
       if (!cancelled) setIdbLoaded(true);
@@ -287,8 +292,7 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
         // for arrivals, the send path for optimistic ones), and writing an
         // unconfirmed send here would give it a second, page-shaped life.
         idbSaveMessages(activeChatId, normalizedMsgs, idbEpochAtRequest).catch(console.warn);
-        // After network confirms, clear the IDB placeholder — network data owns the cache now
-        idbPlaceholderRef.current = null;
+        // Network data now owns the cache; real data always wins over a placeholder.
       }
       return res;
     },
@@ -297,12 +301,26 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
     enabled: !!activeChatId && !String(activeChatId).startsWith('temp_') && !String(activeChatId).startsWith('c_temp_'),
     staleTime: 1000 * 60 * 5,
     gcTime: 1000 * 60 * 10,
-    // placeholderData shows IDB content while network is in-flight WITHOUT setting isLoading:false.
-    // The key insight: placeholderData keeps isLoading:true (or isFetching:true) so callers know
-    // the data is not yet confirmed by the server. The flicker is eliminated because we show
-    // a loading skeleton instead of IDB messages during the brief network fetch.
+    // Never a placeholder: online, the first load shows a skeleton until the
+    // server confirms. The offline copy goes in through setQueryData instead.
     placeholderData: undefined,
   });
+
+  // Offline with nothing in memory for this chat: seed it from what the device
+  // saved. Written as a real cache entry rather than placeholderData so that a
+  // message sent meanwhile is appended to the history instead of replacing it.
+  // `updatedAt: 0` marks it stale, so the first refetch after reconnecting
+  // replaces it with the server's page. Nothing is written once real data
+  // exists, or for a chat other than the open one.
+  useEffect(() => {
+    if (online || !activeChatId || idbPlaceholder?.chatId !== activeChatId) return;
+    if (queryClient.getQueryData(['messages', activeChatId])?.pages?.length) return;
+    queryClient.setQueryData(
+      ['messages', activeChatId],
+      { pages: idbPlaceholder.pages, pageParams: idbPlaceholder.pageParams },
+      { updatedAt: 0 },
+    );
+  }, [online, activeChatId, idbPlaceholder, queryClient]);
 
   // Expose a combined loading state: true when we have no CONFIRMED network data yet.
   // This is used by MessagesLayout to show a skeleton while the first network fetch is in-flight,
@@ -1056,7 +1074,9 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
     // (doesn't exist, or the current user isn't a participant — the backend
     // collapses both into the same 403 so this signal never distinguishes them).
     isError,
-    hasMore: hasNextPage,
+    // Older history cannot be fetched offline; a "loading older messages"
+    // spinner that never ends would say it is on its way.
+    hasMore: hasNextPage && online,
     isLoadingMore: isFetchingNextPage,
     onLoadMore: fetchNextPage,
     sendMessageOptimistically,

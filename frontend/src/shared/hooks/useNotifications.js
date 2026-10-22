@@ -4,6 +4,8 @@ import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tansta
 import { notificationsApi } from '../api/apiClient';
 
 import { useAuth } from '../context/AuthContext';
+import { isOnline } from '../lib/networkStatus';
+import { blockIfOffline } from '../lib/offlineGuard';
 
 const UNREAD_COUNT_KEY = ['notifications', 'unreadCount'];
 
@@ -267,11 +269,22 @@ export function useNotifications({ type } = {}) {
   const { mutate: mutateMarkAllRead } = markAllReadMutation;
   const { mutate: mutateDelete } = deleteMutation;
 
-  const markAsRead = useCallback((id) => mutateMarkAsRead(id), [mutateMarkAsRead]);
+  // Marking read is bookkeeping done on arrival, not something the person asked
+  // for, so offline it simply waits (no flip-and-rollback, no toast): the page
+  // marks again the next time it is opened with a connection.
+  const markAsRead = useCallback((id) => {
+    if (isOnline()) mutateMarkAsRead(id);
+  }, [mutateMarkAsRead]);
   // Wrapped rather than passed through: handed straight to an onClick it would
   // receive the event as its mutation variables.
-  const markAllRead = useCallback(() => mutateMarkAllRead(), [mutateMarkAllRead]);
-  const dismissNotification = useCallback((id) => mutateDelete(id), [mutateDelete]);
+  const markAllRead = useCallback(() => {
+    if (isOnline()) mutateMarkAllRead();
+  }, [mutateMarkAllRead]);
+  // Deleting is a request the person made: refused with a reason, row kept.
+  const dismissNotification = useCallback((id) => {
+    if (blockIfOffline('action')) return;
+    mutateDelete(id);
+  }, [mutateDelete]);
 
   // Memoised for the same reason as `notifications`: this object was rebuilt on
   // every render, so every consumer of the hook re-rendered on every render of

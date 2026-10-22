@@ -29,6 +29,8 @@ import MuteAlertsModal from '../../shared/components/modals/MuteAlertsModal';
 import BlockUserModal from '@shared/components/modals/BlockUserModal';
 import ConversationSkeleton from '../../shared/components/skeletons/ConversationSkeleton';
 import ConversationEmptyState from '../../shared/components/sidebar/ConversationEmptyState';
+import { OfflineState } from '@shared/components/ui/StateViews';
+import { useOnlineStatus } from '@shared/lib/networkStatus';
 
 import styles from './MessagesLayout.module.css';
 import sidebarStyles from '../../shared/components/sidebar/ConversationList.module.css';
@@ -49,6 +51,7 @@ export default function MessagesLayout() {
   // `conversationsError`, `sendDirectMessage` and `startConversation` were
   // destructured here but never referenced -- dropped rather than migrated.
   const { conversations = [], isLoading: isConversationsLoading } = useConversations();
+  const online = useOnlineStatus();
   const {
     reactToMessage, clearChat, toggleBlockUser, createGroupConversation,
     toggleMuteConversation, deleteConversation,
@@ -434,6 +437,9 @@ export default function MessagesLayout() {
           <div className={sidebarStyles.msgConvScroll}>
             {isConversationsLoading ? (
               <ConversationSkeleton count={7} />
+            ) : filteredConvs.length === 0 && !online && conversations.length === 0 ? (
+              // Offline with no saved inbox: not "no conversations yet".
+              <OfflineState message="Your conversations will load when you are back online." />
             ) : filteredConvs.length === 0 ? (
               <ConversationEmptyState
                 searchVal={searchVal}

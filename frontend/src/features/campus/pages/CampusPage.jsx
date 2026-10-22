@@ -20,6 +20,8 @@ import { useActivities } from '@shared/hooks/useCrew';
 import CrewCard from '@features/crew/components/cards/CrewCard';
 import CrewCardSkeleton from '@features/crew/components/cards/CrewCardSkeleton';
 import Skeleton from '@shared/components/skeletons/Skeleton';
+import { OfflineState } from '@shared/components/ui/StateViews';
+import { useOnlineStatus } from '@shared/lib/networkStatus';
 import { mapActivity } from '@shared/utils/mapActivity';
 import CampusJoinFlow from '../components/affiliation/CampusJoinFlow';
 import CommunityRow from '@features/communities/components/directory/CommunityRow';
@@ -246,6 +248,7 @@ export default function CampusPage() {
   const isChangingCollege = campus.isActive && searchParams.get('verify') === 'change';
   const finishCollegeChange = useCallback(() => navigate('/campus', { replace: true }), [navigate]);
 
+  const online = useOnlineStatus();
   const { campusUsers, isLoading: campusUsersLoading } = useCampusUsers(50);
   const { campusCommunities, isLoading: campusCommunitiesLoading } = useCampusCommunities();
 
@@ -595,7 +598,7 @@ export default function CampusPage() {
           ) : campusActivityItems.length === 0 ? (
             <div className={eventStyles.emptyState}>
               <p className={eventStyles.emptyText}>
-                No activities yet.
+                {online ? 'No activities yet.' : "You're offline. Activities will load when you're back online."}
               </p>
             </div>
           ) : (
@@ -625,7 +628,11 @@ export default function CampusPage() {
           </Suspense>
         )}
       </>
-      ) : campus.isLoading ? null : (
+      ) : campus.isLoading ? (
+        // Still confirming the college with the server. Offline that never
+        // finishes, so say so rather than leaving the screen blank.
+        online ? null : <OfflineState message="Campus will load when you are back online." />
+      ) : (
         <CampusJoinFlow pending={campus.pending} pendingLoading={campus.isPendingLoading} />
       )}
 

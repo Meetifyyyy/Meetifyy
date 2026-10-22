@@ -6,6 +6,7 @@ import { showToast } from '@shared/utils/toast';
 import MessageBubble from './MessageBubble';
 import { captureScrollAnchor, restoreScrollAnchor } from '../utils/scrollAnchor';
 import styles from './ChatMessageList.module.css';
+import { useOnlineStatus } from '@shared/lib/networkStatus';
 
 /*
  * First-load placeholder for a thread: a few bubble-shaped blocks alternating
@@ -206,6 +207,7 @@ export default function ChatMessageList({
   const prevFirstMsgIdRef = useRef(null);
 
   // Loading state guards
+  const online = useOnlineStatus();
   const isLoadingOlderRef = useRef(false);
   const loadMoreTriggeredRef = useRef(false);
 
@@ -786,7 +788,10 @@ export default function ChatMessageList({
         <div className={styles.msgEmptyState}>
           {(searchQuery || '').trim()
             ? `No messages match “${searchQuery.trim()}”.`
-            : 'No messages in this chat.'}
+            : online
+              ? 'No messages in this chat.'
+              // Not "no messages": nothing is saved for this chat on this device.
+              : "You're offline. This chat will load when you're back online."}
         </div>
       )}
 

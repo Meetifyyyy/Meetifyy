@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supportApi } from '@shared/api/apiClient';
 import { createSubmissionKey } from '@shared/lib/idempotencyKey';
+import { isOnline } from '@shared/lib/networkStatus';
+import { offlineMessage } from '@shared/lib/offlineGuard';
 import { useAuth } from '@shared/context/AuthContext';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useSheetDrag } from '@shared/hooks/useSheetDrag';
@@ -188,6 +190,13 @@ function ModalBody({ kind, onClose, onViewRequests }) {
     if (Object.keys(found).length) {
       setErrors(found);
       formRef.current?.querySelector(`[name="${Object.keys(found)[0]}"]`)?.focus();
+      return;
+    }
+
+    // Offline: said inline, where the form's other errors are, and nothing is
+    // sent. The form keeps everything that was typed or attached.
+    if (!isOnline()) {
+      setSubmitError(offlineMessage('support'));
       return;
     }
 

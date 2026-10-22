@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postsApi } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
 import { isPostListQuery } from '../utils/postCache';
+import { useGuardedMutation } from '@shared/hooks/useGuardedMutation';
 
 const updatePollInCache = (oldData, postId, updatedPollOrIndices, currentUserId) => {
   if (!oldData) return oldData;
@@ -70,7 +71,7 @@ const updatePollInCache = (oldData, postId, updatedPollOrIndices, currentUserId)
 export function useVotePoll() {
   const queryClient = useQueryClient();
 
-  return useMutation({
+  const mutation = useMutation({
     mutationFn: ({ postId, indices, optionId }) => {
       return postsApi.voteInPoll(postId, { indices, optionId });
     },
@@ -109,4 +110,5 @@ export function useVotePoll() {
       }
     },
   });
+  return useGuardedMutation(mutation, 'action');
 }

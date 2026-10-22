@@ -6,6 +6,7 @@ import { COMMUNITY_KEYS } from '@shared/hooks/useCommunities';
 import { idbDelete } from '@shared/lib/idb';
 import { isCommunityOwner } from '@shared/utils/community';
 import { showToast } from '@shared/utils/toast';
+import { useGuardedMutation } from '@shared/hooks/useGuardedMutation';
 
 /**
  * Apply `update` to every community in a cached list, whichever shape the list
@@ -30,7 +31,7 @@ export function mapCommunityCache(data, update) {
  */
 export function useRequestToJoin() {
   const queryClient = useQueryClient();
-  return useMutation({
+  const mutation = useMutation({
     mutationFn: ({ communityId }) => communitiesApi.join(communityId),
     onSuccess: (res, { communityId }) => {
       const joined = res?.status === 'MEMBER' || res?.isJoined === true;
@@ -46,6 +47,7 @@ export function useRequestToJoin() {
       showToast(err?.response?.data?.message || err?.message || 'Could not send the request', 'error');
     },
   });
+  return useGuardedMutation(mutation, 'action');
 }
 
 export function useJoinCommunity() {

@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { postsApi } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
+import { blockIfOffline } from '@shared/lib/offlineGuard';
 
 import Skeleton from '@shared/components/skeletons/Skeleton';
 import Post from './Post';
@@ -333,6 +334,9 @@ export default function PostView({ post, onBack, autoFocusComment = false }) {
     // The composer disables Send past the limit; this is the same check for any
     // other way in (a keyboard submit, a pasted draft restored after an error).
     if (getCommentLimitState(replyContent.text).isOver) return;
+    // Offline: before the box is cleared and a placeholder comment appears. The
+    // text stays in the composer and in its saved draft.
+    if (blockIfOffline('comment')) return;
     const draft = replyContent;
     const target = replyTarget;
     const draftScopeAtSubmit = `comment:${livePost.id}`;

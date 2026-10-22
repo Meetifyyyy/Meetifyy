@@ -16,6 +16,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { toggleRegistry } from '../utils/mutationRegistry';
 import { requestToggle } from '../utils/serialToggle';
 import { showToast } from '../utils/toast';
+import { blockIfOffline } from '../lib/offlineGuard';
 
 function invalidateAfterSettle(queryClient, invalidateKeys) {
   // Each entry is either a plain query key (refetched immediately on every
@@ -60,6 +61,9 @@ export function useToggleMutation({
   optsRef.current = { applyRollback, callApi, invalidateKeys, errorMessage, onSettled };
 
   const mutate = useCallback((variables) => {
+    // Offline: not applied at all. An optimistic flip that is taken back a few
+    // seconds later misleads twice; one sentence and an unchanged button do not.
+    if (blockIfOffline('action')) return;
     const entityKey = getEntityKey(variables);
     const intent = variables.intentState ?? variables.isLiked ?? variables.isSaved ?? variables.isFollowing ?? variables.isJoined;
 

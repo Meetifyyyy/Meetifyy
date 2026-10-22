@@ -66,6 +66,7 @@ import {
   DEFAULT_ACTIVITY_COVERS,
   getDefaultActivityCover as getDefaultCover,
 } from '@shared/utils/activityCover';
+import { useGuardedMutation } from '@shared/hooks/useGuardedMutation';
 
 
 function formatDateTime(activity) {
@@ -272,7 +273,7 @@ export default function ActivityDetailPage() {
 
   const { mutate: toggleJoin, isJoinPending } = useJoinActivity();
 
-  const endMutation = useMutation({
+  const endMutation = useGuardedMutation(useMutation({
     mutationFn: (actId) => activitiesApi.cancelCrewActivity(actId),
     onMutate: async (actId) => {
       await queryClient.cancelQueries({ queryKey: ['activity', actId] });
@@ -294,7 +295,7 @@ export default function ActivityDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['activities'] });
       if (actId) queryClient.invalidateQueries({ queryKey: ['activity', actId] });
     },
-  });
+  }), 'action');
 
   const endCrewActivity = (actId) => endMutation.mutateAsync(actId);
 

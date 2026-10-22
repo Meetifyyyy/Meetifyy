@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { postsApi } from '@shared/api/apiClient';
 import { toggleLike, readLike } from '@shared/utils/likeSync';
 import { showToast } from '@shared/utils/toast';
+import { blockIfOffline } from '@shared/lib/offlineGuard';
 import { isPostListQuery } from '../utils/postCache';
 
 export const postLikeKey = (postId) => `post:${postId}`;
@@ -71,6 +72,8 @@ export function useLikePost() {
 
   const toggle = useCallback((post, currentUserId) => {
     const postId = post.id;
+    // Offline: not applied, so the heart does not flip and flip back.
+    if (blockIfOffline('action')) return readPostLike(post, currentUserId);
     return toggleLike(postLikeKey(postId), postLikeSnapshot(post, currentUserId), {
       send: (liked) => (liked ? postsApi.likePost(postId) : postsApi.unlikePost(postId)),
       write: (shown) => writePostLike(queryClient, postId, shown),

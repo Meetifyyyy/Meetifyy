@@ -1,5 +1,7 @@
 import { AlertCircle } from '@shared/components/icons';
 import { useExploreCommunities } from '@shared/hooks/useCommunities';
+import { OfflineState } from '@shared/components/ui/StateViews';
+import { useOnlineStatus } from '@shared/lib/networkStatus';
 import CommunityRow from './CommunityRow';
 import CommunityRowSkeleton from './CommunityRowSkeleton';
 import SectionHeading from './SectionHeading';
@@ -20,13 +22,20 @@ export default function ExploreCommunities() {
     fetchNextPage,
     refetch,
   } = useExploreCommunities();
+  const online = useOnlineStatus();
 
   return (
     <section className={listStyles.section} aria-busy={isFetching} aria-label="Communities">
       <SectionHeading title="Discover your people" subtitle="Find communities built around what you love, across campus." />
       {isLoading && <CommunityRowSkeleton count={5} />}
 
-      {!isLoading && isError && communities.length === 0 && (
+      {/* Offline with nothing saved: say so, rather than a skeleton that never
+          ends or a "couldn't load" that suggests something is broken. */}
+      {!isLoading && !online && communities.length === 0 && (
+        <OfflineState message="Communities will load when you are back online." />
+      )}
+
+      {!isLoading && online && isError && communities.length === 0 && (
         <div className={listStyles.state} role="alert">
           <span className={listStyles.stateIcon}><AlertCircle size={22} /></span>
           <h2 className={listStyles.stateTitle}>Couldn’t load communities</h2>
@@ -46,7 +55,7 @@ export default function ExploreCommunities() {
               ))}
             </div>
           </div>
-          {hasNextPage && (
+          {hasNextPage && online && (
             <div className={listStyles.more}>
               <button
                 type="button"

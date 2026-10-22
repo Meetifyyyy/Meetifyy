@@ -1,6 +1,8 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toggleRegistry } from '../utils/mutationRegistry';
 import { showToast } from '../utils/toast';
+import { isOnline } from '../lib/networkStatus';
+import { OfflineError, isOfflineError } from '../lib/offlineGuard';
 
 /**
  * A wrapper around useMutation that standardizes optimistic updates and rollbacks.
@@ -28,6 +30,9 @@ export function useOptimisticMutation({
   return useMutation({
     mutationFn,
     onMutate: async (variables) => {
+      // Offline: refused before anything is applied, so there is no flip to
+      // take back (see lib/offlineGuard).
+      if (!isOnline()) throw new OfflineError('action');
       // 1. Register intent if mutationKey is provided
       const entityKey = mutationKey ? mutationKey(variables) : null;
       const mutationId = entityKey ? toggleRegistry.register(entityKey) : null;
@@ -51,6 +56,10 @@ export function useOptimisticMutation({
       return { previousState, entityKey, mutationId };
     },
     onError: (err, variables, context) => {
+      if (isOfflineError(err)) {
+        showToast(err.message, 'error');
+        return;
+      }
       // Check if stale
       if (context?.entityKey && !toggleRegistry.isLatest(context.entityKey, context.mutationId)) {
         console.debug(`[OptimisticMutation] Ignoring stale error for ${context.entityKey}`);

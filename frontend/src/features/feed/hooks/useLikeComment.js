@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { postsApi } from '@shared/api/apiClient';
 import { toggleLike, readLike } from '@shared/utils/likeSync';
 import { showToast } from '@shared/utils/toast';
+import { blockIfOffline } from '@shared/lib/offlineGuard';
 
 export const commentLikeKey = (commentId) => `comment:${commentId}`;
 
@@ -49,6 +50,8 @@ export function useLikeComment() {
 
   const toggle = useCallback((postId, comment, currentUserId) => {
     const commentId = comment.id;
+    // Offline: not applied, so the heart does not flip and flip back.
+    if (blockIfOffline('action')) return readCommentLike(comment, currentUserId);
     return toggleLike(commentLikeKey(commentId), commentLikeSnapshot(comment, currentUserId), {
       send: (liked) => (liked ? postsApi.likeComment(commentId) : postsApi.unlikeComment(commentId)),
       write: (shown) => writeCommentLike(queryClient, postId, commentId, shown),

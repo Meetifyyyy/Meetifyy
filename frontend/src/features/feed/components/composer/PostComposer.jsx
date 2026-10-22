@@ -8,6 +8,7 @@ import styles from './PostComposer.module.css';
 import { processAndUploadImage, processAndUploadVideo } from '@shared/utils/mediaPipeline';
 import { uploadsApi } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
+import { blockIfOffline, submitErrorMessage } from '@shared/lib/offlineGuard';
 import { useSmoothHeight } from '@shared/hooks/useSmoothHeight';
 import { normalizeBodyText } from '@shared/utils/bodyText';
 import { getPostLimitState, POST_WARN_AT_CHARS, POST_MAX_CHARS } from '@shared/utils/textLimit';
@@ -225,6 +226,11 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit, draftScope = '
       if (!text && media.length === 0) return;
     }
 
+    // Offline: say so and leave everything where it is. The text is already
+    // saved as this composer's draft, the media stays attached, and no spinner
+    // starts (see lib/offlineGuard).
+    if (blockIfOffline('post')) return;
+
     setIsPosting(true);
     let finalMedia = [];
 
@@ -278,7 +284,9 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit, draftScope = '
       setIsExpanded(false);
     } catch (err) {
       console.error('[PostComposer] post creation failed', err);
-      showToast(err?.message || 'Post failed', 'error');
+      // A lost connection mid-send says so and promises the draft is kept; the
+      // retry is safe, the post carries an idempotency key (see Feed).
+      showToast(submitErrorMessage(err, 'Post failed'), 'error');
     } finally {
       setIsPosting(false);
     }
