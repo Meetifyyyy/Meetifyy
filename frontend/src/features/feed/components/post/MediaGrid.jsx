@@ -5,6 +5,8 @@ import { deriveThumbnailKey, getMediaUrl } from '@shared/api/apiClient';
 import { Play, Pause, VolumeHigh, VolumeOff, Maximize } from '@shared/components/icons';
 import { feedVideoRegistry } from '@shared/utils/feedVideoRegistry';
 import { isThumbnailMissing, markThumbnailMissing } from '@shared/utils/missingThumbnails';
+import { safePlaceholder } from '@shared/utils/imagePlaceholder';
+import ImagePlaceholder from '@shared/components/media/ImagePlaceholder';
 import styles from './MediaGrid.module.css';
 
 // A post's image must never be replaced by an unrelated picture. This used to
@@ -449,6 +451,9 @@ function normalizeMedia(mediaInput) {
       aspectRatio,
       isVideo,
       type: isVideo ? 'video' : 'image',
+      // Blur-up stand-in sent by the API for images uploaded since it existed;
+      // null for everything older, which renders the skeleton as before.
+      placeholder: isVideo ? null : safePlaceholder(item.placeholder),
     };
   }).filter(Boolean);
 }
@@ -943,7 +948,9 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
           className={styles.singleImageWrapper}
           style={{ '--aspect': aspect }}
         >
-          {!isLoaded && <div className={styles.skeleton} />}
+          {item.placeholder
+            ? <ImagePlaceholder src={item.placeholder} done={isLoaded} />
+            : !isLoaded && <div className={styles.skeleton} />}
           {imageSrc && (
             <img
               src={imageSrc}
@@ -1086,7 +1093,9 @@ const MediaCarousel = memo(function MediaCarousel({
               style={{ '--a': frame.aspect }}
               onClick={(e) => onItemClick(e, index)}
             >
-              {!loadedStates[keyAt(index)] && <div className={styles.skeleton} />}
+              {item.placeholder
+                ? <ImagePlaceholder src={item.placeholder} done={Boolean(loadedStates[keyAt(index)])} />
+                : !loadedStates[keyAt(index)] && <div className={styles.skeleton} />}
               {src && (
                 <img
                   src={src}

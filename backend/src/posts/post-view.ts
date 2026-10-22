@@ -3,6 +3,8 @@
  * and the media URL.
  */
 
+import { readStoredImagePlaceholder } from '../uploads/image-placeholder.util';
+
 /**
  * A poll option as the post read paths receive it: a Prisma row (with or
  * without `_count`) or a row the raw feed query built as JSON.
@@ -67,13 +69,20 @@ export function buildPollView(
 /** The media fields the read paths shape into a URL. */
 export interface MediaLike {
   objectKey?: string | null;
+  /** The stored blur-up placeholder; re-validated before it is sent. */
+  placeholder?: string | null;
   /** Never a column; kept because the shaping has always honoured one. */
   url?: string | null;
 }
 
 export function withMediaUrl<M extends MediaLike>(m: M) {
+  const { placeholder: stored, ...rest } = m;
+  const placeholder = readStoredImagePlaceholder(stored);
   return {
-    ...m,
+    ...rest,
     url: m.url || (m.objectKey ? `/api/media/${m.objectKey}` : null),
+    // Absent, not null, when there is none: a post without one serialises
+    // exactly as it always has.
+    ...(placeholder ? { placeholder } : {}),
   };
 }

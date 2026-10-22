@@ -361,6 +361,7 @@ export class SearchService {
                     height: true,
                     mimeType: true,
                     type: true,
+                    placeholder: true,
                   },
                 },
                 pollOptions: {

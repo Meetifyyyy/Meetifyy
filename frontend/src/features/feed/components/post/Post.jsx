@@ -630,7 +630,7 @@ function sameMedia(a, b) {
     if (x === y) continue;
     if (x.url !== y.url || x.thumb !== y.thumb || x.type !== y.type
       || x.width !== y.width || x.height !== y.height
-      || x.aspectRatio !== y.aspectRatio) return false;
+      || x.aspectRatio !== y.aspectRatio || x.placeholder !== y.placeholder) return false;
   }
   return true;
 }

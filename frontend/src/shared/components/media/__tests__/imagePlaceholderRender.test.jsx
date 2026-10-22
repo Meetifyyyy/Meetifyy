@@ -1,0 +1,104 @@
+/** @vitest-environment jsdom */
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+
+vi.mock('@shared/utils/MediaCacheManager', () => ({
+  mediaCache: { getUrl: async (u) => u, getSyncUrl: (u) => u, invalidate: () => {} },
+}));
+vi.mock('../../../utils/MediaCacheManager', () => ({
+  mediaCache: { getUrl: async (u) => u, getSyncUrl: (u) => u, invalidate: () => {} },
+}));
+vi.mock('@shared/api/apiClient', () => ({
+  getMediaUrl: (u) => u,
+  deriveThumbnailKey: () => null,
+}));
+
+const { default: OptimizedImage } = await import('../OptimizedImage');
+const { default: MediaGrid } = await import('../../../../features/feed/components/post/MediaGrid');
+
+const PH = `data:image/webp;base64,${btoa('RIFF \u0000\u0000\u0000WEBPVP8 abcdefghijklmnopqrstuvwxyz')}`;
+
+beforeEachSetup();
+function beforeEachSetup() {
+  globalThis.IntersectionObserver = class {
+    observe() {} unobserve() {} disconnect() {}
+  };
+}
+afterEach(() => { cleanup(); vi.useRealTimers(); });
+
+const skeleton = (c) => c.querySelector('[class*="skeleton"]');
+
+describe('MediaGrid blur-up placeholder', () => {
+  const one = (extra = {}) => [{ url: 'https://x/a.webp', type: 'image', width: 800, height: 600, ...extra }];
+
+  it('paints the placeholder instead of the skeleton, under the declared frame', () => {
+    const { container } = render(<MediaGrid media={one({ placeholder: PH })} />);
+    const ph = screen.getByTestId('image-placeholder');
+    expect(ph.style.backgroundImage).toContain(PH);
+    expect(skeleton(container)).toBeNull();
+    // The tile keeps the aspect-ratio reservation it always had.
+    expect(container.querySelector('[style*="--aspect"]')).not.toBeNull();
+  });
+
+  it('renders the skeleton exactly as before when there is no placeholder', () => {
+    const { container } = render(<MediaGrid media={one()} />);
+    expect(screen.queryByTestId('image-placeholder')).toBeNull();
+    expect(skeleton(container)).not.toBeNull();
+  });
+
+  it('ignores a placeholder that is not a safe WebP/JPEG data URL', () => {
+    const { container } = render(
+      <MediaGrid media={one({ placeholder: 'https://evil.test/x.png' })} />,
+    );
+    expect(screen.queryByTestId('image-placeholder')).toBeNull();
+    expect(skeleton(container)).not.toBeNull();
+  });
+
+  it('fades the placeholder out once the image has loaded, then removes it', () => {
+    vi.useFakeTimers();
+    render(<MediaGrid media={one({ placeholder: PH })} />);
+    const img = screen.getByAltText('Post content');
+    Object.defineProperty(img, 'naturalWidth', { value: 800 });
+    Object.defineProperty(img, 'naturalHeight', { value: 600 });
+    fireEvent.load(img);
+    expect(screen.getByTestId('image-placeholder').className).toMatch(/done/);
+    act(() => { vi.advanceTimersByTime(700); });
+    expect(screen.queryByTestId('image-placeholder')).toBeNull();
+  });
+
+  it('uses each tile\'s own placeholder in a multi-image carousel', () => {
+    const media = [
+      { url: 'https://x/carousel-a.webp', type: 'image', width: 800, height: 600, placeholder: PH },
+      { url: 'https://x/carousel-b.webp', type: 'image', width: 600, height: 800 },
+    ];
+    const { container } = render(<MediaGrid media={media} />);
+    expect(screen.getAllByTestId('image-placeholder')).toHaveLength(1);
+    expect(container.querySelectorAll('[class*="skeleton"]')).toHaveLength(1);
+  });
+});
+
+describe('ImagePlaceholder', () => {
+  it('renders nothing when mounted for an image that has already loaded', async () => {
+    const { default: ImagePlaceholder } = await import('../ImagePlaceholder');
+    render(<ImagePlaceholder src={PH} done />);
+    expect(screen.queryByTestId('image-placeholder')).toBeNull();
+  });
+});
+
+describe('OptimizedImage blur-up placeholder', () => {
+  it('shows the placeholder while loading and drops it for the skeleton-free loaded state', async () => {
+    vi.useFakeTimers();
+    const { container } = render(<OptimizedImage src="https://x/a.webp" alt="a" placeholder={PH} />);
+    expect(screen.getByTestId('image-placeholder')).toBeTruthy();
+    expect(container.querySelector('.animate-pulse')).toBeNull();
+    fireEvent.load(screen.getByAltText('a'));
+    act(() => { vi.advanceTimersByTime(700); });
+    expect(screen.queryByTestId('image-placeholder')).toBeNull();
+  });
+
+  it('keeps its skeleton when no placeholder is given', () => {
+    const { container } = render(<OptimizedImage src="https://x/a.webp" alt="a" />);
+    expect(screen.queryByTestId('image-placeholder')).toBeNull();
+    expect(container.querySelector('.animate-pulse')).not.toBeNull();
+  });
+});

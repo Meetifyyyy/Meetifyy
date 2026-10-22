@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ImageOff } from '@shared/components/icons';
 import { mediaCache } from '../../utils/MediaCacheManager';
+import ImagePlaceholder, { hasPlaceholder } from './ImagePlaceholder';
 
 export default function OptimizedImage({ 
   src, 
@@ -8,6 +9,9 @@ export default function OptimizedImage({
   className = '', 
   fallbackSrc = null,
   skeletonClassName = 'bg-bg-tertiary animate-pulse',
+  // Optional blur-up data URL (see utils/imagePlaceholder). Without one this
+  // renders exactly as before.
+  placeholder = null,
   ...props 
 }) {
   // Paint synchronously from the (possibly persisted) cache so stable public
@@ -73,7 +77,9 @@ export default function OptimizedImage({
   return (
     <div className={`relative overflow-hidden ${className}`}>
       {/* Skeleton / Placeholder */}
-      {status === 'loading' && (
+      {hasPlaceholder(placeholder) ? (
+        status !== 'error' && <ImagePlaceholder src={placeholder} done={status === 'loaded'} />
+      ) : status === 'loading' && (
         <div className={`absolute inset-0 ${skeletonClassName}`} />
       )}
       

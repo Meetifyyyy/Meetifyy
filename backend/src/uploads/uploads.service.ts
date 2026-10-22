@@ -11,6 +11,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
 import { config } from '../config';
 import { extensionForMime } from './mime-extension';
+import { parseImagePlaceholder } from './image-placeholder.util';
 import { SUPPORT_ATTACHMENT_LIMITS } from '../support/support.constants';
 import { sanitizeFilename, sniffMimeType } from './attachment-inspection.util';
 import {
@@ -87,6 +88,7 @@ export class StorageService {
     file: Express.Multer.File,
     folder = 'general',
     variantKey?: string,
+    placeholder?: unknown,
   ) {
     const safeFolder = this.normalizeFolder(folder);
     // A thumbnail arriving through this fallback keeps its derived key. It
@@ -144,6 +146,12 @@ export class StorageService {
           : 'IMAGE', // Legacy fallback
       mimeType: file.mimetype,
       fileSize: file.size,
+      // Same rule as the presign path: originals of images only, and an
+      // invalid value is dropped rather than failing the upload.
+      placeholder:
+        !explicitKey && file.mimetype.startsWith('image/')
+          ? ((await parseImagePlaceholder(placeholder)) ?? undefined)
+          : undefined,
       visibility: this.visibilityForFolder(safeFolder),
     };
     const media = explicitKey
@@ -257,6 +265,7 @@ export class StorageService {
     width?: number,
     height?: number,
     duration?: number,
+    placeholder?: unknown,
   ) {
     const safeFolder = this.normalizeFolder(folder);
     // Identity documents never upload straight to storage. A presigned PUT
@@ -322,6 +331,13 @@ export class StorageService {
       width: width ? Math.round(Number(width)) : undefined,
       height: height ? Math.round(Number(height)) : undefined,
       duration: duration ? Math.round(Number(duration)) : undefined,
+      // Blur-up placeholder, kept only for the original of an image. Invalid
+      // input is dropped rather than rejected: it is cosmetic, and an old
+      // client sends none at all.
+      placeholder:
+        !explicitKey && contentType.startsWith('image/')
+          ? ((await parseImagePlaceholder(placeholder)) ?? undefined)
+          : undefined,
       visibility: this.visibilityForFolder(safeFolder),
     };
 

@@ -184,6 +184,7 @@ export class UploadsController {
     @Body('folder') folder: string = 'general',
     @Body('variantKey') variantKey: string | undefined,
     @Req() req: AuthenticatedRequest,
+    @Body('placeholder') placeholder?: unknown,
   ) {
     if (!file) throw new BadRequestException('No file provided');
     const userId = req.user.id;
@@ -192,6 +193,7 @@ export class UploadsController {
       file,
       folder,
       typeof variantKey === 'string' && variantKey ? variantKey : undefined,
+      placeholder,
     );
   }
 
@@ -211,6 +213,7 @@ export class UploadsController {
     @Body('width') width: number | undefined,
     @Body('height') height: number | undefined,
     @Body('duration') duration: number | undefined,
+    @Body('placeholder') placeholder: unknown,
     @Req() req: AuthenticatedRequest,
   ) {
     if (!filename || !contentType) {
@@ -227,6 +230,7 @@ export class UploadsController {
       width,
       height,
       duration,
+      placeholder,
     );
   }
 

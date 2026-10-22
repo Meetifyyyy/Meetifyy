@@ -1,0 +1,30 @@
+/* The blur-up layer: drawn over the tile like the skeleton it replaces, then
+   faded out once the real image has loaded (ImagePlaceholder unmounts it a
+   moment later). The tile is overflow:hidden, so the scale hides the soft
+   blurred edge. */
+.placeholder {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  /* A 16px bitmap scaled up is already soft; a small blur finishes it at a
+     fraction of the cost of a large one on every visible tile. */
+  filter: blur(8px);
+  transform: scale(1.08);
+  opacity: 1;
+  pointer-events: none;
+}
+
+.done {
+  opacity: 0;
+  /* Waits for the image's 0.3s fade-in underneath before going. */
+  transition: opacity 0.25s ease-out 0.3s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .done {
+    transition: none;
+  }
+}

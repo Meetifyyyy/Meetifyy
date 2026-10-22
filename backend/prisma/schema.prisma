@@ -123,6 +123,9 @@ model Media {
   mimeType            String                @default("application/octet-stream")
   fileSize            Int                   @default(0)
   checksum            String?
+  /// A tiny blurred preview of an image (`data:image/webp|jpeg;base64,…`),
+  /// shown while the real image loads. Validated on write and on read.
+  placeholder         String?
   width               Int?
   height              Int?
   duration            Int?

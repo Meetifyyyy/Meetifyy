@@ -17,6 +17,7 @@ const loadCompressor = () => {
 };
 import { apiClient, deriveThumbnailKey, getBackendUrl, getAccessToken, getNativeSessionId } from '../api/apiClient';
 import { MAX_COVERED_IMAGE_SIZE_MB } from '../constants/mediaLimits';
+import { generateImagePlaceholder } from './imagePlaceholder';
 
 /**
  * Creates an instantly-available local preview URL for a File/Blob.
@@ -331,6 +332,8 @@ export const uploadFileDirect = async (file, folder = 'general', onProgress = nu
         ...(meta?.width ? { width: meta.width } : {}),
         ...(meta?.height ? { height: meta.height } : {}),
         ...(meta?.duration ? { duration: meta.duration } : {}),
+        // Blur-up placeholder; an API that predates it ignores the field.
+        ...(meta?.placeholder ? { placeholder: meta.placeholder } : {}),
       });
 
       await new Promise((resolve, reject) => {
@@ -426,6 +429,7 @@ export const uploadFileDirect = async (file, folder = 'general', onProgress = nu
       // A thumbnail keeps its derived key, so the UI's `<name>_thumb.webp`
       // finds it. Without this it was stored under a random key and orphaned.
       if (variantKey) formData.append('variantKey', variantKey);
+      if (meta?.placeholder) formData.append('placeholder', meta.placeholder);
 
       // NOTE: apiClient is fetch-based and cannot emit upload progress events,
       // so this pass-through leg is indeterminate by nature. We hold the bar at
@@ -500,10 +504,20 @@ export const processAndUploadImage = async (file, folder = 'general', compressOp
 
   // Kick off dimensions + (optional) thumbnail + compression in parallel — all
   // off the main thread (createImageBitmap / web worker) so the UI stays smooth.
-  const [dims, thumb, compressedFile] = await Promise.all([
+  // A blur-up placeholder is made for post images only (the one surface that
+  // paints it), from the thumbnail where there is one: it decodes far faster
+  // than the original. Best-effort; null just means "no blur-up".
+  const withPlaceholder = options.placeholder ?? (folder === 'posts');
+  const thumbPromise = needThumb
+    ? generateImageThumbnail(file, { maxSize: thumbSizeForFolder(folder) }).catch(() => null)
+    : Promise.resolve(null);
+  const [dims, thumb, compressedFile, placeholder] = await Promise.all([
     getImageDimensions(file).catch(() => null),
-    needThumb ? generateImageThumbnail(file, { maxSize: thumbSizeForFolder(folder) }).catch(() => null) : Promise.resolve(null),
+    thumbPromise,
     compressImage(file, compressOptions),
+    withPlaceholder
+      ? thumbPromise.then((t) => generateImagePlaceholder(t?.blob || file)).catch(() => null)
+      : Promise.resolve(null),
   ]);
   report(10, 'preparing');
 
@@ -527,7 +541,7 @@ export const processAndUploadImage = async (file, folder = 'general', compressOp
   const originalEnd = withDerivedThumb && thumb?.blob ? 88 : 98;
   const originalRes = await uploadFileDirect(compressedFile, folder, (percent) => {
     report(band(10, originalEnd, percent), 'uploading');
-  }, signal, null, { width: dims?.width, height: dims?.height });
+  }, signal, null, { width: dims?.width, height: dims?.height, placeholder });
 
   // Derived-thumb: upload to `<originalKey>_thumb.webp` so the UI can render it
   // without the entity storing a second URL. Best-effort — render falls back to
@@ -557,6 +571,7 @@ export const processAndUploadImage = async (file, folder = 'general', compressOp
     width: dims?.width || null,
     height: dims?.height || null,
     aspectRatio: dims?.width && dims?.height ? Number((dims.width / dims.height).toFixed(4)) : null,
+    placeholder: placeholder || null,
   };
 };
 

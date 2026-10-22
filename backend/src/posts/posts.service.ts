@@ -173,6 +173,8 @@ interface FeedSqlRow {
     height: number | null;
     mimeType: string;
     type: string;
+    /** The blur-up placeholder; `withMediaUrl` re-validates it. */
+    placeholder?: string | null;
     url?: string | null;
   }>;
   pollOptions: Array<{ id: string; text: string; voteCount: number }>;
@@ -1384,7 +1386,8 @@ export class PostsService {
                 'width', m.width,
                 'height', m.height,
                 'mimeType', m."mimeType",
-                'type', m.type
+                'type', m.type,
+                'placeholder', m.placeholder
               ) ORDER BY m."order" ASC, m."createdAt" ASC
             )
             FROM "Media" m 
@@ -1628,6 +1631,7 @@ export class PostsService {
             height: true,
             mimeType: true,
             type: true,
+            placeholder: true,
           },
         },
         pollOptions: {
