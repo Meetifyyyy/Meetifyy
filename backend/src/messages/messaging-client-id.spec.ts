@@ -123,6 +123,9 @@ describe('MessagingCoreService — one message per client id', () => {
     expect(res.id).toBe('first-msg');
     expect(transaction).not.toHaveBeenCalled();
     expect(persistAndNotify).not.toHaveBeenCalled();
+    // Nobody is notified a second time by the controller's fan-out.
+    expect(res.recipientIds).toEqual([]);
+    expect(res.unmutedRecipientIds).toEqual([]);
   });
 
   it('stores the client id on a first send, so a retry can find it', async () => {

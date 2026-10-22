@@ -278,3 +278,73 @@ describe('IdempotencyInterceptor — handlers that write their own response', ()
     expect(data.size).toBe(0);
   });
 });
+
+describe('IdempotencyInterceptor — what it must never store or block', () => {
+  it('leaves a passthrough @Res() handler alone: cookies and tokens cannot be replayed', async () => {
+    const { Controller, Post, Res } = await import('@nestjs/common');
+    @Controller('auth')
+    class Auth {
+      @Post('session/adopt')
+      adopt(@Res({ passthrough: true }) _res: unknown): void {}
+    }
+    const { redis, data } = fakeRedis();
+    const interceptor = new IdempotencyInterceptor(redis);
+    const { next, run } = handler({ accessToken: 'secret' });
+    const ctx = stub<ExecutionContext>({
+      getType: () => 'http',
+      getClass: () => Auth,
+      getHandler: () => Auth.prototype.adopt,
+      switchToHttp: () => ({
+        getRequest: () => post({ path: '/api/auth/session/adopt' }),
+        getResponse: () => ({ setHeader: () => {} }),
+      }),
+    });
+    await lastValueFrom(interceptor.intercept(ctx, next));
+    await lastValueFrom(interceptor.intercept(ctx, next));
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(data.size).toBe(0);
+  });
+
+  it('skips auth paths by name too', async () => {
+    const { redis, data } = fakeRedis();
+    const interceptor = new IdempotencyInterceptor(redis);
+    const { next, run } = handler({ csrfToken: 't' });
+    await call(interceptor, post({ path: '/api/admin/auth/verify-otp' }), next)
+      .result;
+    await call(interceptor, post({ path: '/api/admin/auth/verify-otp' }), next)
+      .result;
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(data.size).toBe(0);
+  });
+
+  it('claims with a short lifetime, so a crashed request frees its key within a minute', async () => {
+    const { redis } = fakeRedis();
+    const client = redis.getClient() as unknown as { set: jest.Mock };
+    const interceptor = new IdempotencyInterceptor(redis);
+    const { next } = handler();
+    await call(interceptor, post(), next).result;
+    const [claim, done] = client.set.mock.calls as unknown[][];
+    expect(claim).toContain(IdempotencyInterceptor.PENDING_TTL_SECONDS);
+    expect(done).toContain(IdempotencyInterceptor.TTL_SECONDS);
+  });
+
+  it('drops an unreadable entry and runs, instead of spinning on it', async () => {
+    const { redis, data } = fakeRedis();
+    data.set('idem:v1:u:user-1:POST:/api/posts:key-0000000001', 'not json');
+    const interceptor = new IdempotencyInterceptor(redis);
+    const { next, run } = handler();
+    await expect(call(interceptor, post(), next).result).resolves.toEqual({
+      id: 'post-1',
+    });
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it('frees the key when the result is too large to keep', async () => {
+    const { redis, data } = fakeRedis();
+    const interceptor = new IdempotencyInterceptor(redis);
+    const big = { blob: 'x'.repeat(IdempotencyInterceptor.MAX_BODY_BYTES + 1) };
+    const { next } = handler(big);
+    await call(interceptor, post(), next).result;
+    expect(data.size).toBe(0);
+  });
+});

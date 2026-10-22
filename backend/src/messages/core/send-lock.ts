@@ -19,10 +19,30 @@ export function withClientSendLock<T>(
   clientMessageId: string | null | undefined,
   fn: () => Promise<T>,
 ): Promise<T> {
-  if (!redis || !clientMessageId) return fn();
-  return redis.withLock(
-    `msg:send:${senderId}:${clientMessageId}`,
-    CLIENT_SEND_LOCK_TTL_MS,
-    fn,
-  );
+  if (!clientMessageId) return Promise.resolve(fn());
+  // Only while Redis is up. Sending never depended on Redis before this lock,
+  // and a lock that throws or queues while Redis is down would stop every
+  // send with it. Unlocked, a send still dedupes by `clientMessageId`; only
+  // the narrow two-copies-at-once race is uncovered while Redis is out.
+  if (redis?.getClient()?.status !== 'ready') return fn();
+  return runLocked(redis, `msg:send:${senderId}:${clientMessageId}`, fn);
+}
+
+async function runLocked<T>(
+  redis: RedisService,
+  key: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  let ran = false;
+  try {
+    return await redis.withLock(key, CLIENT_SEND_LOCK_TTL_MS, () => {
+      ran = true;
+      return fn();
+    });
+  } catch (err: unknown) {
+    // The lock failed before the send ran (Redis dropped mid-acquire): send
+    // anyway. An error from the send itself is the caller's, unchanged.
+    if (!ran) return fn();
+    throw err;
+  }
 }

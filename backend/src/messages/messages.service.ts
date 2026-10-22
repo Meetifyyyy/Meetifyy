@@ -660,14 +660,16 @@ export class MessagesService
         },
       });
       if (existing) {
+        // No recipients: the gateway fans a send out to these (events and
+        // push), and the original send already reached them.
         return this.formatMessageResponse(
           existing,
           realConvId,
           conversationId,
           senderId,
           clientMsgId,
-          recipientIds,
-          unmutedRecipientIds,
+          [],
+          [],
           conv.name || undefined,
           convChatType,
         );

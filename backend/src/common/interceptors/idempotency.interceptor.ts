@@ -7,10 +7,7 @@ import {
   NestInterceptor,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import {
-  RESPONSE_PASSTHROUGH_METADATA,
-  ROUTE_ARGS_METADATA,
-} from '@nestjs/common/constants';
+import { ROUTE_ARGS_METADATA } from '@nestjs/common/constants';
 import { RouteParamtypes } from '@nestjs/common/enums/route-paramtypes.enum';
 import { createHash } from 'crypto';
 import type { Request, Response } from 'express';
@@ -60,6 +57,12 @@ export class IdempotencyInterceptor implements NestInterceptor {
 
   /** How long a completed result can be replayed. */
   static readonly TTL_SECONDS = 24 * 60 * 60;
+  /**
+   * How long a claim lives before its request finishes. Short, so a process
+   * that dies mid-request (a deploy, an OOM) frees the key within a minute
+   * instead of refusing that submission for a day.
+   */
+  static readonly PENDING_TTL_SECONDS = 60;
   /** How long a repeat waits for the first request to finish. */
   static readonly WAIT_MS = 10_000;
   static readonly POLL_MS = 200;
@@ -78,11 +81,16 @@ export class IdempotencyInterceptor implements NestInterceptor {
     const response = http.getResponse<Response>();
 
     if (!WRITE_METHODS.has(request.method)) return next.handle();
-    // A handler that writes its own response (`@Res()` without passthrough)
-    // ignores what an interceptor returns, so a replay could never reach the
-    // client and the repeat would hang. The one write route like that today
-    // is the direct media upload, which mints a new object key per attempt.
-    if (managesOwnResponse(context)) return next.handle();
+    // A handler that touches the response cannot be replayed from a stored
+    // body. Without passthrough it ignores what an interceptor returns, so the
+    // repeat would hang (the direct media upload). With passthrough it sets
+    // cookies and headers: sign-in, refresh, adopt and sign-out, whose replay
+    // would answer "signed in" with no session cookie, and whose body carries
+    // the installed app's tokens, which must never sit in Redis. Auth paths
+    // are also skipped by name, in case one stops taking `@Res`.
+    if (touchesResponse(context)) return next.handle();
+    const routePath = `${request.baseUrl ?? ''}${request.path}`;
+    if (AUTH_PATH.test(routePath)) return next.handle();
     const raw = request.headers[IDEMPOTENCY_HEADER];
     const key = typeof raw === 'string' ? raw.trim() : '';
     if (!key) return next.handle();
@@ -96,8 +104,7 @@ export class IdempotencyInterceptor implements NestInterceptor {
     const scope = request.user?.id
       ? `u:${request.user.id}`
       : `ip:${request.ip ?? 'unknown'}`;
-    const path = `${request.baseUrl ?? ''}${request.path}`;
-    const redisKey = `idem:v1:${scope}:${request.method}:${path}:${key}`;
+    const redisKey = `idem:v1:${scope}:${request.method}:${routePath}:${key}`;
     const fingerprint = createHash('sha256')
       .update(JSON.stringify(request.body ?? null))
       .digest('hex');
@@ -142,32 +149,39 @@ export class IdempotencyInterceptor implements NestInterceptor {
         redisKey,
         JSON.stringify(pending),
         'EX',
-        IdempotencyInterceptor.TTL_SECONDS,
+        IdempotencyInterceptor.PENDING_TTL_SECONDS,
         'NX',
       );
       if (taken === 'OK') return { kind: 'run' };
 
       const deadline = Date.now() + IdempotencyInterceptor.WAIT_MS;
       for (;;) {
-        const entry = parseEntry(await client.get(redisKey));
-        // Released (the first attempt failed) or expired: this one runs.
+        const raw = await client.get(redisKey);
+        const entry = parseEntry(raw);
+        if (raw !== null && !entry) {
+          // Unreadable: nothing can be replayed from it, so drop it.
+          await client.del(redisKey);
+        }
+        // Released (the first attempt failed), expired, or dropped: run.
         if (!entry) {
           const retaken = await client.set(
             redisKey,
             JSON.stringify(pending),
             'EX',
-            IdempotencyInterceptor.TTL_SECONDS,
+            IdempotencyInterceptor.PENDING_TTL_SECONDS,
             'NX',
           );
           if (retaken === 'OK') return { kind: 'run' };
-          continue;
+        } else {
+          if (entry.fingerprint !== fingerprint) {
+            throw new UnprocessableEntityException(
+              'Idempotency-Key was already used for a different request',
+            );
+          }
+          if (entry.state === 'done') {
+            return { kind: 'replay', body: entry.body };
+          }
         }
-        if (entry.fingerprint !== fingerprint) {
-          throw new UnprocessableEntityException(
-            'Idempotency-Key was already used for a different request',
-          );
-        }
-        if (entry.state === 'done') return { kind: 'replay', body: entry.body };
         if (Date.now() >= deadline) {
           throw new ConflictException(
             'A request with this Idempotency-Key is still being processed',
@@ -199,7 +213,8 @@ export class IdempotencyInterceptor implements NestInterceptor {
       const done: Entry = { state: 'done', fingerprint, body: body ?? null };
       const serialized = JSON.stringify(done);
       if (serialized.length > IdempotencyInterceptor.MAX_BODY_BYTES) {
-        // Kept as pending so a repeat is refused rather than run again.
+        // Too large to keep: free the key rather than leave it pending.
+        await client.del(redisKey);
         return body;
       }
       await client.set(
@@ -224,7 +239,10 @@ export class IdempotencyInterceptor implements NestInterceptor {
   }
 }
 
-function managesOwnResponse(context: ExecutionContext): boolean {
+/** `/api/auth/...`, `/api/admin/auth/...` and the like: never replayed. */
+const AUTH_PATH = /(^|\/)auth(\/|$)/;
+
+function touchesResponse(context: ExecutionContext): boolean {
   const target = context.getClass();
   const handler = context.getHandler().name;
   const args: unknown = Reflect.getMetadata(
@@ -236,13 +254,7 @@ function managesOwnResponse(context: ExecutionContext): boolean {
   const usesResponse = Object.keys(args).some(
     (k) => k.split(':')[0] === String(RouteParamtypes.RESPONSE),
   );
-  if (!usesResponse) return false;
-  const passthrough: unknown = Reflect.getMetadata(
-    RESPONSE_PASSTHROUGH_METADATA,
-    target,
-    handler,
-  );
-  return passthrough !== true;
+  return usesResponse;
 }
 
 function parseEntry(raw: string | null): Entry | null {

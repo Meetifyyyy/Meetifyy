@@ -689,8 +689,11 @@ export class MessagingCoreService {
       inviteData: outputInviteData,
       replyTo: isUnsent ? null : replyToObj,
       status: 'sent',
-      recipientIds,
-      unmutedRecipientIds,
+      // Empty for a retry of a send that already landed: the controllers fan
+      // a send out to these (socket events and push notifications), and the
+      // original send already did, so a retry must reach no one again.
+      recipientIds: existing ? [] : recipientIds,
+      unmutedRecipientIds: existing ? [] : unmutedRecipientIds,
       conversationName: conv.name || '',
     };
   }
