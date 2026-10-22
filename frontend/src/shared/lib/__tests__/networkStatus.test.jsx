@@ -2,7 +2,22 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { QueryClient, QueryObserver, onlineManager } from '@tanstack/react-query';
 import { render, screen, act, cleanup } from '@testing-library/react';
-import { isOnline, subscribeOnline, installNetworkStatus, useOnlineStatus } from '../networkStatus';
+const nativePlugin = vi.hoisted(() => ({ status: { connected: true, connectionType: 'wifi' } }));
+vi.mock('@capacitor/network', () => ({
+  Network: {
+    getStatus: vi.fn(async () => nativePlugin.status),
+    addListener: vi.fn(async () => ({ remove: vi.fn() })),
+  },
+}));
+
+import { createCapacitorNetwork } from '@platform/capacitor/network';
+import {
+  isOnline,
+  subscribeOnline,
+  installNetworkStatus,
+  useOnlineStatus,
+  setNetworkStatusSource,
+} from '../networkStatus';
 
 /**
  * One answer to "is there a network", handed to TanStack so queries pause and
@@ -21,6 +36,7 @@ function setNetwork(online) {
 
 afterEach(() => {
   cleanup();
+  setNetworkStatusSource(null);
   onLine = true;
   installNetworkStatus();
 });
@@ -110,5 +126,102 @@ describe('installNetworkStatus: TanStack follows the device', () => {
     unsubscribe();
     client.unmount();
     client.clear();
+  });
+});
+
+describe('a native NetworkStatus source (the installed app)', () => {
+  function fakeNative(initial) {
+    let emit = () => {};
+    const service = {
+      isOnline: vi.fn(async () => initial),
+      onChange: vi.fn((fn) => {
+        emit = fn;
+        return vi.fn();
+      }),
+    };
+    return { service, emit: (v) => emit(v) };
+  }
+
+  it('wins over navigator.onLine once it has answered', async () => {
+    onLine = true;
+    const native = fakeNative(false);
+    setNetworkStatusSource(native.service);
+    expect(isOnline()).toBe(true); // not answered yet: the browser flag
+    await vi.waitFor(() => expect(isOnline()).toBe(false));
+    window.dispatchEvent(new Event('online')); // the WebView's mirror disagrees
+    expect(isOnline()).toBe(false);
+  });
+
+  it('a native change event drives subscribers, useOnlineStatus and TanStack', async () => {
+    const native = fakeNative(true);
+    setNetworkStatusSource(native.service);
+    installNetworkStatus();
+    await vi.waitFor(() => expect(native.service.isOnline).toHaveBeenCalled());
+    await Promise.resolve();
+    const listener = vi.fn();
+    const off = subscribeOnline(listener);
+    function Probe() {
+      return <p>{useOnlineStatus() ? 'online' : 'offline'}</p>;
+    }
+    render(<Probe />);
+
+    act(() => native.emit(false));
+    expect(listener).toHaveBeenCalledWith(false);
+    expect(screen.getByText('offline')).toBeTruthy();
+    expect(onlineManager.isOnline()).toBe(false);
+
+    act(() => native.emit(true));
+    expect(listener).toHaveBeenLastCalledWith(true);
+    expect(screen.getByText('online')).toBeTruthy();
+    expect(onlineManager.isOnline()).toBe(true);
+    off();
+  });
+
+  it('an event that arrives before the first read is not overwritten by it', async () => {
+    const native = fakeNative(true);
+    setNetworkStatusSource(native.service);
+    native.emit(false);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(isOnline()).toBe(false);
+  });
+
+  it('a source that cannot answer leaves the browser fallback in charge', async () => {
+    onLine = false;
+    setNetworkStatusSource({
+      isOnline: async () => {
+        throw new Error('no plugin');
+      },
+      onChange: () => () => {},
+    });
+    await Promise.resolve();
+    expect(isOnline()).toBe(false);
+    onLine = true;
+    expect(isOnline()).toBe(true);
+  });
+
+  it('an unvalidated network (connected=false, but a wifi or cellular connection) is not offline', async () => {
+    // What Android reports for a few seconds after a switch, and for good on a
+    // network that blocks the system's reachability probe: the browser says
+    // online, and the native "not connected" must not override it.
+    onLine = true;
+    nativePlugin.status = { connected: false, connectionType: 'wifi' };
+    setNetworkStatusSource(createCapacitorNetwork());
+    await vi.waitFor(() => expect(isOnline()).toBe(true));
+    await Promise.resolve();
+    expect(isOnline()).toBe(true);
+    // No connection of any kind is offline.
+    nativePlugin.status = { connected: false, connectionType: 'none' };
+    setNetworkStatusSource(createCapacitorNetwork());
+    await vi.waitFor(() => expect(isOnline()).toBe(false));
+    nativePlugin.status = { connected: true, connectionType: 'wifi' };
+  });
+
+  it('removing the source returns to the browser flag', async () => {
+    onLine = true;
+    setNetworkStatusSource(fakeNative(false).service);
+    await vi.waitFor(() => expect(isOnline()).toBe(false));
+    setNetworkStatusSource(null);
+    expect(isOnline()).toBe(true);
   });
 });
