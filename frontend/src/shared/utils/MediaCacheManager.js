@@ -408,6 +408,11 @@ class MediaCacheManager {
    * Called when the signed-in account changes. Requests already on the wire are
    * not cancelled, but the generation bump makes their answers be discarded.
    */
+  /** True when no signing request is queued or in flight, so `clear()` would strand nobody. */
+  isIdle() {
+    return this.pendingRequests.size === 0 && this.resolvers.length === 0 && this.batchQueue.size === 0;
+  }
+
   clear() {
     this.generation += 1;
     this.cache.clear();

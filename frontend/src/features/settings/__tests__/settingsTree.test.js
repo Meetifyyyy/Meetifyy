@@ -16,6 +16,7 @@ vi.mock('@shared/api/apiClient', () => ({
     adoptSession: async () => ({}),
     logoutSession: async () => ({}),
   }, apiClient: {} }));
+vi.mock('@shared/lib/clearCachedData', () => ({ clearCachedData: async () => {}, estimateCacheUsage: async () => null }));
 vi.mock('@shared/lib/supabase', () => ({ supabase: {}, isSupabaseConfigured: false }));
 
 const { SETTINGS_TREE, SETTINGS_CATEGORIES, SETTINGS_PANELS, PANEL_PARENT } =

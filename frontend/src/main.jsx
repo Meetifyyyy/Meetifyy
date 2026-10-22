@@ -1,5 +1,6 @@
 import { StrictMode } from 'react';
 import { clearExpiredStaleChunkMarker } from '@shared/lib/staleChunkRecovery';
+import { scheduleStorageMaintenance } from '@shared/lib/storageMaintenance';
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from './shared/context/AuthContext';
@@ -231,3 +232,7 @@ createRoot(document.getElementById('root')).render(
 // Lazy routes have not necessarily loaded yet. Preserve a recent recovery
 // marker so a repeatedly failing chunk cannot reload every new document.
 clearExpiredStaleChunkMarker();
+
+// Trim the on-device caches once per launch, when the browser is idle; see the
+// module. After the render call so it can never delay the first paint.
+scheduleStorageMaintenance();

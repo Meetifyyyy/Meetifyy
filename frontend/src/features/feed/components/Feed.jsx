@@ -1,6 +1,6 @@
 import { useCallback, memo, useEffect, useLayoutEffect, useRef, useMemo, useState } from 'react';
 import useUIStore from '@stores/uiStore';
-import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { focusManager, onlineManager, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { postsApi } from '@shared/api/apiClient';
 import { createSubmissionKey } from '@shared/lib/idempotencyKey';
 import { EmptyState, ErrorState } from '@shared/components/ui/StateViews';
@@ -11,7 +11,7 @@ import PullToRefresh from '@shared/components/PullToRefresh';
 import styles from './Feed.module.css';
 import { useAuth } from '@shared/context/AuthContext';
 import { addCreatedPostToCaches } from '../utils/postCache';
-import { feedQueryOptions } from '../utils/feedQuery';
+import { feedQueryOptions, refreshStaleFeedHead } from '../utils/feedQuery';
 import { readSavedFeedScroll, saveFeedScroll } from '../utils/feedScrollMemory';
 import VerificationGate from '@shared/components/VerificationGate/VerificationGate';
 import HeaderScrollEdge from '@shared/components/ui/HeaderScrollEdge';
@@ -30,10 +30,35 @@ function Feed({ onPostClick, onCommentClick }) {
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
+    isFetching,
     isLoading,
     isError,
     refetch,
   } = useInfiniteQuery(feedQueryOptions(searchQuery, currentUser?.id));
+
+  // A stale feed is refreshed by its first page, and only near the top — on
+  // arriving back on Home and when the app or tab regains focus. TanStack's
+  // own refetch would re-request every loaded page; see `refreshStaleFeedHead`.
+  // On arrival the position about to be restored decides, not the current
+  // scroll, which the route change has already reset.
+  const userId = currentUser?.id;
+  useEffect(() => {
+    const key = feedQueryOptions(searchQuery, userId).queryKey;
+    void refreshStaleFeedHead(queryClient, key, { scrollY: readSavedFeedScroll() });
+    // Fire-and-forget: a failed head refresh leaves the cached list on screen.
+    const unsubscribeFocus = focusManager.subscribe((focused) => {
+      if (focused) void refreshStaleFeedHead(queryClient, key, { scrollY: window.scrollY });
+    });
+    // And on coming back online, which the feed's own refetchOnReconnect (now
+    // off, for the same every-page reason) used to cover.
+    const unsubscribeOnline = onlineManager.subscribe((online) => {
+      if (online) void refreshStaleFeedHead(queryClient, key, { scrollY: window.scrollY });
+    });
+    return () => {
+      unsubscribeFocus();
+      unsubscribeOnline();
+    };
+  }, [queryClient, searchQuery, userId]);
 
   // Flatten the pages of posts into a single deduped array with stable reference
   const allPosts = useMemo(() => {
@@ -54,8 +79,12 @@ function Feed({ onPostClick, onCommentClick }) {
 
   const loadMoreRef = useRef(null);
 
+  // Not while the first page is being refreshed (fetching, but not a next
+  // page): fetchNextPage cancels a refetch in flight, so it would drop that
+  // refresh and fetch page two from the old page one's cursor.
+  const isRefreshingHead = isFetching && !isFetchingNextPage;
   useEffect(() => {
-    if (!hasNextPage || isLoading || isFetchingNextPage) return;
+    if (!hasNextPage || isLoading || isFetchingNextPage || isRefreshingHead) return;
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting) {
@@ -68,7 +97,7 @@ function Feed({ onPostClick, onCommentClick }) {
       observer.observe(loadMoreRef.current);
     }
     return () => observer.disconnect();
-  }, [hasNextPage, isLoading, isFetchingNextPage, fetchNextPage]);
+  }, [hasNextPage, isLoading, isFetchingNextPage, isRefreshingHead, fetchNextPage]);
 
   // Restore the scroll position when arriving back on Home.
   //

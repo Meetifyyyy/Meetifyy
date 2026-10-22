@@ -35,6 +35,7 @@ import './installLandscapePhoneMedia';
 import { installLaunchReadiness } from './launchReadiness';
 import { warmSignedInLanding } from './warmSignedInLanding';
 import { installQuerySnapshots } from './querySnapshots';
+import { scheduleStorageMaintenance } from '../shared/lib/storageMaintenance';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -285,3 +286,7 @@ createRoot(document.getElementById('root')).render(
     </StrictMode>
   </QueryClientProvider>,
 );
+
+// Trim the on-device caches once per launch, when the WebView is idle; see the
+// module. After the render call so it can never delay the first paint.
+scheduleStorageMaintenance();

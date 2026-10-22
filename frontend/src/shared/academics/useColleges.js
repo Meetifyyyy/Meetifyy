@@ -1,34 +1,35 @@
-import { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@shared/api/apiClient';
 
+/**
+ * The college list changes when an admin adds a college — rarely, and never
+ * mid-session in a way a picker must see at once. It used to be refetched on
+ * every mount; now it is fetched once and shared for a day, the same lifetime
+ * `academicCatalog` gives the course catalog. A failed fetch is not cached.
+ */
+export const COLLEGES_QUERY_KEY = ['academics', 'colleges'];
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export async function fetchColleges() {
+  const res = await apiClient.get('/api/academics/colleges');
+  return Array.isArray(res?.colleges) ? res.colleges : [];
+}
+
+const EMPTY = [];
+
 export function useColleges() {
-  const [colleges, setColleges] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const query = useQuery({
+    queryKey: COLLEGES_QUERY_KEY,
+    queryFn: fetchColleges,
+    staleTime: DAY_MS,
+    gcTime: DAY_MS,
+    refetchOnWindowFocus: false,
+    retry: 1,
+  });
 
-  useEffect(() => {
-    let isMounted = true;
-
-    apiClient
-      .get('/api/academics/colleges')
-      .then((res) => {
-        if (isMounted) {
-          const list = Array.isArray(res?.colleges) ? res.colleges : [];
-          setColleges(list);
-          setLoading(false);
-        }
-      })
-      .catch((err) => {
-        if (isMounted) {
-          setError(err?.message || 'Failed to load colleges');
-          setLoading(false);
-        }
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  return { colleges, loading, error };
+  return {
+    colleges: query.data ?? EMPTY,
+    loading: query.isPending,
+    error: query.error ? (query.error.message || 'Failed to load colleges') : null,
+  };
 }

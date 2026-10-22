@@ -1,7 +1,8 @@
 import { forwardRef, useState, useEffect, useMemo } from 'react';
 import { UsersIcon } from '@heroicons/react/24/solid';
 import { getMediaUrl, normalizeDicebearUrl, deriveThumbnailKey } from '@shared/api/apiClient';
-import { isDicebearUrl } from '@core/api/media';
+import { isDicebearUrl, directPublicMediaUrl } from '@core/api/media';
+import { config } from '@config';
 import { useCanSeeOthersPresence } from '@shared/hooks/usePresenceVisibility';
 import { DEFAULT_AVATAR_SRC, isPlatformDefaultAvatar } from '@shared/constants/defaultAvatar';
 import styles from './Avatar.module.css';
@@ -27,6 +28,28 @@ export function getProcessedAvatarUrl(src) {
   }
   return getMediaUrl(clean);
 }
+
+/**
+ * Where to load an uploaded avatar from first.
+ *
+ * `/api/media/<key>` answers an avatar with a 302 to the public media host, so
+ * every avatar cost an API round trip before the image request even started.
+ * Avatars are public by construction, so the address can be built here without
+ * asking. Anything that is not an allowlisted public key — and everything when
+ * no public host is configured — keeps the API URL. The API URL stays the
+ * fallback: `handleError` retries it if the direct load fails.
+ */
+export function directAvatarUrl(apiUrl) {
+  return directPublicMediaUrl(apiUrl, config.storage?.publicUrl) || null;
+}
+
+/**
+ * Thumbnails the public host did not have. Older uploads have none, and the
+ * API used to cover that with a redirect to the original; going direct, the
+ * miss is a 404, so it is remembered for the session instead of being paid
+ * again on every render of that person.
+ */
+const missingThumbCache = new Set();
 
 /**
  * The largest avatar the 160px thumbnail serves sharply on a 3x screen
@@ -88,16 +111,24 @@ const Avatar = forwardRef(({
   children
 }, ref) => {
   const canSeePresence = useCanSeeOthersPresence();
+  // The API address. The failure caches are keyed on it — one identity per
+  // avatar, whichever address ends up serving it.
   const fullSrc = useMemo(() => getProcessedAvatarUrl(src), [src]);
+  const directFullSrc = useMemo(() => directAvatarUrl(fullSrc), [fullSrc]);
+  const firstFullSrc = directFullSrc || fullSrc;
   // Null for anything not stored as one of our media keys — a dicebear URL or
   // the bundled default has no variant to ask for.
   const useThumbnail = thumbnail ?? isSmallFixedSize(size);
   const thumbSrc = useMemo(() => {
     if (!useThumbnail) return null;
     const key = deriveThumbnailKey(fullSrc);
-    return key ? getMediaUrl(key) : null;
+    if (!key) return null;
+    const apiThumb = getMediaUrl(key);
+    const direct = directAvatarUrl(apiThumb);
+    if (!direct) return apiThumb;
+    return missingThumbCache.has(direct) ? null : direct;
   }, [useThumbnail, fullSrc]);
-  const initialProcessedSrc = thumbSrc || fullSrc;
+  const initialProcessedSrc = thumbSrc || firstFullSrc;
 
   // Keyed on the original, never the thumbnail: a variant that fails to load
   // says nothing about whether the account has a picture, and caching the
@@ -192,7 +223,18 @@ const Avatar = forwardRef(({
   const handleError = () => {
     // A thumbnail that does not resolve is not a missing avatar — retry the
     // original once before giving up on the picture entirely.
-    if (thumbSrc && imgSrc === thumbSrc && fullSrc && fullSrc !== thumbSrc) {
+    if (thumbSrc && imgSrc === thumbSrc && firstFullSrc && firstFullSrc !== thumbSrc) {
+      // Not while offline: that failure says nothing about the file, and
+      // remembering it would load the full-size image all session.
+      const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+      if (!thumbSrc.includes('/api/media/') && !offline) missingThumbCache.add(thumbSrc);
+      setImgSrc(firstFullSrc);
+      return;
+    }
+    // The public host missed — an unconfigured local backend serving from
+    // disk, or an object only the API can resolve. The API URL is the
+    // authority; try it once before drawing the default.
+    if (directFullSrc && imgSrc === directFullSrc && fullSrc !== directFullSrc) {
       setImgSrc(fullSrc);
       return;
     }

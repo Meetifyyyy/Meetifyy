@@ -26,7 +26,7 @@ import {
   Pencil, Lock, AlertCircle, Trash2,
   User, GraduationCap, Shield, Bell, HelpCircle, LogOut,
   ChevronRight, ChevronDown, Check, Ban,
-  LockKeyhole, Cookie, Sparkles, Eye, Devices, Mail,
+  LockKeyhole, Cookie, Sparkles, Eye, Devices, Mail, Smartphone,
 } from '@shared/components/icons';
 import wordmark from '@assets/images/meetifyy_wordmark.svg';
 import PasswordToggle, { usePasswordVisibility } from '@shared/components/forms/PasswordToggle';
@@ -44,6 +44,8 @@ import { useCookieConsent } from '@shared/context/CookieConsentContext';
 import { visibleViewportBottom } from '@shared/utils/visibleViewport';
 import { dismissKeyboardThen, shouldAutoFocusSearch } from '@shared/utils/textFocus';
 import { isAffiliationActive } from '@shared/lib/campusAccess';
+import { clearCachedData, estimateCacheUsage } from '@shared/lib/clearCachedData';
+import ConfirmModal from '@shared/components/modals/ConfirmModal';
 
 // Large-device split layout only kicks in at this width — tablets and phones
 // keep the existing single-pane list/detail swap untouched.
@@ -107,6 +109,9 @@ export const SETTINGS_TREE = [
       // The app has no cookie banner and keeps its sign-in in the device keystore, so
       // "Cookie Preferences" would name something it does not do.
       { action: 'cookies', label: IS_MOBILE_BUILD ? 'Storage & Privacy' : 'Cookie Preferences', icon: Cookie },
+      // Not destructive — the session and anything unsent survive it — so it
+      // sits with the ordinary rows, beside the other "what this device keeps".
+      { action: 'clear-cache', label: 'Clear cached data', icon: Smartphone },
     ],
     /**
      * Kept apart from the settings above rather than listed among them, and off
@@ -136,6 +141,27 @@ export const SETTINGS_TREE = [
     panel: 'help',
   },
 ];
+
+/**
+ * "About 12 MB" from whatever `estimateCacheUsage` reports — a byte count, or
+ * an object carrying one. Null when the platform cannot say, so the row shows
+ * no line rather than a wrong one.
+ */
+export function formatCacheUsage(usage) {
+  const bytes = typeof usage === 'number'
+    ? usage
+    : usage && typeof usage === 'object'
+      ? (usage.bytes ?? usage.usage ?? usage.total ?? null)
+      : null;
+  if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes < 0) return null;
+  if (bytes < 1024 * 1024) return 'Uses less than 1 MB on this device';
+  const mb = bytes / (1024 * 1024);
+  // "Uses", not "frees": the figure is everything the app stores on the
+  // device, signed-in session and unsent messages included, not what a clear
+  // will release.
+  if (mb < 1024) return `Uses about ${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB on this device`;
+  return `Uses about ${(mb / 1024).toFixed(1)} GB on this device`;
+}
 
 /** Category slugs — the entries that open a list rather than a settings panel. */
 export const SETTINGS_CATEGORIES = SETTINGS_TREE.filter((e) => e.items).map((e) => e.slug);
@@ -540,6 +566,29 @@ export default function SettingsRoute() {
   const [showOnlineStatus, setShowOnlineStatus] = useState(settingsObj.showOnlineStatus ?? true);
   const [readReceipts, setReadReceipts] = useState(settingsObj.readReceipts ?? true);
 
+  // Clear cached data: the row's usage line, and its confirmation.
+  const [cacheUsage, setCacheUsage] = useState(null);
+  const [showClearCache, setShowClearCache] = useState(false);
+  const [clearingCache, setClearingCache] = useState(false);
+
+  const refreshCacheUsage = async () => {
+    try {
+      setCacheUsage(formatCacheUsage(await estimateCacheUsage()));
+    } catch {
+      setCacheUsage(null);
+    }
+  };
+
+  // Measured when the list holding the row opens, not on every settings visit.
+  useEffect(() => {
+    if (openCategory !== 'privacy-security') return undefined;
+    let live = true;
+    estimateCacheUsage()
+      .then((usage) => { if (live) setCacheUsage(formatCacheUsage(usage)); })
+      .catch(() => { if (live) setCacheUsage(null); });
+    return () => { live = false; };
+  }, [openCategory]);
+
   // Delete account state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -846,6 +895,23 @@ export default function SettingsRoute() {
     </button>
   );
 
+  const handleClearCache = async () => {
+    if (clearingCache) return;
+    setClearingCache(true);
+    try {
+      // Reports a partial failure rather than throwing; either way is a failure.
+      const result = await clearCachedData(queryClient);
+      if (result && result.ok === false) throw new Error('partial');
+      showToast('Cached data cleared', 'success');
+      setShowClearCache(false);
+      void refreshCacheUsage();
+    } catch {
+      showToast("Couldn't clear cached data", 'error');
+    } finally {
+      setClearingCache(false);
+    }
+  };
+
   /** The one-line prompt under a row inside Account, or null. */
   const rowAction = (panel) => {
     if (panel === 'email' && profileAction.needsPersonalEmail) return 'Add a personal email';
@@ -855,6 +921,7 @@ export default function SettingsRoute() {
 
   const runItemAction = (action) => {
     if (action === 'cookies') return openCookiePreferences();
+    if (action === 'clear-cache') return setShowClearCache(true);
     if (action === 'delete') return setShowDeleteConfirm(true);
   };
 
@@ -949,7 +1016,9 @@ export default function SettingsRoute() {
                 icon: item.icon,
                 label: item.label,
                 dot: Boolean(rowAction(item.panel)),
-                description: rowAction(item.panel),
+                description: item.action === 'clear-cache'
+                  ? cacheUsage
+                  : rowAction(item.panel),
                 onClick: () => (item.panel ? openPanel(item.panel) : runItemAction(item.action)),
                 active: isLargeScreen && item.panel && activePanel === item.panel,
               })}
@@ -1527,6 +1596,18 @@ export default function SettingsRoute() {
           {activePanel === 'devices' && devicesPanel}
           {activePanel === 'help' && helpPanel}
         </>
+      )}
+
+      {showClearCache && (
+        <ConfirmModal
+          title="Clear cached data?"
+          desc="Frees space on this device. You stay signed in and nothing you haven't sent is lost."
+          onCancel={() => { if (!clearingCache) setShowClearCache(false); }}
+          onConfirm={handleClearCache}
+          confirmText={clearingCache ? 'Clearing…' : 'Clear'}
+          cancelText="Cancel"
+          icon={<Smartphone size={24} strokeWidth={2} />}
+        />
       )}
 
       {/* ── Delete Account Confirmation Modal ── */}

@@ -14,6 +14,7 @@ import {
 import { useSavedActivitiesStore } from '../stores/savedActivitiesStore';
 import { getCollegeName } from '@shared/utils/user';
 import { idbClearAll } from '@shared/lib/idb';
+import { clearAllDrafts } from '@shared/lib/drafts';
 import { mediaCache } from '@shared/utils/MediaCacheManager';
 import { useQueryClient } from '@tanstack/react-query';
 import { IS_MOBILE_BUILD } from '@config';
@@ -201,6 +202,14 @@ function resetClientStateForNewUser(queryClient) {
    */
   import('../../features/messages/shared/utils/idbMessages')
     .then(({ idbClearMessages }) => idbClearMessages())
+    .catch(() => {});
+  // Unsent text the composers kept for this account, and photos picked for a
+  // post that was never published (a separate database, which nothing used to
+  // clear: the next person on the device could read them).
+  // Synchronously, before a switch writes the next account's markers.
+  clearAllDrafts();
+  import('@shared/utils/draftImageCache')
+    .then(({ clearDraftImages }) => clearDraftImages())
     .catch(() => {});
   // And the outbox's in-memory state: which chats have a send pending. Its
   // stored entries went with the message cache above.

@@ -1,4 +1,4 @@
-import { compareMessages } from './cacheUtils';
+import { compareMessages, getMsgTimestamp } from './cacheUtils';
 import { idbEpoch, bumpIdbEpoch } from '@shared/lib/idb';
 
 /**
@@ -516,38 +516,196 @@ export async function idbOutboxAll(userId) {
   }
 }
 
+// ── Bounding the cache ───────────────────────────────────────────────────────
+
+/** Newest messages kept per conversation: a few screens of history, not all of it. */
+export const MAX_MESSAGES_PER_CONVERSATION = 300;
+/** Conversations kept; the least recently active are dropped first. */
+export const MAX_CACHED_CONVERSATIONS = 60;
+/** Ceiling across every conversation, whatever the two limits above allow. */
+export const MAX_CACHED_MESSAGES = 5000;
 /**
- * LRU Cache Trimming - keep only the latest 5000 messages total across all chats.
- * Can be expanded to trim by conversation.
+ * A row still 'sending' or 'failed' is kept this long even with no outbox entry
+ * (a failed send leaves the outbox after OUTBOX_FAILED_KEEP_MS), so a row
+ * stuck in that state cannot pin itself to the cache forever.
  */
-export async function trimMessageCache(maxMessages = 5000) {
+const UNCONFIRMED_KEEP_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Whether a cached row stands for a send that is not finished, and so must
+ * never be trimmed or cleared: dropping it would lose a message the person
+ * wrote and the app has promised to deliver (or let them retry).
+ *
+ * The outbox is the authority: a row it names, by any of the ids the row has
+ * carried (a send is keyed by its clientId, then re-keyed by the server's id).
+ * `queued` and a recent 'sending'/'failed' status cover the window before the
+ * outbox write lands (a media send uploads first) and a failure that outlived it.
+ */
+function isUnsentRow(row, outboxIds, now) {
+  if (!row) return false;
+  if (outboxIds.has(row.id) || outboxIds.has(row.clientId) || outboxIds.has(row.tempId)) return true;
+  if (row.queued === true) return true;
+  const status = row.status;
+  // A message that failed is kept for as long as the user has not dealt with
+  // it: deleting it would make "Not delivered" vanish, as if it had been sent.
+  // There are few, and they still count toward the per-chat cap.
+  if (status === 'failed' || status === 'FAILED') return true;
+  // A "sending" row with no outbox entry is stuck, not pending; after a week
+  // it may go.
+  if (status === 'sending') {
+    const at = getMsgTimestamp(row);
+    return !at || now - at < UNCONFIRMED_KEEP_MS;
+  }
+  return false;
+}
+
+/** Resolves with `visit` called for every row of a store, in key order. */
+function forEachRow(store, visit) {
+  return new Promise((resolve) => {
+    const request = store.openCursor();
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) return resolve();
+      visit(cursor.value, cursor.primaryKey);
+      cursor.continue();
+    };
+    request.onerror = () => resolve();
+  });
+}
+
+/** The ids of every outbox entry, of any account: none of them may be touched. */
+async function readOutboxIds(outboxStore) {
+  const ids = new Set();
+  await forEachRow(outboxStore, (entry, key) => {
+    ids.add(key);
+    if (entry?.clientId) ids.add(entry.clientId);
+  });
+  return ids;
+}
+
+/**
+ * Chooses which rows to delete. Pure: takes slim `{ key, conversationId, at,
+ * unsent }` records and returns the keys to remove plus the conversations that
+ * ended up with nothing.
+ */
+function planTrim(rows, { perConversation, maxConversations, maxTotal }) {
+  const byConversation = new Map();
+  for (const row of rows) {
+    const list = byConversation.get(row.conversationId);
+    if (list) list.push(row);
+    else byConversation.set(row.conversationId, [row]);
+  }
+
+  // Newest first inside a conversation; conversations by their newest message.
+  const conversations = [...byConversation.entries()].map(([id, list]) => {
+    list.sort((a, b) => b.at - a.at);
+    return { id, list, lastActive: list[0].at };
+  });
+  conversations.sort((a, b) => b.lastActive - a.lastActive);
+
+  const remove = new Set();
+  const kept = [];
+  conversations.forEach(({ list }, rank) => {
+    const dropWhole = rank >= maxConversations;
+    let n = 0;
+    for (const row of list) {
+      // Unsent rows count towards the cap but are never removed.
+      if (row.unsent) { kept.push(row); n += 1; continue; }
+      if (dropWhole || n >= perConversation) remove.add(row.key);
+      else { kept.push(row); n += 1; }
+    }
+  });
+
+  // Whatever the two limits left, held to the overall ceiling: oldest first.
+  if (kept.length > maxTotal) {
+    const evictable = kept.filter((r) => !r.unsent).sort((a, b) => a.at - b.at);
+    evictable.slice(0, Math.min(evictable.length, kept.length - maxTotal)).forEach((r) => remove.add(r.key));
+  }
+
+  const emptied = conversations
+    .filter(({ list }) => list.every((r) => remove.has(r.key)))
+    .map(({ id }) => id);
+  return { remove, emptied };
+}
+
+/**
+ * Bounds the message cache: the newest `perConversation` messages of each
+ * conversation, at most `maxConversations` conversations (the least recently
+ * active go first), at most `maxTotal` messages overall. Run once at startup
+ * from the storage maintenance pass, not when a chat opens.
+ *
+ * Rows that are still unsent (see `isUnsentRow`) are never removed, nor is the
+ * outbox touched. It is all one transaction, so the outbox it consults cannot
+ * change between the read and the delete, and a sign-out that lands meanwhile
+ * (a new epoch) makes it stand down. Returns how many messages were removed.
+ */
+export async function trimMessageCache({
+  perConversation = MAX_MESSAGES_PER_CONVERSATION,
+  maxConversations = MAX_CACHED_CONVERSATIONS,
+  maxTotal = MAX_CACHED_MESSAGES,
+} = {}) {
+  const epoch = idbEpoch();
   try {
     const db = await openMessagesDB();
-    const tx = db.transaction(STORES.MESSAGES, 'readwrite');
-    const store = tx.objectStore(STORES.MESSAGES);
-    const index = store.index('createdAt');
-    
-    const countRequest = store.count();
-    const totalCount = await new Promise((res) => {
-      countRequest.onsuccess = () => res(countRequest.result);
-      countRequest.onerror = () => res(0);
+    if (isStale(epoch)) return 0;
+    const tx = db.transaction([STORES.MESSAGES, STORES.SYNC_META, STORES.OUTBOX], 'readwrite');
+    const messages = tx.objectStore(STORES.MESSAGES);
+    const now = Date.now();
+
+    const outboxIds = await readOutboxIds(tx.objectStore(STORES.OUTBOX));
+    const rows = [];
+    await forEachRow(messages, (row, key) => {
+      rows.push({
+        key,
+        conversationId: row?.conversationId,
+        at: getMsgTimestamp(row),
+        unsent: isUnsentRow(row, outboxIds, now),
+      });
     });
 
-    if (totalCount <= maxMessages) return;
-
-    let toDelete = totalCount - maxMessages;
-    const cursorReq = index.openCursor(); // Ascending (oldest first)
-    
-    cursorReq.onsuccess = (e) => {
-      const cursor = e.target.result;
-      if (cursor && toDelete > 0) {
-        cursor.delete();
-        toDelete--;
-        cursor.continue();
-      }
-    };
+    let removed = 0;
+    if (!isStale(epoch)) {
+      const { remove, emptied } = planTrim(rows, { perConversation, maxConversations, maxTotal });
+      remove.forEach((key) => messages.delete(key));
+      // Its cursor described history that is no longer here.
+      emptied.forEach((conversationId) => tx.objectStore(STORES.SYNC_META).delete(conversationId));
+      removed = remove.size;
+    }
+    await committed(tx);
+    return removed;
   } catch (err) {
     console.warn('Cache trim failed', err);
+    return 0;
+  }
+}
+
+/**
+ * Empties the message cache and its sync metadata for "free up space", leaving
+ * signed-in state and everything unsent alone: the outbox store is not opened
+ * for writing, and any row it names (or that is still sending/failed) stays so
+ * the chat keeps showing it. Unlike `idbClearMessages` this does not start a new
+ * clear generation, because the outbox abandons work started under an old one.
+ * Resolves true if it committed.
+ */
+export async function idbClearMessageCache() {
+  try {
+    const db = await openMessagesDB();
+    const tx = db.transaction([STORES.MESSAGES, STORES.SYNC_META, STORES.OUTBOX], 'readwrite');
+    const messages = tx.objectStore(STORES.MESSAGES);
+    const now = Date.now();
+
+    const outboxIds = await readOutboxIds(tx.objectStore(STORES.OUTBOX));
+    const doomed = [];
+    await forEachRow(messages, (row, key) => {
+      if (!isUnsentRow(row, outboxIds, now)) doomed.push(key);
+    });
+    doomed.forEach((key) => messages.delete(key));
+    // Cursors for history that is gone; the next open refetches from the top.
+    tx.objectStore(STORES.SYNC_META).clear();
+    await committed(tx);
+    return true;
+  } catch {
+    return false;
   }
 }
 

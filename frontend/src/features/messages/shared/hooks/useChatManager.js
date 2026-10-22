@@ -7,7 +7,7 @@ import { useAuth } from '@shared/context/AuthContext';
 import { useConversations } from '@shared/hooks/useMessages';
 import { appendMessageToCache, updateMessageInCache, updateConversationPreview, matchesConversationId, getConversationAliases, compareMessages, checkIsMe, withConversationUnreadCleared } from '../utils/cacheUtils';
 
-import { idbGetMessages, idbOutboxAll, idbSaveMessages, idbPatchMessage, idbDeleteMessage, idbMessagesEpoch, migrateHistoricalFailedMessages, trimMessageCache } from '../utils/idbMessages';
+import { idbGetMessages, idbOutboxAll, idbSaveMessages, idbPatchMessage, idbDeleteMessage, idbMessagesEpoch, migrateHistoricalFailedMessages } from '../utils/idbMessages';
 import { outbox } from '../utils/outboxClient';
 import { classifySendFailure } from '../utils/outbox';
 import { restorableOutboxMessages } from '../utils/outboxRestore';
@@ -116,11 +116,11 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
   const { currentUser: dataUser } = useAuth();
   const currentUser = currentUserParam || dataUser;
 
-  // Run historical failed messages migration on startup, then bound the local
-  // message/media-metadata cache so IndexedDB can't grow without limit.
+  // Run historical failed messages migration on startup. Bounding the message
+  // cache is no longer done here: it runs once per launch from the storage
+  // maintenance pass (shared/lib/storageMaintenance.js), not on every chat mount.
   useEffect(() => {
     migrateHistoricalFailedMessages().catch(console.warn);
-    trimMessageCache().catch(console.warn);
   }, []);
 
   const isNearBottomRef = useRef(true);

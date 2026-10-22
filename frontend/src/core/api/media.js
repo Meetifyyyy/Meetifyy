@@ -88,6 +88,44 @@ export const deriveThumbnailKey = (rawSrc) => {
 };
 
 /**
+ * Folders whose objects may be fetched straight from the public media host.
+ *
+ * An allowlist, not a denylist: `/api/media/<key>` 302s to the same public
+ * address for these, so skipping the hop changes nothing but latency. Every
+ * other folder keeps going through the API, which is the only path that checks
+ * who is asking — conversation attachments, voice notes, support files and
+ * identity documents must never be addressed directly, and a folder added later
+ * stays behind the API until someone decides otherwise here.
+ */
+export const DIRECT_PUBLIC_FOLDERS = Object.freeze(['avatars']);
+
+/**
+ * The public-host URL for a stored media reference, or null.
+ *
+ * Accepts a bare key (`avatars/x.webp`), an `/api/media/<key>` path, or an
+ * absolute URL whose path is `/api/media/<key>`. Null whenever there is no
+ * configured public origin, the key is not in an allowlisted folder, or it is
+ * not a single safe `folder/name` segment — the caller then uses the API URL.
+ * No request is made: the address is a pure function of the key.
+ */
+export const directPublicMediaUrl = (ref, publicBase) => {
+  if (!ref || typeof ref !== 'string' || !publicBase || typeof publicBase !== 'string') return null;
+  if (!/^https:\/\/[^/?#]+(\/[^?#]*)?$/i.test(publicBase.trim())) return null;
+
+  let key = ref.trim();
+  const apiPath = key.match(/^(?:https?:\/\/[^/]+)?\/api\/media\/([^?#]+)$/i);
+  if (apiPath) key = apiPath[1];
+  else if (/^[a-z][a-z0-9+.-]*:/i.test(key) || key.startsWith('//')) return null;
+  key = key.replace(/^\/+/, '');
+
+  const match = key.match(/^([a-z0-9_-]+)\/([A-Za-z0-9_-][A-Za-z0-9._-]*)$/);
+  if (!match || match[2].includes('..')) return null;
+  if (!DIRECT_PUBLIC_FOLDERS.includes(match[1])) return null;
+
+  return `${publicBase.trim().replace(/\/+$/, '')}/${key}`;
+};
+
+/**
  * Whether a hostname belongs to a network that is private to whoever is on it.
  *
  * Used here to classify the host inside a STORED url — a question about the

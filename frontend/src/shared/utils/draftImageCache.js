@@ -1,4 +1,5 @@
 import { compressImage, uploadFileDirect, processAndUploadRemoteUrl } from './mediaPipeline';
+import { newIdempotencyKey } from '@shared/lib/idempotencyKey';
 
 const DB_NAME = 'meetifyy_draft_db';
 const DB_VERSION = 1;
@@ -6,6 +7,11 @@ const STORE_NAME = 'draft_images';
 const DEFAULT_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 const activeDrafts = new Map(); // previewUrl -> { draftId, blob, timestamp }
+
+// Bumped by clearDraftImages(). A compression that was running when the person
+// signed out finishes under the old value and writes nothing, so a photo picked
+// as the previous account is not stored after the wipe for the next one.
+let clearGeneration = 0;
 
 /**
  * Opens or initializes the draft images IndexedDB database.
@@ -34,6 +40,7 @@ function openDraftDB() {
  */
 export async function compressAndCacheDraftImage(fileOrUrl, options = {}) {
   let blob;
+  const generationAtStart = clearGeneration;
   
   if (typeof fileOrUrl === 'string') {
     if (fileOrUrl.startsWith('blob:')) {
@@ -62,7 +69,11 @@ export async function compressAndCacheDraftImage(fileOrUrl, options = {}) {
     return { previewUrl: '', blob: null };
   }
 
-  const draftId = `draft_img_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  // Signed out while the image was being fetched or compressed.
+  if (generationAtStart !== clearGeneration) return { previewUrl: '', blob: null };
+
+  // The CSPRNG, never Math.random (CLAUDE.md §8): this is an id.
+  const draftId = `draft_img_${Date.now()}_${newIdempotencyKey() || 'x'}`;
   const previewUrl = URL.createObjectURL(blob);
   const record = { id: draftId, previewUrl, blob, timestamp: Date.now() };
 
@@ -72,8 +83,23 @@ export async function compressAndCacheDraftImage(fileOrUrl, options = {}) {
   try {
     const db = await openDraftDB();
     if (db) {
+      // Checked again after the open: a sign-out during it has already wiped
+      // the database, and this photo belongs to the account that left.
+      if (generationAtStart !== clearGeneration) {
+        db.close();
+        activeDrafts.delete(previewUrl);
+        activeDrafts.delete(draftId);
+        try { URL.revokeObjectURL(previewUrl); } catch (_) { /* already revoked */ }
+        return { previewUrl: '', blob: null };
+      }
       const tx = db.transaction(STORE_NAME, 'readwrite');
       tx.objectStore(STORE_NAME).put({ id: draftId, blob, timestamp: Date.now() });
+      await new Promise((resolve) => {
+        tx.oncomplete = resolve;
+        tx.onerror = resolve;
+        tx.onabort = resolve;
+      });
+      db.close();
     }
   } catch (err) {
     console.warn('IndexedDB write failed for draft image:', err);
@@ -186,35 +212,87 @@ export async function removeDraftImage(draftIdOrUrl) {
 
 /**
  * Deletes uncommitted draft images from local IndexedDB cache after TTL.
+ * Resolves once the sweep has committed. Never rejects: it is housekeeping.
  */
 export async function cleanupDraftImages(maxAgeMs = DEFAULT_TTL_MS) {
+  let db = null;
   try {
-    const db = await openDraftDB();
+    db = await openDraftDB();
     if (!db) return;
 
     const tx = db.transaction(STORE_NAME, 'readwrite');
     const store = tx.objectStore(STORE_NAME);
     const req = store.openCursor();
     const now = Date.now();
+    const expired = [];
 
-    req.onsuccess = (e) => {
-      const cursor = e.target.result;
-      if (cursor) {
+    await new Promise((resolve) => {
+      tx.oncomplete = resolve;
+      tx.onerror = resolve;
+      tx.onabort = resolve;
+      req.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (!cursor) return;
         const item = cursor.value;
-        if (now - item.timestamp > maxAgeMs) {
+        // A record with no usable timestamp can never be told to be fresh.
+        if (!(now - item.timestamp <= maxAgeMs)) {
           store.delete(item.id);
-          removeDraftImage(item.id);
+          expired.push(item.id);
         }
         cursor.continue();
-      }
-    };
+      };
+    });
+    // Their in-memory twins and blob URLs go too.
+    expired.forEach((id) => { void removeDraftImage(id); });
   } catch (err) {
     // silent fail
+  } finally {
+    try { db?.close(); } catch (_) {}
   }
 }
 
-// Auto cleanup old drafts on launch
+/**
+ * Deletes EVERY draft image, expired or not, and resolves once the wipe has
+ * committed.
+ *
+ * For sign-out. These are photos picked for a post or activity that was never
+ * sent, held for 30 minutes so a refresh does not lose them; they are the
+ * previous person's pictures, and the next account on the device must not be
+ * able to read them. Also revokes the in-memory previews, and stops a
+ * compression still in flight from storing its result afterwards.
+ */
+export async function clearDraftImages() {
+  clearGeneration += 1;
+
+  for (const record of new Set(activeDrafts.values())) {
+    if (record?.previewUrl && record.previewUrl.startsWith('blob:')) {
+      try { URL.revokeObjectURL(record.previewUrl); } catch (_) {}
+    }
+  }
+  activeDrafts.clear();
+
+  let db = null;
+  try {
+    db = await openDraftDB();
+    if (!db) return;
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).clear();
+    await new Promise((resolve) => {
+      tx.oncomplete = resolve;
+      tx.onerror = resolve;
+      tx.onabort = resolve;
+    });
+  } catch (err) {
+    // silent: nothing to wipe where storage is unavailable
+  } finally {
+    try { db?.close(); } catch (_) {}
+  }
+}
+
+// Sweep old drafts periodically while the module is loaded. The launch-time
+// sweep is part of the startup storage maintenance (shared/lib/storageMaintenance.js),
+// which does not depend on this module having been imported by a screen first.
 if (typeof window !== 'undefined') {
-  setTimeout(() => cleanupDraftImages(), 2000);
-  setInterval(() => cleanupDraftImages(), 15 * 60 * 1000);
+  const timer = setInterval(() => cleanupDraftImages(), 15 * 60 * 1000);
+  timer?.unref?.();
 }
