@@ -206,6 +206,52 @@ describe('Auth sync cache', () => {
     });
   });
 
+  describe('bookmark ids', () => {
+    /**
+     * The client treats `meta.postBookmarkIds` / `meta.activityBookmarkIds` as
+     * the complete set: an id missing from it renders as "not saved". A
+     * `take: 200` copy of these reads once sat in AuthService (unused, but one
+     * call away from being wired in), and would have shown every bookmark
+     * past the 200th as un-bookmarked.
+     */
+    it('returns every bookmark id, not the newest N', async () => {
+      const module = await build();
+      await module.init();
+      const posts = Array.from({ length: 1200 }, (_, i) => `p${i}`);
+      const activities = Array.from({ length: 450 }, (_, i) => `a${i}`);
+      queryRaw.mockResolvedValue([
+        {
+          ...PROFILE_ROW,
+          postBookmarkIds: posts,
+          activityBookmarkIds: activities,
+        },
+      ]);
+
+      const profile = await service.syncProfile(AUTH_USER);
+
+      expect(profile.meta.postBookmarkIds).toEqual(posts);
+      expect(profile.meta.activityBookmarkIds).toEqual(activities);
+    });
+
+    it('reads the bookmark sets without a row limit', async () => {
+      const module = await build();
+      await module.init();
+
+      await service.syncProfile(AUTH_USER);
+
+      const calls = queryRaw.mock.calls as unknown[][];
+      const strings = calls[0][0] as readonly string[];
+      const sql = strings.join('?');
+      for (const table of ['"PostBookmark"', '"ActivityBookmark"']) {
+        const at = sql.indexOf(table);
+        expect(at).toBeGreaterThan(-1);
+        // The subselect for this set runs to the closing COALESCE default.
+        const subselect = sql.slice(at, sql.indexOf("'[]'::json", at));
+        expect(subselect).not.toMatch(/\bLIMIT\b/i);
+      }
+    });
+  });
+
   describe('cross-instance invalidation', () => {
     it('subscribes to the invalidation channel on init', async () => {
       const module = await build();

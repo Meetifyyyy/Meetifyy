@@ -551,7 +551,9 @@ export class NotificationsService implements OnModuleInit {
           ? { type }
           : { type: { notIn: [NotificationType.MESSAGE] } }),
       },
-      orderBy: { createdAt: 'desc' },
+      // `id` breaks ties between rows created in the same millisecond, so the
+      // order a cursor resumes from is the order the previous page was cut in.
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       include: {
@@ -566,10 +568,14 @@ export class NotificationsService implements OnModuleInit {
       },
     });
 
+    // The cursor is the LAST ROW RETURNED, not the look-ahead row. The next
+    // page resumes with `skip: 1` past the cursor, so pointing it at the
+    // look-ahead row skipped that row: one notification was lost at every
+    // page boundary.
     let nextCursor: string | undefined = undefined;
     if (notifications.length > limit) {
-      const nextItem = notifications.pop();
-      nextCursor = nextItem?.id;
+      notifications.pop();
+      nextCursor = notifications[notifications.length - 1]?.id;
     }
 
     return {

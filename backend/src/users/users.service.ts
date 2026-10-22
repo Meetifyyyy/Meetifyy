@@ -2218,7 +2218,15 @@ export class UsersService {
     return payload;
   }
 
-  /** The viewer's closeness signals for the people pickers. */
+  /**
+   * The viewer's closeness signals for the people pickers.
+   *
+   * The follow sets are deliberately the newest 1000 each, not complete:
+   * they only weight ranking (`socialScore`) and seed `closestIds`, which is
+   * itself capped at 500. Nothing reads them as follow state, so a follow
+   * past the 1000th costs a ranking boost, never a wrong "Following" label.
+   * Do not reuse them for anything that needs the whole set.
+   */
   private async pickerSocial(userId: string): Promise<PickerSocial> {
     const [me, following, followers, recentConvs] = await Promise.all([
       this.prisma.user.findUnique({

@@ -28,7 +28,11 @@ import type {
   UpdateCommunityDto,
 } from './dto/community.dto';
 import Redis from 'ioredis';
-import { roleCan, moderatorPermissions } from './moderator-permissions';
+import {
+  COMMUNITY_CAPABILITIES,
+  roleCan,
+  moderatorPermissions,
+} from './moderator-permissions';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationFactory } from '../notifications/notification.factory';
 import { MediaCleanupService } from '../uploads/media-cleanup.service';
@@ -181,6 +185,14 @@ interface CommunityScoreRow {
   recentPosts: number;
   score: number;
 }
+
+/**
+ * The most reviewers (owner + moderators) one join or join request notifies.
+ * A backstop against a pathological moderator team, not a product limit: no
+ * real community is near it, and exceeding it is logged rather than silent.
+ * The owner is always included on top of it.
+ */
+export const JOIN_NOTIFY_REVIEWER_CEILING = 200;
 
 @Injectable()
 export class CommunitiesService implements OnModuleInit {
@@ -1336,8 +1348,14 @@ export class CommunitiesService implements OnModuleInit {
    * Runs after the join (or the request) has committed, detached, so a
    * notification failure can never fail the join. Recipients are the owner and
    * the moderators whose role may review join requests - the same capability
-   * table the requests screen enforces - capped so a large moderator team
-   * cannot turn one join into an unbounded fan-out.
+   * table the requests screen enforces.
+   *
+   * The fan-out is bounded by JOIN_NOTIFY_REVIEWER_CEILING, but the bound is
+   * applied in the query to reviewers only, in a stable order (longest-serving
+   * first), and overflowing it is logged. It used to be `take: 50` over every
+   * OWNER/MODERATOR row in no order, then a second `slice(0, 25)`, so on a
+   * team larger than 25 an arbitrary, different subset was told each time
+   * and nothing recorded that anyone had been skipped.
    */
   private notifyCommunityReviewers(
     communityId: string,
@@ -1365,20 +1383,31 @@ export class CommunitiesService implements OnModuleInit {
               select: { user: actorSelect },
             }),
         this.prisma.communityMember.findMany({
-          where: { communityId, role: { in: ['OWNER', 'MODERATOR'] } },
+          where: {
+            communityId,
+            role: { in: COMMUNITY_CAPABILITIES.REVIEW_JOIN_REQUESTS.roles },
+          },
           select: { userId: true, role: true },
-          take: 50,
+          orderBy: [{ joinedAt: 'asc' }, { userId: 'asc' }],
+          // One past the ceiling, so overflowing it is observable.
+          take: JOIN_NOTIFY_REVIEWER_CEILING + 1,
         }),
       ]);
       const actor = joinRow?.user;
       if (!community || !actor) return;
       const recipients = new Set<string>();
       if (community.ownerId) recipients.add(community.ownerId);
-      for (const m of staff) {
+      for (const m of staff.slice(0, JOIN_NOTIFY_REVIEWER_CEILING)) {
         if (roleCan(m.role, 'REVIEW_JOIN_REQUESTS')) recipients.add(m.userId);
       }
       recipients.delete(actorId);
-      for (const recipientId of [...recipients].slice(0, 25)) {
+      if (staff.length > JOIN_NOTIFY_REVIEWER_CEILING) {
+        this.logger.warn(
+          `Community ${communityId} has more than ${JOIN_NOTIFY_REVIEWER_CEILING} join reviewers; ` +
+            `only the longest-serving ${JOIN_NOTIFY_REVIEWER_CEILING} were told about this ${kind === 'joined' ? 'join' : 'request'}.`,
+        );
+      }
+      for (const recipientId of recipients) {
         const dto = this.notificationFactory.createCommunityJoin(
           actor,
           {

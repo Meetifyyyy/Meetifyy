@@ -1,4 +1,8 @@
-import { CommunitiesService } from './communities.service';
+import {
+  CommunitiesService,
+  JOIN_NOTIFY_REVIEWER_CEILING,
+} from './communities.service';
+import { Logger } from '@nestjs/common';
 import { stub } from '../common/testing/stub';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { DomainEventService } from '../events/domain-event.service';
@@ -17,6 +21,16 @@ import type { CreateNotificationDto } from '../notifications/notification.factor
  * the owner and the moderators who may review requests, and never repeated
  * for a request that was already waiting.
  */
+interface StaffQuery {
+  where?: { communityId?: string; role?: { in?: string[] } };
+  orderBy?: unknown;
+  take?: number;
+}
+const mods = (n: number) =>
+  Array.from({ length: n }, (_, i) => ({
+    userId: `mod${String(i).padStart(3, '0')}`,
+    role: 'MODERATOR',
+  }));
 const flush = () => new Promise((r) => setTimeout(r, 0));
 const joiner = {
   id: 'joiner',
@@ -30,6 +44,7 @@ function build(opts: {
   isCampusCommunity?: boolean;
   previousRequest?: { status: string } | null;
   alreadyMember?: boolean;
+  staff?: { userId: string; role: string }[];
 }) {
   const tx = {
     communityMember: {
@@ -62,12 +77,14 @@ function build(opts: {
       findUnique: jest.fn((args: { select?: { user?: unknown } }) =>
         Promise.resolve(args.select?.user ? { user: joiner } : null),
       ),
-      findMany: jest.fn(() =>
-        Promise.resolve([
-          { userId: 'owner', role: 'OWNER' },
-          { userId: 'mod', role: 'MODERATOR' },
-          { userId: 'joiner', role: 'MODERATOR' },
-        ]),
+      findMany: jest.fn((_args: StaffQuery) =>
+        Promise.resolve(
+          opts.staff ?? [
+            { userId: 'owner', role: 'OWNER' },
+            { userId: 'mod', role: 'MODERATOR' },
+            { userId: 'joiner', role: 'MODERATOR' },
+          ],
+        ),
       ),
     },
     communityJoinRequest: {
@@ -101,7 +118,12 @@ function build(opts: {
   Object.assign(service, {
     invalidateCommunityCache: jest.fn(() => Promise.resolve()),
   });
-  return { service, createNotification, tx };
+  return {
+    service,
+    createNotification,
+    tx,
+    staffQuery: prisma.communityMember.findMany,
+  };
 }
 
 describe('community join notifications', () => {
@@ -170,5 +192,65 @@ describe('community join notifications', () => {
       isJoined: true,
     });
     await flush();
+  });
+
+  it('notifies every reviewer on a large team, not an arbitrary 25', async () => {
+    const team = mods(60);
+    const { service, createNotification } = build({
+      isPrivate: false,
+      staff: [{ userId: 'owner', role: 'OWNER' }, ...team],
+    });
+    await service.joinCommunity('k1', 'joiner');
+    await flush();
+    const recipients = new Set(
+      createNotification.mock.calls.map((c) => c[0]?.recipientId),
+    );
+    expect(recipients.size).toBe(61);
+    for (const m of team) expect(recipients.has(m.userId)).toBe(true);
+    expect(recipients.has('owner')).toBe(true);
+  });
+
+  it('bounds the reviewer read in the query: reviewer roles only, stable order, ceiling + 1', async () => {
+    const { service, staffQuery } = build({ isPrivate: false });
+    await service.joinCommunity('k1', 'joiner');
+    await flush();
+    const args = staffQuery.mock.calls[0][0];
+    expect(args.where?.communityId).toBe('k1');
+    expect([...(args.where?.role?.in ?? [])].sort()).toEqual([
+      'MODERATOR',
+      'OWNER',
+    ]);
+    expect(args.orderBy).toEqual([{ joinedAt: 'asc' }, { userId: 'asc' }]);
+    expect(args.take).toBe(JOIN_NOTIFY_REVIEWER_CEILING + 1);
+  });
+
+  it('logs, rather than silently drops, reviewers past the ceiling', async () => {
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    try {
+      const { service, createNotification } = build({
+        isPrivate: false,
+        // What the capped query returns on an oversized team: ceiling + 1 rows.
+        staff: mods(JOIN_NOTIFY_REVIEWER_CEILING + 1),
+      });
+      await service.joinCommunity('k1', 'joiner');
+      await flush();
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('more than 200 join reviewers'),
+      );
+      // The ceiling's worth of reviewers plus the owner, who is always told;
+      // the extra row read to detect the overflow is not notified.
+      const recipients = createNotification.mock.calls.map(
+        (c) => c[0]?.recipientId,
+      );
+      expect(recipients).toHaveLength(JOIN_NOTIFY_REVIEWER_CEILING + 1);
+      expect(recipients).toContain('owner');
+      expect(recipients).not.toContain(
+        `mod${String(JOIN_NOTIFY_REVIEWER_CEILING).padStart(3, '0')}`,
+      );
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
