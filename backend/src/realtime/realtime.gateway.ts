@@ -10,7 +10,12 @@ import {
 } from '@nestjs/websockets';
 import type { IncomingHttpHeaders } from 'http';
 import type { AppServer, AppSocket } from './socket-types';
-import { Logger, Optional, OnModuleDestroy } from '@nestjs/common';
+import {
+  HttpException,
+  Logger,
+  Optional,
+  OnModuleDestroy,
+} from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { SupabaseService } from '../supabase/supabase.service';
 import { MessagesService } from '../messages/messages.service';
@@ -1089,7 +1094,9 @@ export class RealtimeGateway
     @MessageBody() data: unknown,
   ) {
     const senderId = client.data.userId;
-    if (!senderId) return { status: 'error', error: 'Unauthenticated' };
+    // ERROR, not REJECTED: the socket re-authenticates on reconnect.
+    if (!senderId)
+      return { status: 'error', error: 'Unauthenticated', code: 'ERROR' };
     const clientKey = correlationIdOf(data);
     // The same DTO the HTTP route validates with, so the socket is not the one
     // path that accepts a malformed message.
@@ -1101,6 +1108,7 @@ export class RealtimeGateway
         tempId: clientKey,
         clientId: clientKey,
         error: 'Invalid message',
+        code: 'REJECTED',
       };
     }
     try {
@@ -1166,6 +1174,11 @@ export class RealtimeGateway
         tempId: clientKey,
         clientId: clientKey,
         error: errorMessage(err) || 'Failed to send message',
+        // Lets a client's outbox tell "try again later" from "never": a send
+        // the server refused (blocked, closed chat, not a member, invalid) is
+        // REJECTED and must not be retried; RATE_LIMITED and ERROR may be.
+        // Builds that predate it ignore the field.
+        code: sendFailureCode(err),
       };
     }
   }
@@ -2104,4 +2117,14 @@ function authSessionId(auth: unknown): string {
   if (typeof raw !== 'string') return '';
   const id = raw.trim();
   return id.length > 0 && id.length <= 128 ? id : '';
+}
+
+/** How a refused `message:send` is classified for the client's retry logic. */
+export function sendFailureCode(
+  err: unknown,
+): 'REJECTED' | 'RATE_LIMITED' | 'ERROR' {
+  const status = err instanceof HttpException ? err.getStatus() : 500;
+  if (status === 429) return 'RATE_LIMITED';
+  if (status >= 400 && status < 500 && status !== 408) return 'REJECTED';
+  return 'ERROR';
 }

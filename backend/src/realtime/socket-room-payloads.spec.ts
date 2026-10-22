@@ -189,3 +189,18 @@ describe('valid payloads still reach the handler', () => {
     expect(findMany).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('message:send failure codes', () => {
+  it('classifies a refused send so the client knows whether to retry', async () => {
+    const { sendFailureCode } = await import('./realtime.gateway');
+    const { ForbiddenException, BadRequestException, HttpException } =
+      await import('@nestjs/common');
+    expect(sendFailureCode(new ForbiddenException())).toBe('REJECTED');
+    expect(sendFailureCode(new BadRequestException())).toBe('REJECTED');
+    expect(sendFailureCode(new HttpException('slow down', 429))).toBe(
+      'RATE_LIMITED',
+    );
+    expect(sendFailureCode(new HttpException('timeout', 408))).toBe('ERROR');
+    expect(sendFailureCode(new Error('db down'))).toBe('ERROR');
+  });
+});
