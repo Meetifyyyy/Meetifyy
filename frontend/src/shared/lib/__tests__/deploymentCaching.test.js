@@ -180,6 +180,35 @@ describe('service-worker update lifecycle', () => {
     expect(workerSource).not.toContain("'meetifyy-images-v4',");
   });
 
+  /**
+   * API responses are never stored by the worker.
+   *
+   * A NetworkFirst route over the messages, notifications and feed endpoints
+   * once wrote authenticated bodies into 'meetifyy-api-network', keyed by URL
+   * alone — so after an account switch the worker could answer account B's
+   * request with account A's DMs whenever the network was slow or offline.
+   * The route was removed, and the cache name was dropped from the allowlist so
+   * the activate handler deletes what existing installations still hold.
+   */
+  it('registers no runtime cache route for API data, and drops the old API cache', () => {
+    for (const needle of [
+      "'/api/messages'",
+      "'/api/notifications'",
+      "'/api/posts/feed'",
+      'NETWORK_FIRST_PATHS',
+    ]) {
+      expect(workerSource).not.toContain(needle);
+    }
+
+    const allowlist = workerSource.slice(
+      workerSource.indexOf('const CURRENT_CACHES = new Set(['),
+      workerSource.indexOf(']);', workerSource.indexOf('const CURRENT_CACHES = new Set([')),
+    );
+    expect(allowlist).toContain("'app-shell'");
+    expect(allowlist).not.toContain('meetifyy-api-network');
+    expect(workerSource).not.toContain("'meetifyy-api-network'");
+  });
+
   it('contains no deployment polling or cache-busting reload workaround', () => {
     const appSource = read('src/App.jsx');
     const boundarySource = read('src/shared/components/ErrorBoundary.jsx');

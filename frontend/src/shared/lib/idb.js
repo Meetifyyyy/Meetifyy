@@ -48,6 +48,14 @@ export function idbEpoch() {
   return _epoch;
 }
 
+/**
+ * Starts a new clear generation. Shared with the messages cache, so either
+ * clear invalidates writes to both; `idbClearAll` calls it synchronously.
+ */
+export function bumpIdbEpoch() {
+  _epoch += 1;
+}
+
 function openDB() {
   if (_db) return Promise.resolve(_db);
   // One connection however many callers arrive before the first one resolves.
@@ -105,10 +113,7 @@ export async function idbSet(store, key, value, epoch) {
       storedAt: Date.now(),
       ttl: config.ttl,
     });
-    await new Promise((res, rej) => {
-      tx.oncomplete = res;
-      tx.onerror = () => rej(tx.error);
-    });
+    await committed(tx);
   } catch {
     // IndexedDB unavailable (private browsing, quota exceeded) — silent fail
   }
@@ -193,6 +198,6 @@ export async function idbClearStore(store) {
  */
 export async function idbClearAll() {
   // First, so a write or read already in flight is refused before the clear lands.
-  _epoch += 1;
+  bumpIdbEpoch();
   await Promise.allSettled(Object.keys(STORES).map(idbClearStore));
 }

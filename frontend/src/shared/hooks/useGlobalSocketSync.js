@@ -34,6 +34,13 @@ const CATCHUP_MAX_PAGES = 5;
 /** An unanswered catch-up is a failure, not a wait that never ends. */
 const CATCHUP_ACK_TIMEOUT_MS = 15_000;
 
+/** Backoff for a catch-up that failed while still connected. */
+const CATCHUP_RETRY_BASE_MS = 5_000;
+const CATCHUP_RETRY_MAX_MS = 120_000;
+
+/** How long away before a reconnect refetches the chat on screen. */
+const CHAT_REFRESH_AFTER_MS = 60_000;
+
 function emitCatchup(socket, payload) {
   return new Promise((resolve) => {
     socket.timeout(CATCHUP_ACK_TIMEOUT_MS).emit('message:catchup', payload, (err, res) => {
@@ -53,6 +60,11 @@ export function useGlobalSocketSync() {
   // what only arrives as a push; and a guard against two catch-ups at once.
   const connectedBeforeRef = useRef(false);
   const catchupRunningRef = useRef(false);
+  const catchupRerunRef = useRef(false);
+  const catchupRetryRef = useRef(undefined);
+  const catchupAttemptRef = useRef(0);
+  const runCatchupRef = useRef(null);
+  const disconnectedAtRef = useRef(0);
 
   // Keep ref in sync so the reconnect handler always sees the latest conversations
   useEffect(() => {
@@ -99,7 +111,14 @@ export function useGlobalSocketSync() {
       if (connectedBeforeRef.current) {
         queryClient.invalidateQueries({ queryKey: ['notifications'] });
         queryClient.invalidateQueries({ queryKey: ['groupDetails'] });
-        queryClient.invalidateQueries({ queryKey: ['messages'], refetchType: 'active' });
+        // The open chat refetches every page it has loaded, so only after a
+        // real gap. The app drops its socket 30s into the background and
+        // reconnects on every return; a quick return has missed nothing that
+        // catch-up does not already bring.
+        const away = Date.now() - (disconnectedAtRef.current || Date.now());
+        if (away > CHAT_REFRESH_AFTER_MS) {
+          queryClient.invalidateQueries({ queryKey: ['messages'], refetchType: 'active' });
+        }
       }
       connectedBeforeRef.current = true;
     };
@@ -118,8 +137,16 @@ export function useGlobalSocketSync() {
      * refetched from history instead.
      */
     const runCatchup = async () => {
-      if (catchupRunningRef.current) return;
+      // One at a time, but never dropped: a connect that lands while an
+      // earlier catch-up is still waiting on its ack (a reconnect seconds
+      // after a drop) asks for another run once that one finishes.
+      if (catchupRunningRef.current) {
+        catchupRerunRef.current = true;
+        return;
+      }
       catchupRunningRef.current = true;
+      clearTimeout(catchupRetryRef.current);
+      let succeeded = false;
       try {
         const since = localStorage.getItem(LAST_SYNC_KEY)
           || new Date(Date.now() - 5 * 60 * 1000).toISOString();
@@ -129,6 +156,7 @@ export function useGlobalSocketSync() {
         for (let page = 0; page < CATCHUP_MAX_PAGES; page += 1) {
           const res = await emitCatchup(socket, after ? { since, after } : { since });
           if (res?.status !== 'ok' || !Array.isArray(res.messages)) return;
+          catchupAttemptRef.current = 0;
           applyCatchupMessages(res.messages);
           // The first page's server time: the overlap the server re-reads
           // covers anything committed while the later pages were fetched.
@@ -146,12 +174,30 @@ export function useGlobalSocketSync() {
         // A server that predates paging sends no `syncedAt`; its single page
         // is all it can give, so this device's clock is the best there is.
         localStorage.setItem(LAST_SYNC_KEY, syncedAt || new Date().toISOString());
+        succeeded = true;
       } catch {
-        // Storage or socket failure: keep the old sync point and retry later.
+        // Storage or socket failure: keep the old sync point and retry below.
       } finally {
         catchupRunningRef.current = false;
+        // Through the ref: by now a reconnect may have replaced this closure.
+        if (catchupRerunRef.current) {
+          catchupRerunRef.current = false;
+          void runCatchupRef.current?.();
+        } else if (!succeeded) {
+          // Refused (rate limited), timed out, or failed. Waiting for the next
+          // connect could mean hours on a steady connection, with closed chats
+          // and the list missing messages all that time. Retry with backoff
+          // while connected; each attempt resumes from the same sync point.
+          const attempt = catchupAttemptRef.current;
+          catchupAttemptRef.current = attempt + 1;
+          const delay = Math.min(CATCHUP_RETRY_MAX_MS, CATCHUP_RETRY_BASE_MS * 2 ** attempt);
+          catchupRetryRef.current = setTimeout(() => {
+            if (useGlobalSocketStore.getState().socket?.connected) void runCatchupRef.current?.();
+          }, delay);
+        }
       }
     };
+    runCatchupRef.current = runCatchup;
 
     const applyCatchupMessages = (messages) => {
       messages.forEach((msg) => {
@@ -198,6 +244,10 @@ export function useGlobalSocketSync() {
     return () => {
       socket.off('connect', syncOnConnect);
       clearInterval(heartbeatInterval);
+      clearTimeout(catchupRetryRef.current);
+      // Runs when the socket drops (isConnected turns false), so the next
+      // connect knows how long it was away.
+      disconnectedAtRef.current = Date.now();
     };
   }, [socket, isConnected, queryClient]);
 

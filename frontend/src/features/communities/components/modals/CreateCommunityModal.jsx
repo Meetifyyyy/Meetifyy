@@ -143,6 +143,14 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
   // the page scroll while the user drags to crop. React 17+ registers
   // onTouchStart as passive, which silently swallows any preventDefault call.
   const cropperRef = useRef(null);
+  // The avatar this submission already uploaded, keyed by what produced it
+  // ({ signature, finalAvatar, hasCustomAvatar }). A retry after a lost
+  // response must send the byte-identical body, or the idempotency key changes
+  // and the server creates a second community. Uploading again on every submit
+  // gave each attempt a new URL; reusing the earlier result keeps the body, and
+  // so the key, the same. A different picture, crop, name or colour has a
+  // different signature and is uploaded afresh.
+  const avatarUploadRef = useRef(null);
 
   // Auto-focus name input when step 2 is active
   useEffect(() => {
@@ -349,37 +357,51 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
       let finalAvatar = null;
       let hasCustomAvatar = false;
 
-      if (avatarPreview) {
-        const croppedFile = await getCroppedAvatarFile();
-        if (croppedFile) {
-          const { publicUrl } = await processAndUploadImage(croppedFile, 'communities', { maxWidthOrHeight: 512 });
-          finalAvatar = publicUrl;
-          hasCustomAvatar = true;
-        }
-      }
+      // Custom picture: the selection (its object URL is unique per pick), the
+      // crop and the source size decide the uploaded image. Generated default:
+      // the name and the gradient do.
+      const avatarSignature = avatarPreview
+        ? JSON.stringify(['custom', avatarPreview, cropState.x, cropState.y, cropState.zoom, imageSize.width, imageSize.height])
+        : JSON.stringify(['default', name.trim(), gradient]);
+      const cachedAvatar = avatarUploadRef.current;
 
-      if (!finalAvatar) {
-        // No picture chosen: render the letter-and-gradient placeholder the user
-        // just previewed into a real image and store it like any upload, so the
-        // community owns an actual avatar URL from the moment it exists.
-        //
-        // Generated ONCE, here. Every surface then reads the stored URL, so the
-        // avatar cannot drift between screens or change on a refresh the way a
-        // per-render placeholder would. `gradient` is the same value shown in the
-        // preview above, so what was on screen is what gets saved.
-        //
-        // Best-effort: a canvas or upload failure must not stop the community
-        // being created. finalAvatar simply stays null and the existing
-        // coloured-initial fallback keeps rendering, exactly as before.
-        try {
-          const generated = await generateInitialAvatarFile(name.trim(), gradient, {
-            fileNameBase: 'community-default-avatar',
-          });
-          const { publicUrl } = await processAndUploadImage(generated, 'communities', { maxWidthOrHeight: 512 });
-          if (publicUrl) finalAvatar = publicUrl;
-        } catch (avatarErr) {
-          console.warn('Default community avatar could not be generated; falling back to the rendered initial', avatarErr);
+      if (cachedAvatar && cachedAvatar.signature === avatarSignature) {
+        finalAvatar = cachedAvatar.finalAvatar;
+        hasCustomAvatar = cachedAvatar.hasCustomAvatar;
+      } else {
+        if (avatarPreview) {
+          const croppedFile = await getCroppedAvatarFile();
+          if (croppedFile) {
+            const { publicUrl } = await processAndUploadImage(croppedFile, 'communities', { maxWidthOrHeight: 512 });
+            finalAvatar = publicUrl;
+            hasCustomAvatar = true;
+          }
         }
+
+        if (!finalAvatar) {
+          // No picture chosen: render the letter-and-gradient placeholder the user
+          // just previewed into a real image and store it like any upload, so the
+          // community owns an actual avatar URL from the moment it exists.
+          //
+          // Generated ONCE, here. Every surface then reads the stored URL, so the
+          // avatar cannot drift between screens or change on a refresh the way a
+          // per-render placeholder would. `gradient` is the same value shown in the
+          // preview above, so what was on screen is what gets saved.
+          //
+          // Best-effort: a canvas or upload failure must not stop the community
+          // being created. finalAvatar simply stays null and the existing
+          // coloured-initial fallback keeps rendering, exactly as before.
+          try {
+            const generated = await generateInitialAvatarFile(name.trim(), gradient, {
+              fileNameBase: 'community-default-avatar',
+            });
+            const { publicUrl } = await processAndUploadImage(generated, 'communities', { maxWidthOrHeight: 512 });
+            if (publicUrl) finalAvatar = publicUrl;
+          } catch (avatarErr) {
+            console.warn('Default community avatar could not be generated; falling back to the rendered initial', avatarErr);
+          }
+        }
+        avatarUploadRef.current = { signature: avatarSignature, finalAvatar, hasCustomAvatar };
       }
 
       const id = await addCommunity({
@@ -396,6 +418,8 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
         isCampusCommunity: isCampusCommunity || privacy === 'campus'
       });
 
+      // Created: the next community is a new submission with its own upload.
+      avatarUploadRef.current = null;
       onCreated(id);
     } catch (err) {
       showToast("Couldn't create community", 'error');

@@ -7,7 +7,7 @@ import { useAuth } from '@shared/context/AuthContext';
 import { useConversations } from '@shared/hooks/useMessages';
 import { appendMessageToCache, updateMessageInCache, updateConversationPreview, matchesConversationId, getConversationAliases, compareMessages, checkIsMe, withConversationUnreadCleared } from '../utils/cacheUtils';
 
-import { idbGetMessages, idbSaveMessages, idbPatchMessage, idbDeleteMessage, migrateHistoricalFailedMessages, trimMessageCache } from '../utils/idbMessages';
+import { idbGetMessages, idbSaveMessages, idbPatchMessage, idbDeleteMessage, idbMessagesEpoch, migrateHistoricalFailedMessages, trimMessageCache } from '../utils/idbMessages';
 
 
 // Throttles upload-progress writes so a fast XHR can't flood React state.
@@ -211,6 +211,9 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
       if (!activeChatId) return null;
       // Anything the socket delivers from here on is racing this request.
       const requestedAt = Date.now();
+      // Captured before the request: a sign-out while it is on the wire clears
+      // the message cache, and this page must not be written back after it.
+      const idbEpochAtRequest = idbMessagesEpoch();
       const res = await getApi().getHistory(activeChatId, undefined, pageParam);
       if (res && res.messages) {
         const normalizedMsgs = res.messages.map(m => ({
@@ -268,7 +271,7 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
         // already persisted by the paths that produced them (the socket handler
         // for arrivals, the send path for optimistic ones), and writing an
         // unconfirmed send here would give it a second, page-shaped life.
-        idbSaveMessages(activeChatId, normalizedMsgs).catch(console.warn);
+        idbSaveMessages(activeChatId, normalizedMsgs, idbEpochAtRequest).catch(console.warn);
         // After network confirms, clear the IDB placeholder — network data owns the cache now
         idbPlaceholderRef.current = null;
       }
@@ -459,6 +462,11 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
     const targetConvId = convId || activeChatId;
     if (!targetConvId) return;
 
+    // Every disk write below except the first follows an upload or a send
+    // await. A sign-out in between clears the message cache, and this send's
+    // record must not be written back into the next account's store.
+    const idbEpochAtSend = idbMessagesEpoch();
+
     let payloadText = typeof text === 'string' ? text : '';
     if (text && typeof text === 'object' && !Array.isArray(text)) {
       payloadText = text.text || '';
@@ -511,7 +519,7 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
     appendMessageToCache(queryClient, targetConvId, tempMessage, { createIfMissing: true });
     const previewSnippet = payloadText || (explicitInviteData ? (explicitInviteData.groupName ? `Group invite: ${explicitInviteData.groupName}` : 'Group invite') : mediaType ? (mediaType === 'image' ? 'Photo' : mediaType === 'video' ? 'Video' : 'Audio') : mediaUrl ? 'Media' : '');
     updateConversationPreview(queryClient, targetConvId, previewSnippet, tempMessage.createdAt, 0);
-    idbSaveMessages(targetConvId, [tempMessage]);
+    idbSaveMessages(targetConvId, [tempMessage], idbEpochAtSend);
 
     let finalMediaUrl = mediaUrl;
     let finalThumbnailUrl = tempMessage.payload.thumbnailUrl;
@@ -587,7 +595,7 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
             mediaUrl: finalMediaUrl,
             uploadStatus: 'done',
             payload: { ...tempMessage.payload, mediaUrl: finalMediaUrl, thumbnailUrl: finalThumbnailUrl, localPreviewUrl: null, width: finalWidth, height: finalHeight, duration: finalDuration },
-          }).catch(() => {});
+          }, idbEpochAtSend).catch(() => {});
         }
 
         pendingUploadsRef.current.delete(clientId);
@@ -610,7 +618,7 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
           return;
         }
         updateMessageInCache(queryClient, targetConvId, clientId, { status: 'failed', uploadStatus: 'failed' });
-        idbPatchMessage(targetConvId, clientId, { status: 'failed', uploadStatus: 'failed' }).catch(() => {});
+        idbPatchMessage(targetConvId, clientId, { status: 'failed', uploadStatus: 'failed' }, idbEpochAtSend).catch(() => {});
         return;
       }
     }
@@ -662,7 +670,7 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
           mediaUrl: serverMsg?.mediaUrl || finalMediaUrl || existing?.mediaUrl,
           payload: mergedPayload,
         };
-        idbPatchMessage(targetConvId, updated.id, updated).catch(console.warn);
+        idbPatchMessage(targetConvId, updated.id, updated, idbEpochAtSend).catch(console.warn);
         return updated;
       });
       if (activeChatId && activeChatId !== targetConvId) {
@@ -677,7 +685,7 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
       if (activeChatId && activeChatId !== targetConvId) {
         updateMessageInCache(queryClient, activeChatId, clientId, { status: 'failed' });
       }
-      idbPatchMessage(targetConvId, clientId, { status: 'failed' }).catch(console.warn);
+      idbPatchMessage(targetConvId, clientId, { status: 'failed' }, idbEpochAtSend).catch(console.warn);
     };
 
     if (socket?.connected) {

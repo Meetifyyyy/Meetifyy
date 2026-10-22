@@ -763,3 +763,45 @@ describe('createTransport — verification-required 403', () => {
     expect(onApiErrorCode).toHaveBeenCalledWith('VERIFICATION_REQUIRED');
   });
 });
+
+/**
+ * The Idempotency-Key is the caller's, never the transport's.
+ *
+ * Only create forms attach one, per submission. A key on every write would
+ * park a Redis entry for a day behind every like and read, and would cover the
+ * auth routes, whose responses carry cookies and tokens that must not be
+ * replayed or stored.
+ */
+describe('createTransport — idempotency keys', () => {
+  const capture = () => {
+    const calls = [];
+    globalThis.fetch = vi.fn(async (url, init) => {
+      calls.push({ url, init });
+      return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({}), text: async () => '' };
+    });
+    return calls;
+  };
+  const withFlag = (enabled) => {
+    const { deps } = build();
+    return createTransport({ ...deps, idempotency: { enabled } });
+  };
+
+  it('sends the key a caller passes', async () => {
+    const calls = capture();
+    await withFlag(true).apiClient.post('/api/posts', { text: 'hi' }, { idempotencyKey: 'key-0000000001' });
+    expect(calls[0].init.headers['Idempotency-Key']).toBe('key-0000000001');
+  });
+
+  it('invents none for a write whose caller passed no key', async () => {
+    const calls = capture();
+    await withFlag(true).apiClient.post('/api/posts/p1/like');
+    await withFlag(true).apiClient.post('/api/auth/session/adopt', {});
+    for (const call of calls) expect(call.init.headers['Idempotency-Key']).toBeUndefined();
+  });
+
+  it('sends nothing while the rollout flag is off', async () => {
+    const calls = capture();
+    await withFlag(false).apiClient.post('/api/posts', {}, { idempotencyKey: 'key-0000000001' });
+    expect(calls[0].init.headers['Idempotency-Key']).toBeUndefined();
+  });
+});

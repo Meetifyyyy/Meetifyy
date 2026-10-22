@@ -572,6 +572,14 @@ export default function CreateActivityPage() {
   // One idempotency key per activity, kept across "Publish" retries after an
   // error, so a retry whose first response was lost cannot create it twice.
   const [createKey] = useState(createSubmissionKey);
+  // The durable URL the selected cover was already uploaded to, as
+  // { source, url } where `source` is the formData.coverImage it came from.
+  // commitDraftImage uploads and then revokes the draft blob, so a retry used
+  // to upload again (a new URL, so a new body and a new idempotency key, so a
+  // second activity if the first response was only lost) or fail with
+  // "reselect the image". Reusing it keeps a retry's body identical. Cleared
+  // whenever the cover changes and after a successful create.
+  const committedCoverRef = useRef(null);
   const whoCanJoinRef = useRef(null);
   // The College mode restricts an activity to the host's own college, so it is
   // only offered to users who actually have one — otherwise the activity would
@@ -631,6 +639,7 @@ export default function CreateActivityPage() {
 
   const handleCoverSelect = (url) => {
     coverTokenRef.current += 1;
+    committedCoverRef.current = null;
     setFormData((prev) => {
       // Drop the previous draft preview so blob URLs don't accumulate.
       if (prev.coverImage && prev.coverImage !== url) releasePreview(prev.coverImage);
@@ -651,6 +660,7 @@ export default function CreateActivityPage() {
     // Bumping the token invalidates any in-flight processing for the image
     // being removed, so a late result can't restore it.
     coverTokenRef.current += 1;
+    committedCoverRef.current = null;
     setFormData((prev) => {
       releasePreview(prev.coverImage);
       return {
@@ -726,6 +736,10 @@ export default function CreateActivityPage() {
 
       const remainder = 5 - (now.getMinutes() % 5);
       currentStart = new Date(now.getTime() + (remainder === 5 ? 0 : remainder) * 60000);
+      // The form stores only hour and minute, so drop seconds and milliseconds
+      // here too: the startDate sent now must equal the one a retry parses back
+      // out of the form, or the retry's body (and idempotency key) differs.
+      currentStart.setSeconds(0, 0);
       currentEnd = new Date(currentStart.getTime() + duration);
 
       const s = formatToState(currentStart);
@@ -855,11 +869,17 @@ export default function CreateActivityPage() {
         // asset into user storage on every activity created.
         coverPayload = { coverImage: formData.coverImage };
       } else if (formData.coverImage) {
-        const committed = await commitDraftImage(formData.coverImage, 'activities');
-        if (!committed || String(committed).startsWith('blob:')) {
-          throw new Error('Cover image upload did not return a durable URL');
+        const cached = committedCoverRef.current;
+        if (cached && cached.source === formData.coverImage) {
+          coverPayload = { coverImage: cached.url };
+        } else {
+          const committed = await commitDraftImage(formData.coverImage, 'activities');
+          if (!committed || String(committed).startsWith('blob:')) {
+            throw new Error('Cover image upload did not return a durable URL');
+          }
+          committedCoverRef.current = { source: formData.coverImage, url: committed };
+          coverPayload = { coverImage: committed };
         }
-        coverPayload = { coverImage: committed };
       } else {
         coverPayload = {};
       }
@@ -877,6 +897,7 @@ export default function CreateActivityPage() {
       };
       const created = await activitiesApi.create(body, { idempotencyKey: createKey.keyFor(body) });
       createKey.done();
+      committedCoverRef.current = null;
       return created;
     })().then((realActivity) => {
       // Swap the optimistic entry for the real one everywhere it was inserted.

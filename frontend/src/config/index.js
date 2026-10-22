@@ -115,8 +115,9 @@ export const config = {
      */
     preferLocalBackend: bool('VITE_API_PREFER_LOCAL', { fallback: IS_DEV_BUILD }),
     /**
-     * Send an `Idempotency-Key` with every write, so a retry after a lost
-     * response returns the first result instead of a duplicate. Off by default:
+     * Send the `Idempotency-Key` that create forms attach to a submission, so
+     * a retry after a lost response returns the first result instead of a
+     * duplicate. Off by default:
      * the API must already allow the header (main.ts CORS allowedHeaders)
      * wherever this build talks to, or every write fails its preflight.
      */

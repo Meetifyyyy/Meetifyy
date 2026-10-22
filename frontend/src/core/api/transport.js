@@ -30,7 +30,7 @@ import { resolveForbiddenCode } from './verificationRequired';
  * @param {object} deps.sessionStore  SyncKeyValueStore, per-session
  * @param {object} deps.etags         from core/api/etagCache
  * @param {object} deps.hooks         TransportHooks: onApiErrorCode, onUnauthorized, onOriginChanged, onApiFailure
- * @param {object} [deps.idempotency] { enabled: boolean, newKey: () => string }
+ * @param {object} [deps.idempotency] { enabled: boolean }
  */
 export function createTransport({
   apiOrigin,
@@ -40,7 +40,7 @@ export function createTransport({
   sessionStore,
   etags,
   hooks,
-  idempotency = { enabled: false, newKey: () => '' },
+  idempotency = { enabled: false },
 }) {
   /**
    * The CSRF token the server set alongside the session cookies.
@@ -602,22 +602,23 @@ export function createTransport({
     }
 
     /**
-     * Makes a write safe to send twice.
+     * Makes a submission safe to send twice.
      *
-     * A write whose response is lost (a connection reset after the server
-     * committed it, a timeout) is otherwise impossible to retry safely: the
+     * A create whose response is lost (a connection reset after the server
+     * committed it, a timeout) cannot otherwise be retried safely: the
      * failover below re-sends this exact request, and a user who sees an error
      * submits again. The server records the key and answers a repeat with the
      * first result instead of creating a second post, comment, group or ticket.
      *
-     * One key per call, set before `send`, so the failover retry reuses it. A
-     * caller retrying the same submission passes its own key to cover the
-     * user's retry too. Behind a flag because the API's CORS preflight must
+     * Only for callers that pass a key, one per submission (see
+     * shared/lib/idempotencyKey.js). Not for every write: likes, follows and
+     * reads are already safe to repeat on the server, a chat message dedupes
+     * on its own client id, and every keyed write is a Redis entry the server
+     * keeps for a day. Behind a flag because the API's CORS preflight must
      * allow the header before any client sends it; see config.api.
      */
-    if (!SAFE_METHODS.has(method) && idempotency.enabled) {
-      const key = idempotencyKey || idempotency.newKey();
-      if (key) headers['Idempotency-Key'] = key;
+    if (!SAFE_METHODS.has(method) && idempotency.enabled && idempotencyKey) {
+      headers['Idempotency-Key'] = idempotencyKey;
     }
     /**
      * Whether a 401 from this path means anything about the session.

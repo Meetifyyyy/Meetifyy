@@ -1,4 +1,5 @@
 import { compareMessages } from './cacheUtils';
+import { idbEpoch, bumpIdbEpoch } from '@shared/lib/idb';
 
 /**
  * IndexedDB wrapper for message caching.
@@ -13,6 +14,36 @@ const STORES = {
 };
 
 let _db = null;
+
+/**
+ * The clear generation, shared with the other local caches.
+ *
+ * The chat paths that mirror messages to disk write AFTER a network await (a
+ * history page, an upload, a send ACK), and signing out does not abort a
+ * request already in flight. Without a generation check, account A's page
+ * landing a moment after A's logout cleared the store wrote A's DMs back.
+ *
+ * Shared with `shared/lib/idb.js` rather than kept here: sign-out reaches this
+ * module through a lazy import, so a counter of its own was bumped only once
+ * that import resolved, leaving a gap. `idbClearAll()` bumps the shared one
+ * synchronously, the moment sign-out starts.
+ *
+ * A caller captures `idbMessagesEpoch()` BEFORE it starts the request and hands
+ * it to the write, which is dropped if a clear happened in between. Reads check
+ * on their own, so a hydration in flight during a clear returns nothing.
+ */
+export const idbMessagesEpoch = idbEpoch;
+
+const isStale = (epoch) => epoch !== undefined && epoch !== idbEpoch();
+
+/** Resolves when the transaction has committed, rejects if it failed or aborted. */
+function committed(tx) {
+  return new Promise((res, rej) => {
+    tx.oncomplete = res;
+    tx.onerror = () => rej(tx.error);
+    tx.onabort = () => rej(tx.error);
+  });
+}
 
 function openMessagesDB() {
   if (_db) return Promise.resolve(_db);
@@ -148,11 +179,16 @@ function sanitizeMessageForStorage(msg) {
 /**
  * Bulk save/update messages for a conversation.
  * Expected to receive raw or lightly mutated messages.
+ * @param {number} [epoch] - `idbMessagesEpoch()` captured before the request
+ *   these messages came from. The write is dropped if the cache was cleared since.
  */
-export async function idbSaveMessages(conversationId, messages) {
+export async function idbSaveMessages(conversationId, messages, epoch) {
   if (!messages || !messages.length) return;
+  if (isStale(epoch)) return;
   try {
     const db = await openMessagesDB();
+    // Re-checked after the open: it is the only await before the write.
+    if (isStale(epoch)) return;
     const tx = db.transaction(STORES.MESSAGES, 'readwrite');
     const store = tx.objectStore(STORES.MESSAGES);
     
@@ -177,10 +213,7 @@ export async function idbSaveMessages(conversationId, messages) {
       store.put(safeMsg);
     }
     
-    await new Promise((res, rej) => {
-      tx.oncomplete = res;
-      tx.onerror = () => rej(tx.error);
-    });
+    await committed(tx);
   } catch (err) {
     console.warn('IDB Save failed:', err);
   }
@@ -191,6 +224,7 @@ export async function idbSaveMessages(conversationId, messages) {
  * sorted strictly by compareMessages ascending.
  */
 export async function idbGetMessages(conversationId) {
+  const epoch = idbEpoch();
   try {
     const db = await openMessagesDB();
     const tx = db.transaction(STORES.MESSAGES, 'readonly');
@@ -210,6 +244,9 @@ export async function idbGetMessages(conversationId) {
     });
 
     const resultsArray = await Promise.all(fetches);
+    // Cleared while the read was in flight: whatever came back belongs to the
+    // account that just signed out.
+    if (epoch !== idbEpoch()) return [];
     const combined = resultsArray.flat();
 
     // Deduplicate by permanent message ID or client/temp ID
@@ -302,33 +339,34 @@ export async function idbGetMessages(conversationId) {
 /**
  * Update sync metadata (e.g., nextCursor, lastSyncedAt)
  */
-export async function idbSaveSyncMeta(conversationId, meta) {
+export async function idbSaveSyncMeta(conversationId, meta, epoch) {
+  if (isStale(epoch)) return;
   try {
     const db = await openMessagesDB();
+    if (isStale(epoch)) return;
     const tx = db.transaction(STORES.SYNC_META, 'readwrite');
     tx.objectStore(STORES.SYNC_META).put({
       conversationId,
       ...meta,
       updatedAt: Date.now(),
     });
-    await new Promise((res, rej) => {
-      tx.oncomplete = res;
-      tx.onerror = () => rej(tx.error);
-    });
+    await committed(tx);
   } catch (err) {
     console.warn('IDB SyncMeta Save failed:', err);
   }
 }
 
 export async function idbGetSyncMeta(conversationId) {
+  const epoch = idbEpoch();
   try {
     const db = await openMessagesDB();
     const tx = db.transaction(STORES.SYNC_META, 'readonly');
     const request = tx.objectStore(STORES.SYNC_META).get(conversationId);
-    return await new Promise((res, rej) => {
+    const meta = await new Promise((res, rej) => {
       request.onsuccess = () => res(request.result);
       request.onerror = () => rej(request.error);
     });
+    return epoch !== idbEpoch() ? null : meta;
   } catch (err) {
     return null;
   }
@@ -363,6 +401,7 @@ export async function idbDeleteConversationMessages(conversationId) {
 
     const meta = tx.objectStore(STORES.SYNC_META);
     candidateIds.forEach((cid) => meta.delete(cid));
+    await committed(tx);
   } catch {
     // silent
   }
@@ -372,11 +411,14 @@ export async function idbDeleteConversationMessages(conversationId) {
  * Clear cache entirely (e.g. on logout)
  */
 export async function idbClearMessages() {
+  // First, so a write or read already in flight is refused before the clear lands.
+  bumpIdbEpoch();
   try {
     const db = await openMessagesDB();
     const tx = db.transaction([STORES.MESSAGES, STORES.SYNC_META], 'readwrite');
     tx.objectStore(STORES.MESSAGES).clear();
     tx.objectStore(STORES.SYNC_META).clear();
+    await committed(tx);
   } catch {
     // silent
   }
@@ -417,10 +459,16 @@ export async function trimMessageCache(maxMessages = 5000) {
   }
 }
 
-export async function idbPatchMessage(conversationId, messageId, patch) {
+/**
+ * @param {number} [epoch] - `idbMessagesEpoch()` captured before the request
+ *   this patch came from. The patch is dropped if the cache was cleared since.
+ */
+export async function idbPatchMessage(conversationId, messageId, patch, epoch) {
   if (!messageId && !patch?.id && !patch?.clientId && !patch?.tempId) return;
+  if (isStale(epoch)) return;
   try {
     const db = await openMessagesDB();
+    if (isStale(epoch)) return;
     const tx = db.transaction(STORES.MESSAGES, 'readwrite');
     const store = tx.objectStore(STORES.MESSAGES);
     
@@ -455,10 +503,7 @@ export async function idbPatchMessage(conversationId, messageId, patch) {
       store.put(updated);
     }
     
-    await new Promise((res, rej) => {
-      tx.oncomplete = res;
-      tx.onerror = () => rej(tx.error);
-    });
+    await committed(tx);
   } catch (err) {
     console.warn('IDB Patch failed:', err);
   }
@@ -471,10 +516,7 @@ export async function idbDeleteMessage(messageId) {
     const tx = db.transaction(STORES.MESSAGES, 'readwrite');
     const store = tx.objectStore(STORES.MESSAGES);
     store.delete(messageId);
-    await new Promise((res, rej) => {
-      tx.oncomplete = res;
-      tx.onerror = () => rej(tx.error);
-    });
+    await committed(tx);
   } catch (err) {
     console.warn('IDB Delete failed:', err);
   }

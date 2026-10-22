@@ -67,7 +67,7 @@ vi.mock('@shared/api/apiClient', () => ({
 vi.mock('@shared/context/AuthContext', () => ({
   useAuth: () => ({ currentUser: CURRENT_USER, isLoggedIn: true, loading: false }),
 }));
-vi.mock('@shared/lib/idb', () => ({ idbEpoch: () => 0,
+vi.mock('@shared/lib/idb', () => ({ idbEpoch: () => 0, bumpIdbEpoch: () => {},
   idbGet: async () => null,
   idbSet: async () => {},
   idbDelete: async () => {},

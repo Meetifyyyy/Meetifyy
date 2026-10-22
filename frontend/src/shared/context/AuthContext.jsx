@@ -573,7 +573,7 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     let cancelled = false;
 
-    const signedOut = () => {
+    const signedOut = ({ purge = false } = {}) => {
       if (cancelled) return;
       setSession(null);
       setCurrentUser(null);
@@ -588,13 +588,20 @@ export function AuthProvider({ children }) {
        * person signing in on this device would be seeded from them. Purged
        * here, and only when a previous account is actually recorded: a
        * first-time visitor has nothing to clear.
+       *
+       * Only when the SERVER said the session is over (`purge`). The other
+       * ways here mean "this launch could not tell": on the installed app a
+       * Keystore read that fails during a background pre-start lands on the
+       * `mayHaveCookieSession()` gate below with the session still valid, and
+       * purging there emptied every cache, messages included, for a user who
+       * was back in on the next launch.
        */
       let heldAccount = false;
       try {
         heldAccount = localStorage.getItem('currentUser') !== null
           || localStorage.getItem('loggedIn') !== null;
       } catch (_) {}
-      if (heldAccount) {
+      if (purge && heldAccount) {
         clearSessionScopedStorage();
         resetClientStateForNewUser(queryClientRef.current);
       }
@@ -629,7 +636,9 @@ export function AuthProvider({ children }) {
       if (cancelled) return;
       if (result?.outcome === 'signed-in' && adoptUser(result.user)) return;
       if (result?.outcome === 'unknown') return settleUnknown();
-      signedOut();
+      // The server answered and there is no session: the one outcome that
+      // proves the held account's data no longer belongs on this device.
+      signedOut({ purge: true });
     };
 
     (async () => {

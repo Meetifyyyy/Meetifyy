@@ -13,7 +13,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 const store = vi.hoisted(() => ({ socket: null, isConnected: false }));
 
 vi.mock('../../stores/useGlobalSocketStore', () => ({
-  useGlobalSocketStore: (sel) => sel(store),
+  useGlobalSocketStore: Object.assign((sel) => sel(store), { getState: () => store }),
 }));
 vi.mock('../../context/AuthContext', () => ({ useAuth: () => ({ currentUser: { id: 'me' } }) }));
 vi.mock('../useMessages', () => ({ useConversations: () => ({ conversations: [] }) }));
@@ -111,5 +111,59 @@ describe('message catch-up on connect', () => {
     mount(socket);
     await waitFor(() => expect(localStorage.getItem(LAST_SYNC_KEY)).not.toBeNull());
     expect(Number.isNaN(Date.parse(localStorage.getItem(LAST_SYNC_KEY)))).toBe(false);
+  });
+});
+
+describe('message catch-up is never silently dropped', () => {
+  it('retries a refused catch-up on its own while still connected', async () => {
+    vi.useFakeTimers();
+    try {
+      localStorage.setItem(LAST_SYNC_KEY, '2026-10-01T00:00:00.000Z');
+      const { socket, calls } = fakeSocket([
+        { status: 'error', error: 'Too many requests' },
+        { status: 'ok', messages: [msg('m1')], hasMore: false, cursor: null, syncedAt: '2026-10-02T09:00:00.000Z' },
+      ]);
+      mount(socket);
+      await vi.advanceTimersByTimeAsync(10);
+      expect(calls).toHaveLength(1);
+      expect(localStorage.getItem(LAST_SYNC_KEY)).toBe('2026-10-01T00:00:00.000Z');
+      await vi.advanceTimersByTimeAsync(6_000);
+      expect(calls).toHaveLength(2);
+      expect(localStorage.getItem(LAST_SYNC_KEY)).toBe('2026-10-02T09:00:00.000Z');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('runs again when a connect arrives while one is still in flight', async () => {
+    let releaseFirst = () => {};
+    const replies = [];
+    const calls = [];
+    const socket = {
+      connected: true,
+      on: vi.fn(),
+      off: vi.fn(),
+      emit: vi.fn(),
+      timeout: () => ({
+        emit: (event, payload, ack) => {
+          if (event !== 'message:catchup') return;
+          calls.push(payload);
+          if (calls.length === 1) {
+            releaseFirst = () => ack(null, { status: 'ok', messages: [], hasMore: false, cursor: null, syncedAt: 'a' });
+          } else {
+            queueMicrotask(() => ack(null, replies.shift() ?? { status: 'ok', messages: [], hasMore: false, cursor: null, syncedAt: 'b' }));
+          }
+        },
+      }),
+    };
+    mount(socket);
+    await new Promise((r) => setTimeout(r, 0));
+    // The socket's own 'connect' listener fires while the first run waits.
+    const onConnect = socket.on.mock.calls.find(([event]) => event === 'connect')[1];
+    onConnect();
+    expect(calls).toHaveLength(1);
+    releaseFirst();
+    await waitFor(() => expect(calls).toHaveLength(2));
+    await waitFor(() => expect(localStorage.getItem(LAST_SYNC_KEY)).toBe('b'));
   });
 });
