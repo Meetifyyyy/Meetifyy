@@ -1,7 +1,13 @@
 import type { RedisService } from '../../redis/redis.service';
 
-/** How long a send may hold its lock before Redis expires it. */
-const CLIENT_SEND_LOCK_TTL_MS = 10_000;
+/**
+ * How long a send may hold its lock before Redis expires it. A waiter gives up
+ * after half of this and runs unlocked, so it must comfortably outlast the
+ * client's 5s REST fallback racing a slow socket send of the same message:
+ * with 10s, that fallback could stop waiting while the socket send was still
+ * inserting, and both would write a row.
+ */
+const CLIENT_SEND_LOCK_TTL_MS = 30_000;
 
 /**
  * Serialises sends that carry the same client message id.

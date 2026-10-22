@@ -9,7 +9,12 @@ import type { Redis } from 'ioredis';
 import { lastValueFrom, Observable, of, throwError } from 'rxjs';
 import { RedisService } from '../../redis/redis.service';
 import { stub } from '../testing/stub';
-import { IdempotencyInterceptor } from './idempotency.interceptor';
+import {
+  COMPLETE_SCRIPT,
+  IdempotencyInterceptor,
+  REFRESH_SCRIPT,
+  RELEASE_SCRIPT,
+} from './idempotency.interceptor';
 
 /**
  * A write carrying an Idempotency-Key happens once.
@@ -23,14 +28,58 @@ import { IdempotencyInterceptor } from './idempotency.interceptor';
  */
 function fakeRedis() {
   const data = new Map<string, string>();
+  /** Expiry per key, in Date.now() ms; honoured by every read. */
+  const expires = new Map<string, number>();
+  const live = (key: string): string | undefined => {
+    const at = expires.get(key);
+    if (at !== undefined && Date.now() >= at) {
+      data.delete(key);
+      expires.delete(key);
+    }
+    return data.get(key);
+  };
+  const ttlFrom = (args: unknown[]): number | undefined => {
+    const i = args.indexOf('EX');
+    return i >= 0 ? Number(args[i + 1]) : undefined;
+  };
+  const write = (key: string, value: string, ttl: number | undefined) => {
+    data.set(key, value);
+    if (ttl === undefined) expires.delete(key);
+    else expires.set(key, Date.now() + ttl * 1000);
+  };
   const client = {
     set: jest.fn((key: string, value: string, ...args: unknown[]) => {
-      if (args.includes('NX') && data.has(key)) return Promise.resolve(null);
-      data.set(key, value);
+      if (args.includes('NX') && live(key) !== undefined) {
+        return Promise.resolve(null);
+      }
+      write(key, value, ttlFrom(args));
       return Promise.resolve('OK');
     }),
-    get: jest.fn((key: string) => Promise.resolve(data.get(key) ?? null)),
-    del: jest.fn((key: string) => Promise.resolve(data.delete(key) ? 1 : 0)),
+    get: jest.fn((key: string) => Promise.resolve(live(key) ?? null)),
+    del: jest.fn((key: string) => {
+      const had = live(key) !== undefined;
+      data.delete(key);
+      expires.delete(key);
+      return Promise.resolve(had ? 1 : 0);
+    }),
+    /** The interceptor's Lua scripts, with their real compare-and-act semantics. */
+    eval: jest.fn(
+      (script: string, _numKeys: number, key: string, ...argv: unknown[]) => {
+        const own = live(key) === argv[0];
+        if (!own) return Promise.resolve(0);
+        if (script === RELEASE_SCRIPT) {
+          data.delete(key);
+          expires.delete(key);
+        } else if (script === COMPLETE_SCRIPT) {
+          write(key, String(argv[1]), Number(argv[2]));
+        } else if (script === REFRESH_SCRIPT) {
+          expires.set(key, Date.now() + Number(argv[1]) * 1000);
+        } else {
+          return Promise.reject(new Error('unknown script'));
+        }
+        return Promise.resolve(1);
+      },
+    ),
   };
   const redis = stub<RedisService>({
     getClient: () => client as unknown as Redis,
@@ -248,6 +297,10 @@ describe('IdempotencyInterceptor', () => {
     await settled;
     jest.useRealTimers();
     expect(run).not.toHaveBeenCalled();
+    const err: unknown = await pending.catch((e: unknown) => e);
+    expect((err as ConflictException).getResponse()).toMatchObject({
+      code: 'IDEMPOTENCY_IN_PROGRESS',
+    });
   });
 });
 
@@ -319,12 +372,17 @@ describe('IdempotencyInterceptor — what it must never store or block', () => {
 
   it('claims with a short lifetime, so a crashed request frees its key within a minute', async () => {
     const { redis } = fakeRedis();
-    const client = redis.getClient() as unknown as { set: jest.Mock };
+    const client = redis.getClient() as unknown as {
+      set: jest.Mock;
+      eval: jest.Mock;
+    };
     const interceptor = new IdempotencyInterceptor(redis);
     const { next } = handler();
     await call(interceptor, post(), next).result;
-    const [claim, done] = client.set.mock.calls as unknown[][];
+    const [claim] = client.set.mock.calls as unknown[][];
+    const [done] = client.eval.mock.calls as unknown[][];
     expect(claim).toContain(IdempotencyInterceptor.PENDING_TTL_SECONDS);
+    expect(done[0]).toBe(COMPLETE_SCRIPT);
     expect(done).toContain(IdempotencyInterceptor.TTL_SECONDS);
   });
 
@@ -346,5 +404,146 @@ describe('IdempotencyInterceptor — what it must never store or block', () => {
     const { next } = handler(big);
     await call(interceptor, post(), next).result;
     expect(data.size).toBe(0);
+  });
+});
+
+describe('IdempotencyInterceptor — a claim belongs to the request that took it', () => {
+  const KEY = 'idem:v1:u:user-1:POST:/api/posts:key-0000000001';
+
+  /** A handler that finishes (or fails) only when the test says so. */
+  function controllable() {
+    let settle: (ok: boolean, v?: unknown) => void = () => {};
+    const next: CallHandler<unknown> = {
+      handle: jest.fn(
+        () =>
+          new Observable<unknown>((sub) => {
+            settle = (ok, v) => {
+              if (ok) {
+                sub.next(v);
+                sub.complete();
+              } else sub.error(new Error('db down'));
+            };
+          }),
+      ),
+    };
+    return { next, settle: (ok: boolean, v?: unknown) => settle(ok, v) };
+  }
+
+  afterEach(() => jest.useRealTimers());
+
+  it('a failing first request does not delete a second claimant’s key', async () => {
+    const { redis, data } = fakeRedis();
+    const interceptor = new IdempotencyInterceptor(redis);
+    const first = controllable();
+    const firstResult = call(interceptor, post(), first.next).result;
+    await new Promise((r) => setTimeout(r, 0));
+    // The first claim lapses (as if it had expired) and a retry claims again.
+    data.delete(KEY);
+    const second = controllable();
+    const secondResult = call(interceptor, post(), second.next).result;
+    await new Promise((r) => setTimeout(r, 0));
+    const secondClaim = data.get(KEY);
+    expect(secondClaim).toBeDefined();
+
+    first.settle(false);
+    await expect(firstResult).rejects.toThrow('db down');
+    expect(data.get(KEY)).toBe(secondClaim);
+
+    second.settle(true, { id: 'post-2' });
+    await expect(secondResult).resolves.toEqual({ id: 'post-2' });
+  });
+
+  it('a late first request does not overwrite another claim with its result', async () => {
+    const { redis, data } = fakeRedis();
+    const interceptor = new IdempotencyInterceptor(redis);
+    const first = controllable();
+    const firstResult = call(interceptor, post(), first.next).result;
+    await new Promise((r) => setTimeout(r, 0));
+    data.delete(KEY);
+    const second = controllable();
+    const secondResult = call(interceptor, post(), second.next).result;
+    await new Promise((r) => setTimeout(r, 0));
+    const secondClaim = data.get(KEY);
+
+    first.settle(true, { id: 'post-1' });
+    await expect(firstResult).resolves.toEqual({ id: 'post-1' });
+    expect(data.get(KEY)).toBe(secondClaim);
+
+    second.settle(true, { id: 'post-2' });
+    await secondResult;
+    expect(JSON.parse(data.get(KEY) ?? 'null')).toMatchObject({
+      state: 'done',
+      body: { id: 'post-2' },
+    });
+  });
+
+  it('gives each claim its own random token', async () => {
+    const { redis, data } = fakeRedis();
+    const interceptor = new IdempotencyInterceptor(redis);
+    const a = controllable();
+    void call(interceptor, post(), a.next).result.catch(() => {});
+    await new Promise((r) => setTimeout(r, 0));
+    const claimA = JSON.parse(data.get(KEY) ?? '{}') as { token?: string };
+    data.delete(KEY);
+    const b = controllable();
+    void call(interceptor, post(), b.next).result.catch(() => {});
+    await new Promise((r) => setTimeout(r, 0));
+    const claimB = JSON.parse(data.get(KEY) ?? '{}') as { token?: string };
+    expect(claimA.token).toMatch(/^[0-9a-f]{32}$/);
+    expect(claimB.token).toMatch(/^[0-9a-f]{32}$/);
+    expect(claimA.token).not.toBe(claimB.token);
+    a.settle(false);
+    b.settle(false);
+  });
+
+  it('keeps refreshing a long request’s claim, so a retry waits instead of running twice', async () => {
+    jest.useFakeTimers();
+    const { redis, data } = fakeRedis();
+    const interceptor = new IdempotencyInterceptor(redis);
+    const first = controllable();
+    const firstResult = call(interceptor, post(), first.next).result;
+    await jest.advanceTimersByTimeAsync(0);
+
+    // Well past the claim's own lifetime: still held.
+    await jest.advanceTimersByTimeAsync(
+      IdempotencyInterceptor.PENDING_TTL_SECONDS * 1000 * 3,
+    );
+    expect(data.has(KEY)).toBe(true);
+    const repeat = handler();
+    const repeatResult = call(interceptor, post(), repeat.next).result;
+    await jest.advanceTimersByTimeAsync(IdempotencyInterceptor.POLL_MS);
+    first.settle(true, { id: 'post-1' });
+    await jest.advanceTimersByTimeAsync(IdempotencyInterceptor.POLL_MS);
+    await expect(firstResult).resolves.toEqual({ id: 'post-1' });
+    await expect(repeatResult).resolves.toEqual({ id: 'post-1' });
+    expect(repeat.run).not.toHaveBeenCalled();
+  });
+
+  it('stops refreshing once the request ends, and a dead claim still expires', async () => {
+    jest.useFakeTimers();
+    const { redis, data } = fakeRedis();
+    const interceptor = new IdempotencyInterceptor(redis);
+    const client = redis.getClient() as unknown as Redis & { eval: jest.Mock };
+    const { next } = handler();
+    await call(interceptor, post(), next).result;
+    const calls = client.eval.mock.calls.length;
+    await jest.advanceTimersByTimeAsync(
+      IdempotencyInterceptor.PENDING_TTL_SECONDS * 1000 * 3,
+    );
+    expect(client.eval.mock.calls.length).toBe(calls);
+
+    // A claim nobody refreshes (its process died) lapses on its own.
+    data.delete(KEY);
+    await client.set(
+      KEY,
+      'x',
+      'EX',
+      IdempotencyInterceptor.PENDING_TTL_SECONDS,
+      'NX',
+    );
+    await jest.advanceTimersByTimeAsync(
+      IdempotencyInterceptor.PENDING_TTL_SECONDS * 1000 + 1,
+    );
+    await expect(client.set(KEY, 'y', 'NX')).resolves.toBe('OK');
   });
 });

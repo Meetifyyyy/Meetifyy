@@ -360,8 +360,37 @@ export class MessagingCoreService {
       throw new ForbiddenException('Conversation not found');
     }
 
+    // A retry of a send that already landed returns the original and does
+    // none of the side effects below a second time. Looked up BEFORE the
+    // refusals below: if the thread has closed since (blocked, left, partner
+    // deleted), the message the recipient already has must not be reported
+    // "Not delivered". Scoped to this sender, so it only finds their own row.
+    const clientMsgId = clientMessageIdOf(payload);
+    const existing = clientMsgId
+      ? await this.prisma.message.findFirst({
+          where: {
+            senderId,
+            conversationId: realConvId,
+            clientMessageId: clientMsgId,
+          },
+          include: {
+            sender: {
+              select: {
+                id: true,
+                username: true,
+                displayName: true,
+                avatar: true,
+                accountStatus: true,
+                deletedAt: true,
+              },
+            },
+            replyTo: { select: REPLY_TO_SELECT },
+          },
+        })
+      : null;
+
     const myParticipant = conv.participants.find((p) => p.userId === senderId);
-    if (!myParticipant) {
+    if (!existing && !myParticipant) {
       throw new ForbiddenException(
         'You are no longer a member of this conversation',
       );
@@ -387,7 +416,7 @@ export class MessagingCoreService {
     );
     const isDirect = otherParticipants.length === 1;
 
-    if (isDirect && unavailableOthers.length === 1) {
+    if (!existing && isDirect && unavailableOthers.length === 1) {
       throw new ForbiddenException({
         code: 'RECIPIENT_UNAVAILABLE',
         message: 'This user is no longer available.',
@@ -398,12 +427,14 @@ export class MessagingCoreService {
     // needs both people eligible; a group needs the sender. This sits below
     // every transport — REST, socket, offline replay — so a client holding
     // stale "you may type here" state is refused at the insert, not trusted.
-    await this.verificationAccess.assertCanMessageInConversation(
-      conv.id,
-      senderId,
-      conv.participants.map((p) => p.userId),
-      conv.type === 'GROUP',
-    );
+    if (!existing) {
+      await this.verificationAccess.assertCanMessageInConversation(
+        conv.id,
+        senderId,
+        conv.participants.map((p) => p.userId),
+        conv.type === 'GROUP',
+      );
+    }
 
     // In a group the conversation stays open — the other members are still
     // there — but a deleted member is dropped from the recipient set so no
@@ -445,7 +476,7 @@ export class MessagingCoreService {
         (id) => blockedUserSet.has(id) && !blockedByMe.has(id),
       );
 
-      if (isBlockedByMe) {
+      if (!existing && isBlockedByMe) {
         throw new ForbiddenException(
           'You blocked this user. Unblock them to continue messaging.',
         );
@@ -456,7 +487,7 @@ export class MessagingCoreService {
       // message. Neutral wording, shared with restricted/limited accounts, so
       // the 403 does not disclose a block.
       const isOneToOne = otherUserIds.length === 1;
-      if (isBlockedByThem && isOneToOne) {
+      if (!existing && isBlockedByThem && isOneToOne) {
         throw new ForbiddenException(
           'You can no longer send messages to this user.',
         );
@@ -504,32 +535,6 @@ export class MessagingCoreService {
             ? 'Video'
             : 'Audio'
         : 'Message');
-
-    // A retry of a send that already landed returns the original, and does
-    // none of the side effects below a second time.
-    const clientMsgId = clientMessageIdOf(payload);
-    const existing = clientMsgId
-      ? await this.prisma.message.findFirst({
-          where: {
-            senderId,
-            conversationId: realConvId,
-            clientMessageId: clientMsgId,
-          },
-          include: {
-            sender: {
-              select: {
-                id: true,
-                username: true,
-                displayName: true,
-                avatar: true,
-                accountStatus: true,
-                deletedAt: true,
-              },
-            },
-            replyTo: { select: REPLY_TO_SELECT },
-          },
-        })
-      : null;
 
     // 2. Atomic $transaction for message creation and conversation metadata updates
     const [message] = existing

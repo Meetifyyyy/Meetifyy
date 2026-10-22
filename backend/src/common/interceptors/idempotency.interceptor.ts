@@ -9,10 +9,10 @@ import {
 } from '@nestjs/common';
 import { ROUTE_ARGS_METADATA } from '@nestjs/common/constants';
 import { RouteParamtypes } from '@nestjs/common/enums/route-paramtypes.enum';
-import { createHash } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import type { Request, Response } from 'express';
 import { from, Observable, of } from 'rxjs';
-import { catchError, mergeMap } from 'rxjs/operators';
+import { catchError, finalize, mergeMap } from 'rxjs/operators';
 import { RedisService } from '../../redis/redis.service';
 import { errorMessage } from '../utils/error.util';
 
@@ -27,8 +27,28 @@ const KEY_PATTERN = /^[A-Za-z0-9_-]{8,128}$/;
 
 /** What is stored under a key. */
 type Entry =
-  | { state: 'pending'; fingerprint: string }
+  | { state: 'pending'; fingerprint: string; token?: string }
   | { state: 'done'; fingerprint: string; body: unknown };
+
+/*
+ * Each claim carries a random token in its pending entry, and the exact entry
+ * string is what these scripts compare. A request may only refresh, release or
+ * complete the key while the stored entry is still its own claim: if its claim
+ * expired and a retry claimed again, the first request must not delete or
+ * overwrite the second one's.
+ */
+
+/** KEYS[1] key; ARGV[1] own pending entry. Deletes only our own claim. */
+export const RELEASE_SCRIPT =
+  "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0";
+
+/** KEYS[1] key; ARGV[1] own pending entry, ARGV[2] result, ARGV[3] TTL. */
+export const COMPLETE_SCRIPT =
+  "if redis.call('GET', KEYS[1]) == ARGV[1] then redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[3]) return 1 end return 0";
+
+/** KEYS[1] key; ARGV[1] own pending entry, ARGV[2] TTL. Extends our claim. */
+export const REFRESH_SCRIPT =
+  "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('EXPIRE', KEYS[1], ARGV[2]) end return 0";
 
 /**
  * Makes a write that carries an `Idempotency-Key` happen at most once.
@@ -48,6 +68,8 @@ type Entry =
  * - A repeat that arrives while the first is still running waits for it, then
  *   replays; past `WAIT_MS` it is refused (409) rather than run twice.
  * - A write that FAILS releases its key, so a retry runs for real.
+ * - A claim is refreshed while its handler runs, so a slow write keeps it; a
+ *   crashed process stops refreshing and its claim expires within a minute.
  * - Without the header, or without Redis, a request runs exactly as before.
  *   Installed apps that predate this send no key and are unaffected.
  */
@@ -109,25 +131,60 @@ export class IdempotencyInterceptor implements NestInterceptor {
       .update(JSON.stringify(request.body ?? null))
       .digest('hex');
 
-    return from(this.claim(redisKey, fingerprint)).pipe(
+    const pending: Entry = {
+      state: 'pending',
+      fingerprint,
+      token: randomBytes(16).toString('hex'),
+    };
+    const claimValue = JSON.stringify(pending);
+
+    return from(this.claim(redisKey, fingerprint, claimValue)).pipe(
       mergeMap((claim) => {
         if (claim.kind === 'replay') {
           response.setHeader('Idempotent-Replayed', 'true');
           return of(claim.body);
         }
         if (claim.kind === 'bypass') return next.handle();
+        const timer = setInterval(
+          () => void this.refresh(redisKey, claimValue),
+          (IdempotencyInterceptor.PENDING_TTL_SECONDS * 1000) / 3,
+        );
+        timer.unref?.();
         return next.handle().pipe(
-          mergeMap((body) => from(this.complete(redisKey, fingerprint, body))),
+          mergeMap((body) =>
+            from(this.complete(redisKey, fingerprint, claimValue, body)),
+          ),
           catchError((err: unknown) =>
-            from(this.release(redisKey)).pipe(
+            from(this.release(redisKey, claimValue)).pipe(
               mergeMap(() => {
                 throw err;
               }),
             ),
           ),
+          finalize(() => clearInterval(timer)),
         );
       }),
     );
+  }
+
+  /**
+   * Extends this request's claim while its handler runs. Fire-and-forget from
+   * a timer, so it never throws; it does nothing once the claim is not ours.
+   */
+  private async refresh(redisKey: string, claimValue: string): Promise<void> {
+    try {
+      await this.redis
+        .getClient()
+        ?.eval(
+          REFRESH_SCRIPT,
+          1,
+          redisKey,
+          claimValue,
+          IdempotencyInterceptor.PENDING_TTL_SECONDS,
+        );
+    } catch (err: unknown) {
+      this.logger.warn(`Idempotency claim not refreshed: ${errorMessage(err)}`);
+    }
   }
 
   /**
@@ -138,16 +195,16 @@ export class IdempotencyInterceptor implements NestInterceptor {
   private async claim(
     redisKey: string,
     fingerprint: string,
+    claimValue: string,
   ): Promise<
     { kind: 'run' } | { kind: 'bypass' } | { kind: 'replay'; body: unknown }
   > {
     const client = this.redis.getClient();
     if (!client) return { kind: 'bypass' };
-    const pending: Entry = { state: 'pending', fingerprint };
     try {
       const taken = await client.set(
         redisKey,
-        JSON.stringify(pending),
+        claimValue,
         'EX',
         IdempotencyInterceptor.PENDING_TTL_SECONDS,
         'NX',
@@ -166,7 +223,7 @@ export class IdempotencyInterceptor implements NestInterceptor {
         if (!entry) {
           const retaken = await client.set(
             redisKey,
-            JSON.stringify(pending),
+            claimValue,
             'EX',
             IdempotencyInterceptor.PENDING_TTL_SECONDS,
             'NX',
@@ -183,9 +240,11 @@ export class IdempotencyInterceptor implements NestInterceptor {
           }
         }
         if (Date.now() >= deadline) {
-          throw new ConflictException(
-            'A request with this Idempotency-Key is still being processed',
-          );
+          throw new ConflictException({
+            code: 'IDEMPOTENCY_IN_PROGRESS',
+            message:
+              'A request with this Idempotency-Key is still being processed',
+          });
         }
         await sleep(IdempotencyInterceptor.POLL_MS);
       }
@@ -201,10 +260,14 @@ export class IdempotencyInterceptor implements NestInterceptor {
     }
   }
 
-  /** Stores the result for replay, then passes it on unchanged. */
+  /**
+   * Stores the result for replay, then passes it on unchanged. Only replaces
+   * this request's own claim: never another request's claim or result.
+   */
   private async complete(
     redisKey: string,
     fingerprint: string,
+    claimValue: string,
     body: unknown,
   ): Promise<unknown> {
     const client = this.redis.getClient();
@@ -214,13 +277,15 @@ export class IdempotencyInterceptor implements NestInterceptor {
       const serialized = JSON.stringify(done);
       if (serialized.length > IdempotencyInterceptor.MAX_BODY_BYTES) {
         // Too large to keep: free the key rather than leave it pending.
-        await client.del(redisKey);
+        await client.eval(RELEASE_SCRIPT, 1, redisKey, claimValue);
         return body;
       }
-      await client.set(
+      await client.eval(
+        COMPLETE_SCRIPT,
+        1,
         redisKey,
+        claimValue,
         serialized,
-        'EX',
         IdempotencyInterceptor.TTL_SECONDS,
       );
     } catch (err: unknown) {
@@ -229,10 +294,15 @@ export class IdempotencyInterceptor implements NestInterceptor {
     return body;
   }
 
-  /** Frees the key after a failed write, so a retry is not refused. */
-  private async release(redisKey: string): Promise<void> {
+  /**
+   * Frees the key after a failed write, so a retry is not refused. Only this
+   * request's own claim: a newer claimant's key is left alone.
+   */
+  private async release(redisKey: string, claimValue: string): Promise<void> {
     try {
-      await this.redis.getClient()?.del(redisKey);
+      await this.redis
+        .getClient()
+        ?.eval(RELEASE_SCRIPT, 1, redisKey, claimValue);
     } catch (err: unknown) {
       this.logger.warn(`Idempotency key not released: ${errorMessage(err)}`);
     }

@@ -45,12 +45,14 @@ describe('MessagingCoreService — one message per client id', () => {
   let create: jest.Mock;
   let transaction: jest.Mock;
   let persistAndNotify: jest.Mock;
+  let blockedByMe: string[];
 
   beforeEach(() => {
     findFirst = jest.fn(() => Promise.resolve(null));
     create = jest.fn(() => 'create-op');
     transaction = jest.fn(() => Promise.resolve([row('new-msg')]));
     persistAndNotify = jest.fn(() => Promise.resolve());
+    blockedByMe = [];
     const prisma = {
       conversation: {
         findUnique: jest.fn(() =>
@@ -93,8 +95,8 @@ describe('MessagingCoreService — one message per client id', () => {
         persistAndNotify,
       }),
       stub<BlocksService>({
-        getExcludedUserIds: jest.fn(() => Promise.resolve([])),
-        getBlockedByUserIds: jest.fn(() => Promise.resolve([])),
+        getExcludedUserIds: jest.fn(() => Promise.resolve(blockedByMe)),
+        getBlockedByUserIds: jest.fn(() => Promise.resolve(blockedByMe)),
       }),
       stub<VerificationAccessService>({
         isEnforcementEnabled: () => false,
@@ -145,5 +147,30 @@ describe('MessagingCoreService — one message per client id', () => {
     const res = await service.sendMessage(ME, CONV, { text: 'hi' });
     expect(res.id).toBe('new-msg');
     expect(transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns a message that already landed even if the thread has since closed', async () => {
+    // The ack was lost, then the sender blocked the recipient. The retry must
+    // still get its message back, not "Not delivered" for a delivered message.
+    findFirst.mockImplementation(
+      (args: { where: { clientMessageId?: string } }) =>
+        Promise.resolve(
+          args.where.clientMessageId === 'c-3' ? row('landed') : null,
+        ),
+    );
+    blockedByMe = ['them'];
+    const res = await service.sendMessage(ME, CONV, {
+      text: 'hi',
+      clientId: 'c-3',
+    });
+    expect(res.id).toBe('landed');
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it('still refuses a NEW send into a closed thread', async () => {
+    blockedByMe = ['them'];
+    await expect(
+      service.sendMessage(ME, CONV, { text: 'hi', clientId: 'c-4' }),
+    ).rejects.toThrow();
   });
 });

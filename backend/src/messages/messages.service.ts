@@ -461,6 +461,58 @@ export class MessagesService
       throw new ForbiddenException('Conversation not found');
     }
 
+    // 1. Idempotency check, BEFORE any permission check. A retry of a send
+    // that already landed must get that message back even if the thread has
+    // since closed (blocked, left, match ended): refusing it would show the
+    // sender "Not delivered" for a message the recipient already has. The
+    // lookup is scoped to this sender, so it can only return their own row.
+    const clientMsgId = payload.clientId || payload.tempId;
+    if (clientMsgId) {
+      // Idempotency: match on the indexed `clientMessageId` column (index
+      // [senderId, clientMessageId]) instead of a JSON payload-path predicate.
+      // The old `payload->>'tempId'` / `payload->>'clientId'` predicates could
+      // not use any index and forced a filtered scan of the sender's messages
+      // on every send. The column is written below (`clientMessageId: clientMsgId`).
+      const existing = await this.prisma.message.findFirst({
+        where: {
+          senderId,
+          conversationId: realConvId,
+          clientMessageId: clientMsgId,
+        },
+        include: {
+          sender: {
+            select: {
+              id: true,
+              username: true,
+              displayName: true,
+              avatar: true,
+              // Required for the tombstone projection (common/users/deleted-user.ts).
+              accountStatus: true,
+              deletedAt: true,
+            },
+          },
+          replyTo: { select: REPLY_TO_SELECT },
+        },
+      });
+      if (existing) {
+        // No recipients: the gateway fans a send out to these (events and
+        // push), and the original send already reached them.
+        return this.formatMessageResponse(
+          existing,
+          realConvId,
+          conversationId,
+          senderId,
+          clientMsgId,
+          [],
+          [],
+          conv.name || undefined,
+          conv.type === 'INSTANT_MATCH' || conv.isInstantMatch
+            ? 'instant'
+            : 'normal',
+        );
+      }
+    }
+
     /**
      * A message has to be *something*.
      *
@@ -632,49 +684,6 @@ export class MessagesService
         senderId,
       )
     ).filter((m) => participantIdSet.has(m.userId));
-
-    // 1. Idempotency Check
-    const clientMsgId = payload.clientId || payload.tempId;
-    if (clientMsgId) {
-      // Idempotency: match on the indexed `clientMessageId` column (index
-      // [senderId, clientMessageId]) instead of a JSON payload-path predicate.
-      // The old `payload->>'tempId'` / `payload->>'clientId'` predicates could
-      // not use any index and forced a filtered scan of the sender's messages
-      // on every send. The column is written below (`clientMessageId: clientMsgId`).
-      const existing = await this.prisma.message.findFirst({
-        where: {
-          senderId,
-          conversationId: realConvId,
-          clientMessageId: clientMsgId,
-        },
-        include: {
-          sender: {
-            select: {
-              id: true,
-              username: true,
-              displayName: true,
-              avatar: true,
-            },
-          },
-          replyTo: { select: REPLY_TO_SELECT },
-        },
-      });
-      if (existing) {
-        // No recipients: the gateway fans a send out to these (events and
-        // push), and the original send already reached them.
-        return this.formatMessageResponse(
-          existing,
-          realConvId,
-          conversationId,
-          senderId,
-          clientMsgId,
-          [],
-          [],
-          conv.name || undefined,
-          convChatType,
-        );
-      }
-    }
 
     // 2. Resolve replyToId safely
     let validatedReplyToId: string | null = null;
