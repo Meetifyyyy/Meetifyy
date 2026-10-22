@@ -563,11 +563,7 @@ model ConversationParticipant {
   user               User             @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@id([userId, conversationId])
-  @@index([userId])
-  @@index([conversationId])
-  @@index([userId, deletedAt])
   @@index([userId, deletedAt, leftAt])
-  @@index([conversationId, deletedAt])
   @@index([conversationId, deletedAt, userId])
   @@index([conversationId, deletedAt, leftAt, userId])
   // Chat-list ordering: pinned rows first, most recently pinned at the top.
@@ -596,12 +592,9 @@ model Message {
   sender            User              @relation(fields: [senderId], references: [id], onDelete: Cascade)
   reactions         MessageReaction[]
 
-  @@index([conversationId, createdAt])
   @@index([conversationId, createdAt(sort: Desc), id(sort: Desc)])
   @@index([conversationId, createdAt, senderId])
-  @@index([conversationId, deletedAt, createdAt(sort: Desc)])
   @@index([conversationId, deletedAt, createdAt(sort: Desc), id(sort: Desc)])
-  @@index([senderId])
   @@unique([senderId, clientMessageId])
 }
 
