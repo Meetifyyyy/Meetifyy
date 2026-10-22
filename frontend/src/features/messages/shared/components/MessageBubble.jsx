@@ -836,7 +836,9 @@ const MessageBubble = memo(function MessageBubble({
   const sendTimeMs = getMsgTimestamp(msg);
   const msgAge = sendTimeMs > 0 ? (Date.now() - sendTimeMs) : Infinity;
   // `queued`: in the outbox, which keeps retrying it, so "Sending…" not failed.
-  const isStaleSending = !isRealServerMsg && !isConfirmedSent && msg?.status === 'sending' && !msg?.queued && (isNaN(msgAge) || msgAge > 5000 || msgAge < 0);
+  // An upload in progress is not stale either: it is not queued until the file
+  // has gone up, and a large video takes far longer than 5 seconds.
+  const isStaleSending = !isRealServerMsg && !isConfirmedSent && msg?.status === 'sending' && !msg?.queued && msg?.uploadStatus !== 'uploading' && (isNaN(msgAge) || msgAge > 5000 || msgAge < 0);
 
   // Not gated on the id: a message whose status says it failed was never
   // confirmed, whatever its id looks like (client ids are UUIDs, so a failed

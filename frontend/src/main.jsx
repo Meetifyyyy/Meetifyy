@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { clearExpiredStaleChunkMarker } from '@shared/lib/staleChunkRecovery';
 import { scheduleStorageMaintenance } from '@shared/lib/storageMaintenance';
 import { installNetworkStatus } from '@shared/lib/networkStatus';
+import { bindOutbox } from './features/messages/shared/utils/outboxClient';
 import { mutationDefaults } from '@shared/lib/mutationDefaults';
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -82,6 +83,11 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+// The outbox updates a bubble through this cache. Bound here, not on the first
+// socket connect, so a message delivered over REST while the socket is down
+// still finishes its bubble (see features/messages/shared/utils/outboxClient.js).
+bindOutbox(queryClient);
 
 // Enable CSS :active pseudo-class on mobile Safari / iOS touch devices
 if (typeof document !== 'undefined') {

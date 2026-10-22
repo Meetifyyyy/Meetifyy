@@ -9,7 +9,6 @@ import { appendMessageToCache, updateMessageInCache, updateConversationPreview, 
 
 import { idbGetMessages, idbOutboxAll, idbSaveMessages, idbPatchMessage, idbDeleteMessage, idbMessagesEpoch, migrateHistoricalFailedMessages } from '../utils/idbMessages';
 import { outbox } from '../utils/outboxClient';
-import { classifySendFailure } from '../utils/outbox';
 import { restorableOutboxMessages } from '../utils/outboxRestore';
 import { newIdempotencyKey } from '@shared/lib/idempotencyKey';
 import { useOnlineStatus } from '@shared/lib/networkStatus';
@@ -248,18 +247,24 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
           // in exactly the same position: written into the cache, not in the
           // page, and gone the moment the page lands. They are identifiable
           // without a buffer — an unconfirmed status is what they are.
+          //
+          // After a cold start the cache is empty, but the outbox still holds
+          // this user's unsent and failed messages for this chat. It is read
+          // FIRST: the cache is read after the await, so a message confirmed
+          // (or sent) while the outbox was being read is seen as it is now,
+          // not as it was before.
+          const outboxEntries = currentUser?.id
+            ? await idbOutboxAll(currentUser.id).catch(() => [])
+            : [];
           const optimistic = (queryClient.getQueryData(['messages', activeChatId])?.pages || [])
             .flatMap((page) => page?.messages || [])
             .filter((m) => m && (m.status === 'sending' || m.status === 'failed' || m.status === 'FAILED'));
 
-          // After a cold start the cache is empty, but the outbox still holds
-          // this user's unsent and failed messages for this chat.
           let restored = [];
           if (currentUser?.id) {
             const matchedConv = conversations?.find((c) => matchesConversationId(c, activeChatId));
             const convIds = [activeChatId, ...getConversationAliases(matchedConv)];
-            const entries = await idbOutboxAll(currentUser.id).catch(() => []);
-            restored = restorableOutboxMessages(entries, convIds, [...normalizedMsgs, ...optimistic], currentUser);
+            restored = restorableOutboxMessages(outboxEntries, convIds, [...normalizedMsgs, ...optimistic], currentUser);
           }
 
           const raced = [
@@ -464,6 +469,24 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
       document.removeEventListener('visibilitychange', handleActiveStateChange);
     };
   }, [activeChatId, markSeenIfEligible]);
+
+  /**
+   * What the outbox needs to keep a chat in order and to update its bubble,
+   * for a send addressed to `targetConvId`. One place, used by a new send and
+   * by the rebuilt send behind tap-to-retry, so the two cannot disagree.
+   * Ordered per CANONICAL chat: a group addressed by its public id in one send
+   * and its internal id in the next must still keep its order.
+   */
+  const outboxRouting = useCallback((targetConvId) => {
+    const knownConv = conversations.find((c) => matchesConversationId(c, targetConvId));
+    return {
+      orderKey: knownConv?.internalId || knownConv?.id || targetConvId,
+      // Which REST route the outbox falls back to when there is no socket.
+      chatType: type,
+      // The same chat can also be cached under the id on screen.
+      mirrorConversationId: activeChatId && activeChatId !== targetConvId ? activeChatId : undefined,
+    };
+  }, [conversations, type, activeChatId]);
 
   // Optimistic Message Sender (supports both positional arguments and single object parameter)
   const sendMessageOptimistically = useCallback(async (convIdOrObj, textArg, replyToArg, mentionsArg, mediaUrlArg, mediaTypeArg, explicitLinkPreviewArg, explicitInviteDataArg, optionsArg) => {
@@ -677,134 +700,34 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
       inviteData: explicitInviteData,
     };
 
-    let sendHandled = false;
-    // Recorded before it goes out, so a send cut off by a dropped connection
-    // or a killed app is retried rather than lost (see utils/outbox.js).
-    // `let`: cleared below if the outbox could not record it.
+    // The outbox is the only sender. It records the send (so a dropped
+    // connection or a killed app retries it instead of losing it), then sends
+    // it over the socket with a REST fallback, in order behind any older
+    // message of this chat, and updates this bubble when the outcome is known
+    // (see utils/outbox.js and utils/outboxClient.js). Nothing here sends.
+    if (!currentUser?.id) {
+      // No account to scope it to, so the outbox could neither send nor keep it.
+      updateMessageInCache(queryClient, targetConvId, clientId, { status: 'failed', queued: false });
+      idbPatchMessage(targetConvId, clientId, { status: 'failed', queued: false }, idbEpochAtSend).catch(() => {});
+      return;
+    }
     // Ordered per CANONICAL chat: a group addressed by its public id in one
     // send and its internal id in the next must still keep its order.
-    const knownConv = conversations.find((c) => matchesConversationId(c, targetConvId));
-    const orderKey = knownConv?.internalId || knownConv?.id || targetConvId;
-    let outboxEntry = currentUser?.id
-      ? { clientId, userId: currentUser.id, conversationId: targetConvId, orderKey, payload, createdAt: Date.now() }
-      : null;
-
-    const handleSuccess = (serverMsg) => {
-      if (sendHandled) return;
-      sendHandled = true;
-      if (outboxEntry) void outbox.complete(outboxEntry, 'ok', serverMsg, idbEpochAtSend);
-      updateMessageInCache(queryClient, targetConvId, clientId, (existing) => {
-        const finalStatus = (existing?.status === 'read' || existing?.status === 'seen') ? existing.status : 'sent';
-        // Merge payloads so locally-derived media metadata (thumbnailUrl, width,
-        // height, duration) survives even if the server ACK omits them. Server
-        // values win when present; local preview URLs are dropped in favour of
-        // the confirmed server mediaUrl.
-        const mergedPayload = {
-          ...(existing?.payload || {}),
-          ...(serverMsg?.payload || {}),
-          thumbnailUrl: serverMsg?.payload?.thumbnailUrl || serverMsg?.thumbnailUrl || finalThumbnailUrl || existing?.payload?.thumbnailUrl,
-          width: serverMsg?.payload?.width || finalWidth || existing?.payload?.width,
-          height: serverMsg?.payload?.height || finalHeight || existing?.payload?.height,
-          duration: serverMsg?.payload?.duration || finalDuration || existing?.payload?.duration,
-          localPreviewUrl: undefined,
-        };
-        const updated = {
-          ...existing,
-          ...(serverMsg || {}),
-          id: serverMsg?.id || existing?.id || clientId,
-          clientId,
-          tempId: clientId,
-          status: finalStatus,
-          queued: false,
-          isOptimistic: false,
-          uploadStatus: fileObj ? 'done' : existing?.uploadStatus,
-          mediaUrl: serverMsg?.mediaUrl || finalMediaUrl || existing?.mediaUrl,
-          payload: mergedPayload,
-        };
-        idbPatchMessage(targetConvId, updated.id, updated, idbEpochAtSend).catch(console.warn);
-        return updated;
-      });
-      if (activeChatId && activeChatId !== targetConvId) {
-        updateMessageInCache(queryClient, activeChatId, clientId, { status: 'sent' });
-      }
+    const outboxEntry = {
+      clientId,
+      userId: currentUser.id,
+      conversationId: targetConvId,
+      ...outboxRouting(targetConvId),
+      payload,
+      createdAt: Date.now(),
     };
-
-    const handleFailure = (failure) => {
-      if (sendHandled) return;
-      sendHandled = true;
-      const outcome = outboxEntry ? classifySendFailure(failure) : 'rejected';
-      if (outboxEntry) void outbox.complete(outboxEntry, outcome, failure, idbEpochAtSend);
-      // A dropped connection, a timeout or a server error: the outbox sends it
-      // again, so it stays "Sending…". Only a refusal is "Not delivered".
-      if (outcome === 'transient') return;
-      updateMessageInCache(queryClient, targetConvId, clientId, { status: 'failed', queued: false });
-      if (activeChatId && activeChatId !== targetConvId) {
-        updateMessageInCache(queryClient, activeChatId, clientId, { status: 'failed', queued: false });
-      }
-      idbPatchMessage(targetConvId, clientId, { status: 'failed', queued: false }, idbEpochAtSend).catch(console.warn);
-    };
-
-    if (outboxEntry) {
-      const { sendNow, persisted } = await outbox.enqueue(outboxEntry, idbEpochAtSend);
-      if (!persisted && !sendNow) {
-        // Could not be stored, and an older message in this chat is still on
-        // its way: sending it now would overtake that one. Not delivered, with
-        // tap-to-retry, rather than out of order.
-        updateMessageInCache(queryClient, targetConvId, clientId, { status: 'failed', queued: false });
-        return;
-      }
-      if (!persisted) {
-        // Storage full or blocked: nothing can retry it, so it must not show
-        // "Sending…" forever. It is sent once and a failure shows as one.
-        outboxEntry = null;
-      } else {
-        updateMessageInCache(queryClient, targetConvId, clientId, { queued: true });
-        idbPatchMessage(targetConvId, clientId, { queued: true }, idbEpochAtSend).catch(() => {});
-        // An earlier message in this chat is still on its way; this one goes
-        // out after it, from the outbox, so the order is kept.
-        if (!sendNow) return;
-      }
-    }
-
-    if (socket?.connected) {
-      let ackReceived = false;
-      const timeoutTimer = setTimeout(async () => {
-        if (!ackReceived && !sendHandled) {
-          try {
-            const res = await getApi().sendMessage(targetConvId, payload);
-            if (res) {
-              handleSuccess(res);
-            } else {
-              handleFailure(null);
-            }
-          } catch (e) {
-            handleFailure(e);
-          }
-        }
-      }, 5000);
-
-      socket.emit('message:send', payload, (response) => {
-        ackReceived = true;
-        clearTimeout(timeoutTimer);
-        if (response?.status === 'ok') {
-          handleSuccess(response.message);
-        } else {
-          handleFailure(response);
-        }
-      });
-    } else {
-      try {
-        const res = await getApi().sendMessage(targetConvId, payload);
-        if (res) {
-          handleSuccess(res);
-        } else {
-          handleFailure(null);
-        }
-      } catch (err) {
-        handleFailure(err);
-      }
-    }
-  }, [activeChatId, currentUser, queryClient, socket, getApi, releaseLocalPreview, conversations]);
+    // Set BEFORE the outbox can finish: a sent or failed outcome clears it, and
+    // setting it afterwards would resurrect "Sending…" on a delivered message.
+    // `queued` is what keeps the bubble on "Sending…" rather than "Not delivered".
+    updateMessageInCache(queryClient, targetConvId, clientId, { queued: true });
+    idbPatchMessage(targetConvId, clientId, { queued: true }, idbEpochAtSend).catch(() => {});
+    await outbox.enqueue(outboxEntry, idbEpochAtSend);
+  }, [activeChatId, currentUser, queryClient, releaseLocalPreview, outboxRouting]);
 
   /**
    * Tap-to-retry for a message that was not delivered. Sends the exact
@@ -826,12 +749,13 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
     if (!revived && currentUser?.id) {
       const payload = sendPayloadFromMessage(findCachedMessage(queryClient, conversationId, clientId), conversationId, clientId);
       if (payload) {
-        const { persisted } = await outbox.enqueue(
-          { clientId, userId: currentUser.id, conversationId, payload, createdAt: Date.now() },
+        // The outbox sends it, in order; if storage refuses it, the outbox
+        // delivers it once and reports the outcome itself (`settled`).
+        const { persisted, settled } = await outbox.enqueue(
+          { clientId, userId: currentUser.id, conversationId, ...outboxRouting(conversationId), payload, createdAt: Date.now() },
           idbMessagesEpoch(),
-          { viaFlush: true },
         );
-        revived = persisted;
+        revived = persisted || settled;
       }
     }
     if (!revived) {
@@ -839,7 +763,7 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
       idbPatchMessage(conversationId, clientId, { status: 'failed', queued: false }, idbMessagesEpoch()).catch(() => {});
     }
     return revived;
-  }, [queryClient, activeChatId, currentUser]);
+  }, [queryClient, activeChatId, currentUser, outboxRouting]);
 
   // Retry a failed media upload with the SAME clientId — appendMessageToCache
   // matches by clientId and updates in place, so no duplicate message/record.
@@ -851,6 +775,7 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
     if (!entry?.file) return;
     const a = entry.sendArgs || {};
     updateMessageInCache(queryClient, entry.targetConvId, clientId, { status: 'sending', uploadStatus: 'uploading', uploadProgress: 0 });
+    const previousPreview = entry.localPreviewUrl;
     sendMessageOptimistically({
       conversationId: entry.targetConvId,
       text: a.text || '',
@@ -873,6 +798,11 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
       clientId,
       tempId: clientId,
     });
+    // The bubble now points at the fresh preview. The one it replaces would
+    // otherwise stay allocated until the page closes, once per failed retry.
+    if (previousPreview && previousPreview !== entry.localPreviewUrl) {
+      try { URL.revokeObjectURL(previousPreview); } catch (_) { /* already revoked */ }
+    }
   }, [queryClient, sendMessageOptimistically]);
 
   // Cancel an in-flight upload — aborts the XHR and removes the optimistic row.

@@ -17,7 +17,7 @@ vi.mock('../../stores/useGlobalSocketStore', () => ({
 }));
 vi.mock('../../context/AuthContext', () => ({ useAuth: () => ({ currentUser: { id: 'me' } }) }));
 vi.mock('../useMessages', () => ({ useConversations: () => ({ conversations: [] }) }));
-vi.mock('../../../features/messages/shared/utils/outboxClient', () => ({ bindOutbox: vi.fn(), outbox: { flush: vi.fn(async () => {}) } }));
+vi.mock('../../../features/messages/shared/utils/outboxClient', () => ({ bindOutbox: vi.fn(), noteSocketConnected: vi.fn(), wakeOutbox: vi.fn(async () => {}), outbox: { flush: vi.fn(async () => {}) } }));
 
 const { useGlobalSocketSync, LAST_SYNC_KEY } = await import('../useGlobalSocketSync');
 

@@ -144,3 +144,21 @@ describe('message cache epoch', () => {
     expect((await m.idbGetSyncMeta('c1'))?.nextCursor).toBe('y');
   });
 });
+
+describe('idbPatchMessage with a function patch', () => {
+  it('leaves the stored row alone when the function declines (null)', async () => {
+    await m.idbSaveMessages('c1', [msg('m1')]);
+    const seen = [];
+    await m.idbPatchMessage('c1', 'm1', (stored) => { seen.push(stored?.status); return null; });
+    expect(seen).toEqual(['sent']);
+    const [stored] = await m.idbGetMessages('c1');
+    expect(stored.status).toBe('sent');
+  });
+
+  it('applies the patch the function returns, given the stored row', async () => {
+    await m.idbSaveMessages('c1', [{ ...msg('m1'), status: 'sending', queued: true }]);
+    await m.idbPatchMessage('c1', 'm1', (stored) => (stored?.status === 'sending' ? { status: 'failed', queued: false } : null));
+    const [stored] = await m.idbGetMessages('c1');
+    expect(stored.status).toBe('failed');
+  });
+});

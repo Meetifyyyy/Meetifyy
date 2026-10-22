@@ -718,6 +718,9 @@ export async function idbClearMessageCache() {
 }
 
 /**
+ * @param {object | ((stored: object | null) => object | null)} patch - a function
+ *   is given the stored row (null when there is none) and returns the patch, or
+ *   null to leave the row alone.
  * @param {number} [epoch] - `idbMessagesEpoch()` captured before the request
  *   this patch came from. The patch is dropped if the cache was cleared since.
  */
@@ -747,9 +750,16 @@ export async function idbPatchMessage(conversationId, messageId, patch, epoch) {
       }
     }
 
+    const resolved = typeof patch === 'function' ? patch(existingRecord) : patch;
+    // A function patch that declined: nothing to write.
+    if (!resolved) {
+      await committed(tx);
+      return;
+    }
+
     const updated = sanitizeMessageForStorage({
       ...(existingRecord || {}),
-      ...patch,
+      ...resolved,
       storedAt: Date.now()
     });
 

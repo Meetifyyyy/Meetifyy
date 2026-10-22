@@ -32,7 +32,7 @@ function setup() {
     delete: vi.fn(async (id) => { rows.delete(id); }),
     all: vi.fn(async (userId) => [...rows.values()].filter((e) => e.userId === userId)),
   };
-  // The transport, as the chat sends it: no network means "offline", not a failure.
+  // The transport, as the outbox sends it: no network means "offline", not a failure.
   const send = vi.fn(async (entry) => {
     if (!isOnline()) return { ok: false, offline: true };
     sentIds.push(entry.clientId);
@@ -59,10 +59,10 @@ function setup() {
 describe('chat outbox while offline', () => {
   it('queues a message sent offline, keeps it pending, and delivers it once on reconnect', async () => {
     const h = setup();
-    const e = h.entry('m1');
-    expect((await h.outbox.enqueue(e)).sendNow).toBe(true);
-    // The direct send found no network; the outbox keeps it for later.
-    await h.outbox.complete(e, 'offline');
+    // No network: the send finds nothing to attempt, and the outbox keeps it.
+    await h.outbox.enqueue(h.entry('m1'));
+    await h.outbox.flush();
+    expect(h.send).toHaveBeenCalled();
     expect(h.rows.has('m1')).toBe(true);
 
     await h.advance(60_000);
@@ -79,6 +79,7 @@ describe('chat outbox while offline', () => {
   it('is not subject to the create guard: nothing refuses or announces a message', async () => {
     const h = setup();
     await h.outbox.enqueue(h.entry('m1'));
+    await h.outbox.flush();
     expect(showToast).not.toHaveBeenCalled();
     // While a post / comment / activity is refused with a message at this moment.
     expect(blockIfOffline('post')).toBe(true);

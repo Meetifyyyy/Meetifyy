@@ -18,7 +18,7 @@ import {
   bumpCommunityPostCount,
 } from '@shared/utils/communityCache';
 
-import { bindOutbox, outbox } from '../../features/messages/shared/utils/outboxClient';
+import { bindOutbox, noteSocketConnected, wakeOutbox } from '../../features/messages/shared/utils/outboxClient';
 import { updateMessageInCache } from '../../features/messages/shared/utils/cacheUtils';
 
 /** Where the last completed catch-up's server time is kept. Session-scoped. */
@@ -101,9 +101,12 @@ export function useGlobalSocketSync() {
       }
 
       // Messages sent while the connection was down, or cut off by it, go out
-      // now, in order (see features/messages/shared/utils/outbox.js).
+      // now, in order, without waiting out a backoff set for the old
+      // connection (see features/messages/shared/utils/outbox.js). The socket
+      // is fresh, so a half-open verdict on the last one no longer applies.
       bindOutbox(queryClient);
-      void outbox.flush();
+      noteSocketConnected();
+      void wakeOutbox();
 
       void runCatchup();
 

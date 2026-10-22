@@ -37,6 +37,7 @@ import { warmSignedInLanding } from './warmSignedInLanding';
 import { installQuerySnapshots } from './querySnapshots';
 import { scheduleStorageMaintenance } from '../shared/lib/storageMaintenance';
 import { installNetworkStatus } from '../shared/lib/networkStatus';
+import { bindOutbox } from '../features/messages/shared/utils/outboxClient';
 import { mutationDefaults } from '../shared/lib/mutationDefaults';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -130,6 +131,11 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+// The outbox updates a bubble through this cache. Bound here, not on the first
+// socket connect, so a message delivered over REST while the socket is down
+// still finishes its bubble (see features/messages/shared/utils/outboxClient.js).
+bindOutbox(queryClient);
 
 // Enables CSS :active on touch devices — the same one-liner the website uses.
 if (typeof document !== 'undefined') {
