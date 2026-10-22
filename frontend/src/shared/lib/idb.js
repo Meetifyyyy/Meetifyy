@@ -12,7 +12,9 @@
  */
 
 const DB_NAME = 'meetifyy_cache';
-const DB_VERSION = 2;
+// 3 added `queries`. An upgrade only creates missing stores, so existing data
+// in the others is kept.
+const DB_VERSION = 3;
 
 /** Stores and their per-store config */
 const STORES = {
@@ -22,6 +24,9 @@ const STORES = {
   profiles:    { name: 'profiles',    ttl: 15 * 60 * 1000 },  // 15 min
   search:      { name: 'search',      ttl: 2  * 60 * 1000 },  // 2 min
   config:      { name: 'config',      ttl: 60 * 60 * 1000 },  // 1 hour
+  // First pages of the installed app's main tabs (mobile/querySnapshots.js),
+  // keyed by account. Always revalidated on use; the TTL only bounds age.
+  queries:     { name: 'queries',     ttl: 3 * 24 * 60 * 60 * 1000 },  // 3 days
 };
 
 let _db = null;

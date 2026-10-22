@@ -6,6 +6,9 @@ import { createCapacitorAppInfo } from '../platform/capacitor/appInfo';
 
 import styles from './UpdateGate.module.css';
 
+/** Away at least this long before returning to the app re-checks the version. */
+const FOREGROUND_RECHECK_MS = 5 * 60 * 1000;
+
 /**
  * Stops an unsupported build from talking to the API, and nudges a merely old one.
  *
@@ -83,10 +86,18 @@ export default function UpdateGate({ children }) {
    * a handful of times a year.
    */
   useEffect(() => {
+    let lastCheck = Date.now();
     check();
 
+    // Not on every return, though: switching to another app and back for a
+    // few seconds cannot have missed a release, and it used to cost one
+    // request each time. After a few minutes away it checks again, which still
+    // catches the week-long session.
     const onVisible = () => {
-      if (document.visibilityState === 'visible') check();
+      if (document.visibilityState !== 'visible') return;
+      if (Date.now() - lastCheck < FOREGROUND_RECHECK_MS) return;
+      lastCheck = Date.now();
+      check();
     };
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);

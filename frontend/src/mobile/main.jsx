@@ -34,6 +34,7 @@
 import './installLandscapePhoneMedia';
 import { installLaunchReadiness } from './launchReadiness';
 import { warmSignedInLanding } from './warmSignedInLanding';
+import { installQuerySnapshots } from './querySnapshots';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -199,6 +200,20 @@ function safeHost(url) {
 // A returning user's home route and first feed page, started alongside the
 // session restore rather than after it (see the module).
 warmSignedInLanding(queryClient);
+
+// The main tabs' first pages, restored from the device when a screen first
+// asks for them and saved after each real fetch; see the module.
+installQuerySnapshots(queryClient);
+
+// Ask for this app's storage to be kept under storage pressure rather than
+// evicted with other best-effort sites. Chromium decides silently, without a
+// prompt; a refusal changes nothing, since every cache here can be rebuilt
+// from the server.
+try {
+  void navigator.storage?.persist?.().catch(() => {});
+} catch {
+  // Storage API unavailable in this WebView.
+}
 
 // Release the realtime socket while the app sits in the background; see the module.
 installBackgroundSocket();
