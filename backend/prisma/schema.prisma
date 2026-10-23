@@ -49,6 +49,7 @@ model College {
   campusEvents  CampusEvent[]
   users         User[]
   affiliations  CollegeAffiliation[]
+  confessions   Confession[]
 
   @@index([status])
   @@index([isActive])
@@ -223,6 +224,7 @@ model User {
   // The verified college email. `collegeId` / `collegeEmail` above mirror it;
   // only CampusAffiliationService writes either. See docs/college-affiliation.md.
   collegeAffiliation         CollegeAffiliation?
+  confessionProfile          ConfessionProfile?
   activityBookmarks          ActivityBookmark[]
   campusEventsCreated        CampusEvent[]               @relation("CampusEventCreator")
   invitationsReceived        ActivityInvitation[]        @relation("ActivityInvitationsReceived")
@@ -1557,6 +1559,13 @@ enum ReportTargetType {
   COMMUNITY
   MESSAGE
   GROUP
+  CONFESSION
+}
+
+enum ConfessionStatus {
+  VISIBLE
+  HIDDEN
+  REMOVED
 }
 
 enum NotificationEntityType {
@@ -2060,4 +2069,50 @@ model PushDevice {
   @@index([userId])
   @@index([familyId])
   @@index([lastSeenAt])
+}
+
+/// A user's anonymous identity for confessions. One per user, never renamed.
+/// Linked to the user only so moderators can act; never exposed in responses.
+model ConfessionProfile {
+  id          String             @id @default(uuid())
+  userId      String             @unique
+  /// As the user typed it, case preserved.
+  handle      String             @db.VarChar(20)
+  /// Lower-cased `handle`; uniqueness is case-insensitive.
+  handleKey   String             @unique @db.VarChar(20)
+  createdAt   DateTime           @default(now())
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  confessions Confession[]
+  relates     ConfessionRelate[]
+}
+
+model Confession {
+  id          String             @id @default(uuid())
+  collegeId   String
+  profileId   String
+  content     String
+  /// sha256 of the normalised, lower-cased content, for duplicate detection.
+  contentHash String             @db.VarChar(64)
+  status      ConfessionStatus   @default(VISIBLE)
+  relateCount Int                @default(0)
+  reportCount Int                @default(0)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  college     College            @relation(fields: [collegeId], references: [id])
+  profile     ConfessionProfile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  relates     ConfessionRelate[]
+
+  @@index([collegeId, status, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([profileId, createdAt])
+}
+
+model ConfessionRelate {
+  confessionId String
+  profileId    String
+  createdAt    DateTime          @default(now())
+  confession   Confession        @relation(fields: [confessionId], references: [id], onDelete: Cascade)
+  profile      ConfessionProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@id([confessionId, profileId])
+  @@index([profileId])
 }

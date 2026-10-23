@@ -57,6 +57,7 @@ const EXPECTED_NAMESPACES = [
   'healthApi',
   'uploadsApi',
   'campusEventsApi',
+  'confessionsApi',
   'campusAffiliationApi',
   'accountEmailApi',
   'notificationsApi',
@@ -96,7 +97,7 @@ describe('createEndpoints', () => {
     const { transport } = stubTransport();
     const api = createEndpoints(transport);
     const total = Object.values(api).reduce((n, ns) => n + Object.keys(ns).length, 0);
-    expect(total).toBe(215); // +pushApi (getConfig/registerDevice/unregisterDevice/getPreferences/updatePreferences); 210 +usersApi.snoozeProfilePrompt; 198 + campusAffiliationApi (get/sendOtp/verify/remove/listColleges/requestCollege) + accountEmailApi (get/sendOtp/verify) + legalApi (listVersions/getVersion)
+    expect(total).toBe(223); // +confessionsApi (getMe/checkHandle/createProfile/list/create/relate/unrelate/remove); 215 +pushApi (getConfig/registerDevice/unregisterDevice/getPreferences/updatePreferences); 210 +usersApi.snoozeProfilePrompt; 198 + campusAffiliationApi (get/sendOtp/verify/remove/listColleges/requestCollege) + accountEmailApi (get/sendOtp/verify) + legalApi (listVersions/getVersion)
   });
 
   it('is a factory, not a singleton — two calls yield independent objects', () => {

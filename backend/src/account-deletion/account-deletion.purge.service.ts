@@ -271,6 +271,12 @@ export class AccountDeletionPurgeService {
         //    bookmarks, invitations, members and discussion messages.
         await this.purgeActivities(tx, userId, mediaKeys);
 
+        // 3b. Anonymous confessions. The user row is anonymised in place, not
+        //     deleted, so the FK cascade from ConfessionProfile never fires on
+        //     its own: without this the account's confessions stayed on the
+        //     campus feed under its handle after the account was gone.
+        await this.purgeConfessions(tx, userId);
+
         // 4. Owned communities: hand over, or wind up if they were the only member.
         await this.purgeOwnedCommunities(tx, userId, mediaKeys, now);
 
@@ -523,6 +529,37 @@ export class AccountDeletionPurgeService {
         data: { deletedAt: now, memberCount: 0, ownerId: null },
       });
     }
+  }
+
+  /**
+   * Deletes the user's confession profile, which cascades to every confession
+   * they posted and every relate they gave. A relate is also a count on
+   * someone else's confession, so those counters are taken down first —
+   * otherwise they would keep counting a person who no longer exists.
+   */
+  private async purgeConfessions(
+    tx: Prisma.TransactionClient,
+    userId: string,
+  ): Promise<void> {
+    const profile = await tx.confessionProfile.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+    if (!profile) return;
+    const relates = await tx.confessionRelate.findMany({
+      where: { profileId: profile.id },
+      select: { confessionId: true },
+    });
+    if (relates.length > 0) {
+      await tx.confession.updateMany({
+        where: {
+          id: { in: relates.map((r) => r.confessionId) },
+          relateCount: { gt: 0 },
+        },
+        data: { relateCount: { decrement: 1 } },
+      });
+    }
+    await tx.confessionProfile.delete({ where: { id: profile.id } });
   }
 
   /**

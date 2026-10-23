@@ -111,6 +111,7 @@ const DirectoryPage = lazyRoute(() => import('./features/campus/pages/DirectoryP
 const CampusCommunitiesPage = lazyRoute(() => import('./features/campus/pages/CampusCommunitiesPage'));
 const CampusEventsPage = lazyRoute(() => import('./features/campus-events/pages/CampusEventsPage'));
 const CampusEventDetailPage = lazyRoute(() => import('./features/campus-events/pages/CampusEventDetailPage'));
+const ConfessionsPage = lazyRoute(() => import('./features/confessions/pages/ConfessionsPage'));
 const SavedPage = lazyRoute(() => import('./features/feed/pages/SavedPage'));
 const AboutPage = lazyRoute(() => import('./features/info/pages/AboutPage'));
 // The legal pages are website-only. In the installed app each of their routes
@@ -543,6 +544,7 @@ export default function App({ homeElement, rootExtras = null }) {
             { path: '/campus/communities',         element: withBoundary(<CampusCommunitiesPage />, null), handle: { wide: true } },
             { path: '/campus/events',              element: withBoundary(<CampusEventsPage />, null), handle: { wide: true } },
             { path: '/campus/events/:id',          element: withBoundary(<CampusEventDetailPage />, null), handle: { wide: true } },
+            { path: '/campus/confessions',         element: withBoundary(<ConfessionsPage />, null), handle: { wide: true } },
             { path: '/crew',                       element: withBoundary(<FindYourCrewPage />, <CrewSkeleton />), handle: { wide: true } },
             { path: '/crew/create',                element: withBoundary(<CreateActivityPage />, null), handle: { wide: true } },
             { path: '/crew/:id',                   element: withBoundary(<ActivityDetailPage />, <ActivityDetailSkeleton />), handle: { wide: true } },

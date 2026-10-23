@@ -246,6 +246,16 @@ describe('AccountDeletionPurgeService — permanent deletion', () => {
       collegeAffiliation: {
         deleteMany: record('collegeAffiliation', 'deleteMany'),
       },
+      confessionProfile: {
+        findUnique: jest.fn(() => Promise.resolve({ id: 'cprof-1' })),
+        delete: record('confessionProfile', 'delete'),
+      },
+      confessionRelate: {
+        findMany: jest.fn(() =>
+          Promise.resolve([{ confessionId: 'cf-a' }, { confessionId: 'cf-b' }]),
+        ),
+      },
+      confession: { updateMany: record('confession', 'updateMany') },
       // Deliberately absent: conversation, conversationParticipant, message.
       // Touching any of those would take the other participant's history with
       // it, so a purge that reached for one should fail this suite loudly.
@@ -392,6 +402,19 @@ describe('AccountDeletionPurgeService — permanent deletion', () => {
     it('releases the verified college email so another account can claim it', () => {
       expect(calls['collegeAffiliation.deleteMany'][0][0]).toEqual({
         where: { userId: USER_ID },
+      });
+    });
+
+    it('deletes the anonymous confession profile, which takes its confessions with it', () => {
+      expect(calls['confessionProfile.delete'][0][0]).toEqual({
+        where: { id: 'cprof-1' },
+      });
+    });
+
+    it('takes the user’s relates off other people’s confession counts first', () => {
+      expect(calls['confession.updateMany'][0][0]).toEqual({
+        where: { id: { in: ['cf-a', 'cf-b'] }, relateCount: { gt: 0 } },
+        data: { relateCount: { decrement: 1 } },
       });
     });
 

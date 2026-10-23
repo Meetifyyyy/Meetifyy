@@ -638,6 +638,24 @@ export function createEndpoints({
     delete: (id) => apiClient.delete(`/api/campus-events/${id}`),
   };
 
+  // ── Anonymous Confessions (campus-scoped; the server takes the campus from
+  // the caller's affiliation and never returns who is behind a handle) ────────
+  const confessionsApi = {
+    getMe: () => apiClient.get('/api/confessions/me'),
+    checkHandle: (handle, { signal } = {}) =>
+      apiClient.get(`/api/confessions/handle-availability?${new URLSearchParams({ handle }).toString()}`, { signal }),
+    createProfile: (handle) => apiClient.post('/api/confessions/profile', { handle }),
+    list: ({ cursor, limit = 20 } = {}) => {
+      const params = new URLSearchParams({ limit: String(limit) });
+      if (cursor) params.set('cursor', cursor);
+      return apiClient.get(`/api/confessions?${params.toString()}`);
+    },
+    create: (content) => apiClient.post('/api/confessions', { content }),
+    relate: (id) => apiClient.post(`/api/confessions/${encodeURIComponent(id)}/relate`),
+    unrelate: (id) => apiClient.delete(`/api/confessions/${encodeURIComponent(id)}/relate`),
+    remove: (id) => apiClient.delete(`/api/confessions/${encodeURIComponent(id)}`),
+  };
+
   const notificationsApi = {
     getAll: (limit = 20, cursor, type) => {
       const params = new URLSearchParams({ limit: String(limit) });
@@ -845,6 +863,7 @@ export function createEndpoints({
     healthApi,
     uploadsApi,
     campusEventsApi,
+    confessionsApi,
     campusAffiliationApi,
     accountEmailApi,
     notificationsApi,

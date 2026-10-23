@@ -1,0 +1,359 @@
+/* HandleSetup — choosing the anonymous name. Same canvas and frame as the
+   deck it follows, so the hand-over reads as one surface changing. */
+
+.screen {
+  --cf-brand: var(--color-brand-primary, #5c47fa);
+  --cf-accent: #ff6a4d;
+  --cf-ink: var(--color-text-main);
+  --cf-soft: var(--color-text-muted);
+  --cf-surface: var(--color-bg-white);
+  --cf-line: var(--color-border);
+  --cf-good: var(--color-success, #10b981);
+  --cf-bad: var(--color-danger, #ef4444);
+
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  min-height: calc(100dvh - var(--root-inset-top, 0px) - var(--bottom-nav-clearance, 0px));
+  background: var(--color-surface-screen, var(--cf-surface));
+  color: var(--cf-ink);
+  animation: enter 560ms cubic-bezier(0.2, 0.85, 0.2, 1) both;
+}
+
+:global([data-theme='dark']) .screen {
+  --cf-brand: var(--color-brand-accent, #7965fb);
+  --cf-accent: #ff7a5f;
+}
+
+@media (min-width: 769px) {
+  .screen {
+    min-height: min(760px, calc(100dvh - 7.5rem));
+    margin: 1rem 1rem 0;
+    border: 1px solid var(--cf-line);
+    border-radius: 28px;
+    background: var(--cf-surface);
+    box-shadow: var(--shadow-sm);
+  }
+}
+
+.inner {
+  flex: 1;
+  width: 100%;
+  max-width: 560px;
+  box-sizing: border-box;
+  margin: 0 auto;
+  padding: clamp(14px, 2.4dvh, 28px) clamp(20px, 6vw, 40px) 16px;
+}
+
+.backLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  margin: 0 0 clamp(16px, 4dvh, 40px) -4px;
+  padding: 0 4px;
+  border: none;
+  background: none;
+  color: var(--cf-soft);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.backLink svg {
+  width: 18px;
+  height: 18px;
+}
+
+.eyebrow {
+  margin: 0 0 12px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--cf-brand);
+}
+
+.title {
+  margin: 0;
+  font-size: min(12vw, 3.75rem);
+  font-weight: 850;
+  line-height: 0.96;
+  letter-spacing: -0.05em;
+}
+
+.titleAccent {
+  color: var(--cf-brand);
+}
+
+.lede {
+  max-width: 34ch;
+  margin: 14px 0 clamp(22px, 4dvh, 36px);
+  font-size: 1rem;
+  line-height: 1.5;
+  color: var(--cf-soft);
+}
+
+/* ---- The input -------------------------------------------------------------- */
+
+.field {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 68px;
+  padding: 0 18px;
+  border: 2px solid var(--cf-line);
+  border-radius: 20px;
+  background: var(--cf-surface);
+  cursor: text;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.field:focus-within {
+  border-color: var(--cf-brand);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--cf-brand) 16%, transparent);
+}
+
+.field[data-state='available'] {
+  border-color: var(--cf-good);
+}
+
+.field[data-state='available']:focus-within {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--cf-good) 16%, transparent);
+}
+
+.field[data-state='taken'],
+.field[data-state='reserved'],
+.field[data-state='invalid'],
+.field[data-state='bad'] {
+  border-color: var(--cf-bad);
+}
+
+.field[data-state='taken']:focus-within,
+.field[data-state='reserved']:focus-within,
+.field[data-state='invalid']:focus-within,
+.field[data-state='bad']:focus-within {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--cf-bad) 14%, transparent);
+}
+
+.at {
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: var(--cf-brand);
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--cf-ink);
+  font: inherit;
+  font-size: 1.45rem;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+}
+
+.input::placeholder {
+  color: var(--cf-soft);
+  opacity: 0.45;
+  font-weight: 650;
+}
+
+.count {
+  flex: none;
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--cf-soft);
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 1.4em;
+  margin: 10px 4px 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--cf-soft);
+}
+
+.statusDot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.6;
+}
+
+.status[data-tone='good'] { color: var(--cf-good); }
+.status[data-tone='bad'] { color: var(--cf-bad); }
+.status[data-tone='good'] .statusDot,
+.status[data-tone='bad'] .statusDot { opacity: 1; }
+.status[data-tone='busy'] .statusDot { animation: blink 0.9s ease-in-out infinite alternate; }
+
+/* ---- Suggestions ------------------------------------------------------------ */
+
+.suggest {
+  margin-top: 22px;
+}
+
+.suggestLabel {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--cf-soft);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip,
+.shuffle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 38px;
+  border: 1px solid var(--cf-line);
+  border-radius: 999px;
+  background: var(--cf-surface);
+  color: var(--cf-ink);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 650;
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.12s ease;
+}
+
+.chip {
+  padding: 0 14px;
+}
+
+.shuffle {
+  width: 38px;
+  padding: 0;
+  color: var(--cf-soft);
+}
+
+.shuffle svg {
+  width: 18px;
+  height: 18px;
+}
+
+.chip:hover,
+.shuffle:hover {
+  border-color: var(--cf-brand);
+}
+
+.chip:active,
+.shuffle:active {
+  transform: scale(0.96);
+}
+
+/* ---- The promise ---------------------------------------------------------- */
+
+.note {
+  display: flex;
+  gap: 14px;
+  margin-top: 28px;
+  padding: 16px;
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--cf-brand) 8%, transparent);
+}
+
+.note p {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  color: var(--cf-soft);
+}
+
+.note strong {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 0.875rem;
+  color: var(--cf-ink);
+}
+
+.noteMark {
+  flex: none;
+  width: 36px;
+  height: 36px;
+}
+
+.noteFace { fill: var(--cf-brand); }
+.noteMouth {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+}
+.noteEye { fill: #fff; }
+
+/* ---- Footer ----------------------------------------------------------------- */
+
+.footer {
+  position: sticky;
+  bottom: var(--bottom-nav-clearance, 0px);
+  width: 100%;
+  max-width: 560px;
+  box-sizing: border-box;
+  margin: 0 auto;
+  padding: 12px clamp(20px, 6vw, 40px) clamp(16px, 2.6dvh, 28px);
+  background: linear-gradient(to top, var(--color-surface-screen, var(--cf-surface)) 70%, transparent);
+}
+
+@media (min-width: 769px) {
+  .footer {
+    position: static;
+    background: none;
+  }
+}
+
+.submit {
+  width: 100%;
+  height: 56px;
+  border: none;
+  border-radius: 999px;
+  background: var(--cf-brand);
+  color: #fff;
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.2s ease, transform 0.12s ease;
+}
+
+.submit:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.submit:not(:disabled):active {
+  transform: scale(0.98);
+}
+
+@keyframes enter {
+  from { opacity: 0; transform: translate3d(28px, 0, 0); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes blink { to { opacity: 0.15; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .screen { animation: none; }
+  .status[data-tone='busy'] .statusDot { animation: none; }
+}

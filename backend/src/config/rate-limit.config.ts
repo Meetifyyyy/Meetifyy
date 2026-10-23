@@ -35,8 +35,10 @@ import { IS_PRODUCTION, APP_ENV, int, oneOf, str } from './env';
  * v10: route-level budgets for creating posts, comments and communities and
  *     for requesting media presigned URLs; support attachment uploads moved off
  *     the 5/hour support-request budget onto their own.
+ * v11: anonymous confessions — handle checks, profile creation, posting
+ *     (per 10 minutes and per day) and relating.
  */
-export const POLICY_VERSION = 10;
+export const POLICY_VERSION = 11;
 
 export type RateLimitAlgorithm = 'fixed-window' | 'token-bucket';
 
@@ -835,6 +837,45 @@ export const RATE_LIMIT_POLICIES = {
     onRedisFailure: 'closed',
     message:
       "You've uploaded several files recently. Please wait a little while before adding more.",
+  },
+
+  /** Confession handle availability checks, typed as the user types. */
+  'confession.handle.check': {
+    points: 60,
+    duration: 60,
+    dimension: 'user',
+    onRedisFailure: 'open',
+    message: 'Too many handle checks. Please wait a moment.',
+  },
+  /** Creating the (once-only) confession profile; failures count too. */
+  'confession.profile.create': {
+    points: 10,
+    duration: 3600,
+    dimension: 'user',
+    onRedisFailure: 'open',
+    message: 'Too many attempts. Please try again later.',
+  },
+  /** Posting confessions: a short burst budget and a daily ceiling. */
+  'confession.create': {
+    points: 5,
+    duration: 600,
+    dimension: 'user',
+    onRedisFailure: 'open',
+    message: "You're confessing too quickly. Please wait a few minutes.",
+  },
+  'confession.create.daily': {
+    points: 20,
+    duration: 86400,
+    dimension: 'user',
+    onRedisFailure: 'open',
+    message: "You've reached today's confession limit. Try again tomorrow.",
+  },
+  'confession.relate': {
+    points: 120,
+    duration: 600,
+    dimension: 'user',
+    onRedisFailure: 'open',
+    message: 'Too many reactions. Please wait a few minutes.',
   },
 } as const satisfies Record<string, RateLimitPolicy>;
 

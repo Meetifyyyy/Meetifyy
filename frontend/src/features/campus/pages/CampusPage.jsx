@@ -432,6 +432,12 @@ export default function CampusPage() {
 
         {/* NAVIGATION TABS */}
         <div className={styles.stickyNav}>
+          {/* First: the row scrolls sideways on a phone, and the newest
+              surface would otherwise start off-screen. */}
+          <button className={styles.navTab} onClick={() => navigate('/campus/confessions')}>
+            <span className={styles.tabEmoji}>🤫</span>
+            <span>Confessions</span>
+          </button>
           <button className={styles.navTab} onClick={() => navigate('/campus/events')}>
             <span className={styles.tabEmoji}>🎟️</span>
             <span>Events</span>

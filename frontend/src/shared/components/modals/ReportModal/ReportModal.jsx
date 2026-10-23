@@ -132,6 +132,8 @@ export default function ReportModal({
       case 'GROUP':
       case 'MESSAGE':
         return 'Report Message';
+      case 'CONFESSION':
+        return 'Report Confession';
       default:
         return `Report ${targetType}`;
     }

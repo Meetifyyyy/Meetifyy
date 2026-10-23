@@ -23,6 +23,8 @@ import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
 import * as Sentry from '@sentry/nestjs';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
+import { syncConfessionReports } from '../confessions/confessions.service';
+import { errorMessage } from '../common/utils/error.util';
 
 @Injectable()
 export class ModerationService {
@@ -113,6 +115,20 @@ export class ModerationService {
           priority: ReportPriority.MEDIUM,
         },
       });
+
+      // 6b. Confessions: keep the distinct-reporter count and auto-hide at the
+      // threshold. Best effort — the report itself is already stored, and a
+      // moderator still sees it if this fails.
+      if (dto.targetType === ReportTargetType.CONFESSION) {
+        try {
+          await syncConfessionReports(this.prisma, dto.targetId);
+        } catch (err: unknown) {
+          this.logger.warn(
+            { targetId: dto.targetId, err: errorMessage(err) },
+            'Failed to sync confession report state',
+          );
+        }
+      }
 
       // 7. Pino Audit Log
       this.logger.info({

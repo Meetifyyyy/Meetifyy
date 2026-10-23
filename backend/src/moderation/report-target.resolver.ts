@@ -4,7 +4,7 @@ import {
   activeAffiliationCollegeId,
 } from '../common/campus/campus-access.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { ReportTargetType } from '@prisma/client';
+import { ConfessionStatus, ReportTargetType } from '@prisma/client';
 import { ActivityAuthorizationService } from '../activities/activity-authorization.service';
 
 @Injectable()
@@ -83,6 +83,31 @@ export class ReportTargetResolver {
           select: { id: true },
         });
         return !!activity;
+      }
+      case ReportTargetType.CONFESSION: {
+        // Visible to the reporter only on their own ACTIVE campus, and not once
+        // removed. A confession elsewhere answers exactly like a missing one,
+        // so reporting cannot be used to probe other campuses.
+        if (!reporterId) return false;
+        const reporter = await this.prisma.user.findUnique({
+          where: { id: reporterId },
+          select: {
+            collegeAffiliation: { select: ACTIVE_AFFILIATION_SELECT },
+          },
+        });
+        const collegeId = activeAffiliationCollegeId(
+          reporter?.collegeAffiliation,
+        );
+        if (!collegeId) return false;
+        const confession = await this.prisma.confession.findFirst({
+          where: {
+            id: targetId,
+            collegeId,
+            status: { not: ConfessionStatus.REMOVED },
+          },
+          select: { id: true },
+        });
+        return !!confession;
       }
       case ReportTargetType.USER: {
         const user = await this.prisma.user.findUnique({
@@ -186,6 +211,33 @@ export class ReportTargetResolver {
         return this.prisma.conversation.findUnique({
           where: { id: targetId },
           select: { id: true, name: true, type: true, createdAt: true },
+        });
+      case ReportTargetType.CONFESSION:
+        // Moderators see who is behind the handle so they can act on it.
+        return this.prisma.confession.findUnique({
+          where: { id: targetId },
+          select: {
+            id: true,
+            content: true,
+            status: true,
+            reportCount: true,
+            relateCount: true,
+            createdAt: true,
+            collegeId: true,
+            profile: {
+              select: {
+                handle: true,
+                user: {
+                  select: {
+                    id: true,
+                    username: true,
+                    displayName: true,
+                    avatar: true,
+                  },
+                },
+              },
+            },
+          },
         });
       default:
         return null;

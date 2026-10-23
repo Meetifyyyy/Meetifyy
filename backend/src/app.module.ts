@@ -30,6 +30,7 @@ import { AppService } from './app.service';
 import { CommunitiesModule } from './communities/communities.module';
 import { ActivitiesModule } from './activities/activities.module';
 import { CampusEventsModule } from './campus-events/campus-events.module';
+import { ConfessionsModule } from './confessions/confessions.module';
 import { CampusAffiliationModule } from './campus-affiliation/campus-affiliation.module';
 import { AccountEmailModule } from './account-email/account-email.module';
 import { UsersModule } from './users/users.module';
@@ -196,6 +197,7 @@ import { requestIdFrom } from './common/utils/request-id.util';
     CommunitiesModule,
     ActivitiesModule,
     CampusEventsModule,
+    ConfessionsModule,
     CampusAffiliationModule,
     AccountEmailModule,
     UsersModule,

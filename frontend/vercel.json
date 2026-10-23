@@ -271,6 +271,10 @@
       "destination": "/app.html"
     },
     {
+      "source": "/campus/confessions",
+      "destination": "/app.html"
+    },
+    {
       "source": "/crew",
       "destination": "/app.html"
     },

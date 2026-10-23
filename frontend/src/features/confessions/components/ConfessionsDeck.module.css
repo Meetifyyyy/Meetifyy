@@ -1,0 +1,454 @@
+/* ============================================================================
+   ConfessionsDeck — the first-time pitch deck.
+
+     .deck                 fills the screen above the bottom nav (phone) or a
+                           tall framed panel (desktop)
+       .topBar             three progress segments · 01 / 03 · Skip
+       .viewport           the swipeable area
+         .track            three slides side by side, moved as one
+           .slide          .art (drawn graphic) + .copy (eyebrow, headline, body)
+       .controls           back · Next / Choose your name
+
+   `--deck-pg` (see useSwipeDeck) is the only moving number. Per slide:
+     --d   signed distance from this slide: 0 here, +1 one slide past it
+     --ad  the same, unsigned (max(d, -d) — CSS has no abs() everywhere yet)
+   Each line of the headline and each graphic layer offsets itself by a
+   different multiple of --d, which is what makes them arrive in a stagger.
+   Transform and opacity only.
+   ========================================================================= */
+
+@property --deck-pg {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0;
+}
+
+.deck {
+  --cf-brand: var(--color-brand-primary, #5c47fa);
+  --cf-accent: #ff6a4d;
+  --cf-ink: var(--color-text-main);
+  --cf-soft: var(--color-text-muted);
+  --cf-surface: var(--color-bg-white);
+  --cf-line: var(--color-border);
+  --cf-tint: var(--color-brand-tint, #f0eeff);
+  --cf-stripe: rgba(92, 71, 250, 0.32);
+
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  height: calc(100dvh - var(--root-inset-top, 0px) - var(--bottom-nav-clearance, 0px));
+  min-height: 480px;
+  overflow: hidden;
+  background: var(--color-surface-screen, var(--cf-surface));
+  color: var(--cf-ink);
+  container-type: inline-size;
+  transition: --deck-pg 760ms cubic-bezier(0.22, 0.8, 0.2, 1);
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  animation: deckIn 520ms cubic-bezier(0.2, 0.85, 0.2, 1) both;
+}
+
+:global([data-theme='dark']) .deck {
+  --cf-brand: var(--color-brand-accent, #7965fb);
+  --cf-accent: #ff7a5f;
+  --cf-tint: rgba(121, 101, 251, 0.16);
+  --cf-stripe: rgba(160, 150, 255, 0.4);
+}
+
+.deck[data-drag] {
+  transition: none;
+}
+
+@media (min-width: 769px) {
+  .deck {
+    height: min(760px, calc(100dvh - 7.5rem));
+    margin: 1rem 1rem 0;
+    border: 1px solid var(--cf-line);
+    border-radius: 28px;
+    background: var(--cf-surface);
+    box-shadow: var(--shadow-sm);
+  }
+}
+
+/* ---- Top bar ---------------------------------------------------------------- */
+
+.topBar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: clamp(14px, 2.4dvh, 22px) clamp(20px, 6vw, 40px) 0;
+}
+
+.progress {
+  flex: 1;
+  display: flex;
+  gap: 6px;
+}
+
+.segment {
+  position: relative;
+  flex: 1;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--cf-line);
+}
+
+/* Fills continuously with the gesture: empty before its slide, full after. */
+.segmentFill {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--cf-ink);
+  transform-origin: left center;
+  transform: scaleX(clamp(0, calc(var(--deck-pg) - var(--n) + 1), 1));
+}
+
+.counter {
+  flex: none;
+  font-size: 0.8rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.counterOf {
+  color: var(--cf-soft);
+  font-weight: 600;
+}
+
+.skip {
+  flex: none;
+  min-height: 36px;
+  padding: 0 4px;
+  border: none;
+  background: none;
+  color: var(--cf-soft);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.skip:hover {
+  color: var(--cf-ink);
+}
+
+/* ---- Slides ----------------------------------------------------------------- */
+
+.viewport {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+  touch-action: pan-y;
+}
+
+.track {
+  display: flex;
+  width: 300%;
+  height: 100%;
+  transform: translate3d(calc(var(--deck-pg) * -33.3333%), 0, 0);
+  will-change: transform;
+}
+
+.slide {
+  --d: calc(var(--deck-pg) - var(--n));
+  --ad: max(var(--d), calc(var(--d) * -1));
+
+  flex: 0 0 33.3333%;
+  min-width: 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  padding: 0 clamp(20px, 6vw, 40px);
+  overflow: hidden;
+}
+
+.art {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(8px, 2dvh, 24px) 0;
+  /* The graphic moves against the slide, a little bigger on the way out. */
+  transform:
+    translate3d(calc(var(--d) * -22vw), 0, 0)
+    rotate(calc(var(--d) * -6deg))
+    scale(calc(1 - var(--ad) * 0.12));
+  opacity: calc(1 - var(--ad) * 0.9);
+}
+
+.svg {
+  width: auto;
+  height: 100%;
+  max-width: 100%;
+  max-height: 340px;
+  overflow: visible;
+}
+
+.copy {
+  flex: none;
+  padding-bottom: clamp(10px, 2dvh, 24px);
+}
+
+.eyebrow {
+  margin: 0 0 clamp(8px, 1.4dvh, 14px);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--cf-brand);
+  transform: translate3d(calc(var(--d) * 10vw), 0, 0);
+  opacity: calc(1 - var(--ad) * 1.6);
+}
+
+.headline {
+  margin: 0;
+  font-size: min(13.4vw, 7.6dvh, 5.25rem);
+  font-weight: 850;
+  line-height: 0.94;
+  letter-spacing: -0.055em;
+}
+
+/* Each line trails its slide by its own amount: the stagger. */
+.line {
+  display: block;
+  white-space: nowrap;
+  transform: translate3d(calc(var(--d) * (14vw + var(--i) * 12vw)), 0, 0);
+  opacity: calc(1 - var(--ad) * (1.3 + var(--i) * 0.3));
+}
+
+.stop {
+  color: var(--cf-accent);
+}
+
+.slide_identity .stop {
+  color: var(--cf-brand);
+}
+
+.body {
+  max-width: 34ch;
+  margin: clamp(12px, 2dvh, 20px) 0 0;
+  font-size: min(4.2vw, 2.2dvh, 1.075rem);
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--cf-soft);
+  transform: translate3d(calc(var(--d) * 40vw), 0, 0);
+  opacity: calc(1 - var(--ad) * 2);
+}
+
+/* A wide deck (desktop, a tablet held sideways): graphic right, words left. */
+@container (min-width: 700px) {
+  .slide {
+    flex-direction: row-reverse;
+    align-items: center;
+    gap: 4%;
+    padding: 0 clamp(32px, 6cqw, 72px);
+  }
+
+  .art {
+    flex: 1 1 50%;
+    height: 100%;
+  }
+
+  .copy {
+    flex: 1 1 50%;
+    padding-bottom: 0;
+  }
+
+  .headline {
+    font-size: min(8.4cqw, 5.75rem);
+  }
+
+  .body {
+    font-size: 1.125rem;
+  }
+}
+
+/* ---- Controls --------------------------------------------------------------- */
+
+.controls {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: clamp(8px, 1.6dvh, 16px) clamp(20px, 6vw, 40px) clamp(16px, 2.6dvh, 28px);
+}
+
+.back,
+.next {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 54px;
+  border-radius: 999px;
+  font: inherit;
+  cursor: pointer;
+  transition: transform 0.12s ease, opacity 0.2s ease, background-color 0.2s ease;
+}
+
+.back {
+  flex: none;
+  width: 54px;
+  padding: 0;
+  border: 1.5px solid var(--cf-line);
+  background: transparent;
+  color: var(--cf-ink);
+}
+
+.back:disabled {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.next {
+  flex: 1;
+  gap: 10px;
+  padding: 0 24px;
+  border: none;
+  background: var(--cf-ink);
+  color: var(--cf-surface);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+:global([data-theme='dark']) .next {
+  background: #ffffff;
+  color: #0a0a0a;
+}
+
+.back svg,
+.next svg {
+  width: 20px;
+  height: 20px;
+}
+
+.back:active,
+.next:active {
+  transform: scale(0.97);
+}
+
+.next:focus-visible,
+.back:focus-visible,
+.skip:focus-visible {
+  outline: 2px solid var(--cf-brand);
+  outline-offset: 3px;
+}
+
+@container (min-width: 700px) {
+  .controls {
+    justify-content: flex-end;
+    padding-left: clamp(32px, 6cqw, 72px);
+    padding-right: clamp(32px, 6cqw, 72px);
+  }
+
+  .next {
+    flex: none;
+    min-width: 240px;
+  }
+}
+
+/* ---- Graphic paint & motion ------------------------------------------------- */
+
+.fillBrand { fill: var(--cf-brand); }
+.fillAccent { fill: var(--cf-accent); }
+.fillInk { fill: var(--cf-ink); }
+.fillSurface {
+  fill: var(--cf-surface);
+  stroke: var(--cf-line);
+  stroke-width: 1.5;
+}
+.fillOutline {
+  fill: var(--cf-tint);
+  stroke: var(--cf-brand);
+  stroke-width: 2;
+  stroke-dasharray: 2 7;
+  stroke-linecap: round;
+}
+
+.noteLines rect { fill: rgba(255, 255, 255, 0.92); }
+.noteLines .noteSign { fill: rgba(255, 255, 255, 0.55); }
+.fold { fill: rgba(0, 0, 0, 0.18); }
+
+/* Layers of a graphic spread apart as the slide leaves, by different amounts. */
+.notesBack,
+.notesMid,
+.notesFront,
+.idCard,
+.idChip {
+  transform-box: view-box;
+  transform-origin: 160px 150px;
+}
+
+.notesBack { transform: translate(calc(var(--d) * -46px), calc(var(--ad) * -18px)) rotate(calc(var(--d) * -12deg)); }
+.notesMid { transform: translate(calc(var(--d) * 30px), calc(var(--ad) * 14px)) rotate(calc(var(--d) * 9deg)); }
+.notesFront { transform: translate(calc(var(--d) * -12px), calc(var(--ad) * 26px)); }
+
+.stripe { fill: var(--cf-stripe); }
+.ringStroke {
+  fill: none;
+  stroke: var(--cf-line);
+  stroke-width: 1.5;
+}
+.redact { fill: var(--cf-ink); }
+.redactSoft { fill: var(--cf-line); }
+.chipDot { fill: rgba(255, 255, 255, 0.9); }
+.chipText {
+  fill: #ffffff;
+  font-family: 'Inter', sans-serif;
+  font-size: 22px;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+}
+
+.idCard { transform: translate(calc(var(--d) * -24px), calc(var(--ad) * -10px)) rotate(calc(-4deg + var(--d) * -8deg)); }
+.idChip { transform: translate(calc(var(--d) * 70px), calc(var(--ad) * 30px)) rotate(calc(3deg + var(--d) * 10deg)); }
+
+.ringFaint {
+  fill: none;
+  stroke: var(--cf-line);
+  stroke-width: 1.5;
+}
+
+.orbit {
+  transform-box: view-box;
+  transform-origin: 160px 150px;
+  animation: spin 18s linear infinite;
+}
+.orbitB { animation-duration: 26s; animation-direction: reverse; }
+.orbitC { animation-duration: 12s; }
+
+.pulse {
+  fill: none;
+  stroke: var(--cf-brand);
+  stroke-width: 2;
+  transform-box: view-box;
+  transform-origin: 160px 150px;
+  animation: pulse 2.8s cubic-bezier(0.2, 0.7, 0.3, 1) infinite;
+}
+
+/* Off-screen slides do not spend frames on loops nobody can see. */
+.slide[aria-hidden='true'] .orbit,
+.slide[aria-hidden='true'] .pulse {
+  animation-play-state: paused;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes pulse {
+  from { transform: scale(1); opacity: 0.7; }
+  to { transform: scale(4.6); opacity: 0; }
+}
+@keyframes deckIn {
+  from { opacity: 0; transform: translate3d(0, 16px, 0); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .deck { transition: none; animation: none; }
+  .orbit, .pulse { animation: none; }
+  .pulse { opacity: 0; }
+}

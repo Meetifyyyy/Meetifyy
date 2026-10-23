@@ -5,6 +5,7 @@ import { AdminCollegesModule } from './colleges/admin-colleges.module';
 import { AdminUsersModule } from './users/admin-users.module';
 import { AdminVerificationModule } from './verification/admin-verification.module';
 import { AdminReportsModule } from './reports/admin-reports.module';
+import { AdminConfessionsModule } from './confessions/admin-confessions.module';
 import { AdminDashboardModule } from './dashboard/admin-dashboard.module';
 import { AdminSupportModule } from './support/admin-support.module';
 import { AdminHelpModule } from './help/admin-help.module';
@@ -23,6 +24,7 @@ import { PrismaModule } from '../prisma/prisma.module';
     AdminUsersModule,
     AdminVerificationModule,
     AdminReportsModule,
+    AdminConfessionsModule,
     AdminDashboardModule,
     AdminSupportModule,
     // Public help-centre content, managed from the same Support section.
