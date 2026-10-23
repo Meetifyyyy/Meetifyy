@@ -1,33 +1,72 @@
 /* ============================================================================
-   AppOpenScreen — the installed app's front door. Editorial, type only.
+   AppOpenScreen — the installed app's front door: three slides you swipe.
 
-     .screen                 100dvh, flat canvas
-       .content              column: ticker / hero / actions
-         .ticker             activities scrolling between two rules
-         .hero               the name, set huge, and one sentence
-         .actions            two flat buttons, side by side
+     .screen                 100dvh, flat canvas, three flat shapes behind
+       .content              column
+         .pager              the swipeable area
+           .track            three panels side by side, moved as one
+             .panel          one slide:
+               .copy           headline (one underlined word) + one sentence
+               .stage          a fan of three photo cards, badge on the front one
+               .tiles          four tiles for this slide
+         .footer
+           .dots             which slide you are on (and buttons to jump)
+           .actions          Create your account / Log in
+
+   ONE NUMBER DRIVES THE MOTION
+   `--pg` is how far along the slides you are, 0 to 2, as a decimal. The track,
+   the photo parallax and the three shapes behind are all functions of it, so
+   they always agree with each other:
+
+     - a finger drag writes `--pg` directly on every move (`data-drag` turns
+       the transition off for that), so everything follows the thumb;
+     - letting go, a tap on a dot, anything else sets it to a whole number and
+       the transition below animates it there.
+
+   It is a registered property (`@property`) only so that it can transition.
+   Where that is unsupported it simply jumps, and the screen still works.
+
+   Light and dark are two token sets (right below), not one set inverted.
 
    Sizes are `min(<width budget>, <height budget>, <cap>)`, so a small phone,
    a tall phone and a tablet keep the same proportions without breakpoints.
 
-   MOTION: the two lines of the name rise out of their masks, then the rest
-   fades in. Only `transform` and `opacity` animate, all done inside ~750ms.
-   Nothing loops.
+   MOTION: only `transform` and `opacity` animate (the dots' colour aside).
    ========================================================================= */
+
+@property --pg {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0;
+}
 
 .screen {
   /* The app's own tokens, so light/dark follow the global theme. */
   --edge: var(--color-surface-screen, var(--color-bg-white));
   --ink: var(--color-text-main);
   --ink-soft: var(--color-text-muted);
-  --rule: var(--color-border);
-  --brand: var(--color-brand-primary);
+  --accent: var(--color-brand-primary);
+
+  /* Light: a white canvas, pale violet shapes, quiet outlined tiles. */
+  --blob: var(--color-brand-tint, #f0eeff);
+  --tile-bg: #ffffff;
+  --tile-line: #e5e7f1;
+  --tile-shadow: 0 6px 16px -12px rgba(31, 27, 90, 0.35);
+  --card-line: rgba(255, 255, 255, 0.9);
+  --card-shadow: 0 22px 40px -22px rgba(31, 27, 90, 0.5), 0 6px 14px -8px rgba(31, 27, 90, 0.25);
+  --dim: rgba(255, 255, 255, 0.5);
+  --dot: #cfd0e3;
+  --ghost-line: rgba(92, 71, 250, 0.4);
+  --ghost-press: rgba(92, 71, 250, 0.07);
+  --cta-shadow: 0 12px 24px -14px rgba(92, 71, 250, 0.7);
 
   --safe-t: max(env(safe-area-inset-top, 0px), var(--status-bar-inset, 0px));
   --safe-b: max(env(safe-area-inset-bottom, 0px), var(--navigation-bar-inset, 0px));
   --safe-l: env(safe-area-inset-left, 0px);
   --safe-r: env(safe-area-inset-right, 0px);
-  --gutter: clamp(20px, 5.4vw, 40px);
+  --gutter: clamp(20px, 6vw, 40px);
+  --pad-l: calc(var(--safe-l) + var(--gutter));
+  --pad-r: calc(var(--safe-r) + var(--gutter));
 
   position: relative;
   width: 100%;
@@ -37,15 +76,40 @@
   color: var(--ink);
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   opacity: 0;
-  transition: opacity 260ms ease-out;
+  --pg: 0;
+  transition:
+    opacity 260ms ease-out,
+    --pg 720ms cubic-bezier(0.22, 0.8, 0.2, 1);
   user-select: none;
   -webkit-user-select: none;
   overscroll-behavior: none;
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Dark: a black canvas, deep indigo shapes, glass-edged tiles. The lighter
+   violet is what keeps the brand colour readable against black. */
+:global([data-theme='dark']) .screen {
+  --accent: var(--color-brand-accent, #7965fb);
+  --blob: rgba(92, 71, 250, 0.17);
+  --tile-bg: rgba(255, 255, 255, 0.045);
+  --tile-line: rgba(255, 255, 255, 0.11);
+  --tile-shadow: none;
+  --card-line: rgba(140, 150, 255, 0.35);
+  --card-shadow: 0 24px 44px -20px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(92, 71, 250, 0.18);
+  --dim: rgba(0, 0, 0, 0.5);
+  --dot: rgba(255, 255, 255, 0.2);
+  --ghost-line: rgba(140, 150, 255, 0.55);
+  --ghost-press: rgba(121, 101, 251, 0.14);
+  --cta-shadow: none;
+}
+
 .visible {
   opacity: 1;
+}
+
+/* While a finger is dragging, `--pg` must follow it exactly, not lag behind. */
+.screen[data-drag] {
+  transition: opacity 260ms ease-out;
 }
 
 /* Nothing plays until the native splash starts handing over. */
@@ -53,153 +117,419 @@
   animation-play-state: paused !important;
 }
 
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- Shapes behind the content -------------------------------------------
+
+   Three flat, true circles. As `--pg` goes 0 → 2 each one drifts and grows or
+   shrinks, by a different amount and in a different direction, so they read as
+   one group that reshapes itself with every slide. The scale is uniform, which
+   is what keeps them circles at every point of the move, not only at rest.
+   Transform only: nothing here is repainted while it moves. */
+
+.blob {
+  position: absolute;
+  border-radius: 50%;
+  background: var(--blob);
+  pointer-events: none;
+  will-change: transform;
+}
+
+.blobTop {
+  width: 78vw;
+  height: 78vw;
+  top: -30vw;
+  right: -34vw;
+  transform:
+    translate3d(calc(var(--pg) * -12vw), calc(var(--pg) * 12vw), 0)
+    scale(calc(1 + var(--pg) * 0.3));
+}
+
+.blobSide {
+  width: 64vw;
+  height: 64vw;
+  top: 38%;
+  left: -46vw;
+  transform:
+    translate3d(calc(var(--pg) * 20vw), calc(var(--pg) * -12vw), 0)
+    scale(calc(1 - var(--pg) * 0.22));
+}
+
+.blobBottom {
+  width: 96vw;
+  height: 96vw;
+  bottom: -62vw;
+  right: -48vw;
+  transform:
+    translate3d(calc(var(--pg) * -26vw), calc(var(--pg) * -10vw), 0)
+    scale(calc(1 + var(--pg) * 0.12));
+}
+
+/* ---- Layout ---------------------------------------------------------------- */
 
 .content {
+  position: relative;
   box-sizing: border-box;
   height: 100%;
   display: flex;
   flex-direction: column;
   padding:
-    calc(var(--safe-t) + clamp(12px, 2dvh, 24px))
-    calc(var(--safe-r) + var(--gutter))
-    calc(var(--safe-b) + clamp(16px, 3dvh, 32px))
-    calc(var(--safe-l) + var(--gutter));
+    calc(var(--safe-t) + clamp(12px, 2.4dvh, 28px))
+    0
+    calc(var(--safe-b) + clamp(14px, 2.6dvh, 30px));
 }
 
-/* ---- Ticker: one composited layer sliding left, forever ---------------- */
-
-.ticker {
-  margin: 0 calc((var(--safe-r) + var(--gutter)) * -1) 0 calc((var(--safe-l) + var(--gutter)) * -1);
-  padding: 12px 0;
-  border-top: 1px solid var(--rule);
-  border-bottom: 1px solid var(--rule);
-  overflow: hidden;
+/* Entrance: each block rises into place on its own delay. */
+.enter {
   opacity: 0;
-  animation: fadeIn 500ms ease-out 420ms forwards;
+  transform: translate3d(0, 14px, 0);
+  animation: enter 560ms cubic-bezier(0.2, 0.85, 0.2, 1) var(--d, 0ms) forwards;
+}
+
+/* ---- The slides -------------------------------------------------------------- */
+
+.pager {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+  /* Vertical gestures stay the browser's; sideways ones are ours. */
+  touch-action: pan-y;
 }
 
 .track {
   display: flex;
-  width: max-content;
-  animation: marquee 32s linear infinite;
+  width: 300%;
+  height: 100%;
+  /* One panel is a third of the track, so `--pg` panels is that many thirds. */
+  transform: translate3d(calc(var(--pg) * -33.3333%), 0, 0);
   will-change: transform;
 }
 
-.run {
-  display: flex;
-  flex-shrink: 0;
-}
-
-.item {
-  display: inline-flex;
-  align-items: center;
-  white-space: nowrap;
-  font-size: min(4.4vw, 2.4dvh, 1.15rem);
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  color: var(--ink);
-}
-
-/* A small brand-coloured mark between items. */
-.item::after {
-  content: '';
-  width: 6px;
-  height: 6px;
-  margin: 0 18px;
-  border-radius: 50%;
-  background: var(--brand);
-}
-
-/* ---- The name ------------------------------------------------------------ */
-
-.hero {
-  flex: 1 1 auto;
+.panel {
+  flex: 0 0 33.3333%;
+  min-width: 0;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
-  padding-bottom: clamp(20px, 4dvh, 48px);
+  padding: 0 var(--pad-r) 0 var(--pad-l);
+  /* The side cards are cut at the screen's edge, not seen in the next panel. */
+  overflow: hidden;
 }
 
-.wordmark {
-  margin: 0 0 0 -0.04em;
-  font-weight: 900;
-  font-size: min(38vw, 21dvh, 15rem);
-  line-height: 0.84;
-  letter-spacing: -0.075em;
+/* ---- Headline -------------------------------------------------------------- */
+
+.copy {
+  flex: none;
+  margin-top: clamp(22px, 6.5dvh, 72px);
+}
+
+.headline {
+  margin: 0;
+  font-size: min(10.4vw, 5.1dvh, 3.6rem);
+  font-weight: 800;
+  line-height: 1.08;
+  letter-spacing: -0.04em;
+}
+
+.headlineLine {
+  display: block;
+  white-space: nowrap;
+}
+
+.accent {
+  position: relative;
+  display: inline-block;
+  color: var(--accent);
+}
+
+/* Hand-drawn underline: grows out from the left when its slide arrives, and
+   stays drawn once it has been. */
+.underline {
+  position: absolute;
+  left: -1%;
+  bottom: -0.2em;
+  width: 102%;
+  height: 0.3em;
+  overflow: visible;
+  transform: scaleX(0);
+  transform-origin: left center;
+}
+
+.seen .underline {
+  animation: draw 520ms cubic-bezier(0.3, 0.7, 0.2, 1) 420ms forwards;
+}
+
+.sub {
+  max-width: 30ch;
+  margin: clamp(10px, 1.9dvh, 18px) 0 0;
+  font-size: min(4.25vw, 2.15dvh, 1.12rem);
+  font-weight: 500;
+  line-height: 1.48;
+  letter-spacing: -0.005em;
+  color: var(--ink-soft);
+}
+
+/* ---- Photo fan ------------------------------------------------------------- */
+
+.stage {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 130px;
+  /* Lets the cards size themselves from the room the stage actually has. */
+  container-type: size;
+  --cw: min(72vw, 34dvh);
+  /* Parallax: the photos trail a little behind their slide. */
+  transform: translate3d(calc((var(--pg) - var(--n)) * 9vw), 0, 0);
+}
+
+@supports (width: 1cqw) {
+  .stage {
+    /* 100cqh leaves room above the card for the badge that overhangs it. */
+    --cw: min(78cqw, 94cqh);
+  }
+}
+
+.card {
+  position: absolute;
+  left: 50%;
+  /* A little low of centre: the badge pokes out of the top edge. */
+  top: calc(50% + 12px);
+  width: var(--cw);
+  aspect-ratio: 1.22;
+  margin: calc(var(--cw) / -2.44) 0 0 calc(var(--cw) / -2);
+}
+
+.front {
+  z-index: 3;
+  transform: translate3d(0, 0, 0) rotate(-3deg);
+}
+
+.right {
+  z-index: 2;
+  transform: translate3d(72%, 4%, 0) rotate(6deg) scale(0.84);
+}
+
+.left {
+  z-index: 1;
+  transform: translate3d(-72%, 4%, 0) rotate(-8deg) scale(0.84);
+}
+
+.photo {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 26px;
+  background: var(--blob);
+  box-shadow: var(--card-shadow);
+}
+
+.photo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+/* A rim, then a veil on the two cards that are not in front. */
+.photo::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1.5px var(--card-line);
+  pointer-events: none;
+}
+
+.photo::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--dim);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.left .photo::after,
+.right .photo::after {
+  opacity: 1;
+}
+
+.badge {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  left: 6%;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px 8px 11px;
+  border-radius: 999px;
+  background: var(--color-brand-primary);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: -0.005em;
+  white-space: nowrap;
+  box-shadow: 0 10px 20px -10px rgba(92, 71, 250, 0.9);
+  transform: translate3d(0, -50%, 0) rotate(-4deg);
+}
+
+.badgeIcon {
+  width: 16px;
+  height: 16px;
+}
+
+/* ---- Feature tiles --------------------------------------------------------- */
+
+.tiles {
+  flex: none;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: clamp(6px, 2vw, 10px);
+  margin: clamp(10px, 2dvh, 20px) 0 clamp(4px, 1dvh, 10px);
+  padding: 0;
+  list-style: none;
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(5px, 0.9dvh, 9px);
+  padding: clamp(9px, 1.6dvh, 15px) 2px;
+  border: 1px solid var(--tile-line);
+  border-radius: 18px;
+  background: var(--tile-bg);
+  box-shadow: var(--tile-shadow);
+}
+
+.tileIcon {
+  width: clamp(22px, 3.1dvh, 28px);
+  height: clamp(22px, 3.1dvh, 28px);
+  color: var(--accent);
+}
+
+.tileLabel {
+  font-size: min(2.85vw, 1.8dvh, 0.78rem);
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  text-align: center;
   color: var(--ink);
 }
 
-.mask {
-  display: block;
-  overflow: hidden;
-  /* Room for descenders (the y's) inside the mask. */
-  padding-bottom: 0.22em;
-  margin-bottom: -0.22em;
+/* ---- Footer: dots and buttons ------------------------------------------------ */
+
+.footer {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  padding: 0 var(--pad-r) 0 var(--pad-l);
 }
 
-.line {
-  display: block;
-  transform: translate3d(0, 105%, 0);
-  animation: rise 680ms cubic-bezier(0.2, 0.85, 0.2, 1) 60ms forwards;
+.dots {
+  display: flex;
+  justify-content: center;
+  gap: 2px;
+  margin-top: clamp(2px, 0.8dvh, 8px);
 }
 
-.line2 {
-  color: var(--brand);
-  animation-delay: 150ms;
+/* The button is the touch target; the visible dot is its ::before. */
+.dot {
+  position: relative;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.statement {
-  max-width: 19ch;
-  margin: clamp(16px, 2.8dvh, 32px) 0 0;
-  font-size: min(6.4vw, 3.3dvh, 1.9rem);
-  font-weight: 500;
-  line-height: 1.18;
-  letter-spacing: -0.02em;
-  opacity: 0;
-  animation: fadeIn 500ms ease-out 380ms forwards;
+.dot::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 50%;
+  background: var(--dot);
+  transition: background-color 240ms ease, transform 240ms ease;
 }
 
-/* ---- Buttons ------------------------------------------------------------- */
+.dotOn::before {
+  background: var(--accent);
+  transform: scaleX(2.4);
+}
 
 .actions {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  opacity: 0;
-  animation: fadeIn 500ms ease-out 480ms forwards;
+  margin-top: clamp(4px, 1.2dvh, 12px);
 }
 
-/* Same as the auth kit's .button / .buttonGhost, so the next screen matches. */
+/* Same height and radius as the auth kit's buttons, so the next screen matches. */
 .primary,
 .secondary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
   width: 100%;
-  height: 52px;
+  height: clamp(48px, 7dvh, 56px);
   padding: 0 1.5rem;
   border-radius: 999px;
   font-family: inherit;
-  font-size: 0.96rem;
+  font-size: 1rem;
   font-weight: 700;
+  letter-spacing: -0.005em;
   cursor: pointer;
-  transition: transform 0.12s ease, opacity 0.12s ease;
+  transition: transform 0.12s ease, opacity 0.12s ease, background-color 0.12s ease;
 }
 
 .primary {
   border: none;
   background: var(--color-brand-primary);
   color: #fff;
-  box-shadow: 0 10px 22px -12px rgba(92, 71, 250, 0.5);
+  box-shadow: var(--cta-shadow);
+}
+
+.arrow {
+  width: 20px;
+  height: 20px;
 }
 
 .secondary {
-  border: 1.5px solid var(--color-border);
-  background: var(--color-bg-white);
-  color: var(--color-text-main);
+  border: 1.5px solid var(--ghost-line);
+  background: transparent;
+  color: var(--ink);
 }
 
 .primary:active,
 .secondary:active {
   transform: scale(0.98);
-  opacity: 0.9;
+  opacity: 0.92;
+}
+
+.secondary:active {
+  background: var(--ghost-press);
 }
 
 /* ---- Exit: content fades; the flat canvas stays put. --------------------- */
@@ -209,20 +539,46 @@
   transition: opacity 0.17s ease-in;
 }
 
-@keyframes marquee { to { transform: translate3d(-50%, 0, 0); } }
-@keyframes rise { to { transform: translate3d(0, 0, 0); } }
-@keyframes fadeIn { to { opacity: 1; } }
+@keyframes enter { to { opacity: 1; transform: translate3d(0, 0, 0); } }
+@keyframes draw { to { transform: scaleX(1); } }
+
+/* ---- A phone held sideways: copy left, photos right ----------------------- */
 
 @media (orientation: landscape) and (max-height: 520px) {
-  .wordmark { font-size: min(26dvh, 9rem); }
-  .statement { font-size: min(4.6dvh, 1.4rem); max-width: 30ch; }
-  .actions { max-width: 28rem; }
+  .panel {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    align-items: center;
+    column-gap: clamp(16px, 4vw, 40px);
+  }
+
+  .copy { margin-top: 0; }
+  .stage { align-self: stretch; --cw: min(30vw, 56dvh); }
+  /* Keep the side cards inside their own column, clear of the copy. */
+  .right { transform: translate3d(62%, 4%, 0) rotate(6deg) scale(0.8); }
+  .left { transform: translate3d(-62%, 4%, 0) rotate(-8deg) scale(0.8); }
+  .tiles { display: none; }
+
+  .footer { flex-direction: row; align-items: center; gap: 16px; }
+  .actions { flex: 1; flex-direction: row; max-width: 30rem; margin-top: 0; }
+  .dots { order: 2; margin: 0 0 0 auto; }
+  .primary, .secondary { padding: 0 1rem; font-size: 0.9rem; white-space: nowrap; }
+
+  .headline { font-size: min(4.4vw, 9.6dvh); }
+  .sub { font-size: min(2vw, 4.4dvh); }
+}
+
+@supports (width: 1cqw) {
+  @media (orientation: landscape) and (max-height: 520px) {
+    .stage { --cw: min(50cqw, 100cqh); }
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .screen { transition: none; }
   .screen * { animation: none !important; transition: none !important; }
-  .line { transform: none; }
-  .ticker, .statement, .actions { opacity: 1; }
+  .enter { opacity: 1; transform: none; }
+  .underline { transform: none; }
   .leaving .content { transition: none; }
 }
