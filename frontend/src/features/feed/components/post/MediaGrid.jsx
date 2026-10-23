@@ -6,6 +6,7 @@ import { Play, Pause, VolumeHigh, VolumeOff, Maximize } from '@shared/components
 import { feedVideoRegistry } from '@shared/utils/feedVideoRegistry';
 import { isThumbnailMissing, markThumbnailMissing } from '@shared/utils/missingThumbnails';
 import { safePlaceholder } from '@shared/utils/imagePlaceholder';
+import { noteImageStart, loadedQuickly } from '@shared/utils/imageReveal';
 import ImagePlaceholder from '@shared/components/media/ImagePlaceholder';
 import styles from './MediaGrid.module.css';
 
@@ -441,16 +442,32 @@ function normalizeMedia(mediaInput) {
     const cachedSyncUrl = !isAbsolute ? mediaCache.getSyncUrl(rawSrc) : null;
     const initialUrl = isAbsolute ? rawSrc : (cachedSyncUrl || getMediaUrl(rawSrc));
 
+    // What the tile showed the last time it was resolved is its thumbnail, not
+    // the original: once a post's thumbnail address is known (it is kept across
+    // launches), the very first render uses it. Without this a returning tile
+    // painted the ORIGINAL on its first frame, then swapped to the thumbnail
+    // when the async resolution below landed — a second download, a skeleton
+    // and a fade-in for a picture that had been on screen a moment before, on
+    // every revisit of the screen. `getSyncUrl` answers null for a thumbnail it
+    // has not resolved yet, which keeps the original as the first frame then.
+    const derivedThumb = !isAbsolute ? deriveThumbnailKey(rawSrc) : null;
+    const knownThumb = derivedThumb && !isThumbnailMissing(derivedThumb)
+      ? mediaCache.getSyncUrl(derivedThumb)
+      : null;
+
     return {
       raw: item,
       rawSrc: rawSrc,
-      url: initialUrl,
+      url: (!isVideo && knownThumb) || initialUrl,
       fullUrl: initialUrl,
       width,
       height,
       aspectRatio,
       isVideo,
       type: isVideo ? 'video' : 'image',
+      // A video's poster is the same derived thumbnail: known ahead of the
+      // async resolution for the same reason.
+      posterUrl: isVideo ? knownThumb : null,
       // Blur-up stand-in sent by the API for images uploaded since it existed;
       // null for everything older, which renders the skeleton as before.
       placeholder: isVideo ? null : safePlaceholder(item.placeholder),
@@ -536,6 +553,16 @@ function useNearViewport() {
  */
 const itemKey = (item) => item?.rawSrc || '';
 
+/**
+ * The class for an image by how it came in: not yet (hidden), a real download
+ * (fades in), or from the cache ('instant': shown at once, see
+ * shared/utils/imageReveal).
+ */
+const revealClass = (state) => {
+  if (state === 'instant') return `${styles.loaded} ${styles.instant}`;
+  return state ? styles.loaded : styles.loading;
+};
+
 export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
   /*
    * What is shown is derived from `media` during render, with resolved URLs
@@ -555,8 +582,9 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
     const initial = {};
     normalizeMedia(media).forEach((item) => {
       const src = item?.url || item?.fullUrl;
+      // 'instant': already seen at this address, so it is shown without a fade.
       if (src && loadedUrlCache.has(src)) {
-        initial[itemKey(item)] = true;
+        initial[itemKey(item)] = 'instant';
       }
     });
     return initial;
@@ -661,9 +689,15 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
       markThumbnailMissing(failedThumb);
       e.target.removeAttribute('data-failed-thumb');
     }
-    setLoadedStates((prev) => (prev[keyAt(index)] ? prev : { ...prev, [keyAt(index)]: true }));
+    // 'instant' when the picture was already in the cache: no fade, no blur.
+    const mode = loadedQuickly(e?.target) ? 'instant' : true;
+    setLoadedStates((prev) => (prev[keyAt(index)] ? prev : { ...prev, [keyAt(index)]: mode }));
     const src = mediaList[index]?.url || mediaList[index]?.fullUrl;
     rememberLoaded(src);
+    // And the address the element really loaded. It differs from the tile's own
+    // when the thumbnail failed and the original was swapped in on the element,
+    // and that is the address a later mount will be asked to show.
+    rememberLoaded(e?.target?.getAttribute?.('src'));
 
     const naturalWidth = e?.target?.naturalWidth;
     const naturalHeight = e?.target?.naturalHeight;
@@ -897,12 +931,13 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
                 onError={() => handlePosterError(0)}
                 style={{ visibility: failedStates[keyAt(0)] ? 'hidden' : undefined }}
                 ref={(imgEl) => {
+                  noteImageStart(imgEl);
                   if (imgEl && imgEl.complete && imgEl.naturalWidth && !loadedStates[keyAt(0)]) {
                     handleImageLoad(0, { target: imgEl });
                   }
                 }}
                 className={`${styles.singleVideo} ${frame.crop ? styles.cropped : ''} ${
-                  isLoaded ? styles.loaded : styles.loading
+                  revealClass(isLoaded)
                 }`}
               />
             ) : mediaSrc && singleTileNear ? (
@@ -949,7 +984,7 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
           style={{ '--aspect': aspect }}
         >
           {item.placeholder
-            ? <ImagePlaceholder src={item.placeholder} done={isLoaded} />
+            ? <ImagePlaceholder src={item.placeholder} done={Boolean(isLoaded)} instant={isLoaded === 'instant'} />
             : !isLoaded && <div className={styles.skeleton} />}
           {imageSrc && (
             <img
@@ -961,13 +996,14 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
               onError={(e) => handleImageError(0, e)}
               style={{ visibility: failedStates[keyAt(0)] ? 'hidden' : undefined }}
               ref={(imgEl) => {
+                noteImageStart(imgEl);
                 if (imgEl && imgEl.complete && imgEl.naturalWidth && !loadedStates[keyAt(0)]) {
                   handleImageLoad(0, { target: imgEl });
                 }
               }}
               onClick={(e) => handleItemClick(e, 0)}
               className={`${styles.singleImage} ${frame.crop ? styles.cropped : ''} ${
-                isLoaded ? styles.loaded : styles.loading
+                revealClass(isLoaded)
               }`}
             />
           )}
@@ -1094,7 +1130,7 @@ const MediaCarousel = memo(function MediaCarousel({
               onClick={(e) => onItemClick(e, index)}
             >
               {item.placeholder
-                ? <ImagePlaceholder src={item.placeholder} done={Boolean(loadedStates[keyAt(index)])} />
+                ? <ImagePlaceholder src={item.placeholder} done={Boolean(loadedStates[keyAt(index)])} instant={loadedStates[keyAt(index)] === 'instant'} />
                 : !loadedStates[keyAt(index)] && <div className={styles.skeleton} />}
               {src && (
                 <img
@@ -1106,14 +1142,13 @@ const MediaCarousel = memo(function MediaCarousel({
                   onLoad={(e) => onTileLoad(index, e)}
                   onError={(e) => onTileError(index, e)}
                   ref={(imgEl) => {
+                    noteImageStart(imgEl);
                     if (imgEl && imgEl.complete && imgEl.naturalWidth && !loadedStates[keyAt(index)]) {
                       onTileLoad(index, { target: imgEl });
                     }
                   }}
                   style={{ visibility: failedStates[keyAt(index)] ? 'hidden' : undefined }}
-                  className={`${styles.carouselImage} ${
-                    loadedStates[keyAt(index)] ? styles.loaded : styles.loading
-                  }`}
+                  className={`${styles.carouselImage} ${revealClass(loadedStates[keyAt(index)])}`}
                 />
               )}
               {item.isVideo && (

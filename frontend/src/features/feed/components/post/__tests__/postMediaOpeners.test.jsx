@@ -50,6 +50,7 @@ vi.mock('@shared/api/apiClient', () => ({
     logoutSession: async () => ({}),
   },
   getMediaUrl: (u) => (typeof u === 'string' ? u : ''),
+  deriveThumbnailKey: () => null,
   postsApi: {
     likePost: async () => ({}), unlikePost: async () => ({}),
     bookmarkPost: async () => ({}), unbookmarkPost: async () => ({}),

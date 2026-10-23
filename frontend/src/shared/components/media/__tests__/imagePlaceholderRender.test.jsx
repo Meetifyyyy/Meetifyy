@@ -56,11 +56,17 @@ describe('MediaGrid blur-up placeholder', () => {
 
   it('fades the placeholder out once the image has loaded, then removes it', () => {
     vi.useFakeTimers();
+    // A real download: it takes longer than a cached picture would (see
+    // shared/utils/imageReveal), so the blur is bridged to the image.
+    const clock = vi.spyOn(performance, 'now');
+    clock.mockReturnValue(1000);
     render(<MediaGrid media={one({ placeholder: PH })} />);
     const img = screen.getByAltText('Post content');
     Object.defineProperty(img, 'naturalWidth', { value: 800 });
     Object.defineProperty(img, 'naturalHeight', { value: 600 });
+    clock.mockReturnValue(1600);
     fireEvent.load(img);
+    clock.mockRestore();
     expect(screen.getByTestId('image-placeholder').className).toMatch(/done/);
     act(() => { vi.advanceTimersByTime(700); });
     expect(screen.queryByTestId('image-placeholder')).toBeNull();
@@ -82,6 +88,23 @@ describe('ImagePlaceholder', () => {
     const { default: ImagePlaceholder } = await import('../ImagePlaceholder');
     render(<ImagePlaceholder src={PH} done />);
     expect(screen.queryByTestId('image-placeholder')).toBeNull();
+  });
+});
+
+describe('ImagePlaceholder for a cached image', () => {
+  it('is taken away at once when the image came out of the cache', async () => {
+    const { default: ImagePlaceholder } = await import('../ImagePlaceholder');
+    const { rerender } = render(<ImagePlaceholder src={PH} />);
+    expect(screen.getByTestId('image-placeholder')).toBeTruthy();
+    rerender(<ImagePlaceholder src={PH} done instant />);
+    expect(screen.queryByTestId('image-placeholder')).toBeNull();
+  });
+
+  it('still bridges a real download: it fades out rather than vanishing', async () => {
+    const { default: ImagePlaceholder } = await import('../ImagePlaceholder');
+    const { rerender } = render(<ImagePlaceholder src={PH} />);
+    rerender(<ImagePlaceholder src={PH} done />);
+    expect(screen.getByTestId('image-placeholder').className).toMatch(/done/);
   });
 });
 

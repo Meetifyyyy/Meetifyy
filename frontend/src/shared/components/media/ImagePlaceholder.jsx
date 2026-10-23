@@ -18,11 +18,15 @@ const FADE_MS = 600;
  * both half-transparent at once, which showed the empty tile), and unmounts so
  * a finished feed carries no blurred layers.
  *
+ * An image that was already cached (`instant`) takes the layer away at once,
+ * and the layer itself stays invisible for the first moment (see the CSS), so a
+ * cached picture never shows the blur at all.
+ *
  * Renders nothing for a missing or malformed value, which is what lets a caller
  * fall back to its existing skeleton: `<ImagePlaceholder>` returning null IS
  * the "no placeholder" case.
  */
-export default function ImagePlaceholder({ src, done = false, className = '' }) {
+export default function ImagePlaceholder({ src, done = false, instant = false, className = '' }) {
   const safe = safePlaceholder(src);
   // A tile remounted for an image that already loaded (a virtualised feed
   // scrolling back) never needs the layer at all.
@@ -34,7 +38,9 @@ export default function ImagePlaceholder({ src, done = false, className = '' }) 
     return () => clearTimeout(timer);
   }, [done]);
 
-  if (!safe || gone) return null;
+  // `instant`: the image came out of the cache, so there is nothing to bridge —
+  // a blur that faded out over it would be the flicker this layer exists to hide.
+  if (!safe || gone || (done && instant)) return null;
   return (
     <div
       className={`${styles.placeholder} ${done ? styles.done : ''} ${className}`}

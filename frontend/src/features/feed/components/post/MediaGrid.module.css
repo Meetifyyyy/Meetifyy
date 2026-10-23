@@ -97,6 +97,16 @@
   background: var(--skeleton-base);
   z-index: 5;
   pointer-events: none;
+  /* Invisible for the first moment: a cached picture arrives within it, and a
+     grey tile that flashes for a frame before it is only noise. The delay is
+     FAST_LOAD_MS in shared/utils/imageReveal.js. */
+  animation: skeletonHold 0s linear 100ms backwards;
+}
+
+@keyframes skeletonHold {
+  from {
+    visibility: hidden;
+  }
 }
 
 .skeleton::after {
@@ -159,6 +169,11 @@
 
 .loading {
   opacity: 0;
+}
+
+/* Came from the cache: shown at once, no fade. */
+.instant {
+  transition: none;
 }
 
 /* Multi-media carousel ─────────────────────────────────────────────────────

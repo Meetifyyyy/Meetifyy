@@ -15,6 +15,16 @@
   transform: scale(1.08);
   opacity: 1;
   pointer-events: none;
+  /* Invisible for the first moment: an image that is already cached lands
+     within it, and the blur would only flash. The delay is FAST_LOAD_MS in
+     shared/utils/imageReveal.js. */
+  animation: placeholderHold 0s linear 100ms backwards;
+}
+
+@keyframes placeholderHold {
+  from {
+    visibility: hidden;
+  }
 }
 
 .done {

@@ -1,10 +1,11 @@
-import { forwardRef, useState, useEffect, useMemo } from 'react';
+import { forwardRef, useState, useMemo } from 'react';
 import { UsersIcon } from '@heroicons/react/24/solid';
 import { getMediaUrl, normalizeDicebearUrl, deriveThumbnailKey } from '@shared/api/apiClient';
 import { isDicebearUrl, directPublicMediaUrl } from '@core/api/media';
 import { config } from '@config';
 import { useCanSeeOthersPresence } from '@shared/hooks/usePresenceVisibility';
 import { DEFAULT_AVATAR_SRC, isPlatformDefaultAvatar } from '@shared/constants/defaultAvatar';
+import { noteImageStart, isImageComplete, loadedQuickly } from '@shared/utils/imageReveal';
 import styles from './Avatar.module.css';
 import DefaultAvatarGlyph from './DefaultAvatarGlyph';
 
@@ -68,6 +69,10 @@ function isSmallFixedSize(size) {
 
 const loadedAvatarCache = new Set();
 const failedAvatarCache = new Set();
+
+/** Nothing to wait for: seen before this session, or inline data. */
+const startsLoaded = (src) =>
+  loadedAvatarCache.has(src) || src.startsWith('blob:') || src.startsWith('data:');
 
 const Avatar = forwardRef(({
   src,
@@ -144,23 +149,29 @@ const Avatar = forwardRef(({
 
   const [hasError, setHasError] = useState(() => failedAvatarCache.has(fullSrc));
   const [imgSrc, setImgSrc] = useState(initialProcessedSrc);
-  const [imgLoading, setImgLoading] = useState(!loadedAvatarCache.has(initialProcessedSrc));
+  const [imgLoading, setImgLoading] = useState(() => !startsLoaded(initialProcessedSrc));
+  // The picture came from the cache a frame after it mounted: show it at once
+  // instead of fading it in over a skeleton (see shared/utils/imageReveal).
+  const [revealInstantly, setRevealInstantly] = useState(false);
 
-  useEffect(() => {
+  // A different picture starts over. Adjusted during render rather than in an
+  // effect: an effect also runs after the FIRST render, where it would undo a
+  // cached picture the image's ref had just shown, and put its skeleton back
+  // for the frame the `load` event takes to arrive.
+  const sourceKey = `${fullSrc}\n${initialProcessedSrc}`;
+  const [seenSourceKey, setSeenSourceKey] = useState(sourceKey);
+  if (seenSourceKey !== sourceKey) {
+    setSeenSourceKey(sourceKey);
     if (failedAvatarCache.has(fullSrc)) {
       setHasError(true);
       setImgLoading(false);
-      return;
-    }
-
-    setHasError(false);
-    setImgSrc(initialProcessedSrc);
-    if (loadedAvatarCache.has(initialProcessedSrc) || initialProcessedSrc.startsWith('blob:') || initialProcessedSrc.startsWith('data:')) {
-      setImgLoading(false);
     } else {
-      setImgLoading(true);
+      setHasError(false);
+      setImgSrc(initialProcessedSrc);
+      setRevealInstantly(false);
+      setImgLoading(!startsLoaded(initialProcessedSrc));
     }
-  }, [initialProcessedSrc, fullSrc]);
+  }
 
   const sizeValue = typeof size === 'number' ? `${size}px` : size;
   const avatarStyle = {
@@ -215,9 +226,19 @@ const Avatar = forwardRef(({
     );
   }
 
-  const handleLoad = () => {
+  const handleLoad = (e) => {
     if (imgSrc) loadedAvatarCache.add(imgSrc);
+    setRevealInstantly(loadedQuickly(e?.currentTarget));
     setImgLoading(false);
+  };
+
+  // The session's "loaded" set is empty after a restart, but the WebView's own
+  // cache is not: a cached picture is already complete here (or a frame from
+  // it), and must not wait for its `load` event to be shown.
+  const attachImage = (img) => {
+    if (!img) return;
+    noteImageStart(img);
+    if (imgLoading && isImageComplete(img)) handleLoad({ currentTarget: img });
   };
 
   const handleError = () => {
@@ -253,14 +274,15 @@ const Avatar = forwardRef(({
     >
       <div className={styles.avatarClip}>
         {imgLoading && (
-          <div className={styles.avatarSkeleton} />
+          <div className={`${styles.avatarSkeleton} ${styles.avatarSkeletonHeld}`} />
         )}
         <img
+          ref={attachImage}
           src={imgSrc}
           alt={name || 'Avatar'}
           loading="lazy"
           decoding="async"
-          className={`${styles.avatarImg} ${imgLoading ? styles.imgHidden : styles.imgVisible}`}
+          className={`${styles.avatarImg} ${imgLoading ? styles.imgHidden : styles.imgVisible} ${revealInstantly ? styles.imgInstant : ''}`}
           onLoad={handleLoad}
           onError={handleError}
         />

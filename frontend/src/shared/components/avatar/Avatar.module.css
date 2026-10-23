@@ -52,6 +52,10 @@
   transition: opacity 0.25s ease;
 }
 
+.imgInstant {
+  transition: none;
+}
+
 .avatarSkeleton {
   position: absolute;
   inset: 0;
@@ -59,6 +63,23 @@
   background-color: var(--color-border-light, #e2e8f0);
   animation: avatarSkeletonPulse 1.5s ease-in-out infinite;
   z-index: 1;
+}
+
+/* The skeleton shown while a picture loads (not the one a parent asks for with
+   `isLoading`): invisible for the first moment, because a picture that is in
+   the cache arrives within it and a grey circle that flashes for a frame
+   before it is only noise. The delay is FAST_LOAD_MS in
+   shared/utils/imageReveal.js. */
+.avatarSkeletonHeld {
+  animation:
+    avatarSkeletonPulse 1.5s ease-in-out infinite,
+    avatarSkeletonHold 0s linear 100ms backwards;
+}
+
+@keyframes avatarSkeletonHold {
+  from {
+    visibility: hidden;
+  }
 }
 
 :global([data-theme="dark"]) .avatarSkeleton {
