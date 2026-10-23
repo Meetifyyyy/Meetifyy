@@ -51,8 +51,8 @@ describe('Avatar loads public avatars straight from the media host', () => {
     expect(img(again.container).getAttribute('src')).toBe('https://cdn.example.test/avatars/p3.webp');
   });
 
-  it('keeps every non-avatar key on the API', () => {
-    const { container } = render(<Avatar src="groups/g1.webp" size={120} />);
-    expect(img(container).getAttribute('src')).toBe('https://api.example.test/api/media/groups/g1.webp');
+  it('keeps every key outside the public icon folders on the API', () => {
+    const { container } = render(<Avatar src="posts/p1.webp" size={120} />);
+    expect(img(container).getAttribute('src')).toBe('https://api.example.test/api/media/posts/p1.webp');
   });
 });

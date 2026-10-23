@@ -96,8 +96,14 @@ export const deriveThumbnailKey = (rawSrc) => {
  * who is asking — conversation attachments, voice notes, support files and
  * identity documents must never be addressed directly, and a folder added later
  * stays behind the API until someone decides otherwise here.
+ *
+ * Going direct also matters offline: the public host answers with a year-long
+ * immutable Cache-Control, so the WebView keeps serving the image with no
+ * network, whereas the API's redirect is cached for an hour and then the image
+ * is gone. The listed folders are the small, everywhere-on-screen icons
+ * (people, communities, group chats), all public on the API side.
  */
-export const DIRECT_PUBLIC_FOLDERS = Object.freeze(['avatars']);
+export const DIRECT_PUBLIC_FOLDERS = Object.freeze(['avatars', 'community-icons', 'communities', 'groups']);
 
 /**
  * The public-host URL for a stored media reference, or null.

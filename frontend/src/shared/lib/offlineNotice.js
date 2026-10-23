@@ -14,9 +14,8 @@
  * A pure controller over injected `show` and timers, so it is testable without
  * a DOM; `OfflineNotice` wires it to the real signal and toast.
  */
-export const OFFLINE_MESSAGE = "You're offline. Showing what was saved on this device.";
-/** For a visitor who is not signed in: nothing of theirs is saved here. */
-export const OFFLINE_MESSAGE_SIGNED_OUT = "You're offline. Some things won't load until you reconnect.";
+/** Just the fact, the same whether or not anyone is signed in. */
+export const OFFLINE_MESSAGE = "You're offline";
 export const ONLINE_MESSAGE = 'Back online';
 export const OFFLINE_SETTLE_MS = 1500;
 export const ONLINE_SETTLE_MS = 1000;

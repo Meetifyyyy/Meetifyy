@@ -11,12 +11,18 @@ describe('directPublicMediaUrl', () => {
       .toBe(`${CDN}/avatars/a1_thumb.webp`);
   });
 
+  it('addresses community and group icons directly too', () => {
+    expect(directPublicMediaUrl('community-icons/c1_thumb.webp', CDN)).toBe(`${CDN}/community-icons/c1_thumb.webp`);
+    expect(directPublicMediaUrl('/api/media/communities/c2.png', CDN)).toBe(`${CDN}/communities/c2.png`);
+    expect(directPublicMediaUrl('groups/g1.webp', CDN)).toBe(`${CDN}/groups/g1.webp`);
+  });
+
   it('never addresses private or unlisted folders directly', () => {
     for (const key of ['chat/x.webp', 'messages/x.webp', 'voice/x.webm', 'support/x.png', 'verification/x.jpg', 'posts/x.webp']) {
       expect(directPublicMediaUrl(key, CDN)).toBeNull();
       expect(directPublicMediaUrl(`/api/media/${key}`, CDN)).toBeNull();
     }
-    expect(DIRECT_PUBLIC_FOLDERS).toEqual(['avatars']);
+    expect(DIRECT_PUBLIC_FOLDERS).toEqual(['avatars', 'community-icons', 'communities', 'groups']);
   });
 
   it('falls back (null) without a usable public origin', () => {

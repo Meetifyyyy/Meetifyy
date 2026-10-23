@@ -4,8 +4,6 @@ import { render, act, cleanup } from '@testing-library/react';
 
 const { showToast } = vi.hoisted(() => ({ showToast: vi.fn() }));
 vi.mock('@shared/utils/toast', () => ({ showToast }));
-const auth = vi.hoisted(() => ({ isLoggedIn: true }));
-vi.mock('@shared/context/AuthContext', () => ({ useAuth: () => auth }));
 
 import {
   createOfflineNotice, OFFLINE_MESSAGE, ONLINE_MESSAGE, OFFLINE_SETTLE_MS, ONLINE_SETTLE_MS,
@@ -120,22 +118,14 @@ describe('<OfflineNotice />', () => {
   };
   beforeEach(() => {
     onLine = true;
-    auth.isLoggedIn = true;
     vi.spyOn(window.navigator, 'onLine', 'get').mockImplementation(() => onLine);
   });
 
-  it('does not claim saved content to a visitor who is not signed in', () => {
-    auth.isLoggedIn = false;
-    onLine = false;
-    render(<OfflineNotice />);
-    expect(showToast.mock.calls[0][0]).toBe("You're offline. Some things won't load until you reconnect.");
-  });
-
-  it('opened offline: one toast with the saved-content wording', () => {
+  it('opened offline: one short toast', () => {
     onLine = false;
     render(<OfflineNotice />);
     expect(showToast).toHaveBeenCalledTimes(1);
-    expect(showToast.mock.calls[0][0]).toBe("You're offline. Showing what was saved on this device.");
+    expect(showToast.mock.calls[0][0]).toBe("You're offline");
   });
 
   it('opened online: silent; goes offline and back: one offline and one back online toast', () => {
