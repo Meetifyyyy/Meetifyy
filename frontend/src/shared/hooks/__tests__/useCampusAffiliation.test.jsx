@@ -81,6 +81,26 @@ describe('useCampusAffiliation before the server confirms the session', () => {
     expect(result.current.isActive).toBe(false);
   });
 
+  describe('with no network', () => {
+    afterEach(() => vi.restoreAllMocks());
+    const offline = () => vi.spyOn(window.navigator, 'onLine', 'get').mockReturnValue(false);
+
+    it('keeps Campus open for a cached active affiliation, since the server cannot be asked', () => {
+      offline();
+      auth.value = { isLoggedIn: true, profileFromCache: true, currentUser: { id: 'u', campusAffiliation: ACTIVE } };
+      const { result } = renderHook(() => useCampusAffiliation(), { wrapper });
+      expect(result.current.status).toBe('active');
+      expect(getMock).not.toHaveBeenCalled();
+    });
+
+    it('does not open Campus for a cached copy that is not active', () => {
+      offline();
+      auth.value = { isLoggedIn: true, profileFromCache: true, currentUser: { id: 'u', campusAffiliation: null } };
+      const { result } = renderHook(() => useCampusAffiliation(), { wrapper });
+      expect(result.current.status).toBe('loading');
+    });
+  });
+
   it('opens once the session is confirmed', () => {
     auth.value = { isLoggedIn: true, profileFromCache: false, currentUser: { id: 'u', campusAffiliation: ACTIVE } };
     const { result } = renderHook(() => useCampusAffiliation(), { wrapper });

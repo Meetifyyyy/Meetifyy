@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { activitiesApi } from '../api/apiClient';
+import { blockIfOffline } from '../lib/offlineGuard';
 
 export const useSavedActivitiesStore = create(
   persist(
@@ -8,6 +9,8 @@ export const useSavedActivitiesStore = create(
       savedActivities: [],
       toggleSaveActivity: async (id) => {
         if (!id) return;
+        // A toggle is refused offline rather than flipped and rolled back.
+        if (blockIfOffline('action')) return;
         const current = get().savedActivities;
         const isSavedAlready = current.includes(id);
 

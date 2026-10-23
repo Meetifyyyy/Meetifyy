@@ -21,11 +21,21 @@
  * - Trimmed to a first page and written at most every few seconds in idle
  *   time: the conversation list refetches on every message.
  *
+ * - The Campus page's queries are kept too, tagged with the college the
+ *   account belonged to when they were saved, and restored only while that is
+ *   still its college: losing the affiliation or switching college makes the
+ *   old college's lists unusable, never shown.
+ * - A community or activity opened lately keeps its detail query (the most
+ *   recent few per account), so reopening one with no network still shows it.
+ *   A 403/404 for one deletes its entry, as the access-denied handling does for
+ *   the in-memory copy.
+ *
  * Installed app only. The website deliberately keeps less on disk: a shared
  * machine must not open on the last person's inbox.
  */
 import { hashKey } from '@tanstack/react-query';
-import { idbEpoch, idbGet, idbSet } from '@shared/lib/idb';
+import { idbDelete, idbEpoch, idbGet, idbSet } from '@shared/lib/idb';
+import { isAffiliationActive } from '@shared/lib/campusAccess';
 
 /** Bumped when a stored shape changes; older entries are then ignored. */
 const SNAPSHOT_VERSION = 1;
@@ -34,7 +44,19 @@ const MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
 /** At most one write per query in this window. */
 const MIN_WRITE_INTERVAL_MS = 15_000;
 
-/** What is kept, and how much of it. `trim` returns undefined to skip a shape it does not know. */
+/** Page one of an infinite query, as it stores it; its cursor stays so page two follows on. */
+const firstPage = (data) =>
+  Array.isArray(data?.pages) && data.pages.length > 0
+    ? { pages: [data.pages[0]], pageParams: [data.pageParams?.[0]] }
+    : undefined;
+
+/** A detail record as it came, or undefined for anything that is not one. */
+const record = (data) => (data && typeof data === 'object' && !Array.isArray(data) ? data : undefined);
+
+/**
+ * What is kept, and how much of it. `trim` returns undefined to skip a shape it
+ * does not know. `campus` marks the college-scoped ones (see `campusScope`).
+ */
 export const SNAPSHOTS = [
   {
     queryKey: ['conversations'],
@@ -57,9 +79,56 @@ export const SNAPSHOTS = [
     queryKey: ['communities', 'mine'],
     trim: (data) => (Array.isArray(data) ? data.slice(0, 100) : undefined),
   },
+  // Campus: what its page paints. The people row and the community cards need
+  // a handful each; the events and activities are the first page.
+  {
+    queryKey: ['users', 'campus', 50],
+    campus: true,
+    trim: (data) => (Array.isArray(data) ? data.slice(0, 50) : undefined),
+  },
+  {
+    queryKey: ['communities', 'campus'],
+    campus: true,
+    trim: (data) => (Array.isArray(data) ? data.slice(0, 50) : undefined),
+  },
+  { queryKey: ['campus-events', 'scope', 'upcoming'], campus: true, trim: firstPage },
+  { queryKey: ['activities', 'campus', { limit: 4 }], campus: true, trim: firstPage },
+];
+
+/**
+ * Detail queries keyed `[root, id]`, of which the most recent `max` per account
+ * are kept. The key is part of the identity, so these cannot be listed ahead
+ * like SNAPSHOTS and are matched by shape instead.
+ */
+export const DETAIL_SNAPSHOTS = [
+  { name: 'community', root: 'community', max: 8, trim: record },
+  { name: 'activity', root: 'activity', max: 8, trim: record },
 ];
 
 const byHash = new Map(SNAPSHOTS.map((s) => [hashKey(s.queryKey), s]));
+
+/** The spec that keeps `queryKey`, or undefined. */
+function specFor(queryKey, queryHash) {
+  const fixed = byHash.get(queryHash);
+  if (fixed) return fixed;
+  if (!Array.isArray(queryKey) || queryKey.length !== 2 || typeof queryKey[1] !== 'string' || !queryKey[1]) return undefined;
+  const detail = DETAIL_SNAPSHOTS.find((d) => d.root === queryKey[0]);
+  return detail ? { ...detail, queryKey } : undefined;
+}
+
+/**
+ * The college this account's Campus belongs to, or null when it has none.
+ * Read from the cached user, the same copy `currentUserId` reads.
+ */
+function campusScope(storage) {
+  try {
+    const user = JSON.parse(storage.getItem('currentUser') || 'null');
+    if (!isAffiliationActive(user?.campusAffiliation)) return null;
+    return user.campusAffiliation.collegeId ?? user.collegeId ?? null;
+  } catch {
+    return null;
+  }
+}
 
 /** The signed-in account this device holds, or null. */
 function currentUserId(storage) {
@@ -110,10 +179,14 @@ export function installQuerySnapshots(
     }
   };
 
-  /** The stored value if it may be painted for `userId`, else null. */
-  const usable = (value, userId) => {
+  /** The stored value if it may be painted for `userId` (and, for Campus, their college), else null. */
+  const usable = (value, userId, spec) => {
     if (!value || value.v !== SNAPSHOT_VERSION || value.userId !== userId) return null;
     if (typeof value.savedAt !== 'number' || now() - value.savedAt > MAX_AGE_MS) return null;
+    if (spec?.campus) {
+      const scope = campusScope(storage);
+      if (!scope || value.scope !== scope) return null;
+    }
     return value;
   };
 
@@ -122,7 +195,7 @@ export function installQuerySnapshots(
     // is newer, and an account change meanwhile has emptied the cache.
     if (queryClient.getQueryData(spec.queryKey) !== undefined) return;
     if (currentUserId(storage) !== userId) return;
-    if (!usable(value, userId)) return;
+    if (!usable(value, userId, spec)) return;
     // `updatedAt` is when it was really fetched, so it counts as stale.
     queryClient.setQueryData(spec.queryKey, value.data, { updatedAt: value.savedAt });
     // And invalidated, for queries whose staleTime would otherwise keep a
@@ -145,7 +218,7 @@ export function installQuerySnapshots(
     if (!value) return false;
     preloaded.delete(query.queryHash);
     const userId = currentUserId(storage);
-    if (!userId || !usable(value, userId)) return false;
+    if (!userId || !usable(value, userId, spec)) return false;
     apply(spec, value, userId);
     return true;
   };
@@ -159,7 +232,7 @@ export function installQuerySnapshots(
       const hash = hashKey(spec.queryKey);
       void idbGet('queries', entryKey(preloadUser, hash))
         .then((entry) => {
-          const value = usable(entry?.value, preloadUser);
+          const value = usable(entry?.value, preloadUser, spec);
           if (!value || epoch !== idbEpoch()) return;
           syncEpoch();
           preloaded.set(hash, value);
@@ -168,33 +241,67 @@ export function installQuerySnapshots(
     }
   }
 
+  /** Serialises the index updates, which read, change and write one record. */
+  let indexChain = Promise.resolve();
+
+  /**
+   * Notes `hash` as the most recently saved of its kind and deletes whatever
+   * falls outside the newest `spec.max`, so the detail entries stay bounded.
+   */
+  const remember = (spec, userId, hash, epoch) => {
+    const key = entryKey(userId, `index:${spec.name}`);
+    indexChain = indexChain
+      .then(async () => {
+        if (epoch !== idbEpoch()) return;
+        const entry = await idbGet('queries', key);
+        const known = Array.isArray(entry?.value?.hashes) ? entry.value.hashes : [];
+        const hashes = [hash, ...known.filter((h) => h !== hash)];
+        for (const evicted of hashes.slice(spec.max)) await idbDelete('queries', entryKey(userId, evicted));
+        await idbSet('queries', key, { v: SNAPSHOT_VERSION, userId, hashes: hashes.slice(0, spec.max) }, epoch);
+      })
+      .catch(() => {}); // a missed index only means one entry outlives the cap until the next save
+  };
+
   const save = (hash, epoch) => {
     // Scheduled before a sign-out: the state it would touch is the next account's.
     if (epoch !== idbEpoch()) return;
     pendingWrites.delete(hash);
-    const spec = byHash.get(hash);
     // Looked up again at idle time: a sign-out in between has removed it.
-    const query = queryClient.getQueryCache().find({ queryKey: spec.queryKey, exact: true });
+    const query = queryClient.getQueryCache().get(hash);
+    const spec = query && specFor(query.queryKey, hash);
     const userId = currentUserId(storage);
-    if (!query || !userId || query.state.status !== 'success') return;
+    if (!spec || !userId || query.state.status !== 'success') return;
     const data = spec.trim(query.state.data);
     if (data === undefined) return;
+    const scope = spec.campus ? campusScope(storage) : undefined;
+    // Campus content of an account that no longer has a campus is not kept.
+    if (spec.campus && !scope) return;
     lastWrite.set(hash, now());
     void idbSet(
       'queries',
       entryKey(userId, hash),
-      { v: SNAPSHOT_VERSION, userId, savedAt: query.state.dataUpdatedAt || now(), data },
+      { v: SNAPSHOT_VERSION, userId, savedAt: query.state.dataUpdatedAt || now(), data, ...(scope ? { scope } : {}) },
       epoch,
     );
+    if (spec.max) remember(spec, userId, hash, epoch);
   };
 
   return queryClient.getQueryCache().subscribe((event) => {
     const query = event?.query;
-    const spec = query && byHash.get(query.queryHash);
+    const spec = query && specFor(query.queryKey, query.queryHash);
     if (!spec) return;
 
     if (event.type === 'observerAdded') {
       if (query.state.data === undefined && !restoreNow(query, spec)) void restore(query, spec);
+      return;
+    }
+
+    // The server refused this record (an activity made private, a community
+    // taken down): what is on disk for it must not outlive the answer.
+    if (event.type === 'updated' && event.action?.type === 'error' && spec.max) {
+      const status = query.state.error?.status ?? query.state.error?.response?.status;
+      const userId = currentUserId(storage);
+      if ((status === 403 || status === 404) && userId) void idbDelete('queries', entryKey(userId, query.queryHash));
       return;
     }
 

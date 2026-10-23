@@ -1,3 +1,5 @@
+import styles from './StateViews.module.css';
+
 export function EmptyState({ title = 'Nothing to see here', message, icon, action, className, style }) {
   return (
     <div className={className} style={{ textAlign: 'center', padding: '4rem 1rem', color: 'var(--color-text-muted)', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', ...style }}>
@@ -40,18 +42,19 @@ export { default as NotFoundState } from './NotFoundState';
 
 
 /**
- * A screen opened offline with nothing saved on this device for it. Shown
- * instead of a skeleton that never ends or a generic "something went wrong";
- * the data loads by itself when the connection returns (queries resume), so
- * there is nothing to tap.
+ * A screen opened offline with nothing to show for it. Shown instead of a
+ * skeleton that never ends or a generic "something went wrong"; the data loads
+ * by itself when the connection returns (queries resume), so there is nothing
+ * to tap. The wording never says what is or is not kept on the device.
  */
-export function OfflineState({ title = "You're offline", message = 'Nothing is saved on this device for this yet. It will load when you are back online.', className, style }) {
+export function OfflineState({ title = "You're offline", message = 'Connect to the internet to see this.', action, className, style }) {
   return (
     <EmptyState
       className={className}
       style={style}
       title={title}
       message={message}
+      action={action}
       icon={
         <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '1rem', opacity: 0.5 }} aria-hidden="true">
           <line x1="2" y1="2" x2="22" y2="22" />
@@ -64,5 +67,33 @@ export function OfflineState({ title = "You're offline", message = 'Nothing is s
         </svg>
       }
     />
+  );
+}
+
+/**
+ * The offline state for a whole screen that has nothing else on it: centred,
+ * both ways, in what is visible of the screen.
+ *
+ * On a phone it is laid over exactly that area (under the status bar, above the
+ * bottom bar or the home indicator), so it is centred in the visible screen
+ * whatever padding or height the page around it has. On a wide screen it is an
+ * ordinary block in the page's content column. `onBack` adds a Back button, for
+ * a page opened from somewhere (a community, an activity) that has no bar of
+ * its own to leave by.
+ */
+export function OfflineScreen({ title, message, onBack }) {
+  return (
+    <div className={styles.screen} data-offline-screen="">
+      <OfflineState
+        title={title}
+        message={message}
+        style={{ padding: '1.5rem 1rem' }}
+        action={onBack ? (
+          <button type="button" className={styles.backButton} onClick={onBack}>
+            Go back
+          </button>
+        ) : undefined}
+      />
+    </div>
   );
 }

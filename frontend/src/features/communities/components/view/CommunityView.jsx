@@ -27,7 +27,9 @@ import {
 import MediaCropper from '@shared/components/media/MediaCropper';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import Skeleton from '@shared/components/skeletons/Skeleton';
-import { ErrorState } from '@shared/components/ui/StateViews';
+import { ErrorState, OfflineScreen, OfflineState } from '@shared/components/ui/StateViews';
+import { useOnlineStatus } from '@shared/lib/networkStatus';
+import { isNetworkLevelFailure } from '@shared/utils/networkErrors';
 import NotFoundState from '@shared/components/ui/NotFoundState';
 import Post from '@features/feed/components/post/Post';
 import VerificationGate from '@shared/components/VerificationGate/VerificationGate';
@@ -836,6 +838,7 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
     localStorage.setItem('meetify_muted_communities', JSON.stringify(mutedList));
   };
   
+  const online = useOnlineStatus();
   const { data: apiComm, isLoading: isApiLoading, isError: isApiError, error: apiError, refetch: retry } = useCommunityById(communityId);
 
   const isDeletedError = isApiError && (
@@ -954,6 +957,15 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
     }
   }, [onCommentClick, onPostClick, comm?.id]);
 
+  // Offline with no copy of this community on the device (its own, or a row
+  // from a list): the query is paused, which is neither loading nor an answer,
+  // so it would otherwise be a skeleton that never ends.
+  if (!comm && !online && !isDeletedError) {
+    return (
+      <OfflineScreen message="Connect to the internet to see this community." onBack={onBack} />
+    );
+  }
+
   if (isLoading) {
     return (
       <div className={styles.wrapper}>
@@ -1008,7 +1020,8 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
 
   if (isApiError || (!isApiLoading && !comm)) {
     const status = apiError?.response?.status;
-    const isServerError = status >= 500;
+    // A request that never reached the server is not "not found" either.
+    const isServerError = status >= 500 || isNetworkLevelFailure(apiError);
 
     if (isServerError) {
       return (
@@ -1100,6 +1113,10 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
 
   const handleDeleteCommunity = async () => {
     if (deleting) return;
+    if (blockIfOffline('action')) {
+      setShowDeleteConfirm(false);
+      return;
+    }
     setDeleting(true);
     try {
       await communitiesApi.delete(communityId);
@@ -1282,7 +1299,11 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
               )}
 
               <div className={styles.postsFeed}>
-                {communityPosts.length === 0 && isPostsPending ? (
+                {communityPosts.length === 0 && isPostsPending && !online ? (
+                  // The first page cannot arrive without a connection: its
+                  // query is paused, so a skeleton would never be replaced.
+                  <OfflineState message="Connect to the internet to see the posts." />
+                ) : communityPosts.length === 0 && isPostsPending ? (
                   // The first page has not arrived: this is not an empty
                   // community yet, so it must not say so.
                   <>

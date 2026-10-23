@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { campusAffiliationApi } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
 import { dropCampusCaches } from '@shared/lib/campusCache';
+import { useOnlineStatus } from '@shared/lib/networkStatus';
 import {
   CAMPUS_AFFILIATION_QUERY_KEY,
   hasAffiliationField,
@@ -41,10 +42,15 @@ async function fetchAffiliation() {
  *     from local storage.
  *
  * `status` is 'loading' | 'active' | 'none'. It stays 'loading' while the
- * signed-in user is only the device's saved copy (`profileFromCache`).
+ * signed-in user is only the device's saved copy (`profileFromCache`) AND the
+ * device is online, so the server can be asked. With no network there is
+ * nothing to wait for: a copy that says `active` keeps Campus open to what the
+ * device already holds (its queries stay paused, so nothing new is asked of
+ * the server), and the confirmation runs again when the connection returns.
  */
 export function useCampusAffiliation({ withPending = false } = {}) {
   const { currentUser, isLoggedIn, profileFromCache } = useAuth();
+  const online = useOnlineStatus();
   const userId = currentUser?.id;
   const known = hasAffiliationField(currentUser);
   const userAffiliation = known ? currentUser.campusAffiliation : null;
@@ -93,8 +99,10 @@ export function useCampusAffiliation({ withPending = false } = {}) {
   // its neutral loading state until the session is confirmed. An answer from
   // the affiliation endpoint itself is the server's, and counts.
   if (currentUser && profileFromCache && !(data && !data.legacy)) {
-    status = 'loading';
-    legacy = false;
+    if (online || !activeFromUser) {
+      status = 'loading';
+      legacy = false;
+    }
   }
 
   return {

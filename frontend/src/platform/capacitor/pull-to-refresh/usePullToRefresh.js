@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { isScrollLocked } from '@shared/hooks/useScrollLock';
+import { isOnline } from '@shared/lib/networkStatus';
+import { OFFLINE_MESSAGE } from '@shared/lib/offlineNotice';
+import { showToast } from '@shared/utils/toast';
 
 /**
  * The gesture, the state machine and the locking behind pull-to-refresh.
@@ -299,6 +302,17 @@ export function usePullToRefresh({ onRefresh, disabled = false, getScrollTop, on
       }
 
       if (distanceRef.current >= TRIGGER_DISTANCE) {
+        /*
+         * Offline there is nothing to fetch, and a screen's reload is often
+         * `resetQueries`, which empties what is on screen and then sits on a
+         * paused fetch. So the pull ends here: the existing "You are offline"
+         * toast, the content left exactly as it is, no spinner.
+         */
+        if (!isOnline()) {
+          showToast(OFFLINE_MESSAGE, 'info', { duration: 2500 });
+          settle();
+          return;
+        }
         runRefresh();
       } else {
         settle();

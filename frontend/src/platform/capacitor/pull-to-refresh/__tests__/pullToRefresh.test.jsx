@@ -3,6 +3,10 @@ import { Profiler } from 'react';
 import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import PullToRefresh from '../PullToRefresh';
+import { OFFLINE_MESSAGE } from '@shared/lib/offlineNotice';
+
+const { showToast } = vi.hoisted(() => ({ showToast: vi.fn() }));
+vi.mock('@shared/utils/toast', () => ({ showToast }));
 
 /**
  * The pull paints itself onto the DOM: dragging must not re-render React.
@@ -113,5 +117,51 @@ describe('PullToRefresh', () => {
     touch(page, 'touchmove', 105, 12); // inside the slop
     flushFrame();
     expect(content.style.transform === '' || content.style.transform === 'none').toBe(true);
+  });
+
+  describe('offline', () => {
+    let onLine;
+    beforeEach(() => {
+      onLine = false;
+      showToast.mockClear();
+      vi.spyOn(window.navigator, 'onLine', 'get').mockImplementation(() => onLine);
+    });
+    afterEach(() => vi.restoreAllMocks());
+
+    const pullPastTrigger = (page) => {
+      touch(page, 'touchstart', 100);
+      for (let y = 110; y <= 400; y += 30) touch(page, 'touchmove', y);
+      flushFrame();
+      touch(page, 'touchend', 400);
+    };
+
+    it('shows the offline toast and ends the pull without refreshing anything', async () => {
+      const onRefresh = vi.fn(() => Promise.resolve());
+      const { page, content } = setup(onRefresh);
+      pullPastTrigger(page);
+      expect(onRefresh).not.toHaveBeenCalled();
+      expect(showToast).toHaveBeenCalledTimes(1);
+      expect(showToast.mock.calls[0][0]).toBe(OFFLINE_MESSAGE);
+      // Springs straight back, with no spinner at the refresh offset.
+      expect(document.querySelector('[class*="dialSpinning"]')).toBeNull();
+      expect(content.style.transform).toBe('translate3d(0, 0px, 0)');
+      await act(async () => { vi.advanceTimersByTime(400); });
+      expect(content.style.transform).toBe('none');
+    });
+
+    it('leaves what is on screen alone', () => {
+      const { page } = setup(() => Promise.resolve());
+      pullPastTrigger(page);
+      expect(page.textContent).toBe('page');
+    });
+
+    it('refreshes as usual once the connection is back', () => {
+      const onRefresh = vi.fn(() => Promise.resolve());
+      const { page } = setup(onRefresh);
+      onLine = true;
+      pullPastTrigger(page);
+      expect(onRefresh).toHaveBeenCalledTimes(1);
+      expect(showToast).not.toHaveBeenCalled();
+    });
   });
 });

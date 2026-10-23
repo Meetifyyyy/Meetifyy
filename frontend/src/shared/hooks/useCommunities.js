@@ -14,6 +14,7 @@ import { idbGet, idbSet, idbDelete, idbEpoch } from '@shared/lib/idb';
 import { useHasCampusAccess, useCampusDeniedHandler } from './useCampusAffiliation';
 import { useAuth } from '@shared/context/AuthContext';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
+import { useOnlineStatus } from '@shared/lib/networkStatus';
 import { useGuardedMutation } from '@shared/hooks/useGuardedMutation';
 
 // A stable empty list. `query.data || []` handed every consumer a brand-new
@@ -349,9 +350,32 @@ export function useExploreCommunities({ search = '' } = {}) {
 }
 
 /**
+ * A community's row out of whichever cached list holds it (mine, campus,
+ * Explore, recommendations), or undefined. Purely a cache read, and only ever a
+ * render placeholder: the list row has the fields a card needs, not the
+ * community's full record.
+ */
+export function findCommunityInListCaches(queryClient, id) {
+  if (!id) return undefined;
+  for (const [, data] of queryClient.getQueriesData({ queryKey: COMMUNITY_KEYS.all })) {
+    const rows = Array.isArray(data) ? data : Array.isArray(data?.pages) ? data.pages.flat() : [];
+    const hit = rows.find((c) => c && typeof c === 'object' && c.id === id);
+    if (hit) return hit;
+  }
+  return undefined;
+}
+
+/**
  * Fetches a single community by ID.
+ *
+ * Offline, with no copy of its own on the device, the row from a cached list
+ * stands in for it, so a community the person has seen in any list still opens.
+ * Online it is not used: the full record is a request away, and a list row's
+ * missing fields (members, rules) would briefly show an incomplete page.
  */
 export function useCommunityById(id) {
+  const queryClient = useQueryClient();
+  const online = useOnlineStatus();
   return useQuery({
     queryKey: COMMUNITY_KEYS.byId(id),
     queryFn: () => communitiesApi.getById(id),
@@ -368,6 +392,7 @@ export function useCommunityById(id) {
     // No keep-previous here: the key IS the identity. Opening community B
     // rendered community A's name, description and avatar until B's fetch
     // landed, which read as "the community avatar loaded the wrong image".
+    placeholderData: () => (online ? undefined : findCommunityInListCaches(queryClient, id)),
   });
 }
 

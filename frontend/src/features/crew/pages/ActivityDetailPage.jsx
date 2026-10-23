@@ -30,6 +30,10 @@ const ActivityDiscussion = lazy(() =>
 );
 import ActivityDetailSkeleton from '../components/ActivityDetailSkeleton';
 import NotFoundState from '@shared/components/ui/NotFoundState';
+import { ErrorState, OfflineScreen } from '@shared/components/ui/StateViews';
+import { useOnlineStatus } from '@shared/lib/networkStatus';
+import { OfflineError, blockIfOffline } from '@shared/lib/offlineGuard';
+import { isNetworkLevelFailure } from '@shared/utils/networkErrors';
 import { activitiesApi, getMediaUrl } from '@shared/api/apiClient';
 
 /* ── Access denied ─────────────────────────────────────────────
@@ -145,10 +149,14 @@ export default function ActivityDetailPage() {
   const {
     data: rawActivity,
     isLoading: isActivityLoading,
+    isError: isActivityError,
+    error: activityError,
+    refetch: refetchActivity,
     isAccessDenied,
     accessDeniedCode,
     accessDeniedMessage,
   } = useActivityById(cleanId);
+  const online = useOnlineStatus();
 
   const activity = useMemo(() => {
     // rawActivity is the authoritative server data (patched optimistically by useJoinActivity).
@@ -377,8 +385,30 @@ export default function ActivityDetailPage() {
     );
   }
 
+  // Offline with no copy of this activity on the device (not the one handed
+  // over by the page it was opened from, not a list card): the query is paused,
+  // which is neither loading nor an answer, so it would otherwise fall through
+  // to "not found" below.
+  if (!activity && !online) {
+    return (
+      <main style={{ gridColumn: '2 / -1', width: '100%', maxWidth: 'none', margin: 0, padding: 0 }}>
+        <OfflineScreen message="Connect to the internet to see this activity." onBack={() => goBack('/crew')} />
+      </main>
+    );
+  }
+
   if (isActivityLoading && !activity) {
     return <ActivityDetailSkeleton />;
+  }
+
+  // The request never reached the server: not the same as the activity not
+  // existing.
+  if (!activity && isActivityError && isNetworkLevelFailure(activityError)) {
+    return (
+      <main style={{ gridColumn: '2 / -1', width: '100%', maxWidth: 'none', margin: 0, padding: 0 }}>
+        <ErrorState onRetry={refetchActivity} />
+      </main>
+    );
   }
 
   if (!activity) {
@@ -443,10 +473,13 @@ export default function ActivityDetailPage() {
   };
 
   const handleSave = () => {
+    // The store refuses it offline (one toast, nothing flipped).
     toggleSaveActivity(activity.id);
   };
 
   const handleSendInvites = async (userIds) => {
+    // Refused with the reason; the sheet stays open with its selection.
+    if (blockIfOffline('action')) throw new OfflineError('action');
     try {
       await activitiesApi.inviteFriends(activity.id, userIds);
       queryClient.invalidateQueries({ queryKey: ['activity-invitation-statuses', activity.id] });
