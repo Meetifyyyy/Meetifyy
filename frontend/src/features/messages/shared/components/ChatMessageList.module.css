@@ -49,6 +49,15 @@
   --msg-gap-attach: 0.1rem;
   --msg-gap-stack: 0.25rem;
 
+  /*
+   * Corner radius of a message bubble (text, reply, typing) and of a voice
+   * note, which is a bubble in all but markup. All four corners, on every
+   * bubble: there is no tail corner. A reply quote inside a bubble derives its
+   * own radius from this (see .msgBubbleReplyRef), so the two stay in
+   * proportion when this changes.
+   */
+  --msg-bubble-radius: 22px;
+
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -156,6 +165,31 @@
   backface-visibility: hidden;
 }
 
+/*
+ * Narrow screens (a phone, or a pane under 480px): a bubble may use the whole
+ * row. At 90% a long message stopped well short of the far edge, and the reply
+ * and more buttons that sit beside every bubble (invisible until hover, but
+ * they keep their room) take about 70px of what is left, so on a 375px phone a
+ * bubble topped out near 240px. Wider panes keep the narrower caps below and
+ * above, so nothing changes on a tablet or desktop.
+ *
+ * Two queries because two surfaces: Messages sizes against its pane
+ * (`chatpane`, see ChatAreaLayout), and the Instant Match chat has no such
+ * container and is a full-screen sheet on a phone, so it sizes against the
+ * viewport. Where both match they say the same thing.
+ */
+@container chatpane (max-width: 479px) {
+  .msgBubbleWrapper {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 479px) {
+  .msgBubbleWrapper {
+    max-width: 100%;
+  }
+}
+
 @container chatpane (min-width: 768px) {
   .msgBubbleWrapper {
     max-width: min(85%, 680px);
@@ -210,7 +244,7 @@
   width: fit-content;
   max-width: 100%;
   padding: 0.6rem 0.9rem;
-  border-radius: 18px;
+  border-radius: var(--msg-bubble-radius, 22px);
   line-height: 1.4;
   position: relative;
   min-width: 0;
@@ -223,7 +257,6 @@
   /* Solid rather than the near-transparent subtle token: against the chat
      background the old value read as a faint wash instead of a bubble. */
   background: #e8e8ee;
-  border-bottom-left-radius: 4px;
   color: var(--color-text-main, #18181b);
 }
 
@@ -235,7 +268,6 @@
   align-self: flex-end;
   background: linear-gradient(135deg, var(--color-primary, #6366f1) 0%, #4f46e5 100%);
   color: white;
-  border-bottom-right-radius: 4px;
   --link-color: white;
 }
 
@@ -276,7 +308,11 @@
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 10px;
+  /* Column gap only. A single `gap: 10px` was also the ROW gap, so when a long
+     message left no room for the time beside its last line and the time wrapped
+     onto a row of its own, it sat 12px below the text (10 plus the line's own
+     leading) - far more than the line spacing within the text itself. */
+  gap: 0 10px;
   flex-wrap: wrap;
   min-width: 0;
   max-width: 100%;
@@ -314,8 +350,12 @@
   text-decoration: underline;
 }
 
+/* On a sent bubble: solid white, a weight heavier than the base. At 88% white
+   and weight 600 it read dimmer than the message text beside it, on the one
+   surface (the indigo gradient) where white is already the lowest contrast. */
 .msgSeeMoreBtnMe {
-  color: rgba(255, 255, 255, 0.88);
+  color: #ffffff;
+  font-weight: 700;
 }
 
 .msgSeeMoreBtnThem {
@@ -836,7 +876,14 @@
   font-size: 0.83rem;
   opacity: 0.95;
   background: rgba(0, 0, 0, 0.07);
-  border-radius: 4px 10px 10px 4px;
+  /*
+   * Concentric with the bubble: the bubble's radius less the padding between
+   * the two (0.6rem above and below), so the quote's corners curve the way the
+   * bubble's do instead of being a fixed 10px that falls out of proportion when
+   * the bubble changes. All four corners, the left ones too: they used to be
+   * 4px, which left the quote square on the side with the accent bar.
+   */
+  border-radius: calc(var(--msg-bubble-radius, 22px) - 0.6rem);
   /* Keeps a one-word quote from collapsing into a sliver next to its accent bar,
      while staying inside the bubble on narrow screens. */
   min-width: min(150px, 100%);

@@ -17,7 +17,8 @@ import MessageBubble from '../MessageBubble';
  * The bubble carries the two facts the thread's stylesheet needs to space it:
  * whether it closes up against the row above (a run), and whether it ends in a
  * status line the next row must stay clear of. Both are attributes, so the
- * spacing lives in CSS and the bubble renders the same either way.
+ * spacing lives in CSS and the bubble renders the same either way. (Its shape
+ * never depends on either: every bubble keeps all four corners round.)
  */
 const wrap = (ui) => (
   <QueryClientProvider client={new QueryClient()}>

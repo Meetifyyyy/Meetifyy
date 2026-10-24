@@ -127,6 +127,80 @@ describe('thread spacing', () => {
   });
 });
 
+describe('bubble corners', () => {
+  const list = read('src/features/messages/shared/components/ChatMessageList.module.css');
+
+  it('takes the radius of a bubble, and of a voice note, from one token', () => {
+    expect(rule(list, '.msgChatBody')).toMatch(/--msg-bubble-radius:\s*22px;/);
+    expect(rule(list, '.msgBubble')).toContain('border-radius: var(--msg-bubble-radius, 22px);');
+    expect(rule(read('src/features/messages/shared/components/VoiceMessagePlayer.module.css'), '.voicePlayerContainer')).toContain(
+      'border-radius: var(--msg-bubble-radius, 22px);',
+    );
+  });
+
+  it('keeps all four corners round on every bubble: there is no tail corner', () => {
+    for (const selector of ['.msgBubble', '.msgBubbleThem', '.msgBubbleMe']) {
+      const declarations = rule(list, selector);
+      expect(declarations, selector).not.toBeNull();
+      expect(declarations, selector).not.toMatch(/border-(bottom|top)-(left|right)-radius/);
+    }
+    // ...and nothing singles out the last bubble of a run any more.
+    expect(normalise(list)).not.toContain('data-continued');
+    expect(normalise(list)).not.toMatch(/border-(bottom|top)-(left|right)-radius: 4px/);
+  });
+
+  it('rounds a reply quote concentrically with its bubble, on all four corners', () => {
+    const quote = rule(list, '.msgBubbleReplyRef');
+    // The bubble's radius less the padding between the two, so they stay in proportion.
+    expect(quote).toContain('border-radius: calc(var(--msg-bubble-radius, 22px) - 0.6rem);');
+    expect(rule(list, '.msgBubble')).toContain('padding: 0.6rem 0.9rem;');
+  });
+});
+
+describe('inside a bubble', () => {
+  const list = read('src/features/messages/shared/components/ChatMessageList.module.css');
+
+  it('puts the 10px between text and time on the columns only, never between rows', () => {
+    // A single `gap: 10px` was also a row gap: a time that wrapped onto its own
+    // row sat 12px below the last line of a long message.
+    const wrap = rule(list, '.msgTextTimeWrap');
+    expect(wrap).toContain('gap: 0 10px;');
+    expect(wrap).not.toMatch(/(^|[;\s])gap:\s*10px/);
+  });
+});
+
+describe('bubble width', () => {
+  const list = read('src/features/messages/shared/components/ChatMessageList.module.css');
+  const css = normalise(list);
+
+  it('lets a bubble use the whole row on narrow screens only', () => {
+    // A pane under 480px (Messages) and a viewport under 480px (Instant Match,
+    // which has no pane container): two surfaces, one answer.
+    expect(css).toContain('@container chatpane (max-width: 479px) { .msgBubbleWrapper { max-width: 100%; } }');
+    expect(css).toContain('@media (max-width: 479px) { .msgBubbleWrapper { max-width: 100%; } }');
+  });
+
+  it('leaves the caps for tablets and desktops exactly as they were', () => {
+    expect(rule(list, '.msgBubbleWrapper')).toContain('max-width: min(90%, 680px);');
+    expect(css).toContain('@container chatpane (min-width: 768px) { .msgBubbleWrapper { max-width: min(85%, 680px); } }');
+    expect(css).toContain('@container chatpane (min-width: 1024px) { .msgBubbleWrapper { max-width: min(80%, 680px); } }');
+  });
+});
+
+describe('Show more', () => {
+  const list = read('src/features/messages/shared/components/ChatMessageList.module.css');
+
+  it('is solid white and bold on a sent bubble, where 88% white was dimmer than the text', () => {
+    const me = rule(list, '.msgSeeMoreBtnMe');
+    expect(me).toContain('color: #ffffff;');
+    expect(me).toContain('font-weight: 700;');
+  });
+
+  it('keeps the accent color on a received bubble', () => {
+    expect(rule(list, '.msgSeeMoreBtnThem')).toBe('color: var(--color-primary);');
+  });
+});
+
 describe('typing indicator', () => {
   const source = read('src/features/messages/shared/components/ChatMessageList.jsx');
 

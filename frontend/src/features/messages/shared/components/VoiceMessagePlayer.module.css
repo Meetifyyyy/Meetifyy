@@ -3,7 +3,8 @@
   align-items: center;
   gap: 10px;
   padding: 9px 14px 11px 14px;
-  border-radius: 16px;
+  /* A voice note is a bubble: same corner as the text ones (set on the thread). */
+  border-radius: var(--msg-bubble-radius, 22px);
   width: 275px;
   min-width: 275px;
   max-width: 275px;
