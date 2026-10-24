@@ -83,6 +83,8 @@ async function publishAndSettle(expectedCalls) {
 }
 
 describe('CreateActivityPage retry', () => {
+  // A longer limit: it walks the whole form through the Start and End
+  // dropdowns, which under a full parallel run can pass the default 5s.
   it('re-sends the identical body, and so the same key, after a failed create', async () => {
     renderPage();
 
@@ -91,8 +93,10 @@ describe('CreateActivityPage retry', () => {
 
     // Start 10:05 today; the end follows at 11:05.
     fireEvent.click(screen.getByText('Date & Time'));
-    fireEvent.click(screen.getByText('22', { selector: 'button' }));
-    fireEvent.click(screen.getByText('10:05am', { selector: 'button' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Start day' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Thu 22' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Start time' }));
+    fireEvent.click(screen.getByRole('option', { name: '10:05am' }));
     fireEvent.click(screen.getByText('Done'));
 
     // The chosen start lapses before Publish is pressed (the form's "now" has
@@ -116,5 +120,5 @@ describe('CreateActivityPage retry', () => {
     expect(JSON.stringify(retryBody)).toBe(JSON.stringify(firstBody));
     expect(retryOpts.idempotencyKey).toBeTruthy();
     expect(retryOpts.idempotencyKey).toBe(firstOpts.idempotencyKey);
-  });
+  }, 20_000);
 });

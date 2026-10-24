@@ -960,226 +960,33 @@
   background: rgba(var(--color-primary-rgb), 0.1);
 }
 
-.dtRangeRow {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 1rem 1.3rem;
-  border-bottom: 1px solid var(--color-border-light);
-  flex-shrink: 0;
-}
-
-.dtRangeBox {
-  flex: 1;
+.dtPickers {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 0.2rem;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1.5px solid rgba(255, 255, 255, 0.08);
-  padding: 0.7rem 0.9rem;
-  border-radius: 14px;
-  cursor: pointer;
-  transition: all 0.22s cubic-bezier(0.25, 0.8, 0.25, 1);
+  gap: 1.1rem;
+  padding: 1.1rem 1.3rem 1.3rem;
 }
 
-.dtRangeBox:hover {
-  background: rgba(var(--color-primary-rgb), 0.05);
+.dtSide {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-width: 0;
 }
 
-.dtRangeBoxActive {
-  background: rgba(var(--color-primary-rgb), 0.16);
-  border-color: rgba(var(--color-primary-rgb), 0.85);
-  box-shadow:
-    0 6px 20px rgba(var(--color-primary-rgb), 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.16);
-}
-
-.dtRangeDate {
-  font-family: var(--font-family-display);
+.dtSideLabel {
+  font-family: var(--font-family-sans);
   font-size: 0.72rem;
-  font-weight: 600;
-  color: var(--color-text-light);
-  text-transform: uppercase;
+  font-weight: 400;
   letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.55);
 }
 
-.dtRangeTime {
-  font-family: var(--font-family-sans);
-  font-size: 1.05rem;
-  font-weight: 700;
-  color: var(--color-text-main);
-}
-
-.dtRangeBoxActive .dtRangeDate,
-.dtRangeBoxActive .dtRangeTime {
-  color: var(--color-primary);
-}
-
-.dtRangeArrow {
-  color: var(--color-text-light);
-  flex-shrink: 0;
-}
-
-.dtBody {
-  display: flex;
-  height: 290px;
-  overflow: hidden;
-  min-height: 0;
-}
-
-/* Calendar */
-.calSection {
-  flex: 1;
-  padding: 0.9rem 1.1rem 0.6rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  overflow-y: auto;
-  scrollbar-width: none;
-}
-
-.calSection::-webkit-scrollbar {
-  display: none;
-}
-
-.calNav {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.calLabel {
-  font-family: var(--font-family-display);
-  font-size: 0.88rem;
-  font-weight: 700;
-  color: var(--color-text-main);
-}
-
-.calBtns {
-  display: flex;
-  gap: 0.15rem;
-}
-
-.calBtn {
-  background: none;
-  border: none;
-  color: var(--color-text-muted);
-  cursor: pointer;
-  display: flex;
-  padding: 0.2rem;
-  border-radius: 6px;
-  transition: background var(--transition-fast), color var(--transition-fast);
-}
-
-.calBtn:hover {
-  background: rgba(var(--color-primary-rgb), 0.1);
-  color: var(--color-primary);
-}
-
-.calGrid {
+/* Day, month, time. Time and month carry the longest labels. */
+.dtSelects {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 2px;
-}
-
-.calDow {
-  font-family: var(--font-family-sans);
-  font-size: 0.65rem;
-  font-weight: 600;
-  color: var(--color-text-light);
-  text-align: center;
-  padding: 0.15rem 0;
-  letter-spacing: 0.02em;
-}
-
-.calDay {
-  background: none;
-  border: none;
-  color: var(--color-text-main);
-  font-family: var(--font-family-sans);
-  font-size: 0.8rem;
-  font-weight: 500;
-  cursor: pointer;
-  border-radius: 8px;
-  padding: 0.4rem 0;
-  text-align: center;
-  min-height: 30px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background var(--transition-fast), color var(--transition-fast);
-}
-
-.calDay:hover:not(:disabled):not(.calDaySel) {
-  background: rgba(var(--color-primary-rgb), 0.12);
-  color: var(--color-primary);
-}
-
-.calDaySel {
-  background: linear-gradient(145deg, var(--color-primary), var(--color-primary-hover, var(--color-primary))) !important;
-  color: #fff !important;
-  font-weight: 700;
-  box-shadow:
-    0 4px 14px rgba(var(--color-primary-rgb), 0.5),
-    inset 0 1px 0 rgba(255, 255, 255, 0.28);
-}
-
-.calDayOff {
-  color: var(--color-text-light);
-  opacity: 0.3;
-  cursor: not-allowed;
-}
-
-/* Time column */
-.timeCol {
-  width: 105px;
-  flex-shrink: 0;
-  border-left: 1px solid var(--color-border-light);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.timeList {
-  flex: 1;
-  overflow-y: auto;
-  scrollbar-width: none;
-  padding: 0.4rem 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.timeList::-webkit-scrollbar {
-  display: none;
-}
-
-.timeSlot {
-  background: none;
-  border: none;
-  color: var(--color-text-muted);
-  font-family: var(--font-family-sans);
-  font-size: 0.8rem;
-  font-weight: 500;
-  padding: 0.45rem 0;
-  cursor: pointer;
-  text-align: center;
-  border-radius: 7px;
-  margin: 0 0.35rem;
-  transition: background var(--transition-fast), color var(--transition-fast);
-}
-
-.timeSlot:hover:not(.timeSlotOn) {
-  background: rgba(var(--color-primary-rgb), 0.1);
-  color: var(--color-primary);
-}
-
-.timeSlotOn {
-  background: rgba(var(--color-primary-rgb), 0.22);
-  color: #fff;
-  font-weight: 700;
-  box-shadow: inset 0 0 0 1px rgba(var(--color-primary-rgb), 0.55);
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 0.5rem;
 }
 
 .dtFooter {
@@ -1656,10 +1463,6 @@ input:checked+.slider:before {
 
   .body {
     padding: 1rem 1rem 0 1rem !important;
-  }
-
-  .timeCol {
-    width: 88px;
   }
 
   .bottomRow {

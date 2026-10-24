@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
@@ -19,7 +19,6 @@ import {
   Users,
   Pencil,
   CalendarClock,
-  ChevronLeft,
   ChevronRight,
   X,
   ChevronsUpDown,
@@ -35,21 +34,8 @@ import { idbDelete } from '@shared/lib/idb';
 import { createSubmissionKey } from '@shared/lib/idempotencyKey';
 import { blockIfOffline, submitErrorMessage } from '@shared/lib/offlineGuard';
 import { isNetworkLevelFailure } from '@shared/utils/networkErrors';
-const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-const DAYS_OF_WEEK = ['S','M','T','W','T','F','S'];
-
-function buildTimeSlots() {
-  const slots = [];
-  for (let h = 0; h < 24; h++) {
-    for (let m = 0; m < 60; m += 5) {
-      const hour12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
-      const ampm = h < 12 ? 'am' : 'pm';
-      slots.push({ h, m, label: `${hour12}:${String(m).padStart(2, '0')}${ampm}` });
-    }
-  }
-  return slots;
-}
-const TIME_SLOTS = buildTimeSlots();
+import DateTimeDropdown from '../components/DateTimeDropdown';
+import { dateWindow, monthOptions, dayOptions, timeOptions, clampDay } from '../utils/activityDateOptions';
 
 
 /**
@@ -90,9 +76,6 @@ const VISIBILITY_BY_OPTION = {
 
 /* ─── Date & Time Modal ─── */
 function DateTimeModal({ formData, set, onClose }) {
-  const [activeTab, setActiveTab] = useState('start'); // 'start' or 'end'
-  const isStart = activeTab === 'start';
-
   // Previously unwired: hardware/browser Back navigated away from the page
   // instead of dismissing the sheet, and Escape did nothing.
   useOverlayBack(true, onClose);
@@ -103,55 +86,9 @@ function DateTimeModal({ formData, set, onClose }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const today = new Date();
-  const [viewYear, setViewYear] = useState(isStart ? (formData.startDateYear || today.getFullYear()) : (formData.endDateYear || today.getFullYear()));
-  const [viewMonth, setViewMonth] = useState((isStart ? (formData.startDateMonth || (today.getMonth() + 1)) : (formData.endDateMonth || (today.getMonth() + 1))) - 1);
-  const timeListRef = useRef(null);
-
-  useEffect(() => {
-    const today = new Date();
-    if (isStart) {
-      setViewYear(formData.startDateYear || today.getFullYear());
-      setViewMonth((formData.startDateMonth || (today.getMonth() + 1)) - 1);
-    } else {
-      setViewYear(formData.endDateYear || today.getFullYear());
-      setViewMonth((formData.endDateMonth || (today.getMonth() + 1)) - 1);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only sync view month/year when switching tabs, not while user navigates months
-  }, [activeTab]);
-
-  const selectedHour = isStart ? formData.startTimeHour : formData.endTimeHour;
-  const selectedMinute = isStart ? formData.startTimeMinute : formData.endTimeMinute;
-  const selectedAmPm = isStart ? formData.startTimeAmPm : formData.endTimeAmPm;
-
-  const hasTimeSelected = !!selectedHour;
-
-  const selectedH = hasTimeSelected
-    ? (selectedAmPm === 'PM'
-      ? (parseInt(selectedHour, 10) === 12 ? 12 : parseInt(selectedHour, 10) + 12)
-      : (parseInt(selectedHour, 10) === 12 ? 0 : parseInt(selectedHour, 10)))
-    : null;
-  const selectedM = hasTimeSelected ? parseInt(selectedMinute, 10) : null;
-  const selectedSlotIdx = hasTimeSelected ? TIME_SLOTS.findIndex(s => s.h === selectedH && s.m === selectedM) : -1;
-
-  useLayoutEffect(() => {
-    if (timeListRef.current && selectedSlotIdx >= 0) {
-      const el = timeListRef.current.children[selectedSlotIdx];
-      if (el) el.scrollIntoView({ block: 'center', behavior: 'auto' });
-    }
-  }, [activeTab, selectedSlotIdx]);
-
-  const firstDay = new Date(viewYear, viewMonth, 1).getDay();
-  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
-
-  const prevMonth = () => {
-    if (viewMonth === 0) { setViewMonth(11); setViewYear(y => y - 1); }
-    else setViewMonth(m => m - 1);
-  };
-  const nextMonth = () => {
-    if (viewMonth === 11) { setViewMonth(0); setViewYear(y => y + 1); }
-    else setViewMonth(m => m + 1);
-  };
+  // The dropdown lists are portalled here, so they stay inside the dialog's
+  // dark theme.
+  const [overlayEl, setOverlayEl] = useState(null);
 
   const updateStartDate = (newStart) => {
     const currentStart = getParsedDate(formData.startDateYear, formData.startDateMonth, formData.startDateDay, formData.startTimeHour, formData.startTimeMinute, formData.startTimeAmPm);
@@ -215,30 +152,30 @@ function DateTimeModal({ formData, set, onClose }) {
   // this form is not supposed to do. The coupling below (end follows start,
   // 5-minute minimum, 30-day cap) needs two real datetimes, so it only runs
   // once the second half arrives.
-  const pickDay = (day) => {
+  const pickDay = (isStart, year, month, day) => {
     if (isStart) {
       if (!formData.startTimeHour) {
-        set({ startDateYear: viewYear, startDateMonth: viewMonth + 1, startDateDay: day });
+        set({ startDateYear: year, startDateMonth: month, startDateDay: day });
         return;
       }
-      const newStart = getParsedDate(viewYear, viewMonth + 1, day, formData.startTimeHour, formData.startTimeMinute, formData.startTimeAmPm);
+      const newStart = getParsedDate(year, month, day, formData.startTimeHour, formData.startTimeMinute, formData.startTimeAmPm);
       if (newStart) updateStartDate(newStart);
     } else {
       if (!formData.endTimeHour) {
-        set({ endDateYear: viewYear, endDateMonth: viewMonth + 1, endDateDay: day });
+        set({ endDateYear: year, endDateMonth: month, endDateDay: day });
         return;
       }
-      const newEnd = getParsedDate(viewYear, viewMonth + 1, day, formData.endTimeHour, formData.endTimeMinute, formData.endTimeAmPm);
+      const newEnd = getParsedDate(year, month, day, formData.endTimeHour, formData.endTimeMinute, formData.endTimeAmPm);
       if (newEnd) updateEndDate(newEnd);
     }
   };
 
-  const pickSlot = (slot) => {
+  const pickSlot = (isStart, slot) => {
     const h12 = slot.h === 0 ? 12 : slot.h > 12 ? slot.h - 12 : slot.h;
     const hourStr = String(h12).padStart(2, '0');
     const minuteStr = String(slot.m).padStart(2, '0');
     const ampmStr = slot.h < 12 ? 'AM' : 'PM';
-    
+
     if (isStart) {
       if (!formData.startDateDay) {
         set({ startTimeHour: hourStr, startTimeMinute: minuteStr, startTimeAmPm: ampmStr });
@@ -256,101 +193,33 @@ function DateTimeModal({ formData, set, onClose }) {
     }
   };
 
-  const isDayDisabled = (day) => {
-    const d = new Date(viewYear, viewMonth, day); d.setHours(0,0,0,0);
-    const t = new Date(); t.setHours(0,0,0,0);
-    if (isStart) {
-      return d < t;
-    } else {
-      const currentStart = getParsedDate(formData.startDateYear, formData.startDateMonth, formData.startDateDay, formData.startTimeHour, formData.startTimeMinute, formData.startTimeAmPm);
-      if (!currentStart) return d < t;
-      const startDay = new Date(currentStart); startDay.setHours(0,0,0,0);
-      const maxEndDay = new Date(currentStart.getTime() + 30 * 24 * 60 * 60000); maxEndDay.setHours(23,59,59,999);
-      return d < startDay || d > maxEndDay;
-    }
-  };
-
-  const isSelected = (day) => {
-    if (isStart) {
-      return formData.startDateYear === viewYear && formData.startDateMonth === viewMonth + 1 && formData.startDateDay === day;
-    } else {
-      return formData.endDateYear === viewYear && formData.endDateMonth === viewMonth + 1 && formData.endDateDay === day;
-    }
-  };
-
-  const fmtDate = (isStartVal) => {
-    const y = isStartVal ? formData.startDateYear : formData.endDateYear;
-    const m = isStartVal ? formData.startDateMonth : formData.endDateMonth;
-    const d = isStartVal ? formData.startDateDay : formData.endDateDay;
-    if (!d) return 'Select date';
-    return new Date(y, m - 1, d)
-      .toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-  };
-  const fmtTime = (isStartVal) => {
-    const h = isStartVal ? formData.startTimeHour : formData.endTimeHour;
-    const min = isStartVal ? formData.startTimeMinute : formData.endTimeMinute;
-    const ampm = isStartVal ? formData.startTimeAmPm : formData.endTimeAmPm;
-    if (!h) return 'Select time';
-    return `${h}:${min} ${ampm}`;
-  };
-
-  const cells = [];
-  for (let i = 0; i < firstDay; i++) cells.push(null);
-  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+  const currentStart = getParsedDate(formData.startDateYear, formData.startDateMonth, formData.startDateDay, formData.startTimeHour, formData.startTimeMinute, formData.startTimeAmPm);
 
   return createPortal(
-    <div data-theme="dark" className={styles.modalOverlay} onClick={onClose}>
+    <div ref={setOverlayEl} data-theme="dark" className={styles.modalOverlay} onClick={onClose}>
       <div className={styles.dateTimeModal} onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Date and time">
         <div className={styles.dtHeader}>
           <span className={styles.dtTitle}>Date &amp; Time</span>
           <button type="button" className={styles.dtClose} onClick={onClose}><X size={16} /></button>
         </div>
 
-        <div className={styles.dtRangeRow}>
-          <button type="button" className={`${styles.dtRangeBox} ${isStart ? styles.dtRangeBoxActive : ''}`} onClick={() => setActiveTab('start')}>
-            <span className={styles.dtRangeDate}>{fmtDate(true)}</span>
-            <span className={styles.dtRangeTime}>{fmtTime(true)}</span>
-          </button>
-          
-          <ChevronRight size={16} className={styles.dtRangeArrow} />
-          
-          <button type="button" className={`${styles.dtRangeBox} ${!isStart ? styles.dtRangeBoxActive : ''}`} onClick={() => setActiveTab('end')}>
-            <span className={styles.dtRangeDate}>{fmtDate(false)}</span>
-            <span className={styles.dtRangeTime}>{fmtTime(false)}</span>
-          </button>
-        </div>
-
-        <div className={styles.dtBody}>
-          <div className={styles.calSection}>
-            <div className={styles.calNav}>
-              <span className={styles.calLabel}>{MONTHS[viewMonth]} {viewYear}</span>
-              <div className={styles.calBtns}>
-                <button type="button" className={styles.calBtn} onClick={prevMonth}><ChevronLeft size={14} /></button>
-                <button type="button" className={styles.calBtn} onClick={nextMonth}><ChevronRight size={14} /></button>
-              </div>
-            </div>
-            <div className={styles.calGrid}>
-              {DAYS_OF_WEEK.map((d, i) => <span key={i} className={styles.calDow}>{d}</span>)}
-              {cells.map((day, i) => (
-                <button key={i} type="button"
-                  className={`${styles.calDay} ${day && isSelected(day) ? styles.calDaySel : ''} ${day && isDayDisabled(day) ? styles.calDayOff : ''}`}
-                  onClick={() => day && !isDayDisabled(day) && pickDay(day)}
-                  disabled={!day || isDayDisabled(day)}
-                >{day || ''}</button>
-              ))}
-            </div>
-          </div>
-
-          <div className={styles.timeCol}>
-            <div className={styles.timeList} ref={timeListRef}>
-              {TIME_SLOTS.map((slot, i) => (
-                <button key={i} type="button"
-                  className={`${styles.timeSlot} ${hasTimeSelected && slot.h === selectedH && slot.m === selectedM ? styles.timeSlotOn : ''}`}
-                  onClick={() => pickSlot(slot)}
-                >{slot.label}</button>
-              ))}
-            </div>
-          </div>
+        <div className={styles.dtPickers}>
+          <DateTimeRow
+            side="start"
+            formData={formData}
+            currentStart={currentStart}
+            container={overlayEl}
+            onDay={(y, m, d) => pickDay(true, y, m, d)}
+            onSlot={(slot) => pickSlot(true, slot)}
+          />
+          <DateTimeRow
+            side="end"
+            formData={formData}
+            currentStart={currentStart}
+            container={overlayEl}
+            onDay={(y, m, d) => pickDay(false, y, m, d)}
+            onSlot={(slot) => pickSlot(false, slot)}
+          />
         </div>
 
         <div className={styles.dtFooter}>
@@ -359,6 +228,83 @@ function DateTimeModal({ formData, set, onClose }) {
       </div>
     </div>,
     document.body,
+  );
+}
+
+/**
+ * One side of the dialog: a label, then day / month / time dropdowns.
+ *
+ * The month shown is the chosen date's month; before a day is chosen it is
+ * held locally (choosing a month alone records nothing, as the calendar's
+ * month arrows did not). Changing the month under a chosen day re-picks that
+ * day in the new month, clamped to its length and to the allowed window.
+ */
+function DateTimeRow({ side, formData, currentStart, container, onDay, onSlot }) {
+  const isStart = side === 'start';
+  const y = isStart ? formData.startDateYear : formData.endDateYear;
+  const m = isStart ? formData.startDateMonth : formData.endDateMonth;
+  const d = isStart ? formData.startDateDay : formData.endDateDay;
+  const hour = isStart ? formData.startTimeHour : formData.endTimeHour;
+  const minute = isStart ? formData.startTimeMinute : formData.endTimeMinute;
+  const ampm = isStart ? formData.startTimeAmPm : formData.endTimeAmPm;
+
+  const now = new Date();
+  const win = dateWindow(side, currentStart, now);
+  const months = monthOptions(win);
+  const [localView, setLocalView] = useState(null);
+  const fallback = months[0];
+  const local = localView && months.find((o) => o.value === localView) ? localView : fallback.value;
+  const viewValue = d ? `${y}-${m}` : local;
+  const view = months.find((o) => o.value === viewValue) || { year: y, month: m };
+
+  const days = dayOptions(view.year, view.month, win);
+  const times = timeOptions(side, d ? { year: y, month: m, day: d } : null, currentStart, now);
+
+  let timeValue = '';
+  if (hour) {
+    let h = parseInt(hour, 10);
+    if (ampm === 'PM' && h !== 12) h += 12;
+    if (ampm === 'AM' && h === 12) h = 0;
+    timeValue = `${h}:${parseInt(minute, 10)}`;
+  }
+
+  const onMonth = (opt) => {
+    if (!d) { setLocalView(opt.value); return; }
+    const day = clampDay(opt.year, opt.month, d, win);
+    if (day) onDay(opt.year, opt.month, day);
+  };
+
+  const label = isStart ? 'Start' : 'End';
+  return (
+    <div className={styles.dtSide}>
+      <span className={styles.dtSideLabel}>{label}</span>
+      <div className={styles.dtSelects}>
+        <DateTimeDropdown
+          ariaLabel={`${label} day`}
+          placeholder="Day"
+          value={d || ''}
+          options={days}
+          container={container}
+          onChange={(opt) => onDay(view.year, view.month, opt.value)}
+        />
+        <DateTimeDropdown
+          ariaLabel={`${label} month`}
+          placeholder="Month"
+          value={viewValue}
+          options={months}
+          container={container}
+          onChange={onMonth}
+        />
+        <DateTimeDropdown
+          ariaLabel={`${label} time`}
+          placeholder="Time"
+          value={timeValue}
+          options={times}
+          container={container}
+          onChange={(opt) => onSlot(opt.slot)}
+        />
+      </div>
+    </div>
   );
 }
 
