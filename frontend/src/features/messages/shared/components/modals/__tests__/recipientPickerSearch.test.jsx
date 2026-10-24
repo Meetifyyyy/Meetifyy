@@ -126,7 +126,7 @@ describe('New Message modal — search reaches the server', () => {
     await waitFor(() => {
       expect(renderedHandles()).toContain('@faraway');
     });
-    expect(getConnectionsMock).toHaveBeenCalledWith('faraway', 50);
+    expect(getConnectionsMock).toHaveBeenCalledWith('faraway', 50, { audience: 'message' });
   });
 
   it('debounces to one request per pause, not one per keystroke', async () => {
@@ -147,18 +147,35 @@ describe('New Message modal — search reaches the server', () => {
     expect(terms).toEqual(['anita']);
   });
 
-  it('keeps showing people the viewer already talks to', async () => {
-    // The map is where open threads live, and it must not be dropped now that
-    // the server answers the search -- otherwise the suggested list would lose
-    // every face it used to open with.
-    usersMap = { u1: { id: 'u1', username: 'known', displayName: 'Known Person' } };
+  it('opens on the server\'s circle, not every locally known account', async () => {
+    // With no query the list is the people the viewer follows and talks to,
+    // as the server ranks them; campus accounts in the local map stay out
+    // until a search matches them.
+    usersMap = { u1: { id: 'u1', username: 'campusonly', displayName: 'Campus Only' } };
+    getConnectionsMock.mockResolvedValue([
+      { id: 'u2', username: 'friend', displayName: 'Friend', contactable: true },
+    ]);
 
     renderModal();
     await settle();
 
     await waitFor(() => {
-      expect(renderedHandles()).toContain('@known');
+      expect(renderedHandles()).toContain('@friend');
     });
+    expect(renderedHandles()).not.toContain('@campusonly');
+  });
+
+  it('shows an unverified result with a notice instead of a checkbox', async () => {
+    getConnectionsMock.mockResolvedValue([
+      { id: 'u5', username: 'newbie', displayName: 'New Bie', contactable: false },
+    ]);
+
+    renderModal();
+    await type('newbie');
+
+    const row = await waitFor(() => screen.getByRole('button', { expanded: false }));
+    fireEvent.click(row);
+    expect(screen.getByRole('status').textContent).toMatch(/hasn’t verified their account yet/);
   });
 
   it('shows a server result and a locally-known match together, once each', async () => {

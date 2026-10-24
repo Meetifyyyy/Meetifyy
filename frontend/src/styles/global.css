@@ -645,6 +645,27 @@ nav a.active {
     max-height: calc(100dvh - var(--status-bar-inset, 0px) - max(var(--bottom-nav-clearance), var(--kb-inset, 0px))) !important;
   }
 
+  /* While the inbox's own search field is in use, the box gives up the
+     keyboard's height on the keyboard's own duration, curve and head start
+     (useKeyboardInset), so the list and its empty state move with the
+     keyboard instead of jumping up in the frame it starts. Only then: on the
+     box itself the transition also ran when a chat closed (the height changes
+     with .chat-is-open), and the empty state glided up and down. */
+  .centre--messages.chat-pans-keyboard:not(.chat-is-open):focus-within {
+    transition:
+      height var(--kb-duration, 0ms) var(--kb-easing, ease-out) var(--kb-delay, 0ms),
+      max-height var(--kb-duration, 0ms) var(--kb-easing, ease-out) var(--kb-delay, 0ms);
+  }
+
+  /* Only the inbox's OWN field makes it give way to the keyboard. A keyboard
+     opened for something above it (the New Message sheet's search) left the
+     box shrinking and growing behind the sheet, and the empty state visibly
+     rode up and down as the sheet closed. */
+  .centre--messages.chat-pans-keyboard:not(.chat-is-open):not(:focus-within) {
+    height: calc(100dvh - var(--status-bar-inset, 0px) - var(--bottom-nav-clearance)) !important;
+    max-height: calc(100dvh - var(--status-bar-inset, 0px) - var(--bottom-nav-clearance)) !important;
+  }
+
   /* The BottomNav is NOT hidden when the keyboard opens — it stays exactly
      where it is and the keyboard simply covers it.
      It used to be `display: none`, which solved the wrong problem: the nav was

@@ -34,6 +34,7 @@ import {
   PickerSocial,
   closestIds,
   matchTier,
+  messageCircleIds,
   rankPickerCandidates,
   startsWithWhere,
 } from './people-picker';
@@ -131,7 +132,23 @@ function uniqueById<T extends { id: string }>(rows: T[]): T[] {
 /** A getConnections entry, as served and as cached for 20 s. */
 type ConnectionUser = Prisma.UserGetPayload<{
   select: typeof CONNECTION_SELECT;
-}>;
+}> & {
+  /**
+   * Whether a message can be sent to this person (they are verified). Present
+   * only on the New Message picker, which lists unverified people too so a
+   * search finds them; every other picker lists contactable people only.
+   */
+  contactable?: boolean;
+};
+
+/**
+ * Who a people picker is for. `message` is the New Message sheet: with no
+ * query it lists only the viewer's own circle (people they talk to, interact
+ * with most, or follow), and a search reaches everyone, unverified people
+ * included and marked `contactable: false`. `default` is every other picker
+ * (share, invite): contactable people only, filled out from campus.
+ */
+export type PickerAudience = 'default' | 'message';
 
 /** A body value as a log line shows it: '-' when absent, JSON when not a primitive. */
 function logValue(value: unknown): string {
@@ -2067,8 +2084,10 @@ export class UsersService {
     userId: string,
     query?: string,
     limit: number = 50,
+    audience: PickerAudience = 'default',
   ): Promise<ConnectionUser[]> {
     const cleanQuery = (query || '').trim().toLowerCase();
+    const forMessage = audience === 'message';
 
     // Short-lived Redis cache: the invite/share "people" list is opened
     // repeatedly and is identical for a user within a few seconds. This turns
@@ -2083,9 +2102,11 @@ export class UsersService {
     //
     // `v4` retired the v3 entries written while the (since removed) first-year
     // isolation filter applied; `v5` retires the newest-first order this list
-    // had before it was ranked by closeness. The key is scoped by `userId`, which is what
+    // had before it was ranked by closeness; `v6` the order from before
+    // learned affinity counted. The audience is part of the key: the two
+    // lists differ in who is eligible, not only in order. The key is scoped by `userId`, which is what
     // makes caching a block-filtered list safe at all.
-    const cacheKey = `connections:v5:${userId}:${cleanQuery}:${limit}`;
+    const cacheKey = `connections:v6:${audience}:${userId}:${cleanQuery}:${limit}`;
     if (redis) {
       try {
         const cached = await redis.get(cacheKey);
@@ -2111,7 +2132,11 @@ export class UsersService {
       // silently shrinks pages and eventually returns an empty one while more
       // eligible users exist further down; and the unfiltered rows would
       // already have been written to the Redis entry below.
-      ...this.verificationAccess.eligibleUserWhere(),
+      //
+      // The New Message picker is the exception: it lists unverified people
+      // so a search finds them, marked `contactable: false` below, and the
+      // send stays refused by `assertUsersEligible` whatever the client does.
+      ...(forMessage ? {} : this.verificationAccess.eligibleUserWhere()),
       ...(cleanQuery
         ? {
             OR: [
@@ -2160,6 +2185,18 @@ export class UsersService {
         }),
       ]);
       candidates = uniqueById([...mine, ...startsWith, ...contains]);
+    } else if (forMessage) {
+      // The viewer's own circle only: whom they talk to, interact with most,
+      // or follow. No campus fill and no one-way followers; a stranger is
+      // reached by searching.
+      const circle = messageCircleIds(social, POOL);
+      candidates =
+        circle.length > 0
+          ? await this.prisma.user.findMany({
+              where: { AND: [whereClause, { id: { in: circle } }] },
+              select: CONNECTION_SELECT,
+            })
+          : [];
     } else {
       const closest = closestIds(social, POOL);
       const [known, campus] = await Promise.all([
@@ -2208,6 +2245,12 @@ export class UsersService {
       social,
       campusPeers,
     ).slice(0, limit);
+    if (forMessage && payload.length > 0) {
+      const eligible = await this.verificationAccess.getEligibilityMap(
+        payload.map((u) => u.id),
+      );
+      for (const u of payload) u.contactable = eligible.get(u.id) === true;
+    }
 
     if (redis) {
       // 20s TTL — long enough to make a modal session feel instant, short
@@ -2228,30 +2271,38 @@ export class UsersService {
    * Do not reuse them for anything that needs the whole set.
    */
   private async pickerSocial(userId: string): Promise<PickerSocial> {
-    const [me, following, followers, recentConvs] = await Promise.all([
-      this.prisma.user.findUnique({
-        where: { id: userId },
-        select: { collegeAffiliation: { select: ACTIVE_AFFILIATION_SELECT } },
-      }),
-      this.prisma.follow.findMany({
-        where: { followerId: userId },
-        select: { followingId: true },
-        orderBy: { createdAt: 'desc' },
-        take: 1000,
-      }),
-      this.prisma.follow.findMany({
-        where: { followingId: userId },
-        select: { followerId: true },
-        orderBy: { createdAt: 'desc' },
-        take: 1000,
-      }),
-      this.prisma.conversationParticipant.findMany({
-        where: { userId, deletedAt: null, conversation: { type: 'DM' } },
-        select: { conversationId: true },
-        orderBy: { conversation: { updatedAt: 'desc' } },
-        take: 30,
-      }),
-    ]);
+    const [me, following, followers, recentConvs, affinity] = await Promise.all(
+      [
+        this.prisma.user.findUnique({
+          where: { id: userId },
+          select: { collegeAffiliation: { select: ACTIVE_AFFILIATION_SELECT } },
+        }),
+        this.prisma.follow.findMany({
+          where: { followerId: userId },
+          select: { followingId: true },
+          orderBy: { createdAt: 'desc' },
+          take: 1000,
+        }),
+        this.prisma.follow.findMany({
+          where: { followingId: userId },
+          select: { followerId: true },
+          orderBy: { createdAt: 'desc' },
+          take: 1000,
+        }),
+        this.prisma.conversationParticipant.findMany({
+          where: { userId, deletedAt: null, conversation: { type: 'DM' } },
+          select: { conversationId: true },
+          orderBy: { conversation: { updatedAt: 'desc' } },
+          take: 30,
+        }),
+        // The For You feed's learned closeness (ranking/affinity.service.ts),
+        // at most AFFINITY_TOP_N rows per user, read by its primary key.
+        this.prisma.userAffinity.findMany({
+          where: { userId },
+          select: { targetId: true, score: true },
+        }),
+      ],
+    );
     const convOrder = recentConvs.map((c) => c.conversationId);
     const partners =
       convOrder.length > 0
@@ -2273,6 +2324,7 @@ export class UsersService {
       recentChat,
       following: new Set(following.map((f) => f.followingId)),
       followers: new Set(followers.map((f) => f.followerId)),
+      affinity: new Map(affinity.map((a) => [a.targetId, a.score])),
       collegeId: activeAffiliationCollegeId(me?.collegeAffiliation),
     };
   }

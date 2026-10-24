@@ -99,14 +99,24 @@ describe('Messages chat with an overlaying keyboard', () => {
     expect(read('src/features/messages/shared/components/ChatMessageList.jsx')).toMatch(/observer\.observe\(container\);/);
   });
 
-  it('stands the bottom sheets on the keyboard, Android only', () => {
+  it('stands the invite sheet on the keyboard, Android only', () => {
     const base = 'src/features/messages/shared/components/modals/';
-    for (const name of ['InviteModal', 'NewMessageModal']) {
-      expect(read(`${base}${name}.jsx`)).toMatch(/data-keyboard-overlay=\{KEYBOARD_OVERLAYS_PAGE \? '' : undefined\}/);
-      expect(squash(read(`${base}${name}.module.css`))).toMatch(
-        /:global\(html\[data-keyboard-open\]\) \.\w+\[data-keyboard-overlay\] \{ padding-bottom: [^;]*--kb-inset/,
-      );
-    }
+    expect(read(`${base}InviteModal.jsx`)).toMatch(/data-keyboard-overlay=\{KEYBOARD_OVERLAYS_PAGE \? '' : undefined\}/);
+    expect(squash(read(`${base}InviteModal.module.css`))).toMatch(
+      /:global\(html\[data-keyboard-open\]\) \.\w+\[data-keyboard-overlay\] \{ padding-bottom: [^;]*--kb-inset/,
+    );
+  });
+
+  it('lets the keyboard slide over the new-message sheet without re-laying it out, Android only', () => {
+    const base = 'src/features/messages/shared/components/modals/';
+    const jsx = read(`${base}NewMessageModal.jsx`);
+    expect(jsx).toMatch(/data-keyboard-overlay=\{KEYBOARD_OVERLAYS_PAGE \? '' : undefined\}/);
+    expect(jsx).toMatch(/data-keyboard-dock=\{KEYBOARD_OVERLAYS_PAGE \? '' : undefined\}/);
+    const css = squash(read(`${base}NewMessageModal.module.css`));
+    // The sheet itself never moves or resizes for the keyboard.
+    expect(css).not.toMatch(/\.overlay\[data-keyboard-overlay\] \{ padding-bottom/);
+    expect(css).toContain(':global(html[data-keyboard-open]) .overlay[data-keyboard-overlay] .scroller { padding-bottom: var(--kb-inset, 0px); }');
+    expect(css).toContain('translate: 0 calc(-1 * var(--kb-inset, 0px));');
   });
 });
 

@@ -59,9 +59,17 @@ export class UsersController {
     @Req() req: AuthenticatedRequest,
     @Query('q') query?: string,
     @Query('limit') limit?: string,
+    // `message`: the New Message sheet (see PickerAudience). Anything else,
+    // including an old client that sends nothing, gets the default picker.
+    @Query('for') audience?: string,
   ) {
     const limitNum = clampPageParam(limit, { def: 50, min: 1, max: 100 });
-    return this.usersService.getConnections(req.user.id, query, limitNum);
+    return this.usersService.getConnections(
+      req.user.id,
+      query,
+      limitNum,
+      audience === 'message' ? 'message' : 'default',
+    );
   }
 
   // NOTE: must stay registered before the catch-all `:username` route below,

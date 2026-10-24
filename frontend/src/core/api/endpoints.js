@@ -329,9 +329,15 @@ export function createEndpoints({
   };
 
   const usersApi = {
-    getConnections: (query = '', limit = 50) => {
+    /**
+     * `audience: 'message'` is the New Message sheet: the viewer's own circle,
+     * and a search that also finds people who cannot be messaged yet (each
+     * row carries `contactable`). Every other picker leaves it out.
+     */
+    getConnections: (query = '', limit = 50, { audience } = {}) => {
       const params = new URLSearchParams({ limit: String(limit) });
       if (query) params.set('q', query);
+      if (audience) params.set('for', audience);
       return apiClient.get(`/api/users/connections?${params.toString()}`);
     },
     getAll: (limit = 20, offset = 0) => {

@@ -10,6 +10,7 @@ const social = (over: Partial<PickerSocial> = {}): PickerSocial => ({
   recentChat: new Map(),
   following: new Set(),
   followers: new Set(),
+  affinity: new Map(),
   collegeId: null,
   ...over,
 });
@@ -58,6 +59,35 @@ describe('socialScore', () => {
   });
 });
 
+describe('socialScore with learned affinity', () => {
+  it('lifts the person the viewer engages with most above someone merely followed', () => {
+    const s = social({
+      following: new Set(['close', 'followed']),
+      affinity: new Map([['close', 1]]),
+    });
+    expect(socialScore('close', s)).toBeGreaterThan(socialScore('followed', s));
+  });
+
+  it('keeps the latest chat above affinity alone', () => {
+    const s = social({
+      recentChat: new Map([['chat', 0]]),
+      affinity: new Map([['engaged', 1]]),
+    });
+    expect(socialScore('chat', s)).toBeGreaterThan(socialScore('engaged', s));
+  });
+
+  it('clamps a score outside 0..1', () => {
+    const s = social({
+      affinity: new Map([
+        ['a', 7],
+        ['b', -3],
+      ]),
+    });
+    expect(socialScore('a', s)).toBe(40);
+    expect(socialScore('b', s)).toBe(0);
+  });
+});
+
 describe('rankPickerCandidates', () => {
   it('lets match quality beat closeness', () => {
     const s = social({ recentChat: new Map([['friend', 0]]) });
@@ -95,6 +125,20 @@ describe('rankPickerCandidates', () => {
       new Set(['peer']),
     );
     expect(ranked.map((r) => r.id)).toEqual(['peer', 'mirror']);
+  });
+});
+
+describe('closestIds with learned affinity', () => {
+  it('puts recent chats first, then people by affinity, then follows', () => {
+    const s = social({
+      recentChat: new Map([['chat', 0]]),
+      affinity: new Map([
+        ['low', 0.2],
+        ['high', 0.9],
+      ]),
+      following: new Set(['followed']),
+    });
+    expect(closestIds(s, 10)).toEqual(['chat', 'high', 'low', 'followed']);
   });
 });
 

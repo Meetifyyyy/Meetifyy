@@ -99,8 +99,11 @@ export default function NewMessageModal({ onClose, onStartChat, onCreateGroup })
    * never in the payload to begin with.
    */
   const { data: searchedUsers = [], isFetching } = useQuery({
-    queryKey: ['new-message-recipients', debouncedQuery],
-    queryFn: () => usersApi.getConnections(debouncedQuery, 50).catch(() => []),
+    queryKey: ['new-message-recipients', 'message', debouncedQuery],
+    // `audience: 'message'`: with no query the viewer's own circle (people
+    // they talk to and follow); a search reaches everyone, and a person who
+    // cannot be messaged yet comes back with `contactable: false`.
+    queryFn: () => usersApi.getConnections(debouncedQuery, 50, { audience: 'message' }).catch(() => []),
     enabled: Boolean(currentUser?.id),
     staleTime: 30_000,
     // Keeps the previous term's rows on screen while the next request is in
@@ -139,15 +142,26 @@ export default function NewMessageModal({ onClose, onStartChat, onCreateGroup })
       merged.push(u);
     };
     (Array.isArray(searchedUsers) ? searchedUsers : []).forEach(push);
-    Object.values(users || {}).filter(matchesLocally).forEach(push);
+    // With no query the list is the server's circle alone; locally known
+    // people (open threads, campus) only join a search.
+    if (needle) Object.values(users || {}).filter(matchesLocally).forEach(push);
     return eligible(merged);
   }, [searchedUsers, users, searchQuery, eligible]);
 
-  // People the viewer already knows (open threads, campus), for the strip.
+  // The top of the circle (latest conversations first), for the strip. Only
+  // people who can be messaged: the strip has no room to explain otherwise.
   const recentUsers = useMemo(
-    () => eligible(Object.values(users || {}).filter((u) => u?.id)).slice(0, RECENT_LIMIT),
-    [users, eligible],
+    () =>
+      searchQuery.trim()
+        ? []
+        : eligible(Array.isArray(searchedUsers) ? searchedUsers : [])
+            .filter((u) => u.contactable !== false)
+            .slice(0, RECENT_LIMIT),
+    [searchedUsers, searchQuery, eligible],
   );
+
+  // The unverified row whose notice is open, if any.
+  const [noticeFor, setNoticeFor] = useState(null);
 
   const selectedIds = useMemo(() => new Set(selected.map((u) => String(u.id))), [selected]);
 
@@ -227,6 +241,10 @@ export default function NewMessageModal({ onClose, onStartChat, onCreateGroup })
       <div
         ref={sheetRef}
         className={styles.panel}
+        // Slides with the keyboard by its own CSS transition (see the
+        // stylesheet); the dock marker keeps the app-wide sheet slide and
+        // focus scrolling from moving it a second time.
+        data-keyboard-dock={KEYBOARD_OVERLAYS_PAGE ? '' : undefined}
         role="dialog"
         aria-modal="true"
         aria-labelledby="new-message-title"
@@ -322,7 +340,7 @@ export default function NewMessageModal({ onClose, onStartChat, onCreateGroup })
                       <p>
                         {searching
                           ? `No accounts found matching "${searchQuery.trim()}".`
-                          : 'No accounts available to message right now.'}
+                          : 'People you follow and message will appear here. Search to find anyone else.'}
                       </p>
                     )}
                   </div>
@@ -330,6 +348,40 @@ export default function NewMessageModal({ onClose, onStartChat, onCreateGroup })
                   <ul className={styles.list}>
                     {filteredUsers.map((user, i) => {
                       const on = selectedIds.has(String(user.id));
+                      if (user.contactable === false) {
+                        const open = noticeFor === String(user.id);
+                        const noteId = `nm-unverified-${user.id}`;
+                        return (
+                          <li key={user.id || i}>
+                            <button
+                              type="button"
+                              className={`${styles.userItem} ${styles.userItemUnavailable}`}
+                              onClick={() => setNoticeFor(open ? null : String(user.id))}
+                              aria-expanded={open}
+                              aria-controls={noteId}
+                            >
+                              <UserAvatar user={user} className={styles.userAvatar} />
+                              <span className={styles.userInfo}>
+                                <span className={styles.userName}>{nameOf(user)}</span>
+                                <span className={styles.userUsername}>@{user.username}</span>
+                              </span>
+                              <span className={styles.infoMark} aria-label="Why this account can’t be messaged">
+                                <svg viewBox="0 0 24 24" aria-hidden="true">
+                                  <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="1.8" />
+                                  <path d="M12 11v5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                                  <circle cx="12" cy="7.9" r="1.1" fill="currentColor" />
+                                </svg>
+                              </span>
+                            </button>
+                            {open && (
+                              <p id={noteId} className={styles.unverifiedNote} role="status">
+                                {nameOf(user)} hasn’t verified their account yet, so they can’t receive
+                                messages. You’ll be able to message them once their verification is complete.
+                              </p>
+                            )}
+                          </li>
+                        );
+                      }
                       return (
                         <li key={user.id || i}>
                           <button

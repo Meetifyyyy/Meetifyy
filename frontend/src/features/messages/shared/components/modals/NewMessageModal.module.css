@@ -370,6 +370,37 @@
   margin: 0;
 }
 
+/* ── A person who can't be messaged yet (unverified) ── */
+.userItemUnavailable .userAvatar,
+.userItemUnavailable .userInfo {
+  opacity: 0.55;
+}
+
+.infoMark {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  color: var(--color-text-muted);
+}
+
+.infoMark svg {
+  width: 20px;
+  height: 20px;
+}
+
+.unverifiedNote {
+  margin: 0 20px 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--nm-fill-hover);
+  font-family: var(--font-family-sans);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--color-text-muted);
+}
+
 /* ── Sticky action bar ── */
 .actionBar {
   flex-shrink: 0;
@@ -566,23 +597,37 @@
 }
 
 /*
- * Android app (`data-keyboard-overlay`, set only there), keyboard up: the
- * keyboard overlays the page instead of shrinking it, so this bottom sheet
- * would sit behind it with its search results and buttons out of reach. The
- * scrim is padded by the keyboard, which stands the sheet on top of it, and
- * the sheet gives up height so its top stays on screen. A layout change, but
- * one per keyboard transition, never per frame. (The sheet's own transform is
- * taken by its entry animation and its drag-to-dismiss, so it cannot be the lift.)
+ * Android app (`data-keyboard-overlay`, set only there): the keyboard overlays
+ * the page instead of shrinking it, and this sheet does NOT move for it. It
+ * keeps its size and place and the keyboard slides over its lower part, the
+ * way the create-event form does. Re-laying out the sheet for the keyboard
+ * (padding the scrim, capping its height) laid out the whole list in the
+ * frame the keyboard started, or on every frame when transitioned, and both
+ * showed as the keyboard arriving late and juddering.
+ *
+ * What the keyboard covers still has to be reachable:
+ *   - the list gets scroll room for it (the scroller alone is laid out, once);
+ *   - the action bar rides up on the keyboard on a compositor `translate`
+ *     (its `transform` is its own show/hide), on the keyboard's own duration,
+ *     curve and head start (useKeyboardInset).
+ * `data-keyboard-dock` on the panel keeps the app-wide sheet slide from moving
+ * it as well.
  */
 @media (max-width: 768px) {
-  /* --kb-inset is the whole keyboard, the navigation bar's area included, so
-     standing the sheet on it puts the sheet's bottom on the keyboard's top
-     edge (this sheet has no navigation-bar padding of its own). */
-  :global(html[data-keyboard-open]) .overlay[data-keyboard-overlay] {
+  :global(html[data-keyboard-open]) .overlay[data-keyboard-overlay] .scroller {
     padding-bottom: var(--kb-inset, 0px);
   }
 
-  :global(html[data-keyboard-open]) .overlay[data-keyboard-overlay] .panel {
-    height: min(88dvh, 720px, calc(100dvh - var(--kb-inset, 0px) - max(env(safe-area-inset-top, 0px), var(--status-bar-inset, 0px)) - 12px));
+  .overlay[data-keyboard-overlay] .actionBar {
+    translate: 0 calc(-1 * var(--kb-inset, 0px));
+    transition: max-height 0.24s cubic-bezier(0.16, 1, 0.3, 1),
+      padding 0.24s cubic-bezier(0.16, 1, 0.3, 1),
+      opacity 0.18s ease,
+      transform 0.24s cubic-bezier(0.16, 1, 0.3, 1),
+      translate var(--kb-duration, 0ms) var(--kb-easing, ease-out) var(--kb-delay, 0ms);
+  }
+
+  :global(html:not([data-keyboard-open])) .overlay[data-keyboard-overlay] .actionBar {
+    translate: none;
   }
 }

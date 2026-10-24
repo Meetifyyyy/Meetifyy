@@ -11,7 +11,9 @@ import { Prisma } from '@prisma/client';
  *     starts-with — including any word of the display name — then contains),
  *     and the viewer's relationship to the person orders within that.
  *   - With no query, the list is the viewer's own people: whom they talk to
- *     most recently, then mutual follows, then one-way follows, then campus.
+ *     most recently, then whom they interact with most (the learned affinity
+ *     the For You feed uses), then mutual follows, then one-way follows, then
+ *     campus.
  *
  * Candidate fetching is split the same way, because both pickers used to take
  * the newest N accounts that merely CONTAINED the query and rank only those —
@@ -25,6 +27,13 @@ export interface PickerSocial {
   recentChat: Map<string, number>;
   following: Set<string>;
   followers: Set<string>;
+  /**
+   * User id → how much the viewer interacts with them, 0..1: the same
+   * `UserAffinity` scores the For You feed ranks authors by (likes, comments,
+   * bookmarks and messages, decayed by age, precomputed by the ranking
+   * worker). Only the viewer's top people have a row; everyone else is 0.
+   */
+  affinity: Map<string, number>;
   /** The viewer's ACTIVE affiliation college (campus access), or null. */
   collegeId: string | null;
 }
@@ -53,12 +62,16 @@ export function matchTier(
 }
 
 /**
- * How close the viewer is to `userId`, 0..~100. Recency of conversation
+ * How close the viewer is to `userId`, 0..~140. Recency of conversation
  * dominates: whom you messaged yesterday is who you are most likely sharing
- * with today.
+ * with today. Affinity comes next and is what separates the people the viewer
+ * actually engages with from the many they merely follow; at most 40, less
+ * than the latest conversation's 60, so on its own it never outranks the
+ * person the viewer is chatting with right now.
  */
 export function socialScore(userId: string, s: PickerSocial): number {
   let score = 0;
+  score += 40 * Math.min(Math.max(s.affinity.get(userId) ?? 0, 0), 1);
   const rank = s.recentChat.get(userId);
   if (rank !== undefined) score += 60 - Math.min(rank, 30);
   const following = s.following.has(userId);
@@ -112,9 +125,36 @@ export function closestIds(social: PickerSocial, cap: number): string[] {
       .sort((a, b) => a[1] - b[1])
       .map(([id]) => id),
   );
+  for (const [id] of [...social.affinity.entries()].sort(
+    (a, b) => b[1] - a[1],
+  )) {
+    ids.add(id);
+  }
   for (const id of social.following) if (social.followers.has(id)) ids.add(id);
   for (const id of social.following) ids.add(id);
   for (const id of social.followers) ids.add(id);
+  return [...ids].slice(0, cap);
+}
+
+/**
+ * The New Message sheet's list with no query: the viewer's own circle, best
+ * first. Whom they talk to most recently, then whom they interact with most
+ * (learned affinity), then everyone they follow. Unlike `closestIds` it leaves
+ * out people who only follow the viewer: a sheet for starting a conversation
+ * offers the people the viewer chose, not the ones who chose them.
+ */
+export function messageCircleIds(social: PickerSocial, cap: number): string[] {
+  const ids = new Set<string>(
+    [...social.recentChat.entries()]
+      .sort((a, b) => a[1] - b[1])
+      .map(([id]) => id),
+  );
+  for (const [id] of [...social.affinity.entries()].sort(
+    (a, b) => b[1] - a[1],
+  )) {
+    ids.add(id);
+  }
+  for (const id of social.following) ids.add(id);
   return [...ids].slice(0, cap);
 }
 

@@ -56,6 +56,7 @@ describe('UsersService — selector eligibility', () => {
             user: { findMany, findUnique: jest.fn() },
             // The closeness signals the picker ranks by; none for this viewer.
             follow: { findMany: jest.fn().mockResolvedValue([]) },
+            userAffinity: { findMany: jest.fn().mockResolvedValue([]) },
             conversationParticipant: {
               findMany: jest.fn().mockResolvedValue([]),
             },
@@ -154,6 +155,26 @@ describe('UsersService — selector eligibility', () => {
     );
   });
 
+  it('lets a New Message search reach unverified people, still blocked and active-only', async () => {
+    findMany.mockResolvedValue([
+      { id: 'u1', username: 'john', displayName: 'John' },
+    ]);
+    const rows = await service.getConnections('me', 'john', 50, 'message');
+    // The first call is the search pool (later ones include the eligibility
+    // lookup for the rows found).
+    const where = eligibilityOf(findMany.mock.calls[0][0]);
+    expect(where.verificationStatus).toBeUndefined();
+    expect(where.accountStatus).toBe('ACTIVE');
+    // Each row says whether it can be messaged, decided by the same rule the
+    // send enforces (u1 resolves to no verified row here).
+    expect(rows[0]).toMatchObject({ id: 'u1', contactable: false });
+  });
+
+  it('keeps the share and invite pickers verified-only', async () => {
+    await service.getConnections('me', 'john', 50, 'default');
+    expect(whereOf().verificationStatus).toBe(VerificationStatus.VERIFIED);
+  });
+
   it('lifts the restriction when enforcement is disabled', async () => {
     process.env.FEATURE_VERIFICATION_ENABLED = 'false';
     await service.getConnections('me');
@@ -186,6 +207,7 @@ describe('UsersService — connections cache', () => {
               findUnique: jest.fn().mockResolvedValue(null),
             },
             follow: { findMany: jest.fn().mockResolvedValue([]) },
+            userAffinity: { findMany: jest.fn().mockResolvedValue([]) },
             conversationParticipant: {
               findMany: jest.fn().mockResolvedValue([]),
             },
@@ -222,7 +244,7 @@ describe('UsersService — connections cache', () => {
     // being served for the rest of their TTL under a rule that no longer
     // applies. v2 was the verification filter; v3 was first-year isolation;
     // v4 is its removal.
-    expect(get).toHaveBeenCalledWith('connections:v5:me:john:50');
-    expect(setex.mock.calls[0][0]).toBe('connections:v5:me:john:50');
+    expect(get).toHaveBeenCalledWith('connections:v6:default:me:john:50');
+    expect(setex.mock.calls[0][0]).toBe('connections:v6:default:me:john:50');
   });
 });
