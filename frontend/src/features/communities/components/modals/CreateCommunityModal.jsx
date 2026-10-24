@@ -488,9 +488,9 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
                         key={`${cat.label}-${idx}`}
                         type="button"
                         onClick={() => setSelectedCat(cat)}
+                        aria-pressed={isSelected}
                         className={`${styles.categoryCard} ${isSelected ? styles.categoryCardSelected : ''}`}
                       >
-                        {isSelected && <span style={{ marginRight: '0.25rem', fontWeight: 'bold' }}>✓</span>}
                         <span>{cat.icon}</span>
                         <span>{cat.label}</span>
                       </button>

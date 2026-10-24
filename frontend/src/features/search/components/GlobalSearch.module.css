@@ -155,12 +155,10 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 0.75rem;
-  font-weight: 700;
+  font-size: 0.8rem;
+  font-weight: 500;
   color: var(--color-text-muted);
-  text-transform: uppercase;
   padding: 16px 16px 8px;
-  letter-spacing: 0.5px;
   background: #FFFFFF;
 }
 

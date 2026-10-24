@@ -206,11 +206,9 @@
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  font-size: 0.75rem;
-  font-weight: 700;
+  font-size: 0.8rem;
+  font-weight: 500;
   color: var(--color-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
 }
 
 .clearAllBtn {
@@ -266,11 +264,9 @@
 }
 
 .sectionLabel {
-  font-size: 0.72rem;
-  font-weight: 700;
+  font-size: 0.8rem;
+  font-weight: 500;
   color: var(--color-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
   padding: 0.5rem 0.35rem 0.25rem;
 }
 

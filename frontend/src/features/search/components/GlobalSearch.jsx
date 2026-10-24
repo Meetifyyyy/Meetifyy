@@ -274,7 +274,7 @@ export default function GlobalSearch() {
           {!hasQuery && recentSearches.length > 0 && (
             <>
               <div className={styles.dropdownHeader}>
-                Recent Searches
+                Recent searches
                 <button className={styles.clearAllBtn} onClick={clearAllRecent}>Clear all</button>
               </div>
               {recentSearches.map((text, i) => (

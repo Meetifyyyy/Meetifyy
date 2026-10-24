@@ -406,12 +406,12 @@ export default function SearchResultsRoute() {
             </div>
           )}
 
-          {/* Recent Searches Bar */}
+          {/* Recent searches Bar */}
           {!hasQuery && recentSearches.length > 0 && (
             <div className={styles.recentRow}>
               <div className={styles.recentLabel}>
                 <Clock size={13} />
-                <span>Recent Searches</span>
+                <span>Recent searches</span>
                 <button className={styles.clearAllBtn} onClick={clearAllRecent}>
                   Clear all
                 </button>
