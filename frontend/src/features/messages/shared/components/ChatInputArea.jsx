@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import MentionInput from '@shared/components/mentions/MentionInput';
 import LazyEmojiPicker, { preloadEmojiPicker } from '@shared/components/ui/LazyEmojiPicker';
 import styles from './ChatInputAreaStyles.module.css';
@@ -110,6 +110,26 @@ export default function ChatInputArea({
     }
   }, [replyingTo]);
 
+  // The reply bar floats above the composer (out of flow), so the composer has
+  // to be told how much room to leave for it: see --reply-bar-h in the
+  // stylesheet. Measured, because what the bar shows (a quoted photo, a card, a
+  // long name) decides its height, and watched, because that can change while
+  // it is open (an image arriving).
+  const replyBarRef = useRef(null);
+  const [replyBarHeight, setReplyBarHeight] = useState(0);
+  useLayoutEffect(() => {
+    const bar = replyBarRef.current;
+    if (!replyingTo || !bar) {
+      setReplyBarHeight((h) => (h === 0 ? h : 0));
+      return undefined;
+    }
+    const measure = () => setReplyBarHeight(Math.ceil(bar.getBoundingClientRect().height));
+    measure();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(measure);
+    observer.observe(bar);
+    return () => observer.disconnect();
+  }, [replyingTo]);
 
   const hasText = !!(typeof inputValue === 'string' ? inputValue : (inputValue?.text || '')).trim();
 
@@ -239,10 +259,14 @@ export default function ChatInputArea({
     /* `data-keyboard-dock` (Messages in the Android app, see ChatAreaLayout):
        this composer rises with the keyboard by itself, so the app-wide "keep
        the focused field visible" pass (keyboardFocus) leaves it alone. */
-    <div className={styles.msgChatInputWrap} data-keyboard-dock={keyboardDock ? '' : undefined}>
+    <div
+      className={styles.msgChatInputWrap}
+      data-keyboard-dock={keyboardDock ? '' : undefined}
+      style={replyBarHeight > 0 ? { '--reply-bar-h': `${replyBarHeight}px` } : undefined}
+    >
       {/* Reply preview bar */}
       {replyingTo && (
-        <div className={styles.msgReplyPreview}>
+        <div className={styles.msgReplyPreview} ref={replyBarRef}>
           <div className={styles.msgReplyPreviewDetails}>
             <span className={styles.msgReplyPreviewLabel}>
               Replying to {replyingTo.from === 'me' ? 'yourself' : (replyingTo.senderName || conversation.name)}

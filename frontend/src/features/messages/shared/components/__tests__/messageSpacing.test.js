@@ -201,6 +201,22 @@ describe('Show more', () => {
   });
 });
 
+describe('composer reply bar', () => {
+  const composer = read('src/features/messages/shared/components/ChatInputAreaStyles.module.css');
+
+  it('is labelled in sentence case, not capitals', () => {
+    const label = rule(composer, '.msgReplyPreviewLabel');
+    expect(label).not.toBeNull();
+    expect(label).not.toMatch(/text-transform:\s*uppercase/);
+  });
+
+  it('leaves the bar room in the composer, so the thread ends above it instead of running under', () => {
+    expect(rule(composer, '.msgChatInputWrap')).toContain('margin-top: var(--reply-bar-h, 0px);');
+    // The bar itself stays out of flow: it fills the margin the composer made.
+    expect(rule(composer, '.msgReplyPreview')).toContain('position: absolute;');
+  });
+});
+
 describe('typing indicator', () => {
   const source = read('src/features/messages/shared/components/ChatMessageList.jsx');
 

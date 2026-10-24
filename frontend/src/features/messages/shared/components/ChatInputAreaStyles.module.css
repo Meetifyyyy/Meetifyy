@@ -9,6 +9,16 @@
   flex-shrink: 0;
   min-height: 60px;
   box-sizing: border-box;
+  /*
+   * Room for the reply bar, which sits above the composer (see .msgReplyPreview).
+   * The bar is positioned out of flow, so by itself it takes no space and the
+   * thread above it runs underneath: the last messages were covered by it when
+   * the thread was scrolled to the bottom. ChatInputArea measures the bar and
+   * passes its height here, so the composer is taller by exactly that much, the
+   * thread ends above the bar, and the bar fills the margin it made. Zero when
+   * there is no bar.
+   */
+  margin-top: var(--reply-bar-h, 0px);
 }
 
 /*
@@ -62,10 +72,11 @@
 .msgReplyPreviewLabel {
   font-family: var(--font-family-display);
   font-weight: 700;
-  font-size: 0.7rem;
+  /* Sentence case ("Replying to Aarav"), not capitals: capitals made it shout
+     over the quote it introduces, and 0.7rem was only legible because of them. */
+  font-size: 0.75rem;
   color: var(--color-primary);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.01em;
 }
 
 .msgReplyPreviewText {

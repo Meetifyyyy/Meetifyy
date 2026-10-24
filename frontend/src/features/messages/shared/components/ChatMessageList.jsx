@@ -208,6 +208,11 @@ export default function ChatMessageList({
   // scrollHeight growth (which double-counted the browser's own anchoring).
   const scrollAnchorRef = useRef(null);
   const isAtBottomRef = useRef(true);
+  // The scroller's own height at the last resize, to tell its BOX changing
+  // (below) from its content changing. Never reset with the conversation: it
+  // describes the layout, not the thread, and the reset effect also runs on
+  // mount, after the first reading, which wiped it.
+  const prevClientHeightRef = useRef(null);
   const hasScrolledInitialRef = useRef(false);
   const prevConvIdRef = useRef(null);
   const prevMessagesLengthRef = useRef(0);
@@ -473,7 +478,28 @@ export default function ChatMessageList({
     const container = bodyRef.current;
 
     const observer = new ResizeObserver(() => {
-      if (!hasScrolledInitialRef.current || !container) return;
+      if (!container) return;
+
+      // The thread's own box changed height: the composer grew (a reply bar
+      // opened above it), a window resized, the keyboard took a share of the
+      // screen. Its content did not, so `scrollHeight` is the same and the
+      // check below sees nothing to do - and a thread sitting at the bottom
+      // would be left with its last messages pushed out of view. Stay on the
+      // latest message instead.
+      //
+      // The height is recorded on EVERY call, before the early return below:
+      // the first notification arrives before the initial scroll has happened,
+      // and skipping the record there made the first real resize look like the
+      // first reading, so it was never acted on.
+      const clientHeight = container.clientHeight;
+      const boxResized = prevClientHeightRef.current !== null && clientHeight !== prevClientHeightRef.current;
+      prevClientHeightRef.current = clientHeight;
+      if (!hasScrolledInitialRef.current) return;
+      if (boxResized && isAtBottomRef.current) {
+        container.scrollTop = container.scrollHeight + 10000;
+        prevScrollHeightRef.current = container.scrollHeight;
+        return;
+      }
 
       const newScrollHeight = container.scrollHeight;
       const diff = newScrollHeight - prevScrollHeightRef.current;
