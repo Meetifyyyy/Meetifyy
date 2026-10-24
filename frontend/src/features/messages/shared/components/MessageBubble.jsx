@@ -673,6 +673,10 @@ const MessageBubble = memo(function MessageBubble({
   // Find-in-chat term. ChatMessageList has always passed this down; the prop
   // simply was never declared here, so the value arrived and was discarded.
   searchQuery = '',
+  // Set by the list from utils/messageRuns.closesUpFlags, which owns the rule:
+  // this row closes up against the row above it. The bubble only reflects it as
+  // an attribute; the stylesheet does the rest.
+  continuesRun = false,
 }) {
   const navigate = useNavigate();
   const storeUsers = useUsersMap();
@@ -914,6 +918,10 @@ const MessageBubble = memo(function MessageBubble({
     (typeof mediaUrl === 'string' && (/\.(mp4|webm|mov|mkv|avi|flv)/i.test(mediaUrl) || mediaUrl.startsWith('data:video/')));
   const hasText = !!(messageText && String(messageText).trim().length > 0);
   const timeText = getDisplayClockTime(msg);
+
+  // The "Sending…" / "Not delivered" / "Sent" line under a message of your own.
+  // Failed and queued ones always show it; otherwise only the latest message.
+  const hasStatusLine = Boolean(isMe && (isFailedMsg || isLatestMessage || msg.queued));
 
   let innerContent = null;
 
@@ -1200,6 +1208,15 @@ const MessageBubble = memo(function MessageBubble({
          that is still sending only has a clientId, and a reply may target either. */
       data-message-id={msg.id || undefined}
       data-client-id={msg.clientId || msg.tempId || undefined}
+      /* Whether the list closes this row up against the one above it. Decided
+         in one place (utils/messageRuns.closesUpFlags), which also keeps rows
+         that open with a label - a group member's name, "You replied to ..." -
+         apart. See ChatMessageList.module.css (--msg-gap-run). */
+      data-run={continuesRun ? 'continue' : undefined}
+      /* This row ends in a status line ("Sending…", "Not delivered", "Sent").
+         That line belongs to it, so the row below keeps a full gap under it
+         rather than closing up against the line. */
+      data-status-line={hasStatusLine ? '' : undefined}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
@@ -1276,7 +1293,7 @@ const MessageBubble = memo(function MessageBubble({
             longer reserved on the rest, and both sides now use the same single
             gap.
           */}
-          {isMe && (isFailedMsg || isLatestMessage || msg.queued) && (
+          {hasStatusLine && (
             <div className={`${styles.msgStatusLabel} ${isFailedMsg ? styles.msgStatusLabelFailed : ''}`}>
               {/* Failed status is always shown — never hidden even if not the latest message */}
               {isFailedMsg && (onRetrySend && !isUploadFailed ? (

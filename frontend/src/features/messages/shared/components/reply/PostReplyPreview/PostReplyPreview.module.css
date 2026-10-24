@@ -5,7 +5,9 @@
   flex-direction: column;
   width: fit-content;
   max-width: min(250px, 100%);
-  margin-bottom: 4px;
+  /* The quoted post is part of the reply below it, and a separate object from
+     it: the thread's stack distance, inherited, rather than a pixel value here. */
+  margin-bottom: var(--msg-gap-stack, 0.25rem);
   position: relative;
   user-select: none;
 }

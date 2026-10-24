@@ -14,7 +14,9 @@
   transition: opacity 0.15s ease;
   min-width: 200px;
   max-width: 300px;
-  margin-top: 4px;
+  /* No outer margin: the thread's gap spaces this from its neighbours. A margin
+     here made a shared community sit 4px further from the message above it than
+     any other message does. */
 }
 
 [data-theme='dark'] .card {

@@ -41,7 +41,9 @@ function MessageListSkeleton() {
     </div>
   );
 }
-import { compareMessages } from '../utils/cacheUtils';
+import { compareMessages, checkIsMe, isSystemMessage } from '../utils/cacheUtils';
+import { closesUpFlags } from '../utils/messageRuns';
+import { isPostReply } from './reply';
 import { createMessageHighlighter } from '../utils/messageHighlight';
 
 
@@ -116,6 +118,7 @@ const MessageRow = memo(function MessageRow({
   msg,
   index,
   isLatestMessage,
+  continuesRun: inRun,
   conversation,
   currentUser,
   users,
@@ -136,6 +139,7 @@ const MessageRow = memo(function MessageRow({
       onJumpToMessage={onJumpToMessage}
       index={index}
       isLatestMessage={isLatestMessage}
+      continuesRun={inRun}
       msg={msg}
       conversation={conversation}
       currentUser={currentUser}
@@ -157,6 +161,9 @@ const MessageRow = memo(function MessageRow({
   return (
     prev.msg === next.msg &&
     prev.isLatestMessage === next.isLatestMessage &&
+    // A neighbour arriving, being unsent or being filtered out changes whether
+    // this row is the start of a run, though the message itself is untouched.
+    prev.continuesRun === next.continuesRun &&
     prev.searchQuery === next.searchQuery &&
     prev.conversation?.id === next.conversation?.id
   );
@@ -668,6 +675,8 @@ export default function ChatMessageList({
 
   // ── Build render items list ──────────────────────────────────────────────
 
+  const isGroup = Boolean(conversation?.isGroup || conversation?.type === 'GROUP');
+
   const renderItems = useMemo(() => {
     const items = [];
 
@@ -696,12 +705,30 @@ export default function ChatMessageList({
       });
     });
 
-    return items;
-  }, [sortedMessages]);
+    // Which rows close up against the one above. A date separator between two
+    // messages breaks a run (a new day starts a new one), so it is an item here
+    // like any other.
+    const closesUp = closesUpFlags(items, { currentUser, isGroup, isPostReply });
+    return items.map((item, k) => (item.type === 'message' ? { ...item, closesUp: closesUp[k] } : item));
+  }, [sortedMessages, currentUser, isGroup]);
+
+  // The typing indicator is one more row at the bottom of the thread, so it
+  // follows the same rule: it sits close to the last message when that is from
+  // the person typing, and a full gap away when it is yours.
+  const lastMessage = sortedMessages.length > 0 ? sortedMessages[sortedMessages.length - 1] : null;
+  const typingContinuesRun = Boolean(
+    lastMessage &&
+    !isSystemMessage(lastMessage) &&
+    !checkIsMe(lastMessage, currentUser) &&
+    (!isGroup || !firstTypingUserId ||
+      String(lastMessage.senderId ?? lastMessage.sender?.id ?? lastMessage.userId) === String(firstTypingUserId)),
+  );
+
+  // A group's typing row carries the typist's name above its bubble, so like any
+  // row that opens with a label it does not close up against the message above.
+  const typingClosesUp = typingContinuesRun && !(isGroup && typingName);
 
   // ── RENDER ───────────────────────────────────────────────────────────────
-
-  const isGroup = conversation?.isGroup || conversation?.type === 'GROUP';
 
   return (
     <div className={styles.msgChatBody} ref={bodyRef} onScroll={handleScroll}>
@@ -734,6 +761,7 @@ export default function ChatMessageList({
               msg={item.msg}
               index={item.index}
               isLatestMessage={item.isLatestMessage}
+              continuesRun={item.closesUp}
               conversation={conversation}
               currentUser={currentUser}
               users={users}
@@ -757,7 +785,10 @@ export default function ChatMessageList({
 
       {/* ── Typing indicator ── */}
       {isTyping && (
-        <div className={`${styles.msgBubbleContainer} ${styles.msgBubbleContainerThem}`}>
+        <div
+          className={`${styles.msgBubbleContainer} ${styles.msgBubbleContainerThem}`}
+          data-run={typingClosesUp ? 'continue' : undefined}
+        >
           <div className={styles.msgBubbleWrapper}>
             <div className={styles.msgAvatar}>
               <Avatar src={typingAvatar} name={typingName} size="28px" />
@@ -767,14 +798,21 @@ export default function ChatMessageList({
                 <span className={styles.msgSenderName}>{typingName}</span>
               )}
               <div className={`${styles.msgMainRow} ${styles.msgMainRowThem}`}>
-                <div
-                  className={`${styles.msgBubble} ${styles.msgBubbleThem}`}
-                  style={{ display: 'inline-flex', alignItems: 'center', padding: '0.65rem 0.95rem' }}
-                >
-                  <div className={styles.typingBubbleInline}>
-                    <span className={styles.typingDot} />
-                    <span className={styles.typingDot} />
-                    <span className={styles.typingDot} />
+                {/* Built the way a text message is (bubble > text wrap > text),
+                    with the dots standing where the words would, so it is the
+                    height of a one-line message and the thread does not shift
+                    when the real message takes its place. */}
+                <div className={`${styles.msgBubble} ${styles.msgBubbleThem}`}>
+                  <div className={styles.msgTextTimeWrap}>
+                    <div className={styles.msgTextContent}>
+                      <span className={styles.msgText}>
+                        <span className={styles.typingBubbleInline} role="status" aria-label="Typing">
+                          <span className={styles.typingDot} />
+                          <span className={styles.typingDot} />
+                          <span className={styles.typingDot} />
+                        </span>
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>

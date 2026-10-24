@@ -179,33 +179,6 @@
   align-self: center;
 }
 
-.systemMessageContainer {
-  display: flex;
-  justify-content: center;
-  margin: 0.75rem 0;
-  width: 100%;
-  -webkit-user-select: none;
-  user-select: none;
-}
-
-.systemMessageText {
-  background: rgba(0, 0, 0, 0.05);
-  color: var(--color-text-muted);
-  font-size: 0.8rem;
-  font-weight: 500;
-  padding: 0.4rem 0.8rem;
-  border-radius: 8px;
-  text-align: center;
-  max-width: 80%;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
-  -webkit-user-select: none;
-  user-select: none;
-}
-
-[data-theme='dark'] .systemMessageText {
-  background: rgba(255, 255, 255, 0.05);
-}
-
 .inputBar {
   display: flex;
   align-items: center;
@@ -482,10 +455,6 @@
     height: 64px;
     padding: 0 0.3rem;
     border-bottom: 1px solid var(--color-border-light);
-  }
-
-  .msgChatBody {
-    padding: 1rem;
   }
 }
 
@@ -1286,22 +1255,6 @@
   to {
     opacity: 1;
   }
-}
-
-.msgAudioCardContainer {
-  display: flex;
-  flex-direction: column;
-  margin: 4px 0 6px 0;
-  gap: 4px;
-  max-width: 100%;
-}
-
-.msgBubbleContainerMe .msgAudioCardContainer {
-  align-items: flex-end;
-}
-
-.msgBubbleContainerThem .msgAudioCardContainer {
-  align-items: flex-start;
 }
 
 

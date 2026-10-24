@@ -1,14 +1,53 @@
 .msgChatBody {
   /*
-   * The one gap between messages, for every message type.
+   * Vertical rhythm of the thread. A handful of tokens, and nothing else sets a
+   * vertical distance between two things in it. Largest to smallest:
    *
-   * Text, voice, media, shared cards, group invites and replies all render
-   * through the same `.msgBubbleContainer`, so declaring the value here and
-   * reading it there is what makes the rhythm uniform. Anything that needs
-   * different spacing should change this token, not add a margin of its own -
-   * a per-type margin is how the thread drifted out of step in the first place.
+   *   --msg-gap-section  around a date separator or a system notice, which are
+   *                      the thread's own punctuation and want more air.
+   *   --msg-gap          between two rows from DIFFERENT authors - a reply after
+   *                      something you sent, or one group member after another.
+   *   --msg-gap-run      between two rows from the SAME author, the way one
+   *                      person's messages cluster in a chat app (about 2px,
+   *                      as in the apps people compare this to).
+   *                      Not used for a row that opens with a label (a group
+   *                      member's name, "You replied to ..."): closing those up
+   *                      would leave the label nearer the bubble above than
+   *                      the one it labels.
+   *   --msg-gap-stack    inside one message, between two separate objects
+   *                      stacked in it: a quoted post and the reply under it.
+   *   --msg-gap-attach   inside one message, between a part and what it
+   *                      belongs to: the sender name and the bubble, a card and
+   *                      its time pill, a bubble and its "Sent" line.
+   *                      Both are tighter than a gap between messages, so a
+   *                      part reads as belonging to its own message and not to
+   *                      the one above it.
+   *
+   * Which of the two gaps applies depends only on WHO sent the rows, never on
+   * what they contain: text, voice, media and every shared card are alike.
+   * The list marks a row `data-run="continue"` when the row above it is from
+   * the same author (utils/messageRuns) and the row opens with its bubble.
+   *
+   * The gap is owned HERE, by `gap` on the thread, not by a margin on each
+   * row. Every row used to carry its own margin, and the rows disagreed: a
+   * text bubble 4.8px, anything built from `.msgImageCardContainer` (images,
+   * video, voice, profile / post / community / activity cards, invites) 6.8px
+   * plus whatever the card added itself - 4px for a community, 6px for an
+   * activity - and a date or system row 16 above and 10 below. A flex column
+   * does not collapse margins, so each of those simply stacked. With `gap`
+   * there is no margin left to disagree about: whatever two rows are
+   * neighbours, they are `--msg-gap` apart.
+   *
+   * The tokens are inherited, so a part rendered by another stylesheet (the
+   * post-reply preview) reads them too, with a fallback for use outside the
+   * thread. To change the spacing, change a token. Never add a vertical margin
+   * to a row, a bubble or a card.
    */
-  --msg-gap: 0.3rem;
+  --msg-gap: 0.5rem;
+  --msg-gap-run: 0.15rem;
+  --msg-gap-section: 1rem;
+  --msg-gap-attach: 0.1rem;
+  --msg-gap-stack: 0.25rem;
 
   flex: 1;
   min-height: 0;
@@ -18,6 +57,7 @@
   padding: 0.75rem 1rem 1rem;
   display: flex;
   flex-direction: column;
+  gap: var(--msg-gap);
   position: relative;
 }
 
@@ -69,9 +109,33 @@
   display: flex;
   flex-direction: column;
   position: relative;
-  /* The single spacing unit. See --msg-gap on .msgChatBody. */
-  margin-bottom: var(--msg-gap, 0.3rem);
+  /* No margin: the distance to the next row is the thread's `gap`. */
   flex-shrink: 0;
+}
+
+/*
+ * A row from the same author as the row above closes up from --msg-gap to
+ * --msg-gap-run. The thread's `gap` is the one distance between rows, so this
+ * only takes back the difference; the row still never owns a spacing of its
+ * own. Never set on the first row of the thread, after a date separator or
+ * after a system notice (see utils/messageRuns), so it cannot pull a row up
+ * against something that is not a message, and never on a row that opens with
+ * a label - a group member's name, or "You replied to ..." - where the label
+ * needs the room (MessageBubble).
+ */
+/* The fallbacks are the tokens' own values, kept in step by the spacing test. */
+.msgBubbleContainer[data-run='continue'] {
+  margin-top: calc(var(--msg-gap-run, 0.15rem) - var(--msg-gap, 0.5rem));
+}
+
+/*
+ * ...except directly under a row that ends in a status line ("Sending…",
+ * "Not delivered", "Sent"). That line is part of the row above, and it is only
+ * --msg-gap-attach below its bubble, so closing up to --msg-gap-run beneath it
+ * would leave the line the same distance from both messages. Keep the full gap.
+ */
+.msgBubbleContainer[data-status-line] + .msgBubbleContainer[data-run='continue'] {
+  margin-top: 0;
 }
 
 .msgBubbleContainerMe {
@@ -114,12 +178,22 @@
 
 .msgAvatar {
   cursor: pointer;
+  /*
+   * Flex, so the avatar is a flex item and not an inline-block on a text line.
+   * The shared Avatar is `inline-block`, and an inline-block sits on its line's
+   * baseline with room left below it for descenders: this box came out 32px
+   * around a 28px avatar. The wrapper is bottom-aligned to the bubble, so the
+   * avatar floated ~4px above the bubble's bottom edge in every group message,
+   * and the typing indicator's row was 4px taller than its own bubble, which
+   * put it 12px from the message above instead of the row gap.
+   */
+  display: flex;
 }
 
 .msgSenderName {
   font-size: 0.75rem;
   color: var(--color-text-muted, #71717a);
-  margin-bottom: 4px;
+  margin-bottom: var(--msg-gap-attach, 0.1rem);
   margin-left: 4px;
 }
 
@@ -248,12 +322,19 @@
   color: var(--color-primary);
 }
 
+/*
+ * A message that is a card or media rather than a bubble: the card on top, its
+ * time pill underneath. No outer margin - this used to add 2px above and below
+ * on top of the row gap, which is what made these rows sit further from their
+ * neighbours than a text bubble does. The only distance left here is the one
+ * inside the message, between the card and its time.
+ */
 .msgImageCardContainer,
 .msgAudioCardContainer {
   display: flex;
   flex-direction: column;
-  margin: 2px 0;
-  gap: 2px;
+  margin: 0;
+  gap: var(--msg-gap-attach, 0.1rem);
 }
 
 .msgBubbleContainerMe .msgImageCardContainer,
@@ -317,7 +398,7 @@
   font-size: 0.72rem;
   font-weight: 500;
   color: var(--color-text-muted, #71717a);
-  margin-top: 3px;
+  margin-top: var(--msg-gap-attach, 0.1rem);
   text-align: right;
   padding-right: 2px;
   display: flex;
@@ -396,13 +477,35 @@
   }
 }
 
+/*
+ * The thread's punctuation: a date pill and a system notice ("Aarav joined").
+ * They sit `--msg-gap-section` from the rows on either side - the row gap plus
+ * the margin below, the same above and below, which the old per-class margins
+ * (1rem / 0.6rem, on top of the previous row's own margin) never were: 20.8px
+ * above a date and 16px below it, 14px above a notice and 10px below.
+ *
+ * Two of them in a row (several people joining) would each add that margin and
+ * stack to nearly double, so the second one cancels its own top margin and the
+ * pair is a single `--msg-gap` apart, like consecutive messages.
+ */
+.msgDateSeparator,
+.systemMessageContainer {
+  margin-block: calc(var(--msg-gap-section, 1rem) - var(--msg-gap, 0.5rem));
+  flex-shrink: 0;
+}
+
+.msgDateSeparator + .msgDateSeparator,
+.msgDateSeparator + .systemMessageContainer,
+.systemMessageContainer + .msgDateSeparator,
+.systemMessageContainer + .systemMessageContainer {
+  margin-top: calc(var(--msg-gap, 0.5rem) - var(--msg-gap-section, 1rem));
+}
+
 .msgDateSeparator {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 1rem;
-  margin: 1rem 0;
-  flex-shrink: 0;
 }
 
 .msgDateSeparatorText {
@@ -417,22 +520,6 @@
   border-radius: 100px;
   background: var(--color-bg-white, #ffffff);
   white-space: nowrap;
-}
-
-.systemMessageContainer {
-  display: flex;
-  justify-content: center;
-  margin: 0.5rem 0;
-  width: 100%;
-}
-
-.systemMessageText {
-  background: var(--color-bg-subtle, #f4f4f5);
-  color: var(--color-text-muted, #71717a);
-  font-size: 0.78rem;
-  padding: 4px 12px;
-  border-radius: 12px;
-  text-align: center;
 }
 
 .typingIndicatorDots {
@@ -1042,10 +1129,19 @@
 }
 
 
+/*
+ * The dots sit on a text line inside a normal bubble, in the same markup a text
+ * message uses (.msgTextTimeWrap > .msgTextContent > .msgText), so the bubble
+ * is the height of a one-line message by construction, not by a number that has
+ * to be kept in step. It used to override the bubble's padding inline around a
+ * bare 7px dot: 27.8px tall against 42px for a one-line message, and the thread
+ * shifted by the difference when a real message replaced the indicator.
+ */
 .typingBubbleInline {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  vertical-align: middle;
 }
 
 .typingDot {
@@ -1087,7 +1183,6 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  margin: 0.6rem 0;
   width: 100%;
   user-select: none;
   -webkit-user-select: none;
@@ -1247,7 +1342,8 @@
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  gap: 0.75rem;
+  /* The thread's own gap, so the placeholder has the rhythm of what replaces it. */
+  gap: var(--msg-gap, 0.5rem);
   overflow: hidden;
 }
 
