@@ -37,6 +37,7 @@ import { InstantMatchRateLimiter } from '../instant-match/instant-match.rate-lim
 import {
   parseJoinQueuePayload,
   parseMatchRespondPayload,
+  parseMatchRequestPayload,
 } from '../instant-match/dto/join-queue.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { checkPresenceVisibilityBatch } from '../users/privacy.helper';
@@ -1887,6 +1888,45 @@ export class RealtimeGateway
       return { status: 'ok' };
     } catch (err) {
       return this.instantMatchAck(err, 'Could not send your response');
+    }
+  }
+
+  /** Ask one person on the roster to match, directly. */
+  @SubscribeMessage('match:request')
+  @VerifiedOnly()
+  async handleMatchRequest(
+    @ConnectedSocket() client: AppSocket,
+    @MessageBody() data: unknown,
+  ) {
+    const userId = client.data.userId;
+    if (!userId)
+      return { status: 'error', error: 'Unauthenticated', code: 401 };
+
+    const limited = await this.limitEvent(userId, [
+      { policy: 'im.request.user', identifier: userId },
+    ]);
+    if (limited) return limited;
+
+    try {
+      const { targetUserId, search } = parseMatchRequestPayload(data);
+      // A request sent before searching also starts the search, so it spends
+      // the join budget too.
+      if (search) {
+        const joinLimited = await this.limitEvent(userId, [
+          { policy: 'im.join.user', identifier: userId },
+          { policy: 'im.join.hourly.user', identifier: userId },
+          { policy: 'im.join.ip', identifier: socketIp(client) },
+        ]);
+        if (joinLimited) return joinLimited;
+      }
+      await this.instantMatchService.requestMatch(
+        userId,
+        targetUserId,
+        search ? parseJoinQueuePayload(userId, search) : undefined,
+      );
+      return { status: 'ok' };
+    } catch (err) {
+      return this.instantMatchAck(err, 'Could not send your request');
     }
   }
 

@@ -140,6 +140,29 @@ export function parseMatchRespondPayload(payload: unknown): {
   return { matchId, action };
 }
 
+/**
+ * Validates an untrusted `match:request` socket payload: the one person the
+ * sender wants to be paired with. Ids are opaque strings; the service decides
+ * whether that person exists and can be asked.
+ */
+export function parseMatchRequestPayload(payload: unknown): {
+  targetUserId: string;
+  /** The search to start first, when the sender is not searching yet. Still
+   *  untrusted: the gateway runs it through `parseJoinQueuePayload`. */
+  search: unknown;
+} {
+  const raw = fieldsOf(payload);
+  if (!raw) {
+    throw new BadRequestException('Malformed request');
+  }
+  const targetUserId =
+    typeof raw.targetUserId === 'string' ? raw.targetUserId.trim() : '';
+  if (!targetUserId || targetUserId.length > 64) {
+    throw new BadRequestException('Missing person to match with');
+  }
+  return { targetUserId, search: raw.search ?? undefined };
+}
+
 export function toQueueSnapshot(dto: JoinQueueDto): QueueSnapshot {
   const { userId: _userId, ...rest } = dto;
   return rest;

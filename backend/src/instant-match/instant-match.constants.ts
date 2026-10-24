@@ -69,8 +69,8 @@ export const EXPIRY_SWEEP_MS = 10_000;
 
 /** Abuse limits, enforced per user on the gateway. */
 // Instant Match rate limits now live in config/rate-limit.config.ts as
-// `im.join.user`, `im.join.hourly.user`, `im.join.ip`, `im.respond.user` and
-// `im.queuesync.user`, enforced through RateLimitService so they are shared
+// `im.join.user`, `im.join.hourly.user`, `im.join.ip`, `im.respond.user`,
+// `im.request.user` and `im.queuesync.user`, enforced through RateLimitService so they are shared
 // across replicas. The values here were per-process, so the effective ceiling
 // was multiplied by the replica count and reset on every deploy. Removed
 // rather than left in place, because two sources of truth for one limit is how

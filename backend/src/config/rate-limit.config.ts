@@ -737,6 +737,16 @@ export const RATE_LIMIT_POLICIES = {
     message: 'Slow down a moment.',
   },
 
+  /** Direct match requests from the roster: each one interrupts a stranger's
+   *  search with a card to answer, so the budget is deliberately small. */
+  'im.request.user': {
+    points: 6,
+    duration: 60,
+    dimension: 'user',
+    onRedisFailure: 'closed',
+    message: "You've sent a lot of requests. Give them a moment to answer.",
+  },
+
   /** Was entirely unlimited — a state read a stuck client can spin on. */
   'im.queuesync.user': {
     points: 20,

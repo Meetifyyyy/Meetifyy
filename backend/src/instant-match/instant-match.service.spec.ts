@@ -567,6 +567,162 @@ describe('InstantMatchService', () => {
 
   // ── Declining ──────────────────────────────────────────────────────────────
 
+  describe('requestMatch', () => {
+    // Different activities, so the ranker never pairs them on its own: every
+    // session in these tests exists because of the request.
+    beforeEach(async () => {
+      await service.joinQueue(joinDto('alice', { activity: 'study' }));
+      await service.joinQueue(joinDto('bob', { activity: 'coffee' }));
+      expect(prisma.sessions).toHaveLength(0);
+      emitter.emitMatchFound.mockClear();
+    });
+
+    it('pairs the two, with the requester already accepted', async () => {
+      await service.requestMatch('alice', 'bob');
+
+      expect(prisma.sessions).toHaveLength(1);
+      const session = prisma.sessions[0];
+      expect(session.userAId).toBe('alice');
+      expect(session.aAccepted).toBe(true);
+      expect(session.bAccepted).toBe(false);
+      expect(prisma.queue).toHaveLength(0);
+
+      const byUser = Object.fromEntries(emitter.emitMatchFound.mock.calls);
+      expect(byUser.alice.awaitingOther).toBe(true);
+      expect(byUser.bob.requested).toBe(true);
+      expect(byUser.bob.candidate.id).toBe('alice');
+    });
+
+    it('completes the match when the other person accepts', async () => {
+      await service.requestMatch('alice', 'bob');
+      await service.respondToMatch('bob', prisma.sessions[0].id, 'accept');
+
+      expect(prisma.sessions[0].status).toBe('ACCEPTED');
+      expect(messages.createInstantMatchConversation).toHaveBeenCalledTimes(1);
+    });
+
+    it('returns both to searching when the other person passes', async () => {
+      await service.requestMatch('alice', 'bob');
+      emitter.emitMatchDeclined.mockClear();
+      await service.respondToMatch('bob', prisma.sessions[0].id, 'decline');
+
+      expect(prisma.sessions[0].status).toBe('DECLINED');
+      // The request interrupted Bob's own search; passing must not end it.
+      expect(prisma.queue.map((e) => e.userId).sort()).toEqual([
+        'alice',
+        'bob',
+      ]);
+      expect(prisma.queue.find((e) => e.userId === 'bob')?.activity).toBe(
+        'coffee',
+      );
+
+      const byUser = Object.fromEntries(emitter.emitMatchDeclined.mock.calls);
+      expect(byUser.alice.reason).toMatch(/passed on your request/i);
+      expect(byUser.alice.requeued).toBe(true);
+      expect(byUser.bob.reason).toMatch(/you passed on this request/i);
+      expect(byUser.bob.requeued).toBe(true);
+    });
+
+    it('lets the requester withdraw, returning both to searching', async () => {
+      await service.requestMatch('alice', 'bob');
+      emitter.emitMatchDeclined.mockClear();
+      await service.respondToMatch('alice', prisma.sessions[0].id, 'decline');
+
+      expect(prisma.queue.map((e) => e.userId).sort()).toEqual([
+        'alice',
+        'bob',
+      ]);
+      const byUser = Object.fromEntries(emitter.emitMatchDeclined.mock.calls);
+      expect(byUser.alice.reason).toMatch(/request cancelled/i);
+      expect(byUser.bob.reason).toMatch(/withdrew/i);
+    });
+
+    it('is about what the other person is up for, on both cards and the session', async () => {
+      await service.requestMatch('alice', 'bob');
+      expect(prisma.sessions[0].activity).toBe('coffee');
+      const byUser = Object.fromEntries(emitter.emitMatchFound.mock.calls);
+      expect(byUser.alice.activity).toBe('coffee');
+      expect(byUser.bob.activity).toBe('coffee');
+    });
+
+    it('refuses a requester who is not searching', async () => {
+      await service.cancelQueue('alice');
+      await expect(service.requestMatch('alice', 'bob')).rejects.toThrow(
+        /start a search/i,
+      );
+      expect(prisma.sessions).toHaveLength(0);
+    });
+
+    it('refuses a target who is no longer searching', async () => {
+      await service.cancelQueue('bob');
+      await expect(service.requestMatch('alice', 'bob')).rejects.toThrow(
+        /not searching/i,
+      );
+    });
+
+    it('refuses across a block, without saying it is a block', async () => {
+      prisma.addBlock('bob', 'alice');
+      await expect(service.requestMatch('alice', 'bob')).rejects.toThrow(
+        /not searching/i,
+      );
+      expect(prisma.sessions).toHaveLength(0);
+    });
+
+    it('starts the requester’s search when they ask from the roster', async () => {
+      await service.cancelQueue('alice');
+      await service.requestMatch(
+        'alice',
+        'bob',
+        joinDto('alice', { activity: 'coffee' }),
+      );
+
+      expect(prisma.sessions).toHaveLength(1);
+      expect(prisma.sessions[0].aAccepted).toBe(true);
+      // A pass then puts them back to searching for what they asked about.
+      await service.respondToMatch('bob', prisma.sessions[0].id, 'decline');
+      const alice = prisma.queue.find((e) => e.userId === 'alice');
+      expect(alice?.activity).toBe('coffee');
+    });
+
+    it('undoes that implicit search when the request fails', async () => {
+      await service.cancelQueue('alice');
+      await service.cancelQueue('bob');
+      await expect(
+        service.requestMatch('alice', 'bob', joinDto('alice')),
+      ).rejects.toThrow(/not searching/i);
+      expect(prisma.queue).toHaveLength(0);
+    });
+
+    it('refuses asking yourself', async () => {
+      await expect(service.requestMatch('alice', 'alice')).rejects.toThrow(
+        /yourself/i,
+      );
+    });
+
+    it('never labels an ordinary pairing as a request', async () => {
+      await service.cancelQueue('alice');
+      await service.cancelQueue('bob');
+      await service.joinQueue(joinDto('alice'));
+      await service.joinQueue(joinDto('bob'));
+      const session = prisma.sessions[prisma.sessions.length - 1];
+      // The partner accepting first is not the same thing as a request.
+      await service.respondToMatch(session.userAId, session.id, 'accept');
+      const other = await service.getStateFor(session.userBId);
+      expect(other.pendingMatch?.requested).toBe(false);
+      const mine = await service.getStateFor(session.userAId);
+      expect(mine.pendingMatch?.awaitingOther).toBe(true);
+    });
+
+    it('shows the requester the wait, not the question, after a reload', async () => {
+      await service.requestMatch('alice', 'bob');
+      const mine = await service.getStateFor('alice');
+      const theirs = await service.getStateFor('bob');
+      expect(mine.pendingMatch?.awaitingOther).toBe(true);
+      expect(theirs.pendingMatch?.awaitingOther).toBe(false);
+      expect(theirs.pendingMatch?.requested).toBe(true);
+    });
+  });
+
   describe('decline', () => {
     let sessionId: string;
 

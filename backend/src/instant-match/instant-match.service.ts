@@ -73,6 +73,11 @@ export interface MatchFoundPayload {
    *  than to `timer` seconds from render, so a slow render, a backgrounded
    *  tab, or a late-arriving event cannot desync the ring from the server. */
   expiresAt: number;
+  /** This user has already said yes — they sent the request — so the card
+   *  shows the wait for the other side instead of asking again. */
+  awaitingOther?: boolean;
+  /** The other person asked for this pairing directly, from the roster. */
+  requested?: boolean;
 }
 
 export interface QueueStats {
@@ -311,8 +316,15 @@ export class InstantMatchService implements OnModuleInit {
   /**
    * Idempotent: re-joining with the same or updated criteria replaces the
    * existing entry rather than stacking duplicates (userId is unique).
+   *
+   * `matchNow: false` queues without the immediate pairing attempt — used by
+   * a direct request, which must claim one specific person before the ranker
+   * can hand the requester to somebody else.
    */
-  async joinQueue(dto: JoinQueueDto): Promise<void> {
+  async joinQueue(
+    dto: JoinQueueDto,
+    { matchNow = true }: { matchNow?: boolean } = {},
+  ): Promise<void> {
     // Through the shared policy rather than its own `verificationStatus !==
     // 'VERIFIED'` comparison: one definition of eligibility, one feature flag,
     // and the cached lookup the rest of the app already pays for.
@@ -368,6 +380,8 @@ export class InstantMatchService implements OnModuleInit {
 
     // Everyone waiting in this bucket now sees a different queue depth.
     await this.broadcastQueueStats();
+
+    if (!matchNow) return;
 
     // The user is queued at this point, so a failure to pair them *right now*
     // must not be reported as a failed join — that would tell them the search
@@ -862,6 +876,10 @@ export class InstantMatchService implements OnModuleInit {
     myEntry: { userId: string },
     candidate: { userId: string },
     timerSecs: number,
+    {
+      requestedByA = false,
+      activity,
+    }: { requestedByA?: boolean; activity?: string } = {},
   ): Promise<{ id: string; expiresAt: Date } | null> {
     const expiresAt = new Date(
       Date.now() + timerSecs * 1000 + ACCEPT_TIMER_GRACE_MS,
@@ -886,14 +904,19 @@ export class InstantMatchService implements OnModuleInit {
           data: {
             userAId: a.userId,
             userBId: b.userId,
-            activity: a.activity,
+            activity: activity ?? a.activity,
             expiresAt,
-            snapshotA: this.entryToSnapshot(
-              a,
-            ) as unknown as Prisma.InputJsonValue,
+            // A direct request marks itself on the requester's snapshot (a
+            // JSON column, so no schema change): declines and reloads read it
+            // to tell a request from a ranker pairing.
+            snapshotA: (requestedByA
+              ? { ...this.entryToSnapshot(a), requested: true }
+              : this.entryToSnapshot(a)) as unknown as Prisma.InputJsonValue,
             snapshotB: this.entryToSnapshot(
               b,
             ) as unknown as Prisma.InputJsonValue,
+            // A direct request is the requester's yes, given up front.
+            aAccepted: requestedByA,
           },
           select: { id: true, expiresAt: true },
         });
@@ -902,6 +925,150 @@ export class InstantMatchService implements OnModuleInit {
       if (err instanceof PairClaimLost) return null;
       throw err;
     }
+  }
+
+  // ─── Requesting someone directly ─────────────────────────────────────────────
+
+  /**
+   * One searcher asks to be paired with one specific person on the roster.
+   *
+   * Built on the same claim the ranker uses, so it inherits its guarantees:
+   * both rows leave the queue in one transaction, which is what stops either
+   * person being paired twice, and a claim that loses a race simply fails.
+   * The requester is user A with their acceptance already recorded, so the
+   * other person's Accept completes the match through the ordinary path, and
+   * a Pass or a timeout goes through the ordinary decline/expiry, which puts
+   * the requester straight back in the queue — their search carries on.
+   *
+   * Everything the roster promises is re-checked here, because a roster can
+   * be minutes old: the target must still be searching, still eligible, and
+   * not blocked in either direction.
+   */
+  async requestMatch(
+    requesterId: string,
+    targetUserId: string,
+    search?: JoinQueueDto,
+  ): Promise<void> {
+    if (requesterId === targetUserId) {
+      throw new BadRequestException('You cannot match with yourself');
+    }
+
+    // Asked from the roster before searching: the request starts the search,
+    // with the same checks as any join, but without the immediate pairing
+    // attempt that could hand the requester to somebody else first. If the
+    // request then fails, that implicit search is undone, so an error never
+    // leaves someone queued who did not choose to be.
+    const existing = await this.prisma.matchQueueEntry.findUnique({
+      where: { userId: requesterId },
+    });
+    const queued =
+      Boolean(existing) && (existing?.expiresAt.getTime() ?? 0) > Date.now();
+    if (!queued && search && search.userId === requesterId) {
+      await this.joinQueue(search, { matchNow: false });
+      try {
+        await this.claimRequested(requesterId, targetUserId);
+      } catch (err) {
+        // In the moment between joining and claiming, another joiner's
+        // ranker may already have paired this user. That match stands, and
+        // its own `match:found` drives the client — the request just steps
+        // aside rather than reporting a failure that did not happen.
+        if (await this.findPendingSessionFor(requesterId)) return;
+        await this.cancelQueue(requesterId);
+        throw err;
+      }
+      return;
+    }
+
+    await this.claimRequested(requesterId, targetUserId);
+  }
+
+  private async claimRequested(
+    requesterId: string,
+    targetUserId: string,
+  ): Promise<void> {
+    const [mine, theirs] = await Promise.all([
+      this.prisma.matchQueueEntry.findUnique({
+        where: { userId: requesterId },
+      }),
+      this.prisma.matchQueueEntry.findUnique({
+        where: { userId: targetUserId },
+      }),
+    ]);
+    const now = Date.now();
+    if (!mine || mine.expiresAt.getTime() <= now) {
+      throw new BadRequestException('Start a search before sending a request');
+    }
+    if (!theirs || theirs.expiresAt.getTime() <= now) {
+      throw new BadRequestException('They are not searching any more');
+    }
+
+    const excluded = await this.getExcludedUserIds(requesterId);
+    if (excluded.includes(targetUserId)) {
+      // Worded like "not searching" on purpose: a block must not be
+      // discoverable by probing who can be asked.
+      throw new BadRequestException('They are not searching any more');
+    }
+    const eligibility = await this.verificationAccess.getEligibilityMap([
+      targetUserId,
+    ]);
+    if (!eligibility.get(targetUserId)) {
+      throw new BadRequestException('They are not searching any more');
+    }
+
+    const [me, them] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: requesterId },
+        select: USER_CARD_SELECT,
+      }),
+      this.prisma.user.findUnique({
+        where: { id: targetUserId },
+        select: USER_CARD_SELECT,
+      }),
+    ]);
+    if (!me || !them) {
+      throw new BadRequestException('They are not searching any more');
+    }
+
+    // The request is about what *they* are up for, so their activity and
+    // timing set the window.
+    const timer = getAcceptTimerSecs(theirs.activity, theirs.timePreference);
+    const session = await this.claimPair(mine, theirs, timer, {
+      requestedByA: true,
+      // What they are up for is what was asked for: it is the activity both
+      // cards describe and the reason the chat opens with.
+      activity: theirs.activity,
+    });
+    if (!session) {
+      throw new BadRequestException('They were just matched with someone else');
+    }
+
+    const area = theirs.area ?? mine.area ?? null;
+    const expiresAtMs = session.expiresAt.getTime();
+
+    realtimeGatewayRef?.emitMatchFound(requesterId, {
+      matchId: session.id,
+      candidate: this.toCandidateDto(them),
+      activity: theirs.activity,
+      area,
+      timer,
+      expiresAt: expiresAtMs,
+      awaitingOther: true,
+    });
+    realtimeGatewayRef?.emitMatchFound(targetUserId, {
+      matchId: session.id,
+      candidate: this.toCandidateDto(me),
+      activity: theirs.activity,
+      area,
+      timer,
+      expiresAt: expiresAtMs,
+      requested: true,
+    });
+
+    this.logger.log(
+      `match:requested ${session.id} ${requesterId} -> ${targetUserId}`,
+    );
+
+    await this.broadcastQueueStats();
   }
 
   // ─── Responding ─────────────────────────────────────────────────────────────
@@ -972,22 +1139,51 @@ export class InstantMatchService implements OnModuleInit {
 
     const requeued = await this.requeue(otherUserId, otherSnapshot);
 
+    // A direct request interrupted two searches, so backing out of it — the
+    // target passing, or the requester withdrawing — returns *both* people to
+    // what they were doing. A ranker pairing keeps its rule: whoever passes
+    // has chosen to stop.
+    const isRequest = isDirectRequest(session.snapshotA);
+    const declinerRequeued = isRequest
+      ? await this.requeue(
+          userId,
+          readQueueSnapshot(
+            session.userAId === userId ? session.snapshotA : session.snapshotB,
+          ),
+        )
+      : false;
+    const declinerIsRequester = session.userAId === userId;
+
     realtimeGatewayRef?.emitMatchDeclined(userId, {
-      reason: 'You passed on this match',
-      requeued: false,
+      reason: !isRequest
+        ? 'You passed on this match'
+        : withSearching(
+            declinerIsRequester
+              ? 'Request cancelled'
+              : 'You passed on this request',
+            declinerRequeued,
+          ),
+      requeued: declinerRequeued,
     });
     realtimeGatewayRef?.emitMatchDeclined(otherUserId, {
-      reason: requeued
-        ? 'The other student was unavailable — back to searching'
-        : 'The other student was unavailable',
+      reason: !isRequest
+        ? withSearching('The other student was unavailable', requeued)
+        : withSearching(
+            declinerIsRequester
+              ? 'They withdrew the request'
+              : 'They passed on your request',
+            requeued,
+          ),
       requeued,
     });
 
     this.logger.log(
-      `match:declined ${session.id} by=${userId} requeued=${requeued}`,
+      `match:declined ${session.id} by=${userId} requeued=${requeued}` +
+        (isRequest ? ` request declinerRequeued=${declinerRequeued}` : ''),
     );
 
     if (requeued) await this.tryMatch(otherUserId);
+    if (declinerRequeued) await this.tryMatch(userId);
   }
 
   private async acceptSession(
@@ -1489,6 +1685,12 @@ export class InstantMatchService implements OnModuleInit {
             snapshot?.timePreference ?? 'now',
           ),
           expiresAt: session.expiresAt.getTime(),
+          // After a reload the requester must land on the wait, not on an
+          // Accept they already gave; the other side keeps the request label.
+          awaitingOther:
+            session.userAId === userId ? session.aAccepted : session.bAccepted,
+          requested:
+            session.userBId === userId && isDirectRequest(session.snapshotA),
         };
       }
     }
@@ -2054,3 +2256,16 @@ export class InstantMatchService implements OnModuleInit {
 
 /** Internal signal used to roll back a pair claim that lost its race. */
 class PairClaimLost extends Error {}
+
+/** True for a session created by a direct request (see `claimPair`). */
+function isDirectRequest(snapshotA: unknown): boolean {
+  return (
+    typeof snapshotA === 'object' &&
+    snapshotA !== null &&
+    (snapshotA as { requested?: unknown }).requested === true
+  );
+}
+
+function withSearching(reason: string, requeued: boolean): string {
+  return requeued ? `${reason} — back to searching` : reason;
+}

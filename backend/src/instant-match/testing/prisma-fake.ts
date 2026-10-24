@@ -340,7 +340,8 @@ export class PrismaFake {
           | 'expiresAt'
           | 'snapshotA'
           | 'snapshotB'
-        >;
+        > &
+          Partial<Pick<MatchSession, 'aAccepted'>>;
         select?: Row;
       }) => {
         const row: MatchSession = {
