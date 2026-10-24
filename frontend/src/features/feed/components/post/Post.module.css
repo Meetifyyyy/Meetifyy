@@ -218,22 +218,45 @@
   border: 1px solid var(--color-border-light);
   border-radius: 100px;
   cursor: pointer;
-  transition: all var(--transition-normal);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  /* Release eases out a little slower than the press, so it settles. */
+  transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+    color 0.15s ease, background-color 0.15s ease;
 }
 
-.postActionBtn:hover {
-  background: var(--color-border-light);
-  color: var(--color-text-muted);
+/* Hover only where there is a real pointer: on a phone a tap leaves :hover
+   stuck on the button, which filled its whole pill until the next tap
+   elsewhere. */
+@media (hover: hover) and (pointer: fine) {
+  .postActionBtn:hover {
+    background: var(--color-border-light);
+    color: var(--color-text-muted);
+  }
+
+  .postActionBtn:hover svg {
+    stroke: var(--color-primary);
+  }
 }
 
-.postActionBtn:hover svg {
-  stroke: var(--color-primary);
+/* The press is a shrink only, never a filled box. */
+.postActionBtn:active,
+.postActionBtn[data-pressed] {
+  transform: scale(0.92);
+  transition-duration: 0.12s;
 }
 
-.postActionBtn:active {
-  transform: scale(0.94);
-  background: var(--color-border-light);
-  transition: transform 0.05s ease, background-color 0.05s ease;
+.postActionBtn:focus:not(:focus-visible) {
+  outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .postActionBtn,
+  .postActionBtn:active,
+  .postActionBtn[data-pressed] {
+    transition: none;
+    transform: none;
+  }
 }
 
 .postActionBtn svg {

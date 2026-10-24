@@ -7,6 +7,20 @@ import { Bookmark } from '@shared/components/icons';
 import SharePostModal from '../modals/SharePostModal';
 import styles from './Post.module.css';
 
+/**
+ * A held press state for the action buttons, written straight onto the
+ * button (no React render). CSS :active alone is applied by the Android
+ * WebView for a single frame on a quick tap, so the press shrink never showed
+ * and the release looked like a flicker.
+ */
+const release = (e) => { delete e.currentTarget.dataset.pressed; };
+const PRESS_HANDLERS = {
+  onPointerDown: (e) => { e.currentTarget.dataset.pressed = ''; },
+  onPointerUp: release,
+  onPointerCancel: release,
+  onPointerLeave: release,
+};
+
 function PostActions({
   post,
   onCommentClick,
@@ -73,6 +87,7 @@ function PostActions({
           type="button"
           className={`${styles.postActionBtn} ${isLikedByMe ? styles.liked : ''}`}
           onClick={toggleLikeHandler}
+          {...PRESS_HANDLERS}
           aria-label="Like post"
         >
           <svg
@@ -92,6 +107,7 @@ function PostActions({
           type="button"
           className={styles.postActionBtn}
           onClick={handleCommentHandler}
+          {...PRESS_HANDLERS}
           aria-label="Comment on post"
         >
           <svg
@@ -113,6 +129,7 @@ function PostActions({
           type="button"
           className={styles.postActionBtn}
           onClick={handleShare}
+          {...PRESS_HANDLERS}
           aria-label="Share post"
         >
           <svg
@@ -138,6 +155,7 @@ function PostActions({
           type="button"
           className={`${styles.postActionBtn} ${isSaved ? styles.saved : ''}`}
           onClick={toggleSaveHandler}
+          {...PRESS_HANDLERS}
           aria-label={isSaved ? 'Saved' : 'Save post'}
         >
           <Bookmark
