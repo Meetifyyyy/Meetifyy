@@ -1,5 +1,7 @@
 import { useInstantMatch } from '../../context/InstantMatchContext';
-import { Bolt, Squiggle } from '../decor/Decor';
+import { MeetScene } from '../art/CampusMap';
+import Face from '../art/Face';
+import { ArrowRightIcon } from '../art/icons';
 
 /**
  * What Instant Match shows once a conversation is over.
@@ -24,20 +26,34 @@ export default function EndedPanel() {
 
   return (
     <div className="im-ended">
-      <span className="im-sticker im-sticker-coral">{copy.badge}</span>
-      <h3 className="im-display im-display-lg im-ended-title">{copy.title}</h3>
-      <Squiggle className="im-ended-squiggle" />
-      <p className="im-lede im-ended-lede">{copy.body}</p>
+      <MeetScene variant="ended" className="im-ended-scene im-scene-fade">
+        {matchPartner && (
+          <Face
+            className="im-ended-face"
+            avatar={matchPartner.avatar}
+            name={partnerName}
+            size={56}
+          />
+        )}
+      </MeetScene>
 
-      <button
-        type="button"
-        className="im-btn im-btn-yes im-ended-action"
-        onClick={() => leaveMatch({ alreadyEnded: true })}
-        disabled={leaving}
-      >
-        Find someone new
-        <Bolt className="im-btn-bolt" />
-      </button>
+      <div className="im-ended-copy">
+        <span className="im-eyebrow">{copy.badge}</span>
+        <h3 className="im-title im-title-lg">{copy.title}</h3>
+        <p className="im-lede">{copy.body}</p>
+      </div>
+
+      <div className="im-panel-actions">
+        <button
+          type="button"
+          className="im-btn im-btn-primary im-btn-block"
+          onClick={() => leaveMatch({ alreadyEnded: true })}
+          disabled={leaving}
+        >
+          Find someone new
+          <ArrowRightIcon />
+        </button>
+      </div>
     </div>
   );
 }
@@ -47,18 +63,18 @@ function describeEnding(chat, partnerName) {
     return {
       badge: 'Time up',
       title: 'Your Instant Match has ended',
-      body: 'Your 24-hour chat window has expired.',
+      body: 'The 24-hour chat window closed. Start a new search whenever you like.',
     };
   }
   if (chat.endReason === 'you_left') {
     return {
-      badge: 'Left',
+      badge: 'You left',
       title: 'You left this match',
       body: 'That conversation is closed. Start a new search whenever you like.',
     };
   }
   return {
-    badge: 'Ended',
+    badge: 'Match ended',
     title: `${partnerName} left the match`,
     body: 'Your Instant Match conversation has ended.',
   };

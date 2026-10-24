@@ -1,15 +1,21 @@
-import { useRef, useMemo, useId, useState } from 'react';
+import { useRef, useMemo, useId } from 'react';
 import { createPortal } from 'react-dom';
 import { useInstantMatch } from '../../context/InstantMatchContext';
 import { useMatchTimer } from '../../hooks/useMatchTimer';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
 import { useAuth } from '@shared/context/AuthContext';
-import { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
-import { getActivity, getActivityVerb, getAreaLabel, accentVars } from '../../constants/matchConstants';
+import {
+  getActivity, getActivityVerb, getAreaLabel, accentVars,
+} from '../../constants/matchConstants';
 import { getAcceptTimer } from '../../utils/timerByActivity';
-import CountdownRing from './CountdownRing';
-import { Blob, Starburst, Halftone, Grain, Bolt, Squiggle } from '../decor/Decor';
+import { MeetScene } from '../art/CampusMap';
+import {
+  ActivityIcon, AreaIcon, CheckIcon, CloseIcon, SpinnerIcon,
+} from '../art/icons';
+import { MatchMark } from '../decor/Decor';
+import Face, { firstName } from '../art/Face';
+import { CountdownHalo, CountdownPill } from './Countdown';
 import '../../styles/instant-match.css';
 import '../../styles/match-popup.css';
 
@@ -57,20 +63,19 @@ function MatchCard() {
     return theirs.filter((i) => mineLower.has(String(i).toLowerCase()));
   }, [currentUser?.interests, candidate?.interests]);
 
+  const name = candidate?.displayName || candidate?.username || 'A student';
   const areaLabel = getAreaLabel(area);
-  const intent = `Wants to ${getActivityVerb(activity)}${areaLabel ? ` near ${areaLabel}` : ''}`;
 
   const candidateYear = candidate?.passingYear ?? candidate?.currentYear;
   const subline = [candidate?.course, candidate?.branch, yearLabel(candidateYear)]
     .filter(Boolean)
     .join(' · ');
 
-  const accentStyle = accentVars(activityMeta, 'im-accent');
-
   const responding = status === 'match_found';
+  const success = status === 'matched';
 
   return createPortal(
-    <div className="im-scope im-match-overlay" style={accentStyle}>
+    <div className="im-scope im-match-overlay" style={accentVars(activityMeta)}>
       <div
         className={`im-match-card im-match-${status}`}
         ref={cardRef}
@@ -79,51 +84,90 @@ function MatchCard() {
         aria-labelledby={titleId}
         tabIndex={-1}
       >
-        {/* Layered poster ground */}
-        <div className="im-match-ground" aria-hidden="true">
-          <Halftone className="im-match-dots" id="im-dots-match" />
-          <Blob className="im-match-blob-1" variant={1} />
-          <Blob className="im-match-blob-2" variant={2} />
-          <Starburst className="im-match-burst" points={16} />
-          <Grain />
+        <div className="im-match-hero">
+          {/* Straddles the map's top edge: half on the card, half on the art. */}
+          {!success && (
+            <span className="im-match-tag">
+              <MatchMark />
+              {activeMatch.awaitingOther
+                ? 'Request sent'
+                : activeMatch.requested ? 'Match request' : 'Match found'}
+            </span>
+          )}
+          <MeetScene variant="match" className="im-match-scene">
+            {success ? (
+              <span className="im-pair im-pair-joined">
+                <Face
+                  className="im-pair-face im-pair-you"
+                  avatar={currentUser?.avatar || currentUser?.avatarUrl}
+                  name={currentUser?.displayName || currentUser?.username || 'You'}
+                  size={84}
+                />
+                <span className="im-pair-node"><MatchMark /></span>
+                <Face className="im-pair-face im-pair-them" avatar={candidate?.avatar} name={name} size={84} />
+              </span>
+            ) : (
+              <span className="im-match-portrait">
+                <CountdownHalo
+                  timeLeft={timeLeft}
+                  total={fallbackSecs}
+                  // A request we sent is still their decision against the
+                  // clock, so the ring keeps running while we wait.
+                  running={responding || Boolean(activeMatch.awaitingOther)}
+                  size={136}
+                />
+                <Face avatar={candidate?.avatar} name={name} size={108} />
+                <span className="im-match-badge im-icon-tile" aria-hidden="true">
+                  <ActivityIcon id={activity} />
+                </span>
+              </span>
+            )}
+          </MeetScene>
         </div>
 
-        {status === 'matched' ? (
-          <SuccessPanel name={candidate?.displayName} titleId={titleId} />
+        {success ? (
+          <div className="im-match-body im-match-success">
+            <span className="im-eyebrow im-eyebrow-blue">It&apos;s a match</span>
+            <h2 id={titleId} className="im-title im-title-lg">You&apos;re matched</h2>
+            <p className="im-lede" role="status" aria-live="polite">
+              Opening your chat with {firstName(name) || 'them'}…
+            </p>
+          </div>
         ) : (
-          <div className="im-match-content">
-            <div className="im-match-topline">
-              <span className="im-sticker im-sticker-lime">
-                <Bolt /> Match found
-              </span>
-              {responding && (
-                <CountdownRing timeLeft={timeLeft} total={fallbackSecs} />
-              )}
-            </div>
-
-            <Avatar candidate={candidate} />
-
+          <div className="im-match-body">
             <div className="im-match-identity">
-              <h2 id={titleId} className="im-display im-display-xl im-match-name">
-                {candidate?.displayName || candidate?.username || 'A student'}
-              </h2>
-              <Squiggle className="im-match-squiggle" />
+              <div className="im-match-nameline">
+                <h2 id={titleId} className="im-title im-title-lg">{name}</h2>
+                {responding && <CountdownPill timeLeft={timeLeft} />}
+              </div>
               {subline && <p className="im-match-sub">{subline}</p>}
             </div>
 
-            <p className="im-match-intent">
-              <span className="im-match-intent-emoji im-emoji" aria-hidden="true">
-                {activityMeta?.emoji ?? '⚡'}
+            <div className="im-match-intent">
+              <span className="im-icon-tile" aria-hidden="true">
+                <ActivityIcon id={activity} />
               </span>
-              {intent}
-            </p>
+              <span className="im-match-intent-text">
+                <span className="im-match-intent-title">
+                  Wants to {getActivityVerb(activity)}
+                </span>
+                <span className="im-match-intent-where">
+                  {areaLabel ? (
+                    <>
+                      <AreaIcon id={area} />
+                      Near {areaLabel}
+                    </>
+                  ) : 'Anywhere on campus'}
+                </span>
+              </span>
+            </div>
 
             {sharedInterests.length > 0 && (
               <div className="im-match-shared">
                 <span className="im-eyebrow">You both like</span>
                 <ul className="im-match-tags">
                   {sharedInterests.slice(0, 4).map((interest) => (
-                    <li key={interest} className="im-match-tag">{interest}</li>
+                    <li key={interest} className="im-chip">{interest}</li>
                   ))}
                 </ul>
               </div>
@@ -133,6 +177,8 @@ function MatchCard() {
               status={status}
               busy={busy}
               timeLeft={timeLeft}
+              requestSent={Boolean(activeMatch.awaitingOther)}
+              name={firstName(name) || 'them'}
               onRespond={respondToMatch}
             />
           </div>
@@ -143,27 +189,44 @@ function MatchCard() {
   );
 }
 
-function MatchFooter({ status, busy, timeLeft, onRespond }) {
+function MatchFooter({ status, busy, timeLeft, name, requestSent, onRespond }) {
   if (status === 'waiting') {
     return (
-      <div className="im-match-waiting" role="status" aria-live="polite">
-        <span className="im-match-waiting-dots" aria-hidden="true">
-          <i /><i /><i />
+      <>
+      <div className="im-match-wait" role="status" aria-live="polite">
+        <span className="im-match-wait-icon" aria-hidden="true"><CheckIcon /></span>
+        <span className="im-match-wait-text">
+          <span className="im-match-wait-title">
+            {requestSent ? 'Request sent' : <>You&apos;re in</>}
+          </span>
+          <span className="im-match-wait-sub">Waiting for {name} to accept</span>
         </span>
-        <p className="im-match-waiting-text">
-          You're in. Waiting for them to accept…
-        </p>
+        <SpinnerIcon className="im-match-wait-spinner" />
       </div>
+      {requestSent && (
+        <button
+          type="button"
+          className="im-btn im-btn-ghost im-match-withdraw"
+          onClick={() => onRespond('decline')}
+          disabled={busy}
+        >
+          {busy ? 'Withdrawing…' : 'Withdraw request'}
+        </button>
+      )}
+      </>
     );
   }
 
   if (status === 'timed_out') {
     return (
-      <div className="im-match-timeout" role="status" aria-live="polite">
-        <span className="im-sticker im-sticker-coral">Time's up</span>
-        <p className="im-lede">
-          Nobody answered in time. Putting you both back in the queue…
-        </p>
+      <div className="im-match-wait im-match-timeout" role="status" aria-live="polite">
+        <span className="im-match-wait-text">
+          <span className="im-match-wait-title">Time&apos;s up</span>
+          <span className="im-match-wait-sub">
+            Nobody answered in time. Putting you both back in the queue…
+          </span>
+        </span>
+        <SpinnerIcon className="im-match-wait-spinner" />
       </div>
     );
   }
@@ -173,20 +236,21 @@ function MatchFooter({ status, busy, timeLeft, onRespond }) {
       <div className="im-match-actions">
         <button
           type="button"
-          className="im-btn im-btn-ghost"
+          className="im-btn"
           onClick={() => onRespond('decline')}
           disabled={busy}
         >
+          <CloseIcon />
           Pass
         </button>
         <button
           type="button"
-          className="im-btn im-btn-yes im-match-accept"
+          className="im-btn im-btn-primary im-match-accept"
           onClick={() => onRespond('accept')}
           disabled={busy}
         >
-          {busy ? 'Sending…' : "Let's go"}
-          {!busy && <Bolt className="im-btn-bolt" />}
+          {!busy && <CheckIcon />}
+          {busy ? 'Sending…' : 'Accept'}
         </button>
       </div>
       {/* Read out at coarse intervals only — a per-second live region would
@@ -197,63 +261,6 @@ function MatchFooter({ status, busy, timeLeft, onRespond }) {
           : ''}
       </span>
     </>
-  );
-}
-
-function SuccessPanel({ name, titleId }) {
-  return (
-    <div className="im-match-success">
-      <span className="im-match-success-burst" aria-hidden="true">
-        <Starburst points={18} />
-      </span>
-      <span className="im-match-success-emoji" aria-hidden="true">🎉</span>
-      <h2 id={titleId} className="im-display im-display-xl">You're matched!</h2>
-      <p className="im-lede" role="status" aria-live="polite">
-        Opening your chat with {name || 'them'}…
-      </p>
-    </div>
-  );
-}
-
-/**
- * The matched student's real photo.
- *
- * `candidate.avatar` is a storage object key, not a URL, so it has to go
- * through the app's shared resolver — rendering it directly (as this did
- * before) requested a path that does not exist and every match fell back to
- * a placeholder. When there genuinely is no photo we show their initial,
- * which reads better here than the generic silhouette.
- */
-function Avatar({ candidate }) {
-  const [failed, setFailed] = useState(false);
-
-  const resolved = useMemo(
-    () => getProcessedAvatarUrl(candidate?.avatar),
-    [candidate?.avatar],
-  );
-  const hasPhoto = Boolean(resolved) && !resolved.includes('default_avatar');
-
-  const initial = (candidate?.displayName || candidate?.username || '?')
-    .trim().charAt(0).toUpperCase();
-
-  return (
-    <div className="im-match-avatar-frame">
-      <span className="im-match-avatar-plate" aria-hidden="true" />
-      {hasPhoto && !failed ? (
-        <img
-          className="im-match-avatar"
-          src={resolved}
-          alt=""
-          loading="eager"
-          decoding="async"
-          onError={() => setFailed(true)}
-        />
-      ) : (
-        <span className="im-match-avatar im-match-avatar-initial" aria-hidden="true">
-          {initial}
-        </span>
-      )}
-    </div>
   );
 }
 

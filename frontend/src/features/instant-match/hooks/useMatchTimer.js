@@ -54,7 +54,7 @@ export function useMatchTimer(expiresAt, fallbackSecs, onExpire) {
      * The 250 ms interval existed so the ring depleted smoothly, which meant
      * re-rendering the whole match popup four times a second for the entire
      * accept window. The ring is now depleted by a CSS animation that the
-     * browser interpolates at display rate (see CountdownRing), so React only
+     * browser interpolates at display rate (see CountdownBar), so React only
      * has to keep up with the digits — and those change once a second.
      */
     const id = window.setInterval(tick, 1000);

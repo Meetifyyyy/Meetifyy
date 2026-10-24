@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react';
-import { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
-import emptyMascotImg from '@assets/images/instant_match_mascot.webp';
+import { useState } from 'react';
+import { getActivity } from '../../constants/matchConstants';
+import PeopleSummary from '../people/PeopleSummary';
+import PeopleList from '../people/PeopleList';
 import {
-  getActivity, getAreaLabel, getTimePreference, accentVars,
-} from '../../constants/matchConstants';
-import { Ticks } from '../decor/Decor';
+  ActivityIcon, RefreshIcon, SpinnerIcon, PinIcon, ChatIcon,
+} from '../art/icons';
+import { MeetScene, RosterScene } from '../art/CampusMap';
 
 /**
  * Who is searching right now — the screen Instant Match opens on.
@@ -15,24 +16,42 @@ import { Ticks } from '../decor/Decor';
  * nothing is filled in — a person who gave no area simply has no area line, so
  * the list can never claim more than someone actually said.
  *
- * The rows are deliberately not interactive. Instant Match pairs people
- * through the queue, not by picking a face out of a list, and a tappable row
- * would promise something the feature does not do.
+ * Folded first: the map with everyone pinned, and one box of faces. Tapping
+ * the box slides to the list, where any of them can be asked to match
+ * directly (PeopleList). Matching through the queue still works the same;
+ * a request is the second way in.
  *
  * Presentational: the roster is read by the sheet, which needs to know whether
  * there is anything to list before it decides to draw its own heading.
  */
 export default function PeopleStep({ people, loading, error, retry }) {
+  const [view, setView] = useState('map');
+
   if (loading) return <RosterLoader />;
   if (error) return <RosterError message={error} onRetry={retry} />;
   if (!people.length) return <EmptyQueue />;
 
+  if (view === 'list') {
+    return (
+      <div className="im-search-slide" data-dir="forward">
+        <PeopleList people={people} onBack={() => setView('back')} />
+      </div>
+    );
+  }
+
+  const pins = people.map((p) => {
+    const activity = getActivity(p.activity);
+    return {
+      ...p,
+      ink: activity ? { light: activity.ink, dark: activity.inkDark } : null,
+    };
+  });
+
   return (
-    <ul className="im-people" aria-label="People searching on Instant Match">
-      {people.map((person, i) => (
-        <PersonRow key={person.user.id} person={person} index={i} />
-      ))}
-    </ul>
+    <div className="im-roster im-search-slide" data-dir={view === 'back' ? 'back' : 'none'}>
+      <RosterScene people={pins} className="im-roster-map" />
+      <PeopleSummary people={people} onOpen={() => setView('list')} />
+    </div>
   );
 }
 
@@ -41,18 +60,7 @@ export default function PeopleStep({ people, loading, error, retry }) {
 function RosterLoader() {
   return (
     <div className="im-people-loader" role="status">
-      <svg
-        className="im-people-spinner"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2.6"
-        strokeLinecap="round"
-        aria-hidden="true"
-      >
-        <circle cx="12" cy="12" r="9" strokeOpacity="0.22" />
-        <path d="M12 3a9 9 0 0 1 9 9" />
-      </svg>
+      <SpinnerIcon />
       <span className="im-sr-only">Loading who is searching</span>
     </div>
   );
@@ -60,10 +68,12 @@ function RosterLoader() {
 
 function RosterError({ message, onRetry }) {
   return (
-    <div className="im-people-state" role="alert">
-      <span className="im-sticker im-sticker-coral">Couldn&apos;t load</span>
+    <div className="im-state" role="alert">
+      <MeetScene variant="ended" className="im-state-art im-scene-fade" />
+      <h3 className="im-state-title">Couldn&apos;t load who&apos;s searching</h3>
       <p className="im-lede">{message}</p>
-      <button type="button" className="im-btn im-btn-ghost im-btn-sm" onClick={onRetry}>
+      <button type="button" className="im-btn im-btn-sm" onClick={onRetry}>
+        <RefreshIcon />
         Try again
       </button>
     </div>
@@ -71,120 +81,36 @@ function RosterError({ message, onRetry }) {
 }
 
 /**
- * Nobody is waiting.
- *
- * Carried entirely by the friendly mascot illustration (which incorporates the
- * "nobody yet?" lettering). Screen reader text is retained for accessibility.
+ * Nobody is waiting. Every road on the map leads to the user's own pin, with
+ * nobody on them yet: the spot is theirs to take. Below it, how it works in
+ * three lines, so an empty queue still tells a first-time user what happens
+ * when they press the button.
  */
 function EmptyQueue() {
   return (
-    <div className="im-people-empty" role="status">
-      <img
-        src={emptyMascotImg}
-        alt="Nobody yet?"
-        className="im-people-empty-mascot"
-        width={1671}
-        height={941}
-      />
-      <span className="im-sr-only">Nobody yet</span>
-      <span className="im-sr-only">Be the first.</span>
+    <div className="im-state im-state-empty" role="status">
+      <MeetScene variant="empty" className="im-empty-art">
+        <span className="im-empty-label">Your spot</span>
+      </MeetScene>
+      <h3 className="im-state-title im-empty-title">Nobody yet</h3>
+      <p className="im-lede im-empty-lede">Be the first.</p>
+      <p className="im-state-note">
+        Start a search and anyone who joins after you is matched with you first.
+      </p>
+      <ol className="im-how" aria-label="How Instant Match works">
+        <li>
+          <span className="im-how-icon" aria-hidden="true"><ActivityIcon id="coffee" /></span>
+          <span>Pick what you&apos;re up for</span>
+        </li>
+        <li>
+          <span className="im-how-icon" aria-hidden="true"><PinIcon /></span>
+          <span>We find someone free nearby</span>
+        </li>
+        <li>
+          <span className="im-how-icon" aria-hidden="true"><ChatIcon /></span>
+          <span>Chat for 24 hours, then meet</span>
+        </li>
+      </ol>
     </div>
-  );
-}
-
-function PersonRow({ person, index }) {
-  const activity = getActivity(person.activity);
-  const when = getTimePreference(person.timePreference);
-  const areaLabel = getAreaLabel(person.area);
-  const name = person.user.displayName || person.user.username || 'A student';
-  const waited = waitedFor(person.joinedAt);
-
-  return (
-    <li className="im-person" style={accentVars(activity)}>
-      {/* Same rhythm as the activity grid: a mark every third row, so the
-          list has texture without decorating every line. */}
-      {index % 3 === 1 && <Ticks className="im-person-ticks" />}
-
-      <Portrait person={person.user} name={name} />
-
-      <div className="im-person-text">
-        <p className="im-person-head">
-          <span className="im-person-name">{name}</span>
-          {when && (
-            <span className="im-person-when">
-              <span className="im-emoji" aria-hidden="true">{when.emoji}</span>
-              {when.title}
-            </span>
-          )}
-        </p>
-
-        <p className="im-person-activity">
-          <span className="im-person-emoji im-emoji" aria-hidden="true">
-            {activity?.emoji ?? '⚡'}
-          </span>
-          <span className="im-person-label">{activity?.label ?? person.activity}</span>
-          {person.optionalDetail && (
-            <span className="im-person-detail">{person.optionalDetail}</span>
-          )}
-        </p>
-
-        {/* Only rendered when there is something to say: an area nobody gave
-            is an absent line, never an "unknown" placeholder. */}
-        {(areaLabel || waited) && (
-          <p className="im-person-meta">
-            {areaLabel && (
-              <span className="im-person-area">
-                <span aria-hidden="true">📍</span> {areaLabel}
-              </span>
-            )}
-            {waited && <span className="im-person-wait">{waited}</span>}
-          </p>
-        )}
-      </div>
-    </li>
-  );
-}
-
-/** How long they have been waiting, from the queue row's own `joinedAt`.
- *  Coarse on purpose: this refreshes when the queue moves, not every second,
- *  and a minute figure stays true for a minute. */
-function waitedFor(joinedAt) {
-  if (!Number.isFinite(joinedAt)) return null;
-  const mins = Math.floor((Date.now() - joinedAt) / 60000);
-  if (mins < 1) return 'just joined';
-  return `waiting ${mins}m`;
-}
-
-/**
- * Their photo. `avatar` is a storage object key rather than a URL, so it goes
- * through the app's shared resolver — the same path the match card uses — and
- * falls back to the initial rather than a generic silhouette.
- */
-function Portrait({ person, name }) {
-  const [failed, setFailed] = useState(false);
-
-  const resolved = useMemo(
-    () => getProcessedAvatarUrl(person.avatar),
-    [person.avatar],
-  );
-  const hasPhoto = Boolean(resolved) && !resolved.includes('default_avatar');
-
-  if (hasPhoto && !failed) {
-    return (
-      <img
-        className="im-person-face"
-        src={resolved}
-        alt=""
-        loading="lazy"
-        decoding="async"
-        onError={() => setFailed(true)}
-      />
-    );
-  }
-
-  return (
-    <span className="im-person-face im-person-face-initial" aria-hidden="true">
-      {name.trim().charAt(0).toUpperCase()}
-    </span>
   );
 }

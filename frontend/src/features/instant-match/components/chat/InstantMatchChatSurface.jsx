@@ -1,5 +1,4 @@
-import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
-import PropTypes from 'prop-types';
+import { useMemo, useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useMediaViewerActions } from '@shared/context/MediaViewerContext';
@@ -17,7 +16,9 @@ import {
   getConversationStarters,
   STARTERS_MESSAGE_THRESHOLD,
 } from '../../constants/conversationStarters';
-import { Bolt } from '../decor/Decor';
+import { MatchMark } from '../decor/Decor';
+import { MeetScene } from '../art/CampusMap';
+import { ActivityIcon, BackIcon, ArrowRightIcon } from '../art/icons';
 import '../../styles/instant-match.css';
 import '../../styles/instant-match-chat.css';
 
@@ -256,9 +257,7 @@ export default function InstantMatchChatSurface({
           }}
           aria-label="Close Instant Match chat"
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <polyline points="15 18 9 12 15 6" />
-          </svg>
+          <BackIcon />
         </button>
 
         <span className="im-chat-avatar">
@@ -267,20 +266,21 @@ export default function InstantMatchChatSurface({
 
         <div className="im-chat-identity">
           <span className="im-chat-name">{partnerName}</span>
-        </div>
-
-        {/* Right side: Bolt button that reveals time on hover (desktop) and on click/tap */}
-        <div onClick={(e) => e.stopPropagation()}>
-          <InstantMatchBoltTimer
-            timeLabel={timeLabel}
-            isActive={chat.isActive}
-          />
+          <span className={`im-chat-sub${chat.isActive ? '' : ' is-ended'}`}>
+            <MatchMark className="im-chat-sub-mark" />
+            <span>
+              Instant Match ·{' '}
+              {chat.isActive ? <span className="im-chat-sub-time">{timeLabel} left</span> : 'Ended'}
+            </span>
+          </span>
         </div>
       </header>
 
       {/* Why these two were put together — the thing that makes this not a DM. */}
       <div className="im-chat-reason">
-        <span aria-hidden="true">{activityMeta?.emoji ?? '⚡'}</span>
+        <span className="im-icon-tile im-icon-tile-sm" style={accentVars(activityMeta)} aria-hidden="true">
+          <ActivityIcon id={activityMeta?.id} />
+        </span>
         <span>You both wanted to {getActivityVerb(chat.matchReason || chat.activity)}</span>
       </div>
 
@@ -349,16 +349,21 @@ export default function InstantMatchChatSurface({
            The thread stays readable above; this replaces the composer with
            the one action that still makes sense. */
         <div className="im-chat-ended" role="status">
-          <p className="im-chat-ended-title">{endedCopy.title}</p>
-          <p className="im-chat-ended-lede">{endedCopy.body}</p>
-          <button
-            type="button"
-            className="im-btn im-btn-yes im-btn-sm"
-            onClick={() => onLeave({ alreadyEnded: true })}
-          >
-            Find someone new
-            <Bolt className="im-btn-bolt" />
-          </button>
+          <div className="im-chat-ended-card">
+            <MeetScene variant="ended" className="im-chat-ended-scene im-scene-fade" />
+            <div className="im-chat-ended-copy">
+              <p className="im-chat-ended-title">{endedCopy.title}</p>
+              <p className="im-chat-ended-lede">{endedCopy.body}</p>
+            </div>
+            <button
+              type="button"
+              className="im-btn im-btn-primary im-btn-sm im-chat-ended-btn"
+              onClick={() => onLeave({ alreadyEnded: true })}
+            >
+              Find someone new
+              <ArrowRightIcon />
+            </button>
+          </div>
         </div>
       )}
 
@@ -395,110 +400,3 @@ function describeEnding(chat, partnerName) {
     body: 'Your Instant Match conversation has ended.',
   };
 }
-
-/**
- * Header Instant Match bolt icon button.
- * - Shows only the icon by default on all devices.
- * - Desktop: Hover smoothly reveals the remaining time.
- * - Mobile / Click: Tapping/clicking toggles the remaining time visible.
- */
-function InstantMatchBoltTimer({ timeLabel, isActive }) {
-  const [open, setOpen] = useState(false);
-  const [suppressHover, setSuppressHover] = useState(false);
-  const timerRef = useRef(null);
-  const wrapRef = useRef(null);
-
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, []);
-
-  const showTooltip = useCallback((duration = 3000) => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    setOpen(true);
-    if (duration) {
-      timerRef.current = setTimeout(() => {
-        setOpen(false);
-        setSuppressHover(true);
-      }, duration);
-    }
-  }, []);
-
-  const hideTooltip = useCallback(() => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    setOpen(false);
-  }, []);
-
-  const handleClick = useCallback(() => {
-    if (open) {
-      hideTooltip();
-    } else {
-      showTooltip(3000);
-    }
-  }, [open, hideTooltip, showTooltip]);
-
-  const handleMouseEnter = useCallback(() => {
-    if (!suppressHover) {
-      showTooltip(3000);
-    }
-  }, [suppressHover, showTooltip]);
-
-  const handleMouseLeave = useCallback(() => {
-    setSuppressHover(false);
-    hideTooltip();
-  }, [hideTooltip]);
-
-  useEffect(() => {
-    if (!open) return undefined;
-
-    const onOutside = (e) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target)) {
-        hideTooltip();
-      }
-    };
-    const onKey = (e) => {
-      if (e.key === 'Escape') hideTooltip();
-    };
-    document.addEventListener('mousedown', onOutside);
-    document.addEventListener('touchstart', onOutside);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onOutside);
-      document.removeEventListener('touchstart', onOutside);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open, hideTooltip]);
-
-  const text = isActive ? `${timeLabel} remaining` : 'Ended';
-
-  return (
-    <div
-      ref={wrapRef}
-      className={`im-chat-bolt-wrap ${open ? 'is-open' : ''}`}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
-    >
-      <button
-        type="button"
-        className={`im-chat-bolt-btn ${isActive ? '' : 'im-chat-bolt-off'}`}
-        onClick={handleClick}
-        aria-label={`Instant Match: ${text}`}
-        aria-expanded={open}
-      >
-        <Bolt className="im-chat-bolt-icon" />
-      </button>
-
-      {open && (
-        <div className="im-chat-bolt-tooltip" role="tooltip">
-          <span>{text}</span>
-        </div>
-      )}
-    </div>
-  );
-}
-
-InstantMatchBoltTimer.propTypes = {
-  timeLabel: PropTypes.string.isRequired,
-  isActive: PropTypes.bool.isRequired,
-};

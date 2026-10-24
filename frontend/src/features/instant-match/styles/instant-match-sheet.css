@@ -1,9 +1,9 @@
 /**
  * The Instant Match sheet.
  *
- * Mobile: a bottom sheet that rises over the app. Tablet and up: a centred
- * poster card, because at that width a full-bleed sheet reads as a mistake
- * rather than a choice.
+ * Mobile: a bottom sheet over the app, with the actions in thumb reach.
+ * 720px and up: a centred dialog, because a full-bleed sheet on a desktop
+ * reads as a mistake rather than a choice.
  */
 
 .im-sheet-overlay {
@@ -13,10 +13,8 @@
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  background: rgba(22, 19, 14, 0.55);
-  backdrop-filter: blur(7px);
-  -webkit-backdrop-filter: blur(7px);
-  animation: im-scrim-in 0.24s var(--im-ease-out) both;
+  background: rgba(15, 23, 42, 0.45);
+  animation: im-scrim-in 0.24s ease both;
   /*
    * The keyboard overlays the page in the app (--kb-inset, useKeyboardInset)
    * instead of shrinking it. The Details step focuses its field on arrival,
@@ -28,6 +26,7 @@
    */
   padding-bottom: var(--kb-inset, 0px);
 }
+[data-theme='dark'] .im-sheet-overlay { background: rgba(0, 0, 0, 0.62); }
 
 @keyframes im-scrim-in { from { opacity: 0; } to { opacity: 1; } }
 
@@ -35,27 +34,19 @@
   position: relative;
   width: 100%;
   max-width: 560px;
-  /*
-   * `dvh`, not `vh`. On mobile `vh` is the LARGE viewport — it ignores the
-   * browser's own toolbars — so `88vh` could resolve taller than the space
-   * actually on screen and push the sheet's actions below the fold. `dvh`
-   * tracks the visible area as the toolbars come and go. The `vh` line stays
-   * first as the fallback for browsers without `dvh`.
-   */
+  /* `dvh`, not `vh`: on mobile `vh` ignores the browser's own toolbars and
+     could push the actions below the fold. `vh` stays first as a fallback. */
   max-height: min(88vh, 780px);
   max-height: min(88dvh, 780px, calc(100dvh - var(--kb-inset, 0px) - var(--status-bar-inset, 0px) - 1rem));
   display: flex;
   flex-direction: column;
-  background: var(--im-paper);
-  border: var(--im-border);
-  border-bottom: 0;
+  background: var(--im-surface);
   border-radius: var(--im-radius-lg) var(--im-radius-lg) 0 0;
   box-shadow: var(--im-shadow-lg);
   overflow: hidden;
-  animation: im-sheet-rise 0.4s var(--im-ease) both;
-  /* Keeps the rounded top edge travelling with the body's height change
-     rather than redrawing at the new size in one frame. */
-  transition: max-height 0.34s var(--im-ease-out);
+  /* `backwards`, not `both`: a held end frame would pin `transform` and
+     override the drag-to-dismiss (useSheetDrag), which writes it inline. */
+  animation: im-sheet-rise 0.42s var(--im-ease) backwards;
 }
 
 @keyframes im-sheet-rise {
@@ -65,6 +56,29 @@
 
 .im-sheet:focus { outline: none; }
 
+.im-sheet-handle {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  z-index: 2;
+  width: 96px;
+  height: 22px;
+  margin-left: -48px;
+  touch-action: none;
+  cursor: grab;
+}
+.im-sheet-handle::before {
+  content: '';
+  position: absolute;
+  top: 8px;
+  left: 30px;
+  width: 36px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--sheet-handle-color, #94A3B8);
+  opacity: 0.55;
+}
+
 .im-sheet-content {
   position: relative;
   z-index: 1;
@@ -73,687 +87,543 @@
   min-height: 0;
   /* The keyboard covers the home-indicator area while it is up: that inset
      gives way to it rather than adding to the overlay's padding. */
-  padding: 18px 20px calc(18px + max(0px, env(safe-area-inset-bottom) - var(--kb-inset, 0px)));
-  gap: 14px;
+  padding: 26px 20px calc(16px + max(0px, env(safe-area-inset-bottom) - var(--kb-inset, 0px)));
+  gap: 16px;
+}
+
+@media (min-width: 720px) {
+  .im-sheet-overlay { align-items: center; padding: 24px; }
+  .im-sheet {
+    max-width: 520px;
+    border-radius: var(--im-radius-lg);
+    animation-name: im-sheet-pop;
+    animation-duration: 0.32s;
+  }
+  .im-sheet-handle { display: none; }
+  .im-sheet-content { padding: 22px 24px 22px; }
+  @keyframes im-sheet-pop {
+    from { opacity: 0; transform: translate3d(0, 14px, 0) scale(0.98); }
+    to { opacity: 1; transform: none; }
+  }
 }
 
 /* ── Header ──────────────────────────────────────────────────────────────── */
 
 .im-sheet-head {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  align-items: center;
   gap: 12px;
+  min-height: 40px;
 }
 
-.im-sheet-brand { display: flex; align-items: center; gap: 10px; }
+.im-sheet-brand { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
 
-.im-sheet-boltbox {
+.im-sheet-mark {
   display: grid;
   place-items: center;
-  width: 38px; height: 38px;
-  border: 0;
-  border-radius: 50%;
-  background: var(--im-sun);
-  color: #16130E;
-  transform: rotate(-4deg);
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--im-blue);
+  color: var(--im-on-blue);
 }
-.im-sheet-boltbox .im-bolt { width: 20px; height: 20px; }
-
-.im-sheet-brandtext { display: flex; flex-direction: column; gap: 1px; }
+.im-sheet-mark .im-mark { width: 18px; height: 18px; }
 
 .im-sheet-brandname {
-  font-family: var(--im-display);
-  font-size: 1.05rem;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  line-height: 1;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--im-text);
+}
+
+.im-sheet-stepcount {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--im-text-3);
+  font-variant-numeric: tabular-nums;
 }
 
 .im-sheet-close {
   flex-shrink: 0;
   display: grid;
   place-items: center;
-  width: 44px; height: 44px;      /* touch target, even though the mark is small */
+  width: 36px;
+  height: 36px;
   padding: 0;
-  border: var(--im-border);
+  border: 0;
   border-radius: 50%;
-  background: var(--im-paper);
-  color: var(--im-ink);
+  background: var(--im-surface-3);
+  color: var(--im-text-2);
   cursor: pointer;
-  box-shadow: var(--im-shadow-sm);
-  transition: transform 0.14s var(--im-ease), background-color 0.14s linear;
+  transition: transform 0.16s var(--im-ease), background-color 0.16s ease;
 }
-.im-sheet-close svg { width: 20px; height: 20px; }
-.im-sheet-close:hover { background: var(--im-accent-wash); }
-.im-sheet-close:active { transform: scale(0.94); }
+.im-sheet-close svg { width: 18px; height: 18px; stroke-width: 2; }
+@media (hover: hover) {
+  .im-sheet-close:hover { background: rgba(15, 23, 42, 0.1); }
+  [data-theme='dark'] .im-sheet-close:hover { background: rgba(255, 255, 255, 0.14); }
+}
+.im-sheet-close:active { transform: scale(0.92); }
 
-/* ── Connection notice ───────────────────────────────────────────────────── */
+/* ── Progress ────────────────────────────────────────────────────────────── */
+
+.im-progress {
+  display: flex;
+  gap: 4px;
+  margin: -4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.im-progress-seg {
+  position: relative;
+  flex: 1;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--im-surface-3);
+  overflow: hidden;
+}
+.im-progress-seg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--im-blue);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 0.36s var(--im-ease);
+}
+.im-progress-seg.is-active::after,
+.im-progress-seg.is-done::after { transform: scaleX(1); }
+
+/* ── Plan band (question steps) ──────────────────────────────────────────── */
+
+.im-sheet-plan {
+  flex-shrink: 0;
+  height: clamp(96px, 15dvh, 124px);
+  margin-top: -4px;
+  border-radius: var(--im-radius);
+}
+
+/* ── Notices ─────────────────────────────────────────────────────────────── */
 
 .im-sheet-offline {
   display: flex;
   align-items: center;
   gap: 8px;
   margin: 0;
-  padding: 8px 12px;
-  border: 2px dashed var(--im-ink-faint);
+  padding: 10px 12px;
   border-radius: var(--im-radius-sm);
-  background: var(--im-paper-deep);
-  color: var(--im-ink-soft);
-  font-size: 0.82rem;
-  font-weight: 600;
+  background: rgba(245, 158, 11, 0.12);
+  color: var(--im-text-2);
+  font-size: 0.8125rem;
+  font-weight: 500;
 }
-/*
- * A status light, so it pulses in place rather than travelling.
- *
- * This used `im-drift`, which is the poster decoration float: 8px of vertical
- * movement plus a 3-degree rotation. On a 30px blob that reads as a gentle
- * drift; on a 9px dot it is almost the dot's entire height, so it bobbed in and
- * out of line with the "Reconnecting…" text it is supposed to sit beside.
- *
- * Scaling about its own centre and fading keeps it exactly on the text's centre
- * line at every frame, and reads as "still trying" the way a connection
- * indicator should. Transform and opacity only, so it still composites.
- */
-.im-sheet-offline-dot {
-  width: 9px; height: 9px;
-  border-radius: 999px;
-  background: var(--im-sun);
-  /* It is a fixed-size marker in a flex row; never let the text squash it. */
-  flex-shrink: 0;
-  animation: im-status-pulse 1.4s ease-in-out infinite;
-}
+.im-sheet-offline svg { width: 16px; height: 16px; color: var(--im-warn); }
 
-@keyframes im-status-pulse {
-  0%, 100% { opacity: 0.45; transform: scale(0.82); }
-  50%      { opacity: 1;    transform: scale(1); }
+.im-sheet-error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 8px 10px 12px;
+  border-radius: var(--im-radius-sm);
+  background: rgba(var(--im-danger-rgb), 0.1);
+  color: var(--im-danger);
+  font-size: 0.875rem;
+  font-weight: 500;
+  animation: im-fade-up 0.24s var(--im-ease-out) both;
 }
-
-@media (prefers-reduced-motion: reduce) {
-  /* Still clearly "on", just not animated. */
-  .im-sheet-offline-dot { animation: none; opacity: 1; }
+.im-sheet-error:focus { outline: none; }
+.im-sheet-error > svg { width: 18px; height: 18px; }
+.im-sheet-error-text { flex: 1; min-width: 0; }
+.im-sheet-error-dismiss {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
 }
+.im-sheet-error-dismiss svg { width: 16px; height: 16px; }
 
 /* ── Title block ─────────────────────────────────────────────────────────── */
 
 .im-sheet-title-block {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  /* Asymmetric: the title hangs slightly left of the body copy. */
-  margin-left: -1px;
+  gap: 6px;
+  animation: im-fade-up 0.3s var(--im-ease-out) both;
 }
-
-.im-sheet-title { margin-top: 2px; }
-
-.im-sheet-squiggle {
-  width: 58%;
-  max-width: 190px;
-  margin: 1px 0 6px;
-}
+.im-sheet-title-block .im-eyebrow { margin-bottom: 2px; }
 
 /* ── Body ────────────────────────────────────────────────────────────────── */
 
 /**
- * The one scrolling region in the sheet.
- *
- * Height is set inline by useAnimatedHeight and transitions between steps, so
- * the sheet grows and shrinks with its content on a screen that has room.
- *
- * `flex-shrink: 1` is what makes it safe when there is not. This used to be
- * `flex: 0 0 auto` with a `max-height: min(54vh, 430px)` cap, and the header,
- * title, error and footer all sat outside it. On a short screen their combined
- * height exceeded the sheet's own cap, and since `.im-sheet` is
- * `overflow: hidden`, the surplus was CLIPPED rather than scrolled — the
- * primary action at the bottom simply could not be reached. Letting this box
- * shrink means the fixed rows are always laid out first and this one takes
- * whatever is left, scrolling inside itself.
- *
- * `min-height: 0` is required for that: without it a flex item refuses to
- * shrink below its content and the clipping comes straight back.
+ * The one scrolling region in the sheet. Its height is set inline by
+ * useAnimatedHeight and transitions between steps; `flex-shrink: 1` with
+ * `min-height: 0` lets it give way on a short screen, so the header and the
+ * footer are always laid out first and the actions are always reachable.
  */
 .im-sheet-body {
   flex: 0 1 auto;
   min-height: 0;
   overflow-y: auto;
-  /* Nothing in the flow is meant to scroll sideways; a long unbroken string in
-     a detail field should wrap, not widen the sheet. */
   overflow-x: hidden;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
-  padding: 2px 2px 4px;
   margin: 0 -2px;
-  /* 240ms reads as responsive; the old 340ms was long enough that a decisive
-     tap felt like it was waiting for the sheet to catch up. */
-  transition: height 0.24s var(--im-ease-out);
+  transition: height 0.26s var(--im-ease);
 }
+
+/* Measured wrapper. The breathing room for focus rings lives here, not on
+   the body: the body's height is set to exactly this box's height, so any
+   padding on the body would come out of the content and clip its last row. */
+.im-sheet-body-inner { display: flow-root; padding: 2px; }
+.im-sheet-searching .im-sheet-body-inner { display: flex; }
 
 /*
- * ── Step transitions ─────────────────────────────────────────────────────
- *
- * The arriving step slides a short distance and fades in, in the direction the
- * flow is travelling: forward from the right, Back from the left. Transform and
- * opacity only, so this composites and does not fight the height transition
- * running on the parent at the same time.
- *
- * 12px, not 40 — at this distance the movement reads as the content arriving
- * rather than as a screen being pushed across, which is what keeps a four-step
- * form feeling quick rather than theatrical.
+ * Step transitions: the arriving step slides a short way in the direction the
+ * flow is travelling. Transform and opacity only, so it composites alongside
+ * the height transition on the parent.
  */
 .im-step-swap {
-  /*
-   * Fill the body, always.
-   *
-   * The searching, matched and ended panels make `.im-sheet-body-inner` a flex
-   * row, and a flex item defaults to `flex: 0 1 auto` — it shrink-wraps to its
-   * content and sits at the start of the line. This wrapper was added for the
-   * step transition and had no width of its own, so in those states it
-   * collapsed to its content width and pulled the entire panel to the left of
-   * the sheet: the radar, the headline, the metrics card and the buttons all
-   * centred on the wrapper rather than on the sheet.
-   *
-   * Before this wrapper existed the panel was the flex item itself and carried
-   * `width: 100%`, which is why the problem arrived with the transition.
-   *
-   * `min-width: 0` keeps the shrink behaviour sane so a long unbroken word
-   * inside a step cannot push the wrapper wider than the sheet.
-   */
   width: 100%;
   min-width: 0;
-  animation: im-step-in-fwd 0.26s var(--im-ease-out) both;
+  animation: im-step-in-fwd 0.28s var(--im-ease-out) both;
 }
-
-.im-step-swap[data-dir='back'] {
-  animation-name: im-step-in-back;
-}
+.im-step-swap[data-dir='back'] { animation-name: im-step-in-back; }
 
 @keyframes im-step-in-fwd {
-  from { opacity: 0; transform: translate3d(12px, 0, 0); }
-  to   { opacity: 1; transform: translate3d(0, 0, 0); }
+  from { opacity: 0; transform: translate3d(14px, 0, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
 }
-
 @keyframes im-step-in-back {
-  from { opacity: 0; transform: translate3d(-12px, 0, 0); }
-  to   { opacity: 1; transform: translate3d(0, 0, 0); }
+  from { opacity: 0; transform: translate3d(-14px, 0, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  /* No travel, but keep a short fade: an instant swap between two full-height
-     screens is disorienting in its own way, and a cross-fade is not motion in
-     the sense the setting is asking us to avoid. */
   .im-step-swap { animation: im-step-fade 0.14s linear both; }
   @keyframes im-step-fade { from { opacity: 0; } to { opacity: 1; } }
 }
 
-/*
- * The location step's dropdown used to need `overflow: visible` to escape this
- * box. It no longer gets it: an escaping child could only reach the edge of
- * `.im-sheet`, which clips, so on a short screen the options fell outside the
- * sheet with no way to scroll to them. The list is its own scroller (210px cap)
- * and now sits inside the one region that scrolls, which is reachable at every
- * height.
- */
-
-/* Measured wrapper — never given a height of its own. */
-.im-sheet-body-inner { display: flow-root; }
-
-/*
- * The searching, matched and ended panels are read in one go rather than
- * scrolled through, so on a screen with room they take their natural height and
- * no scrollbar appears — the shared `flex: 0 1 auto` above already gives them
- * that, because the inline height matches their content.
- *
- * They used to opt out with `overflow: visible`, on the reasoning that the
- * sheet's own max-height bounded them anyway. It bounds them by CLIPPING: these
- * are the tallest screens in the flow, and on a short phone the searching
- * screen's Cancel button and the matched panel's "Find someone new" were cut
- * off with no way to scroll to either. They now shrink and scroll like every
- * other step when, and only when, the screen is too short for them.
- */
-.im-sheet-searching .im-sheet-body-inner { display: flex; }
-
-/*
- * The searching panel's footer.
- *
- * Same row as the stepped form's actions, minus the progress dots, so its one
- * child takes the full width and the two buttons share it.
- */
-.im-sheet-actions-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-  width: 100%;
-}
-
-@media (min-width: 520px) {
-  .im-sheet-actions-panel { flex-direction: row; }
-  .im-sheet-actions-panel .im-btn { flex: 1; }
-}
-
-/*
- * The roster screen's footer.
- *
- * One action, and nothing to sit opposite it — no progress dots, because
- * nothing on that screen is being answered — so it takes the whole row rather
- * than hanging off one end of an otherwise empty bar.
- */
-.im-sheet-foot-people .im-sheet-actions { width: 100%; }
-.im-sheet-foot-people .im-btn { flex: 1; }
-
-/* ── Error ───────────────────────────────────────────────────────────────── */
-
-.im-sheet-error {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 11px 12px;
-  border: var(--im-border);
-  border-radius: var(--im-radius-sm);
-  background: var(--im-coral);
-  color: #16130E;                 /* cream on this coral fails AA */
-  font-size: 0.88rem;
-  font-weight: 700;
-  box-shadow: var(--im-shadow-sm);
-  animation: im-pop-in 0.24s var(--im-ease) both;
-}
-.im-sheet-error:focus { outline: none; }
-
-.im-sheet-error-mark {
-  flex-shrink: 0;
-  display: grid;
-  place-items: center;
-  width: 22px; height: 22px;
-  border-radius: 999px;
-  /* Fixed pair, not theme tokens: this badge always sits on the coral
-     banner, where the dark-mode ink (cream) would sink into the background. */
-  background: #16130E;
-  color: #FFF8EA;
-  font-family: var(--im-display);
-  font-size: 0.9rem;
-}
-
-.im-sheet-error-dismiss {
-  margin-left: auto;
-  width: 32px; height: 32px;
-  flex-shrink: 0;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: inherit;
-  font-size: 1.4rem;
-  line-height: 1;
-  cursor: pointer;
-}
-.im-sheet-error-dismiss:hover { background: rgba(0, 0, 0, 0.14); }
-
 /* ── Footer ──────────────────────────────────────────────────────────────── */
 
-.im-sheet-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  padding-top: 14px;
-  border-top: 1px solid var(--im-line);
-}
+.im-sheet-foot { display: flex; flex-direction: column; gap: 12px; }
 
-.im-steps { display: flex; align-items: center; gap: 7px; margin: 0; padding: 0; list-style: none; }
-
-.im-step-dot {
-  width: 8px; height: 8px;
-  border: 0;
-  border-radius: 999px;
-  background: var(--im-line-strong);
-  transition: width 0.24s var(--im-ease), background-color 0.24s linear;
-}
-.im-step-dot.is-done { background: var(--im-ink-faint); }
-.im-step-dot.is-active { width: 26px; border-radius: 999px; background: var(--im-accent); }
-
-.im-sheet-actions { display: flex; align-items: center; gap: 9px; }
-.im-btn-bolt { width: 16px; height: 16px; }
-
-/* Unread messages, inline in a button's own row rather than pinned to its
-   corner: this one sits inside a full-width action, where a corner badge would
-   float away from the label it belongs to. Circular at one digit, a stadium at
-   "9+", and inert to pointer events so the whole button stays one target. */
-.im-unread-dot {
-  min-width: 20px;
-  height: 20px;
-  padding: 0 6px;
-  display: inline-grid;
+.im-sheet-actions { display: flex; gap: 10px; }
+/* Flat pills, to sit with the round Back and cancel buttons beside them. */
+.im-sheet-foot .im-btn { border-radius: 999px; box-shadow: none; }
+.im-sheet-back {
+  display: grid;
   place-items: center;
-  border-radius: 999px;
-  background: var(--im-coral);
-  /* Ink, not cream: cream on this coral fails AA. */
-  color: #16130E;
-  font-family: var(--im-display);
-  font-size: 0.68rem;
-  line-height: 1;
-  pointer-events: none;
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: 1.5px solid var(--im-line);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--im-text);
+  cursor: pointer;
+  transition: transform 0.18s var(--im-ease), background-color 0.18s ease;
+}
+.im-sheet-back svg { width: 22px; height: 22px; stroke-width: 2.2; }
+@media (hover: hover) {
+  .im-sheet-back:hover { background: var(--im-surface-3); }
+}
+.im-sheet-back:active { transform: scale(0.92); }
+.im-sheet-next { flex: 1; }
+
+/* Cancel search: a quiet ring with an ✕ — black on light, white on dark. */
+.im-sheet-cancel {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  border-radius: 50%;
+  background: transparent;
+  color: #000000;
+  cursor: pointer;
+  transition: transform 0.18s var(--im-ease), background-color 0.18s ease;
+}
+[data-theme='dark'] .im-sheet-cancel { border-color: rgba(255, 255, 255, 0.2); color: #FFFFFF; }
+.im-sheet-cancel svg { width: 20px; height: 20px; stroke-width: 2.2; }
+@media (hover: hover) {
+  .im-sheet-cancel:hover:not(:disabled) { background: rgba(0, 0, 0, 0.06); }
+  [data-theme='dark'] .im-sheet-cancel:hover:not(:disabled) { background: rgba(255, 255, 255, 0.1); }
+}
+.im-sheet-cancel:active:not(:disabled) { transform: scale(0.92); }
+.im-sheet-cancel:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.im-sheet-actions-split { flex-direction: column-reverse; }
+.im-sheet-actions-split .im-btn { width: 100%; }
+@media (min-width: 520px) {
+  .im-sheet-actions-split { flex-direction: row; }
+  .im-sheet-actions-split .im-btn { flex: 1; }
 }
 
-/* ── Loading skeleton ────────────────────────────────────────────────────── */
+/* ── Skeleton ────────────────────────────────────────────────────────────── */
 
 .im-skeleton {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 10px;
-  padding: 4px 0;
 }
 .im-skeleton-tile {
-  height: 82px;
-  border: 1.5px dashed var(--im-line-strong);
+  height: 92px;
   border-radius: var(--im-radius);
-  background: linear-gradient(100deg,
-    var(--im-paper-deep) 20%, var(--im-accent-wash) 45%, var(--im-paper-deep) 70%);
-  background-size: 220% 100%;
-  animation: im-shimmer 1.5s linear infinite;
-  opacity: 0.75;
+  background: var(--im-surface-2);
+  animation: im-skeleton 1.4s ease-in-out infinite;
 }
+@keyframes im-skeleton { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 
-/* ── Responsive ──────────────────────────────────────────────────────────── */
+/* ═══ Roster ═════════════════════════════════════════════════════════════ */
 
-@media (min-width: 768px) {
-  .im-sheet-overlay { align-items: center; padding: 24px; }
-  .im-sheet {
-    border-bottom: var(--im-border);
-    border-radius: var(--im-radius-lg);
-    box-shadow: var(--im-shadow-lg);
-    animation-name: im-pop-in;
-    /* Subtract the overlay's own padding so the sheet can never be taller
-       than the space it sits in — the previous 86vh plus 24px of padding
-       overflowed a short laptop window and pushed the actions off-screen. */
-    max-height: min(800px, calc(100vh - 48px));
-    max-height: min(800px, calc(100dvh - 48px));
-  }
-  .im-sheet-content { padding: 24px 28px; gap: 16px; }
-  /* No viewport cap on the body here either: the flex model above keeps the
-     header and the footer actions on screen together at any window height,
-     including a short laptop one, without a second set of numbers to keep in
-     step with the sheet's own. */
+.im-roster-map {
+  height: clamp(118px, 18dvh, 150px);
+  margin-bottom: 6px;
+  border-radius: var(--im-radius);
+  animation: im-fade-up 0.35s var(--im-ease-out) both;
 }
-
-@media (min-width: 1200px) {
-  .im-sheet { max-width: 620px; }
-  .im-sheet-content { padding: 30px 34px; }
-}
-
-/* Short viewports (landscape phones): drop the decorative breathing room
-   before the content itself has to scroll. */
-@media (prefers-reduced-motion: reduce) {
-  .im-sheet-body { transition: none; height: auto !important; }
-}
-
-@media (max-height: 620px) {
-  .im-sheet-squiggle { display: none; }
-  .im-sheet-title-block .im-lede { display: none; }
-  .im-sheet-content { gap: 10px; padding-top: 12px; }
-}
-
-/* ═══ Steps ═══════════════════════════════════════════════════════════════ */
-
-.im-fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
-
-.im-field-label {
-  display: block;
-  font-family: var(--im-body);
-  font-size: 0.78rem;
-  font-weight: 800;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--im-ink-soft);
-  margin-bottom: 7px;
-}
-
-/* ── Who is searching ────────────────────────────────────────────────────── */
 
 .im-people {
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 8px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-/* Same plate as the time cards — one card shape for the whole sheet — minus
-   the affordances, because a row here is something to read, not to press. */
 .im-person {
-  --im-tile-ink: var(--im-tile-ink-l, var(--im-accent));
-  --im-tile-wash: var(--im-tile-wash-l, var(--im-accent-wash));
-
-  position: relative;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 12px;
-  padding: 12px 14px;
-  overflow: hidden;
-  border: var(--im-border);
-  border-radius: var(--im-radius);
-  background: var(--im-paper);
-  box-shadow: var(--im-shadow-sm);
+  padding: 12px 12px 12px 12px;
+  border: 1px solid var(--im-line);
+  border-radius: 16px;
+  background: var(--im-surface);
+  animation: im-fade-up 0.32s var(--im-ease-out) both;
+  animation-delay: calc(var(--im-i, 0) * 40ms);
 }
 
-[data-theme='dark'] .im-person {
-  --im-tile-ink: var(--im-tile-ink-d, var(--im-accent));
-  --im-tile-wash: var(--im-tile-wash-d, var(--im-accent-wash));
-}
-
-/* The activity's colour as a single edge rather than a fill: twelve rows of
-   coloured wash would drown the type this list exists to be read for. */
-.im-person::before {
-  content: '';
+.im-person-face { position: relative; flex-shrink: 0; }
+.im-person-live {
   position: absolute;
-  inset: 0 auto 0 0;
-  width: 4px;
-  background: var(--im-tile-ink);
-}
-
-.im-person-ticks {
-  position: absolute;
-  top: 8px;
-  right: 10px;
-  width: 34px;
-  color: var(--im-tile-ink);
-  opacity: 0.16;
-  pointer-events: none;
-}
-
-.im-person-face {
-  flex-shrink: 0;
-  width: 42px;
-  height: 42px;
+  right: 1px;
+  bottom: 1px;
+  width: 12px;
+  height: 12px;
+  border: 2.5px solid var(--im-surface);
   border-radius: 50%;
-  border: 1.5px solid var(--im-line-strong);
-  object-fit: cover;
-  background: var(--im-paper-deep);
+  background: var(--im-success);
 }
 
-.im-person-face-initial {
-  display: grid;
-  place-items: center;
-  font-family: var(--im-display);
-  font-size: 1.15rem;
-  color: var(--im-tile-ink);
-  background: var(--im-tile-wash);
-}
-
-.im-person-text {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-  flex: 1;
-  z-index: 1;
-}
+.im-person-text { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0; }
+.im-person-text p { margin: 0; }
 
 .im-person-head {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-  margin: 0;
+  gap: 6px;
+  min-width: 0;
 }
-
 .im-person-name {
-  font-family: var(--im-display);
-  font-size: 1rem;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  color: var(--im-ink);
+  flex: 0 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--im-text);
 }
-
-/* When they want to meet, kept in ink rather than in the time preference's
-   own colour: the row already carries one accent, and a second would compete
-   with it for the same glance. */
-.im-person-when {
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  color: var(--im-ink-soft);
+.im-person-handle {
+  flex: 0 10 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 0.8125rem;
+  color: var(--im-text-3);
 }
-
-.im-person-when .im-emoji { font-size: 0.82rem; }
+/* How long they have waited, quietly, at the end of the name line. */
+.im-person-wait {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding-left: 6px;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  color: var(--im-text-3);
+}
 
 .im-person-activity {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
-  min-width: 0;
-  margin: 0;
-  font-size: 0.86rem;
-  color: var(--im-ink);
+  gap: 4px 8px;
+  font-size: 0.8125rem;
 }
-
-.im-person-emoji { font-size: 0.95rem; }
-
-.im-person-label {
-  font-weight: 700;
-  color: var(--im-tile-ink);
+.im-person-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 10px 0 7px;
+  border-radius: 999px;
+  background: var(--im-blue-tint);
+  color: var(--im-blue);
 }
-
-/* Their own words, so they are quoted rather than restyled as a label. */
+[data-theme='dark'] .im-person-chip { color: #8DB0FF; }
+.im-person-chip .im-icon { width: 16px; height: 16px; }
+.im-person-label { font-weight: 600; }
 .im-person-detail {
   min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--im-text-2);
+  /* Up to 60 characters of someone else's text: two lines at most. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--im-ink-soft);
 }
-.im-person-detail::before { content: '· '; }
 
 .im-person-meta {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
-  margin: 0;
-  font-size: 0.76rem;
-  color: var(--im-ink-faint);
+  gap: 4px 10px;
 }
-
-.im-person-area {
+.im-person-meta-item {
+  max-width: 100%;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.im-person-wait { flex-shrink: 0; }
-
-/* ── Roster: empty, error and loading ────────────────────────────────────── */
-
-/*
- * An empty queue, carried by the poster rather than by a paragraph: the mark
- * first, then one word of display type. The action that answers it lives in
- * the footer, so nothing here has to ask for it.
- */
-.im-people-empty {
-  display: flex;
-  flex-direction: column;
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding: 8px 0 12px;
+  gap: 5px;
+  font-size: 0.75rem;
+  color: var(--im-text-3);
 }
+.im-person-meta-item svg { width: 14px; height: 14px; }
 
-/*
- * ── The empty mark ───────────────────────────────────────────────────────
- *
- * Mascot character shown when nobody is currently searching in the queue.
- */
-.im-people-empty-mascot {
-  display: block;
-  width: auto;
-  height: 250px;
-  max-width: 440px;
-  object-fit: contain;
-  margin: 0 auto;
-  user-select: none;
-  -webkit-user-drag: none;
-  pointer-events: none;
-}
-
-@media (max-width: 480px) {
-  .im-people-empty-mascot {
-    height: 195px;
-    max-width: 100%;
-  }
-}
-
-.im-people-state {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 18px 4px 6px;
-}
-
-/* One spinner on its own. Row-shaped placeholders drew a list before anyone
-   knew there was one — and an empty queue then had to take them away again. */
 .im-people-loader {
   display: grid;
   place-items: center;
-  min-height: 132px;
-  padding: 18px 0;
-  color: var(--im-accent);
+  min-height: 200px;
 }
 
-.im-people-spinner {
-  width: 30px;
-  height: 30px;
-  animation: im-spin 0.9s linear infinite;
+/* Empty, error: art band, title, copy. */
+.im-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 8px;
+  text-align: center;
+}
+.im-state-art {
+  width: 100%;
+  height: 168px;
+  margin-bottom: 8px;
+  border-radius: var(--im-radius);
+}
+.im-state-title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--im-text);
+}
+.im-state .im-btn { margin-top: 8px; }
+
+/* Nobody yet: a tall map, a big heading, and how it works. */
+.im-empty-art {
+  width: 100%;
+  height: clamp(220px, 34dvh, 280px);
+  margin-bottom: 14px;
+  border-radius: 20px;
+}
+.im-empty-label {
+  /* Centred on the meeting point, then lifted to sit above the pin. */
+  transform: translateY(-66px);
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: #FFFFFF;
+  color: #1E293B;
+  font-size: 0.75rem;
+  font-weight: 700;
+  box-shadow: 0 6px 16px rgba(10, 25, 80, 0.3);
+  animation: im-label-float 3s ease-in-out infinite;
+}
+@keyframes im-label-float {
+  0%, 100% { translate: 0 0; }
+  50% { translate: 0 -3px; }
+}
+.im-empty-title { font-size: clamp(1.75rem, 7vw, 2rem); font-weight: 700; letter-spacing: -0.03em; }
+.im-empty-lede { font-size: 1.0625rem; font-weight: 500; color: var(--im-text-2); }
+
+.im-how {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: how;
+}
+.im-how li {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 8px;
+  border-radius: var(--im-radius);
+  background: var(--im-surface-2);
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--im-text-2);
+  animation: im-fade-up 0.35s var(--im-ease-out) both;
+}
+[data-theme='dark'] .im-how li { background: var(--im-surface-3); }
+.im-how li:nth-child(2) { animation-delay: 60ms; }
+.im-how li:nth-child(3) { animation-delay: 120ms; }
+.im-how-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  background: var(--im-blue);
+  color: #FFFFFF;
+}
+.im-how-icon svg { width: 18px; height: 18px; }
+.im-state-note {
+  max-width: 32ch;
+  margin: 4px 0 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--im-text-3);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .im-people-spinner { animation-duration: 2.4s; }
-}
+/* ═══ Activity ═══════════════════════════════════════════════════════════ */
 
-/* ── Activity grid ───────────────────────────────────────────────────────── */
+.im-fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
 
 .im-activity-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  gap: 8px;
 }
-
-/* Resolve the injected light/dark pair for this theme. */
-.im-activity-tile,
-.im-time-card {
-  --im-tile-ink: var(--im-tile-ink-l, var(--im-accent));
-  --im-tile-wash: var(--im-tile-wash-l, var(--im-accent-wash));
-}
-[data-theme='dark'] .im-activity-tile,
-[data-theme='dark'] .im-time-card {
-  --im-tile-ink: var(--im-tile-ink-d, var(--im-accent));
-  --im-tile-wash: var(--im-tile-wash-d, var(--im-accent-wash));
+@media (min-width: 420px) {
+  .im-activity-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
 .im-activity-tile {
@@ -762,516 +632,368 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  min-height: 88px;
-  padding: 12px 6px;
-  overflow: hidden;
-  border: var(--im-border);
-  border-radius: var(--im-radius);
-  background: var(--im-paper);
-  color: var(--im-ink);
+  gap: 10px;
+  min-height: 92px;
+  padding: 14px 6px 12px;
+  border: 1px solid var(--im-line);
+  border-radius: 16px;
+  background: var(--im-surface);
+  color: var(--im-text-2);
+  font-family: inherit;
   cursor: pointer;
-  box-shadow: var(--im-shadow-sm);
-  transition: transform 0.16s var(--im-ease), box-shadow 0.16s var(--im-ease),
-              background-color 0.16s linear;
+  transition: transform 0.18s var(--im-ease), border-color 0.18s ease,
+    background-color 0.18s ease, color 0.18s ease;
+  animation: im-fade-up 0.3s var(--im-ease-out) both;
+  animation-delay: calc(var(--im-i, 0) * 16ms);
 }
 
-.im-activity-tile:hover {
-  background: var(--im-tile-wash);
-  transform: translateY(-2px);
-  box-shadow: var(--im-shadow);
+.im-activity-icon {
+  display: grid;
+  place-items: center;
+  color: var(--im-text);
 }
-.im-activity-tile:active { transform: translateY(0); box-shadow: var(--im-shadow-sm); }
+.im-activity-icon .im-icon { width: 28px; height: 28px; stroke-width: 1.6; }
 
-.im-activity-tile.is-selected {
-  background: var(--im-tile-wash);
-  border-color: var(--im-tile-ink);
-  box-shadow: 0 0 0 1.5px var(--im-tile-ink), var(--im-shadow);
-  transform: none;
+@media (hover: hover) {
+  .im-activity-tile:hover { border-color: var(--color-border-dark, #CBD5E1); color: var(--im-text); }
 }
-
-.im-activity-emoji { width: 100%; height: 1.7rem; font-size: 1.6rem; }
+.im-activity-tile:active { transform: scale(0.97); }
 
 .im-activity-label {
-  font-family: var(--im-display);
-  font-size: 0.82rem;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-}
-
-.im-activity-ticks {
-  inset: auto -14px -14px auto;
-  width: 46px; height: 46px;
-  color: var(--im-tile-ink);
-  opacity: 0.14;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.2;
 }
 
 .im-activity-check {
   position: absolute;
-  top: 5px; right: 6px;
-  width: 20px; height: 20px;
-  display: grid; place-items: center;
-  border-radius: 999px;
-  background: var(--im-tile-ink);
-  color: #FFF8EA;
-  font-size: 0.7rem;
-  font-weight: 900;
-}
-/* Dark inks are the light end of the palette — the tick flips with them. */
-[data-theme='dark'] .im-activity-check { color: #16130E; }
-
-@media (min-width: 520px) {
-  .im-activity-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-  .im-activity-tile { min-height: 96px; }
-}
-
-/* ── Time stack ──────────────────────────────────────────────────────────── */
-
-.im-time-stack { display: flex; flex-direction: column; gap: 11px; }
-
-.im-time-card {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 13px;
-  width: 100%;
-  min-height: 74px;
-  padding: 14px 16px;
-  overflow: hidden;
-  text-align: left;
-  border: var(--im-border);
-  border-radius: var(--im-radius);
-  background: var(--im-paper);
-  color: var(--im-ink);
-  cursor: pointer;
-  box-shadow: var(--im-shadow-sm);
-  transition: transform 0.16s var(--im-ease), box-shadow 0.16s var(--im-ease),
-              background-color 0.16s linear;
-}
-
-.im-time-card:hover { transform: translateY(-2px); box-shadow: var(--im-shadow); background: var(--im-tile-wash); }
-.im-time-card:active { transform: translateY(0); box-shadow: var(--im-shadow-sm); }
-
-.im-time-card.is-selected {
-  background: var(--im-tile-wash);
-  border-color: var(--im-tile-ink);
-  box-shadow: 0 0 0 1.5px var(--im-tile-ink), var(--im-shadow);
-}
-
-.im-time-blob {
-  top: -60%; right: -12%;
-  width: 130px; height: 130px;
-  color: var(--im-tile-ink);
-  opacity: 0.14;
-}
-
-.im-time-badge {
-  flex-shrink: 0;
-  width: 46px; height: 46px;
-  font-size: 1.35rem;
-  border: 0;
-  border-radius: 50%;
-  background: var(--im-tile-wash);
-}
-
-.im-time-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; z-index: 1; }
-
-.im-time-title {
-  font-family: var(--im-display);
-  font-size: 1.05rem;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-}
-
-.im-time-desc { font-size: 0.82rem; color: var(--im-ink-soft); }
-
-/* Bare mark, no chip and no motion — the card itself is the affordance, so
-   the arrow only needs to point. */
-.im-time-mark {
-  margin-left: auto;
-  flex-shrink: 0;
+  top: 8px;
+  right: 8px;
   display: grid;
   place-items: center;
-  width: 24px;
-  height: 24px;
-  background: none;
-  color: var(--im-tile-ink);
-  z-index: 1;
-  transition: color 0.18s linear;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--im-blue);
+  color: #FFFFFF;
+  opacity: 0;
+  transform: scale(0.6);
+  transition: opacity 0.16s ease, transform 0.22s var(--im-ease);
 }
+.im-activity-check svg { width: 11px; height: 11px; stroke-width: 3; }
 
-.im-time-mark svg { width: 22px; height: 22px; display: block; }
-
-/* ── Detail input ────────────────────────────────────────────────────────── */
-
-.im-detail-step { padding: 2px 0; }
-
-.im-detail-card {
-  position: relative;
+.im-activity-tile.is-selected {
+  border-color: var(--im-blue);
+  box-shadow: inset 0 0 0 1px var(--im-blue);
+  background: var(--im-blue-tint);
+  color: var(--im-blue);
+}
+.im-activity-tile.is-selected .im-activity-icon { color: var(--im-blue); }
+.im-activity-tile.is-selected .im-activity-label {
+  max-width: 100%;
   overflow: hidden;
-  padding: 16px;
-  border: var(--im-border);
-  border-radius: var(--im-radius);
-  background: var(--im-accent-wash);
-  box-shadow: var(--im-shadow);
-}
+  text-overflow: ellipsis;
+  white-space: nowrap; font-weight: 600; }
+.im-activity-tile.is-selected .im-activity-check { opacity: 1; transform: scale(1); }
+[data-theme='dark'] .im-activity-tile.is-selected,
+[data-theme='dark'] .im-activity-tile.is-selected .im-activity-icon { color: #8DB0FF; }
 
-.im-detail-burst {
-  top: -18px; right: -18px;
-  width: 76px; height: 76px;
-  color: var(--im-accent);
-  opacity: 0.2;
-}
+/* ═══ Option rows (time) ═════════════════════════════════════════════════ */
 
-.im-detail-label {
-  display: block;
-  font-family: var(--im-display);
-  font-size: 1.05rem;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  margin-bottom: 9px;
-  position: relative;
-}
+.im-option-list { display: flex; flex-direction: column; gap: 8px; }
 
-.im-detail-input {
-  width: 100%;
-  min-height: 50px;
-  padding: 12px 14px;
-  border: var(--im-border);
-  border-radius: var(--im-radius-sm);
-  background: var(--im-paper);
-  color: var(--im-ink);
-  font-family: var(--im-body);
-  font-size: 1rem;      /* 16px minimum: stops iOS zooming the sheet on focus */
-  font-weight: 600;
-  box-shadow: var(--im-shadow-sm);
-  position: relative;
-}
-.im-detail-input::placeholder { color: var(--im-ink-faint); font-weight: 500; }
-.im-detail-input:focus { outline: 3px solid var(--im-accent); outline-offset: 2px; }
-
-.im-detail-foot {
+.im-option {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 9px;
-  position: relative;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 68px;
+  padding: 12px 16px 12px 12px;
+  border: 1px solid var(--im-line);
+  border-radius: var(--im-radius);
+  background: var(--im-surface);
+  color: var(--im-text);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.18s var(--im-ease), border-color 0.18s ease, background-color 0.18s ease;
 }
+@media (hover: hover) {
+  .im-option:hover { border-color: var(--color-border-dark, #CBD5E1); }
+}
+.im-option:active { transform: scale(0.985); }
 
-.im-detail-hint { margin: 0; font-size: 0.78rem; color: var(--im-ink-soft); line-height: 1.4; }
-
-.im-detail-count {
+.im-option-icon {
+  display: grid;
+  place-items: center;
   flex-shrink: 0;
-  font-family: var(--im-display);
-  font-size: 0.85rem;
-  color: var(--im-ink-soft);
-}
-.im-detail-count.is-low { color: var(--im-coral-ink); }
-
-/* ── Location ────────────────────────────────────────────────────────────── */
-
-.im-location-step { display: flex; flex-direction: column; gap: 18px; }
-
-.im-select { position: relative; }
-
-.im-select-trigger {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  width: 100%;
-  min-height: 52px;
-  padding: 12px 14px;
-  border: var(--im-border);
+  width: 42px;
+  height: 42px;
   border-radius: var(--im-radius-sm);
-  background: var(--im-paper);
-  color: var(--im-ink);
-  font-family: var(--im-body);
-  font-size: 0.95rem;
-  font-weight: 700;
-  cursor: pointer;
-  box-shadow: var(--im-shadow-sm);
-  transition: box-shadow 0.14s var(--im-ease);
+  background: var(--im-surface-2);
+  color: var(--im-text-2);
+  transition: background-color 0.18s ease, color 0.18s ease;
 }
-.im-select-trigger:hover { box-shadow: var(--im-shadow); }
-.im-select-trigger.is-open { box-shadow: var(--im-shadow); background: var(--im-accent-wash); }
+[data-theme='dark'] .im-option-icon { background: var(--im-surface-3); }
+.im-option-icon svg { width: 22px; height: 22px; stroke-width: 1.6; }
 
-.im-select-value { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
-.im-select-placeholder { color: var(--im-ink-faint); font-weight: 600; }
+.im-option-text { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.im-option-title { font-size: 0.9375rem; font-weight: 600; }
+.im-option-desc { font-size: 0.8125rem; color: var(--im-text-3); }
 
-.im-select-chevron { width: 18px; height: 18px; flex-shrink: 0; transition: transform 0.2s var(--im-ease); }
-.im-select-chevron.is-open { transform: rotate(180deg); }
-
-.im-select-list {
-  position: absolute;
-  left: 0; right: 0;
-  top: calc(100% + 6px);
-  bottom: auto;
-  z-index: 50;
-  max-height: 210px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  margin: 0;
-  padding: 6px;
-  list-style: none;
-  border: var(--im-border);
-  border-radius: var(--im-radius);
-  background: var(--im-paper);
-  box-shadow: var(--im-shadow);
-  animation: im-pop-in 0.16s var(--im-ease-out) both;
+.im-radio {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--color-border-dark, #CBD5E1);
+  border-radius: 50%;
+  transition: border-color 0.18s ease, border-width 0.18s var(--im-ease);
 }
-.im-select-list:focus { outline: none; }
 
-.im-select-option {
+.im-option.is-selected {
+  border-color: var(--im-blue);
+  box-shadow: inset 0 0 0 1px var(--im-blue);
+  background: var(--im-blue-tint);
+}
+.im-option.is-selected .im-option-icon { background: var(--im-surface); color: var(--im-blue); }
+.im-option.is-selected .im-radio { border-color: var(--im-blue); border-width: 6px; }
+[data-theme='dark'] .im-option.is-selected .im-option-icon { color: #8DB0FF; }
+
+/* ═══ Fields (details, location) ═════════════════════════════════════════ */
+
+.im-detail-step,
+.im-location-step { display: flex; flex-direction: column; gap: 8px; }
+
+.im-field-label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--im-text-2);
+}
+
+.im-input-wrap {
   display: flex;
   align-items: center;
-  gap: 9px;
-  min-height: 44px;
-  padding: 10px 11px;
-  border-radius: 9px;
-  font-size: 0.92rem;
-  font-weight: 650;
-  cursor: pointer;
+  gap: 10px;
+  min-height: 54px;
+  padding: 0 14px 0 10px;
+  border: 1.5px solid var(--im-line);
+  border-radius: var(--im-radius-sm);
+  background: var(--im-surface-2);
+  transition: border-color 0.18s ease, background-color 0.18s ease;
 }
-.im-select-option.is-active { background: var(--im-accent-wash); }
-.im-select-option.is-selected { font-weight: 800; }
-.im-select-tick { margin-left: auto; color: var(--im-accent); font-weight: 900; }
+.im-input-wrap:focus-within { border-color: var(--im-blue); background: var(--im-surface); }
 
-.im-gps-block {
+.im-input {
+  flex: 1;
+  min-width: 0;
+  height: 50px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--im-text);
+  font-family: inherit;
+  /* 16px stops iOS zooming the page on focus. */
+  font-size: 1rem;
+  outline: none;
+}
+.im-input::placeholder { color: var(--im-text-3); opacity: 0.8; }
+.im-scope .im-input:focus-visible { outline: none; }
+
+.im-input-count {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--im-text-3);
+  font-variant-numeric: tabular-nums;
+}
+.im-input-count.is-low { color: var(--im-danger); }
+
+.im-field-hint {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--im-text-3);
+}
+.im-field-hint-warn { color: #B45309; }
+[data-theme='dark'] .im-field-hint-warn { color: #FBBF24; }
+
+.im-area-grid {
   display: flex;
-  flex-direction: column;
-  gap: 9px;
-  padding: 14px;
-  border: 1.5px dashed var(--im-line-strong);
-  border-radius: var(--im-radius);
-  background: var(--im-paper-deep);
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
 }
-.im-gps-block.is-prominent { border-style: solid; border-color: var(--im-accent); }
 
-.im-gps-btn {
+.im-area {
+  max-width: 100%;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  gap: 9px;
-  min-height: 48px;
-  padding: 11px 15px;
-  border: var(--im-border);
-  border-radius: var(--im-radius-sm);
-  background: var(--im-paper);
-  color: var(--im-ink);
-  font-family: var(--im-body);
-  font-size: 0.9rem;
-  font-weight: 750;
-  cursor: pointer;
-  box-shadow: var(--im-shadow-sm);
-  transition: transform 0.14s var(--im-ease), background-color 0.14s linear;
-}
-.im-gps-btn:hover:not(:disabled) { transform: translateY(-1.5px); box-shadow: var(--im-shadow); }
-.im-gps-btn:disabled { opacity: 0.65; cursor: progress; }
-.im-gps-btn.is-on { background: var(--im-mint); color: #16130E; }
-
-.im-gps-dot {
-  width: 10px; height: 10px;
+  gap: 7px;
+  min-height: 40px;
+  padding: 0 14px 0 11px;
+  border: 1.5px solid var(--im-line);
   border-radius: 999px;
-  background: #16130E;
-  box-shadow: 0 0 0 4px rgba(22, 19, 14, 0.18);
-  animation: im-pulse-dot 1.8s ease-in-out infinite;
+  background: var(--im-surface);
+  color: var(--im-text-2);
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: transform 0.16s var(--im-ease), border-color 0.16s ease, background-color 0.16s ease,
+    color 0.16s ease;
 }
-@keyframes im-pulse-dot {
-  0%, 100% { box-shadow: 0 0 0 3px rgba(22, 19, 14, 0.16); }
-  50% { box-shadow: 0 0 0 7px rgba(22, 19, 14, 0.05); }
+.im-area svg { width: 17px; height: 17px; }
+@media (hover: hover) {
+  .im-area:hover { border-color: var(--color-border-dark, #CBD5E1); }
 }
-
-.im-gps-spinner { width: 17px; height: 17px; animation: im-spin 0.9s linear infinite; }
-
-.im-gps-note { margin: 0; font-size: 0.78rem; line-height: 1.45; color: var(--im-ink-soft); }
-
-.im-gps-error {
-  margin: 0;
-  font-size: 0.78rem;
-  font-weight: 700;
-  color: var(--im-coral);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .im-gps-dot { animation: none; }
+.im-area:active { transform: scale(0.96); }
+.im-area.is-selected {
+  border-color: var(--im-blue);
+  background: var(--im-blue);
+  color: #FFFFFF;
 }
 
-
-/* ═══ Matched panel ═══════════════════════════════════════════════════════ */
-
-.im-matched {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 15px;
-  padding: 6px 0 2px;
-  text-align: center;
-}
-
-/* Two portraits struck together by the bolt. */
-.im-matched-stage {
-  position: relative;
+.im-gps {
   display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 6px 0;
-}
-
-.im-matched-burst {
-  top: -10px; left: 50%;
-  width: 62px; height: 62px;
-  margin-left: -31px;
-  color: var(--im-lime);
-  opacity: 0.55;
-  animation: im-spin 18s linear infinite;
-}
-
-.im-matched-portrait {
-  position: relative;
-  display: block;
-  width: 92px;
-  height: 92px;
-  border-radius: 50%;
-  background: var(--im-paper);
-  box-shadow: 0 0 0 4px var(--im-paper), var(--im-shadow);
-  transform: rotate(var(--im-tilt, 0deg));
-  animation: im-matched-in 0.5s var(--im-ease) both;
-}
-/* Overlap so they read as a pair, not two separate people. */
-.im-matched-portrait:last-of-type { margin-left: -20px; animation-delay: 0.08s; }
-
-@keyframes im-matched-in {
-  from { opacity: 0; transform: rotate(0deg) scale(0.8); }
-  to { opacity: 1; transform: rotate(var(--im-tilt, 0deg)) scale(1); }
-}
-
-.im-matched-face {
-  display: grid;
-  place-items: center;
+  gap: 12px;
   width: 100%;
-  height: 100%;
-  object-fit: cover;
-  border-radius: 50%;
-  background: var(--im-paper-deep);
+  padding: 12px 14px 12px 12px;
+  border: 1.5px solid var(--im-line);
+  border-radius: var(--im-radius);
+  background: var(--im-surface);
+  color: var(--im-text);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.18s ease, background-color 0.18s ease;
 }
+.im-gps:disabled { cursor: progress; }
+.im-gps.is-prominent:not(.is-on) { border-color: var(--im-blue-tint-2); }
 
-.im-matched-face-initial {
-  font-family: var(--im-display);
-  font-size: 2.3rem;
-  color: #16130E;
-  background: var(--im-sun);
-}
-
-.im-matched-portrait:last-of-type .im-matched-face-initial { background: var(--im-sky); }
-
-/* The bolt sits over the seam between them. */
-.im-matched-link {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  z-index: 2;
+.im-gps-icon {
   display: grid;
   place-items: center;
+  flex-shrink: 0;
   width: 40px;
   height: 40px;
-  margin: -20px 0 0 -20px;
+  border-radius: var(--im-radius-sm);
+  background: var(--im-blue-tint);
+  color: var(--im-blue);
+}
+.im-gps-icon svg { width: 20px; height: 20px; }
+.im-gps-text { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.im-gps-title { font-size: 0.9375rem; font-weight: 600; }
+.im-gps-note { font-size: 0.8125rem; line-height: 1.4; color: var(--im-text-3); }
+
+.im-switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 40px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--color-border-dark, #CBD5E1);
+  transition: background-color 0.2s ease;
+}
+[data-theme='dark'] .im-switch { background: #4D4D4D; }
+.im-switch::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
-  background: var(--im-lime);
-  color: #16130E;
-  box-shadow: 0 0 0 4px var(--im-paper), var(--im-shadow-sm);
-  animation: im-matched-strike 0.45s var(--im-ease) 0.2s both;
+  background: #FFFFFF;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.25);
+  transition: transform 0.24s var(--im-ease);
 }
-.im-matched-link .im-bolt { width: 21px; height: 21px; }
+.im-gps.is-on { border-color: var(--im-blue); background: var(--im-blue-tint); }
+.im-gps.is-on .im-gps-icon { background: var(--im-blue); color: #FFFFFF; }
+.im-gps.is-on .im-switch { background: var(--im-blue); }
+.im-gps.is-on .im-switch::after { transform: translateX(16px); }
 
-@keyframes im-matched-strike {
-  from { opacity: 0; transform: scale(0.3) rotate(-30deg); }
-  to { opacity: 1; transform: scale(1) rotate(0deg); }
-}
+/* ═══ Matched + ended panels ═════════════════════════════════════════════ */
 
-.im-matched-names {
-  display: flex;
-  align-items: baseline;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 9px;
-}
-
-.im-matched-name {
-  font-family: var(--im-display);
-  font-size: 1.15rem;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  color: var(--im-ink);
-}
-
-.im-matched-amp {
-  font-family: var(--im-display);
-  font-size: 1.05rem;
-  color: var(--im-accent);
-}
-
-.im-matched-copy {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 7px;
-}
-
-.im-matched-copy .im-lede { max-width: 34ch; }
-
-.im-matched-squiggle { width: 130px; margin: 1px 0 3px; }
-
-.im-matched-actions {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 9px;
-  width: 100%;
-}
-/* One action now that leaving lives inside the chat, so it no longer needs to
-   share a row — a full-bleed lone button looked like a form submit. */
-.im-matched-actions .im-btn { width: 100%; max-width: 300px; }
-
-.im-matched-gone {
-  margin: 0;
-  font-size: 0.82rem;
-  font-weight: 650;
-  color: var(--im-ink-soft);
-}
-
-@media (min-width: 520px) {
-  .im-matched-portrait { width: 104px; height: 104px; }
-  .im-matched-actions .im-btn { max-width: 280px; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .im-matched-burst { animation: none; }
-  .im-matched-portrait,
-  .im-matched-link { animation: none; opacity: 1; }
-  .im-matched-portrait { transform: rotate(var(--im-tilt, 0deg)); }
-}
-
-/* ═══ Ended panel ═════════════════════════════════════════════════════════ */
-
+.im-matched,
 .im-ended {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 10px 0 4px;
+  gap: 16px;
   text-align: center;
 }
 
-.im-ended-title { margin: 0; }
-.im-ended-squiggle { width: 120px; margin: 0 0 2px; }
-.im-ended-lede { margin: 0; max-width: 32ch; }
-
-.im-ended-action {
+.im-matched-scene {
   width: 100%;
-  max-width: 300px;
-  margin-top: 6px;
+  height: 188px;
+  border-radius: var(--im-radius);
+}
+.im-ended-scene {
+  width: 100%;
+  height: 150px;
+  border-radius: var(--im-radius);
+}
+
+.im-ended-face {
+  border: 4px solid var(--im-surface);
+  box-sizing: content-box;
+  filter: grayscale(1);
+  opacity: 0.8;
+}
+
+.im-matched-copy,
+.im-ended-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin-top: -4px;
+}
+.im-ended-copy .im-lede { max-width: 34ch; }
+.im-matched-copy .im-title { overflow-wrap: anywhere; }
+
+.im-facts {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--im-line);
+  border-radius: var(--im-radius);
+  text-align: left;
+}
+.im-facts li {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  font-size: 0.875rem;
+  color: var(--im-text-2);
+}
+.im-facts li + li { border-top: 1px solid var(--im-line); }
+.im-facts strong { font-weight: 600; color: var(--im-text); }
+.im-icon-tile-neutral { background: var(--im-surface-3); color: var(--im-text-2); }
+
+.im-panel-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+.im-panel-actions .im-badge { margin-left: 2px; }
+.im-spinner-on-blue { color: currentColor; width: 18px; height: 18px; }
+
+.im-panel-note {
+  margin: 2px 0 0;
+  font-size: 0.8125rem;
+  color: var(--im-text-3);
 }
 
 /* ── Keyboard, Android app ───────────────────────────────────────────────────
@@ -1300,7 +1022,7 @@ html[data-keyboard-open] .im-sheet-overlay.im-kb-overlay .im-sheet {
 }
 
 .im-sheet-overlay.im-kb-overlay .im-sheet-content {
-  padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
 }
 
 @media (prefers-reduced-motion: reduce) {

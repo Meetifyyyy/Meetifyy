@@ -36,7 +36,7 @@ export default function LeaveMatchModal({ partnerName, busy, onCancel, onConfirm
       onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onCancel(); }}
     >
       <div className="im-leave-card" ref={ref} role="alertdialog" aria-modal="true" aria-labelledby="im-leave-title">
-        <h2 id="im-leave-title" className="im-display im-display-lg im-leave-title">
+        <h2 id="im-leave-title" className="im-title im-leave-title">
           Leave this match?
         </h2>
         <p className="im-lede im-leave-body">

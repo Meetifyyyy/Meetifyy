@@ -30,9 +30,15 @@ export function useFocusTrap(containerRef, active, onEscape) {
         (el) => el.offsetParent !== null || el === document.activeElement,
       );
 
-    // Move focus in on open, without scroll-jumping the page.
-    const first = focusables()[0];
-    (first || container).focus?.({ preventScroll: true });
+    // Move focus in on open, without scroll-jumping the page. A container that
+    // can take focus itself (tabIndex -1, the dialog surface) takes it, so no
+    // button opens wearing a focus ring it was never tabbed to; Tab then moves
+    // into the controls. Focus already inside (a field that focused itself)
+    // is left where it is.
+    if (!container.contains(document.activeElement)) {
+      const target = container.hasAttribute('tabindex') ? container : focusables()[0];
+      (target || container).focus?.({ preventScroll: true });
+    }
 
     const onKeyDown = (e) => {
       if (e.key === 'Escape' && onEscape) {

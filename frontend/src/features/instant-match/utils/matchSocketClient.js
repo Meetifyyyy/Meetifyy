@@ -215,6 +215,12 @@ class MatchSocketClient {
     return this.request('match:respond', { matchId, action });
   }
 
+  /** Ask one person on the roster to match, directly. `search` starts this
+   *  user's own search in the same step when they are not searching yet. */
+  requestMatch(targetUserId, search) {
+    return this.request('match:request', search ? { targetUserId, search } : { targetUserId });
+  }
+
   /** Asks the server to restore this user's authoritative match state. */
   sync() {
     return this.request('queue:sync', {});

@@ -1,6 +1,8 @@
 import { useRef, useEffect, useId } from 'react';
-import { ACTIVITY_DETAILS_CONFIG, OPTIONAL_DETAIL_MAX, getActivity } from '../../constants/matchConstants';
-import { Starburst } from '../decor/Decor';
+import {
+  ACTIVITY_DETAILS_CONFIG, OPTIONAL_DETAIL_MAX, getActivity, accentVars,
+} from '../../constants/matchConstants';
+import { ActivityIcon } from '../art/icons';
 
 /** Optional one-liner. Never blocks progress — an empty detail is valid. */
 export default function DetailsStep({ activityId, value, onChange, onSubmit }) {
@@ -21,25 +23,29 @@ export default function DetailsStep({ activityId, value, onChange, onSubmit }) {
 
   return (
     <div className="im-detail-step">
-      <div className="im-detail-card">
-        <Starburst className="im-detail-burst" points={8} />
+      <label className="im-field-label" htmlFor={inputId}>
+        {config.label}
+      </label>
 
-        <label className="im-detail-label" htmlFor={inputId}>
-          {config.label}
-        </label>
-
+      <div className="im-input-wrap" style={accentVars(activity)}>
+        <span className="im-icon-tile im-icon-tile-sm" aria-hidden="true">
+          <ActivityIcon id={activityId} />
+        </span>
         <input
           id={inputId}
           ref={inputRef}
-          className="im-detail-input"
+          className="im-input"
           type="text"
           inputMode="text"
           autoComplete="off"
+          enterKeyHint="next"
           placeholder={config.placeholder}
           value={value}
           maxLength={OPTIONAL_DETAIL_MAX}
           aria-describedby={hintId}
-          onChange={(e) => onChange(e.target.value)}
+          // No leading spaces and no runs of them: a detail of blanks reads
+          // as empty everywhere it is shown, and the server trims it anyway.
+          onChange={(e) => onChange(e.target.value.replace(/^\s+/, '').replace(/\s{2,}/g, ' '))}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
               e.preventDefault();
@@ -47,20 +53,18 @@ export default function DetailsStep({ activityId, value, onChange, onSubmit }) {
             }
           }}
         />
-
-        <div className="im-detail-foot">
-          <p id={hintId} className="im-detail-hint">
-            Optional. Skip it and we&apos;ll still find you someone for{' '}
-            {activity?.label.toLowerCase() ?? 'this'}.
-          </p>
-          <span
-            className={`im-detail-count ${remaining <= 10 ? 'is-low' : ''}`}
-            aria-live="polite"
-          >
-            {remaining}
-          </span>
-        </div>
+        <span
+          className={`im-input-count ${remaining <= 10 ? 'is-low' : ''}`}
+          aria-live="polite"
+        >
+          {remaining}
+        </span>
       </div>
+
+      <p id={hintId} className="im-field-hint">
+        Optional. Skip it and we&apos;ll still find you someone for{' '}
+        {activity?.label.toLowerCase() ?? 'this'}.
+      </p>
     </div>
   );
 }

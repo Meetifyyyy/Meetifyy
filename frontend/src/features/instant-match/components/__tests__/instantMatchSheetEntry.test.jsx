@@ -66,7 +66,7 @@ afterEach(cleanup);
 describe('Instant Match sheet entry', () => {
   it('opens on the roster rather than on the first question', async () => {
     renderSheet();
-    expect(await screen.findByText('Riya')).toBeTruthy();
+    expect(await screen.findByText('Riya is searching')).toBeTruthy();
     expect(screen.getByText("Who's searching")).toBeTruthy();
     expect(screen.queryByText("What're you up for?")).toBeNull();
     // It is the roster's own read, not the boot state read, that fills it.
@@ -88,13 +88,13 @@ describe('Instant Match sheet entry', () => {
 
   it('shows no progress dots on a screen where nothing is answered', async () => {
     renderSheet();
-    await screen.findByText('Riya');
+    await screen.findByText('Riya is searching');
     expect(screen.queryByLabelText('Progress')).toBeNull();
   });
 
   it('leaves the roster for step one through its one action', async () => {
     const { setStep } = renderSheet();
-    await screen.findByText('Riya');
+    await screen.findByText('Riya is searching');
     fireEvent.click(screen.getByRole('button', { name: /find my match/i }));
     expect(setStep).toHaveBeenCalledWith(STEP_ACTIVITY);
   });
@@ -113,7 +113,7 @@ describe('Instant Match sheet entry', () => {
 
   it('does not put the roster behind the boot skeleton — it loads on its own', async () => {
     renderSheet({ restoring: true });
-    expect(await screen.findByText('Riya')).toBeTruthy();
+    expect(await screen.findByText('Riya is searching')).toBeTruthy();
     expect(listQueue).toHaveBeenCalled();
   });
 });
@@ -137,7 +137,7 @@ describe('a result still outranks the roster', () => {
 
     // The panel really is the thing on screen, not an empty body.
     expect(screen.getByText(/Ridhima/)).toBeTruthy();
-    expect(screen.queryByText('Riya')).toBeNull();
+    expect(screen.queryByText(/Riya/)).toBeNull();
     // …and the roster's action does not survive underneath it.
     expect(screen.queryByRole('button', { name: /find my match/i })).toBeNull();
   });

@@ -1,22 +1,23 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { useInstantMatch } from '../../context/InstantMatchContext';
 import { useAuth } from '@shared/context/AuthContext';
-import { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
-import { getActivity, getActivityVerb } from '../../constants/matchConstants';
-import { Bolt, Starburst, Squiggle } from '../decor/Decor';
+import { getActivity, getActivityVerb, accentVars } from '../../constants/matchConstants';
+import { useCountdown } from '../../hooks/useCountdown';
+import { MeetScene } from '../art/CampusMap';
+import { ActivityIcon, ClockIcon, ChatIcon, SpinnerIcon } from '../art/icons';
+import { MatchMark } from '../decor/Decor';
+import Face, { firstName } from '../art/Face';
 import LeaveMatchModal from '../modals/LeaveMatchModal';
 
 /**
  * Shown when the user reopens Instant Match after a mutual accept.
  *
- * The pairing is the point, so both people are given equal weight: two
- * portraits facing each other with the bolt struck between them. Coming back
- * to a blank activity grid made a successful match feel like it had never
- * happened.
- *
  * This panel is the hub: reaching Instant Match while matched lands here, and
  * both choices — open the conversation, or walk away and search again — are
  * made from this one screen. The chat itself is then only for chatting.
+ *
+ * The two people stand where their routes met on the map, so the screen says
+ * "you found each other" before any copy is read.
  *
  * Leaving is destructive and permanent, so it never fires on the first tap:
  * the confirmation names the other person and states the consequence.
@@ -29,89 +30,92 @@ export default function MatchedPanel() {
   const [confirmLeave, setConfirmLeave] = useState(false);
   const { currentUser } = useAuth();
 
+  // The chat's own deadline, falling back to the pairing's.
+  const expiresAt = chat?.expiresAt ?? recentMatch?.expiresAt ?? null;
+  const { label: timeLabel, remainingMs } = useCountdown(expiresAt);
+
   // A live chat is reason enough to render this panel. `recentMatch` is the
   // richer payload and is used when present, but it arrives from a different
-  // request than the chat state does — so on a slow resync, or a tab that
-  // reconnected mid-match, the chat can be known before the pairing is. The
-  // panel used to return null in that window and the sheet fell back to the
-  // activity grid, which read as "your match vanished".
+  // request than the chat state does — so on a slow resync the chat can be
+  // known before the pairing is.
   if (!recentMatch && !chat) return null;
 
   const candidate = recentMatch?.candidate ?? matchPartner ?? null;
   const activity = recentMatch?.activity ?? chat?.matchReason ?? chat?.activity ?? '';
   // The dedicated chat's own state is the authority on whether there is
-  // anything to open — `recentMatch` describes the pairing, not the
-  // conversation's lifecycle.
+  // anything to open.
   const chatReady = chat ? chat.isActive : Boolean(recentMatch.chatId);
   const activityMeta = getActivity(activity);
 
-  const you = {
-    name: firstName(currentUser?.displayName || currentUser?.username) || 'You',
-    avatar: currentUser?.avatar || currentUser?.avatarUrl,
-  };
-  const them = {
-    name: firstName(candidate?.displayName || candidate?.username) || 'Them',
-    avatar: candidate?.avatar,
-  };
+  const youName = firstName(currentUser?.displayName || currentUser?.username) || 'You';
+  const themName = firstName(candidate?.displayName || candidate?.username) || 'your match';
+  const showUnread = !busy && chat?.isActive && unreadCount > 0;
 
   return (
     <div className="im-matched">
-      <div className="im-matched-stage">
-        <Starburst className="im-matched-burst" points={16} />
-
-        <Portrait person={you} tilt="-5deg" />
-
-        <span className="im-matched-link" aria-hidden="true">
-          <Bolt />
+      <MeetScene variant="match" className="im-matched-scene im-scene-fade">
+        <span className="im-pair">
+          <Face
+            className="im-pair-face im-pair-you"
+            avatar={currentUser?.avatar || currentUser?.avatarUrl}
+            name={youName}
+            size={76}
+          />
+          <span className="im-pair-node"><MatchMark /></span>
+          <Face
+            className="im-pair-face im-pair-them"
+            avatar={candidate?.avatar}
+            name={themName}
+            size={76}
+          />
         </span>
-
-        <Portrait person={them} tilt="5deg" />
-      </div>
-
-      <div className="im-matched-names">
-        <span className="im-matched-name">{you.name}</span>
-        <span className="im-matched-amp" aria-hidden="true">&</span>
-        <span className="im-matched-name">{them.name}</span>
-      </div>
+      </MeetScene>
 
       <div className="im-matched-copy">
-        <span className="im-sticker im-sticker-lime">Matched</span>
-        <h3 className="im-display im-display-lg">You two clicked</h3>
-        <Squiggle className="im-matched-squiggle" />
-        <p className="im-lede">
-          <span aria-hidden="true">{activityMeta?.emoji ?? '⚡'}</span>{' '}
-          You both wanted to {getActivityVerb(activity)}. Your chat stays open
-          for 24 hours. Say hi before it closes.
-        </p>
+        <span className="im-eyebrow im-eyebrow-blue">Matched</span>
+        <h3 className="im-title im-title-lg">You and {themName}</h3>
       </div>
 
-      <div className="im-matched-actions">
-        {/* Always offered. A missing `chatId` is usually a momentary gap —
-            the accept outran the conversation write, or this tab reconnected
-            mid-match — and the handler re-asks the server rather than doing
-            nothing, which is what made the button feel dead. It only reports
-            a closed chat once the server confirms there is none. */}
+      <ul className="im-facts">
+        <li style={accentVars(activityMeta)}>
+          <span className="im-icon-tile im-icon-tile-sm" aria-hidden="true">
+            <ActivityIcon id={activity} />
+          </span>
+          <span>You both wanted to {getActivityVerb(activity)}</span>
+        </li>
+        {expiresAt && chatReady && (
+          <li>
+            <span className="im-icon-tile im-icon-tile-sm im-icon-tile-neutral" aria-hidden="true">
+              <ClockIcon />
+            </span>
+            <span>
+              Chat open for <strong>{remainingMs > 0 ? timeLabel : 'a little longer'}</strong>
+            </span>
+          </li>
+        )}
+      </ul>
+
+      <div className="im-panel-actions">
+        {/* Always offered. A missing `chatId` is usually a momentary gap, and
+            the handler re-asks the server rather than doing nothing. */}
         <button
           type="button"
-          className="im-btn im-btn-yes"
+          className="im-btn im-btn-primary im-btn-block"
           onClick={openMatchChat}
           disabled={busy}
           aria-busy={busy || undefined}
         >
+          {busy ? <SpinnerIcon className="im-spinner-on-blue" /> : <ChatIcon />}
           {busy ? 'Opening…' : 'Open chat'}
-          {/* The same unread badge as the launcher, on the button that
-              actually opens the chat — a user who reached this panel through
-              the sheet never sees the launcher underneath it. */}
-          {!busy && chat?.isActive && unreadCount > 0 && (
-            <span className="im-unread-dot" aria-hidden="true">
+          {showUnread && (
+            <span className="im-badge" aria-hidden="true">
               {unreadCount > 9 ? '9+' : unreadCount}
             </span>
           )}
-          {!busy && <Bolt className="im-btn-bolt" />}
         </button>
         <button
           type="button"
-          className="im-btn im-btn-ghost im-btn-sm"
+          className="im-btn im-btn-ghost im-btn-block"
           onClick={() => setConfirmLeave(true)}
           disabled={leaving}
         >
@@ -119,17 +123,23 @@ export default function MatchedPanel() {
         </button>
 
         {!chatReady && !busy && (
-          <p className="im-matched-gone">
+          <p className="im-panel-note">
             {chat && !chat.isActive
               ? 'This chat has ended. Open it to see what happened.'
-              : 'Getting your chat ready. Tap above if it does not open.'}
+              : 'Getting your chat ready. Tap Open chat if it does not open.'}
           </p>
         )}
       </div>
 
+      {showUnread && (
+        <span className="im-sr-only" role="status">
+          {unreadCount} new message{unreadCount === 1 ? '' : 's'} from {themName}
+        </span>
+      )}
+
       {confirmLeave && (
         <LeaveMatchModal
-          partnerName={them.name}
+          partnerName={themName}
           busy={leaving}
           onCancel={() => setConfirmLeave(false)}
           onConfirm={async () => {
@@ -140,36 +150,4 @@ export default function MatchedPanel() {
       )}
     </div>
   );
-}
-
-function Portrait({ person, tilt }) {
-  const [failed, setFailed] = useState(false);
-  const resolved = useMemo(
-    () => getProcessedAvatarUrl(person.avatar),
-    [person.avatar],
-  );
-  const hasPhoto = Boolean(resolved) && !resolved.includes('default_avatar');
-
-  return (
-    <span className="im-matched-portrait" style={{ '--im-tilt': tilt }}>
-      {hasPhoto && !failed ? (
-        <img
-          className="im-matched-face"
-          src={resolved}
-          alt=""
-          decoding="async"
-          onError={() => setFailed(true)}
-        />
-      ) : (
-        <span className="im-matched-face im-matched-face-initial" aria-hidden="true">
-          {person.name.trim().charAt(0).toUpperCase()}
-        </span>
-      )}
-    </span>
-  );
-}
-
-function firstName(full) {
-  if (!full || typeof full !== 'string') return '';
-  return full.trim().split(/\s+/)[0];
 }

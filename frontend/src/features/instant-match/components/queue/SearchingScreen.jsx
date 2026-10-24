@@ -1,36 +1,35 @@
 import { memo, useState, useEffect } from 'react';
+import { useAuth } from '@shared/context/AuthContext';
 import { useInstantMatch } from '../../context/InstantMatchContext';
-import { getActivityLabel, getTimePreference } from '../../constants/matchConstants';
-import SearchRadar from './SearchRadar';
+import { useSearchingNow } from '../../hooks/useSearchingNow';
+import {
+  getActivityLabel, getTimePreference, getAreaLabel,
+} from '../../constants/matchConstants';
+import { SearchScene } from '../art/CampusMap';
+import PeopleSummary from '../people/PeopleSummary';
+import PeopleList from '../people/PeopleList';
+import {
+  ActivityIcon, AreaIcon, TimeIcon,
+} from '../art/icons';
 import '../../styles/searching-screen.css';
 
 const STATUS_LINES = [
-  'Scanning your campus…',
-  'Checking who is free…',
-  'Lining up the best fit…',
-  'Almost there…',
+  'Looking around campus',
+  'Checking who is free',
+  'Lining up the best fit',
+  'Still looking',
 ];
-
-/** After this long, stop implying a match is imminent and say so plainly. */
-const LONG_WAIT_MS = 120_000;
 
 /*
  * ── Why the timers live in leaves ─────────────────────────────────────────
  *
- * A search runs for minutes. This screen used to own a 1 s elapsed counter and
- * a 3.2 s status rotation directly, so the whole subtree — the radar's entire
- * SVG included — reconciled once a second for the entire wait (measured: 6
- * re-renders in 6 s, unbounded).
- *
- * Each ticking value now sits in the smallest component that displays it, so a
- * tick re-renders a single text node. `SearchingScreen` itself now renders only
- * when something real changes, and `SearchRadar` is memoised on top of that, so
- * the animation is handed to the browser once and never touched again.
+ * A search runs for minutes. Each ticking value sits in the smallest
+ * component that displays it, so a tick re-renders a single text node, and
+ * the map — memoised, with every frame owned by CSS — is never touched again
+ * after it mounts.
  */
 
-/** The mm:ss readout. Owns its own clock; nothing else re-renders with it —
- *  which is why it is a component of its own rather than state on the screen
- *  that would drag the radar into a re-render once a second. */
+/** The m:ss readout. Owns its own clock. */
 const ElapsedReadout = memo(function ElapsedReadout() {
   const [elapsed, setElapsed] = useState(0);
 
@@ -43,14 +42,11 @@ const ElapsedReadout = memo(function ElapsedReadout() {
     return () => window.clearInterval(id);
   }, []);
 
-  // Below ten seconds a timer reads as impatience rather than information.
-  if (elapsed < 10) return null;
-
   return (
-    <p className="im-searching-elapsed">
+    <span className="im-search-elapsed">
       <span className="im-sr-only">Time spent searching: </span>
       {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, '0')}
-    </p>
+    </span>
   );
 });
 
@@ -68,32 +64,12 @@ const StatusLine = memo(function StatusLine({ connected }) {
   }, [connected]);
 
   return (
-    <p className="im-lede" role="status" aria-live="polite">
-      {connected
-        ? STATUS_LINES[line]
-        : 'Reconnecting. Your place is held.'}
-    </p>
-  );
-});
-
-/**
- * One state change, not a per-second comparison: a single timeout flips this
- * once, two minutes in.
- */
-const LongWaitNotice = memo(function LongWaitNotice() {
-  const [show, setShow] = useState(false);
-
-  useEffect(() => {
-    const id = window.setTimeout(() => setShow(true), LONG_WAIT_MS);
-    return () => window.clearTimeout(id);
-  }, []);
-
-  if (!show) return null;
-
-  return (
-    <p className="im-searching-patience" role="status">
-      Quiet right now. Close this and we&apos;ll buzz you the moment
-      someone turns up.
+    <p className="im-search-status" role="status" aria-live="polite">
+      <span className={`im-live-dot ${connected ? '' : 'is-paused'}`} aria-hidden="true" />
+      <span key={connected ? line : 'offline'} className="im-search-status-text">
+        {connected ? STATUS_LINES[line] : 'Reconnecting. Your place is held.'}
+      </span>
+      {connected && <ElapsedReadout />}
     </p>
   );
 });
@@ -102,45 +78,75 @@ const LongWaitNotice = memo(function LongWaitNotice() {
  * The waiting room.
  *
  * Two jobs: make an indefinite wait feel deliberate rather than broken, and
- * make it obvious the search survives minimising the sheet.
+ * make it obvious the search survives minimising the sheet. The actions are
+ * rendered by the sheet's footer so they never scroll out of reach.
+ *
+ * Two views that slide between each other: the search itself, and the
+ * people searching alongside (each of whom can be asked directly). The
+ * roster is read here, once, so both views show the same live list.
  */
 export default function SearchingScreen() {
   const { formData, connected } = useInstantMatch();
+  const { currentUser } = useAuth();
+  const { people } = useSearchingNow(true);
+  const [view, setView] = useState('search');
 
   const activityLabel = getActivityLabel(formData.activity, 'a hangout');
   const when = getTimePreference(formData.timePreference);
+  const areaLabel = getAreaLabel(formData.location?.area);
+  const others = people ? people.filter((p) => p.user?.id !== currentUser?.id) : null;
+
+  // Everyone left while the list was open: show the search again rather than
+  // an empty list with a count of nobody.
+  if (view === 'people' && others?.length) {
+    return (
+      <div className="im-search-slide" data-dir="forward">
+        <PeopleList people={others ?? []} onBack={() => setView('back')} />
+      </div>
+    );
+  }
+
+  const same = others ? others.filter((p) => p.activity === formData.activity).length : 0;
 
   return (
-    <div className="im-searching">
-      <SearchRadar />
+    <div className="im-search im-search-slide" data-dir={view === 'back' ? 'back' : 'none'}>
+      <SearchScene className="im-search-scene" activity={formData.activity} />
 
-      <div className="im-searching-copy">
-        <span className="im-sticker im-sticker-coral">Searching</span>
-        <h3 className="im-display im-display-lg">
-          Finding someone
-          <br />
-          for {activityLabel.toLowerCase()}
+      <div className="im-search-copy">
+        <h3 className="im-title im-title-lg">
+          Finding someone for {activityLabel.toLowerCase()}
         </h3>
         <StatusLine connected={connected} />
-        {when && (
-          <p className="im-searching-when">
-            <span aria-hidden="true">{when.emoji}</span> {when.title}
-          </p>
-        )}
       </div>
 
-      <ElapsedReadout />
+      <ul className="im-search-chips" aria-label="Your search">
+        <li className="im-chip">
+          <ActivityIcon id={formData.activity} />
+          {activityLabel}
+        </li>
+        {when && (
+          <li className="im-chip">
+            <TimeIcon id={when.id} />
+            {when.title}
+          </li>
+        )}
+        {areaLabel && (
+          <li className="im-chip">
+            <AreaIcon id={formData.location.area} />
+            {areaLabel}
+          </li>
+        )}
+      </ul>
 
-      <LongWaitNotice />
-      {/*
-        * The two actions are rendered by the sheet, in its footer, alongside the
-        * ones the stepped form uses. They used to live here, inside the
-        * scrolling body, which meant they scrolled out of reach on a short
-        * screen; sticking them to the bottom of the scroller fixed the reach
-        * but painted an opaque plate over the poster backdrop that read as a
-        * stray card. Out here they are simply always on screen, with no plate
-        * and nothing to paint over.
-        */}
+      {others && others.length > 0 && (
+        <PeopleSummary
+          people={others}
+          detail={same > 0
+            ? `${same} also ${same === 1 ? 'wants' : 'want'} ${activityLabel.toLowerCase()}`
+            : undefined}
+          onOpen={() => setView('people')}
+        />
+      )}
     </div>
   );
 }

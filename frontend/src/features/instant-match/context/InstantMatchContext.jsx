@@ -190,6 +190,11 @@ export function InstantMatchProvider({ children }) {
   const chatRef = useRef(chat);
   chatRef.current = chat;
 
+  // Read by `requestMatch`, which must restore the form if a request fails
+  // without re-creating itself on every keystroke in the form.
+  const formDataRef = useRef(formData);
+  formDataRef.current = formData;
+
   // Read inside callbacks that must not re-create themselves (and re-render
   // every consumer) each time a new match lands.
   const recentMatchRef = useRef(recentMatch);
@@ -248,7 +253,8 @@ export function InstantMatchProvider({ children }) {
       // user back to an un-answered card they have already answered.
       if (statusRef.current !== 'waiting' && inFlightRef.current === false) {
         setActiveMatch(state.pendingMatch);
-        setStatus('match_found');
+        // A request this user sent is already their yes: show the wait.
+        setStatus(state.pendingMatch.awaitingOther ? 'waiting' : 'match_found');
       }
       return;
     }
@@ -295,8 +301,10 @@ export function InstantMatchProvider({ children }) {
       if (!match?.matchId || !match?.candidate) return;
       setError(null);
       setActiveMatch(match);
-      setStatus('match_found');
-      notifyMatchFound(match);
+      // `awaitingOther`: this user sent the request, so they wait for the
+      // other side rather than being asked to accept their own request.
+      setStatus(match.awaitingOther ? 'waiting' : 'match_found');
+      if (!match.awaitingOther) notifyMatchFound(match);
     });
 
     const offAccepted = matchSocketClient.on('match:accepted', (payload = {}) => {
@@ -424,7 +432,7 @@ export function InstantMatchProvider({ children }) {
           setRecentMatch(state.recentMatch ?? null);
           if (state.pendingMatch) {
             setActiveMatch(state.pendingMatch);
-            setStatus('match_found');
+            setStatus(state.pendingMatch.awaitingOther ? 'waiting' : 'match_found');
           } else if (state.queued) {
             setFormData((prev) => ({
               ...prev,
@@ -653,7 +661,11 @@ export function InstantMatchProvider({ children }) {
   const respondToMatch = useCallback(async (action) => {
     const match = activeMatch;
     if (!match || inFlightRef.current) return;
-    if (statusRef.current !== 'match_found') return;
+    // A request this user sent can be withdrawn while they wait; everything
+    // else is answered only from the card that asks.
+    const withdrawing = action === 'decline'
+      && statusRef.current === 'waiting' && Boolean(match.awaitingOther);
+    if (statusRef.current !== 'match_found' && !withdrawing) return;
 
     inFlightRef.current = true;
     setBusy(true);
@@ -673,9 +685,69 @@ export function InstantMatchProvider({ children }) {
       // with match:declined either way.
       setError(res.error);
       showToast(res.error, 'error');
-      if (statusRef.current === 'waiting') setStatus('match_found');
+      // Only a failed *accept* returns to the card that asks. A failed
+      // withdrawal stays on the wait: that card has nothing to accept.
+      if (action === 'accept' && statusRef.current === 'waiting') setStatus('match_found');
     }
   }, [activeMatch]);
+
+  /**
+   * Ask one person on the roster to match, directly.
+   *
+   * Mid-search it simply interrupts the search. From the opening screen it
+   * also starts one — for what *they* are up for, at their timing — in the
+   * same server step, so the ranker cannot hand this user to somebody else
+   * in between. Either way the server pairs us with our yes already given
+   * and answers with `match:found` (`awaitingOther`), which shows the wait;
+   * a pass or a timeout comes back as `match:declined` with `requeued`, so
+   * the search carries on. Returns whether the request went out.
+   */
+  const requestMatch = useCallback(async (person) => {
+    const targetUserId = person?.user?.id;
+    if (!isVerifiedRef.current || !targetUserId || inFlightRef.current) return false;
+    const current = statusRef.current;
+    if (current !== 'searching' && current !== 'idle') return false;
+
+    let search;
+    let previousForm = null;
+    if (current !== 'searching') {
+      previousForm = formDataRef.current;
+      const next = {
+        ...initialFormData,
+        activity: person.activity,
+        timePreference: person.timePreference || 'now',
+      };
+      setFormData(next);
+      search = {
+        campus: getCollegeName(currentUser),
+        activity: next.activity,
+        timePreference: next.timePreference,
+        location: {},
+      };
+    }
+
+    inFlightRef.current = true;
+    setBusy(true);
+    const res = await matchSocketClient.requestMatch(targetUserId, search);
+    inFlightRef.current = false;
+    setBusy(false);
+
+    if (!res.ok) {
+      // Nothing was started: put back whatever the form held before.
+      if (previousForm) setFormData(previousForm);
+      showToast(res.error || 'Could not send your request', 'error');
+      return false;
+    }
+    if (search) {
+      // The search exists now; a pass will bring this screen back to it.
+      // `match:found` may already have moved us to the wait — only an idle
+      // status is caught up.
+      setRecentMatch(null);
+      setStep(STEP_SEARCHING);
+      setStatus((prev) => (prev === 'idle' ? 'searching' : prev));
+    }
+    return true;
+  }, [currentUser]);
 
   /**
    * Our countdown emptied. We deliberately do not auto-decline: declining
@@ -940,7 +1012,7 @@ export function InstantMatchProvider({ children }) {
     error, busy, connected, restoring, isBusyState, recentMatch,
     openSheet, closeSheet, nextStep, prevStep, setStep,
     updateFormData, resetForm, startSearch, cancelSearch,
-    respondToMatch, handleMatchTimeout, dismissError,
+    respondToMatch, requestMatch, handleMatchTimeout, dismissError,
     openMatchChat, dismissRecentMatch, isVerified,
   }), [
     sheetOpen, step, formData, status, buttonState, matchCountdown,
@@ -951,7 +1023,7 @@ export function InstantMatchProvider({ children }) {
     error, busy, connected, restoring, isBusyState, recentMatch,
     openSheet, closeSheet, nextStep, prevStep,
     updateFormData, resetForm, startSearch, cancelSearch,
-    respondToMatch, handleMatchTimeout, dismissError,
+    respondToMatch, requestMatch, handleMatchTimeout, dismissError,
     openMatchChat, dismissRecentMatch, isVerified,
   ]);
 
@@ -980,7 +1052,7 @@ function notifyMatchFound(match) {
     if (!document.hidden) return;
     if (!('Notification' in window) || Notification.permission !== 'granted') return;
     const name = match.candidate?.displayName || 'Someone';
-    new Notification('⚡ Match found!', {
+    new Notification('Match found', {
       body: `${name} is up for ${match.activity}. Tap to respond.`,
       icon: '/logo-192.png',
       tag: `instant-match-${match.matchId}`,

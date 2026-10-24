@@ -3,8 +3,9 @@
  *
  * The `id` values are the wire contract and are mirrored by
  * `backend/src/instant-match/instant-match.constants.ts` — keep the two in
- * step. Everything else here (colour, emoji, copy) is presentation and is
- * safe to change on its own.
+ * step. Everything else here (colour, copy) is presentation and is safe to
+ * change on its own. Icons live in `components/art/icons.jsx`, keyed by the
+ * same ids.
  */
 
 /** The screen Instant Match opens on: who is searching right now. It sits
@@ -30,18 +31,18 @@ export const OPTIONAL_DETAIL_MAX = 60;
  * which picks per theme — see `--im-tile-ink-l` / `--im-tile-ink-d`.
  */
 export const MATCH_ACTIVITIES = [
-  { id: 'study',   label: 'Study',   emoji: '📚', category: 'indoor',  ink: '#2563EB', wash: '#DBEAFE', inkDark: '#7FB0FF', washDark: '#1B2A44', verb: 'study' },
-  { id: 'coding',  label: 'Coding',  emoji: '💻', category: 'indoor',  ink: '#0F766E', wash: '#CCFBF1', inkDark: '#5FD5C4', washDark: '#10322F', verb: 'code' },
-  { id: 'sports',  label: 'Sports',  emoji: '🏸', category: 'outdoor', ink: '#C2410C', wash: '#FFEDD5', inkDark: '#FF9A63', washDark: '#3B2113', verb: 'play sports' },
-  { id: 'coffee',  label: 'Coffee',  emoji: '☕', category: 'indoor',  ink: '#92400E', wash: '#FEF3C7', inkDark: '#E0A96D', washDark: '#33240F', verb: 'grab coffee' },
-  { id: 'food',    label: 'Food',    emoji: '🍜', category: 'indoor',  ink: '#BE123C', wash: '#FFE4E6', inkDark: '#FF8FA8', washDark: '#3A1620', verb: 'grab food' },
-  { id: 'gaming',  label: 'Gaming',  emoji: '🎮', category: 'indoor',  ink: '#7C3AED', wash: '#EDE9FE', inkDark: '#B79BFF', washDark: '#29204A', verb: 'play games' },
-  { id: 'walk',    label: 'Walk',    emoji: '🚶', category: 'outdoor', ink: '#15803D', wash: '#DCFCE7', inkDark: '#6BD68F', washDark: '#14301F', verb: 'go for a walk' },
-  { id: 'movie',   label: 'Movie',   emoji: '🎬', category: 'indoor',  ink: '#4338CA', wash: '#E0E7FF', inkDark: '#9AA3FF', washDark: '#22254D', verb: 'watch a movie' },
-  { id: 'event',   label: 'Event',   emoji: '🎉', category: 'indoor',  ink: '#A21CAF', wash: '#FAE8FF', inkDark: '#EC8FF5', washDark: '#3A1741', verb: 'hit an event' },
-  { id: 'chat',    label: 'Chat',    emoji: '💬', category: 'indoor',  ink: '#0369A1', wash: '#E0F2FE', inkDark: '#6BC2F0', washDark: '#102C3D', verb: 'just talk' },
-  { id: 'library', label: 'Library', emoji: '📖', category: 'indoor',  ink: '#7C2D12', wash: '#FEF0E7', inkDark: '#D99A72', washDark: '#33200F', verb: 'hit the library' },
-  { id: 'other',   label: 'Other',   emoji: '✨', category: 'indoor',  ink: '#475569', wash: '#E2E8F0', inkDark: '#A9B6C6', washDark: '#262C35', verb: 'meet up' },
+  { id: 'study',   label: 'Study',   category: 'indoor',  ink: '#2563EB', wash: '#DBEAFE', inkDark: '#7FB0FF', washDark: '#1B2A44', verb: 'study' },
+  { id: 'coding',  label: 'Coding',  category: 'indoor',  ink: '#0F766E', wash: '#CCFBF1', inkDark: '#5FD5C4', washDark: '#10322F', verb: 'code' },
+  { id: 'sports',  label: 'Sports',  category: 'outdoor', ink: '#C2410C', wash: '#FFEDD5', inkDark: '#FF9A63', washDark: '#3B2113', verb: 'play sports' },
+  { id: 'coffee',  label: 'Coffee',  category: 'indoor',  ink: '#92400E', wash: '#FEF3C7', inkDark: '#E0A96D', washDark: '#33240F', verb: 'grab coffee' },
+  { id: 'food',    label: 'Food',    category: 'indoor',  ink: '#BE123C', wash: '#FFE4E6', inkDark: '#FF8FA8', washDark: '#3A1620', verb: 'grab food' },
+  { id: 'gaming',  label: 'Gaming',  category: 'indoor',  ink: '#7C3AED', wash: '#EDE9FE', inkDark: '#B79BFF', washDark: '#29204A', verb: 'play games' },
+  { id: 'walk',    label: 'Walk',    category: 'outdoor', ink: '#15803D', wash: '#DCFCE7', inkDark: '#6BD68F', washDark: '#14301F', verb: 'go for a walk' },
+  { id: 'movie',   label: 'Movie',   category: 'indoor',  ink: '#4338CA', wash: '#E0E7FF', inkDark: '#9AA3FF', washDark: '#22254D', verb: 'watch a movie' },
+  { id: 'event',   label: 'Event',   category: 'indoor',  ink: '#A21CAF', wash: '#FAE8FF', inkDark: '#EC8FF5', washDark: '#3A1741', verb: 'hit an event' },
+  { id: 'chat',    label: 'Chat',    category: 'indoor',  ink: '#0369A1', wash: '#E0F2FE', inkDark: '#6BC2F0', washDark: '#102C3D', verb: 'just talk' },
+  { id: 'library', label: 'Library', category: 'indoor',  ink: '#7C2D12', wash: '#FEF0E7', inkDark: '#D99A72', washDark: '#33200F', verb: 'hit the library' },
+  { id: 'other',   label: 'Other',   category: 'indoor',  ink: '#475569', wash: '#E2E8F0', inkDark: '#A9B6C6', washDark: '#262C35', verb: 'meet up' },
 ];
 
 /**
@@ -79,7 +80,7 @@ export const TIME_PREFERENCES = [
     id: 'now',
     title: 'Right now',
     desc: 'Someone free this minute',
-    emoji: '⚡',
+   
     ink: '#C2410C', wash: '#FFEDD5',
     inkDark: '#FF9A63', washDark: '#3B2113',
   },
@@ -87,7 +88,7 @@ export const TIME_PREFERENCES = [
     id: '30min',
     title: 'In 30 minutes',
     desc: 'Heading out shortly',
-    emoji: '⏱',
+   
     ink: '#2563EB', wash: '#DBEAFE',
     inkDark: '#7FB0FF', washDark: '#1B2A44',
   },
@@ -95,7 +96,7 @@ export const TIME_PREFERENCES = [
     id: 'today',
     title: 'Later today',
     desc: 'Anytime before tonight',
-    emoji: '🌤',
+   
     ink: '#7C3AED', wash: '#EDE9FE',
     inkDark: '#B79BFF', washDark: '#29204A',
   },
@@ -106,13 +107,13 @@ export function getTimePreference(id) {
 }
 
 export const CAMPUS_AREAS = [
-  { id: 'library',        label: 'Library',        emoji: '📖' },
-  { id: 'cafeteria',      label: 'Cafeteria',      emoji: '🍽' },
-  { id: 'hostel',         label: 'Hostel',         emoji: '🏠' },
-  { id: 'academic_block', label: 'Academic Block', emoji: '🏛' },
-  { id: 'sports_complex', label: 'Sports Complex', emoji: '🏟' },
-  { id: 'main_gate',      label: 'Main Gate',      emoji: '🚪' },
-  { id: 'other',          label: 'Somewhere else', emoji: '📍' },
+  { id: 'library',        label: 'Library' },
+  { id: 'cafeteria',      label: 'Cafeteria' },
+  { id: 'hostel',         label: 'Hostel' },
+  { id: 'academic_block', label: 'Academic Block' },
+  { id: 'sports_complex', label: 'Sports Complex' },
+  { id: 'main_gate',      label: 'Main Gate' },
+  { id: 'other',          label: 'Somewhere else' },
 ];
 
 export function getAreaLabel(id) {

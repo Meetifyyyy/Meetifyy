@@ -1,5 +1,6 @@
-/* The dedicated Instant Match conversation — a temporary, deliberately
-   un-DM-like surface that owns the whole viewport. */
+/* The dedicated Instant Match conversation. On a phone it owns the screen;
+   on a desktop it is a centred window on a dimmed backdrop. Neutral Meetifyy
+   surfaces, Inter, one blue accent. Motion is transform/opacity only. */
 
 .im-chat-root {
   position: fixed;
@@ -7,7 +8,9 @@
   z-index: 1200;
   display: flex;
   flex-direction: column;
-  background: var(--im-paper, var(--color-bg-page, #fff));
+  background: var(--im-surface);
+  color: var(--im-text);
+  font-family: var(--im-font);
   /* Respect the notch and the home-indicator / navigation-bar inset.
      Where something else makes room for the keyboard (iOS: the visual viewport
      shrinks; the website on Android: the browser resizes the layout viewport)
@@ -43,7 +46,7 @@
 
 html[data-keyboard-open] .im-chat-root.chat-pans-keyboard .im-chat-body,
 html[data-keyboard-open] .im-chat-root.chat-pans-keyboard .im-chat-starters,
-html[data-keyboard-open] html[data-keyboard-open] .im-chat-root.chat-pans-keyboard .im-chat-ended {
+html[data-keyboard-open] .im-chat-root.chat-pans-keyboard .im-chat-ended {
   transform: translate3d(0, calc(-1 * var(--chat-kb-lift, 0px)), 0);
 }
 
@@ -56,18 +59,17 @@ html[data-keyboard-open] html[data-keyboard-open] .im-chat-root.chat-pans-keyboa
   z-index: 2;
 }
 .im-chat-root.chat-pans-keyboard .im-chat-reason {
-  background: color-mix(in srgb, var(--im-sun) 22%, var(--im-paper, var(--color-bg-page, #fff)));
+  background: var(--im-surface);
 }
 
 @media (prefers-reduced-motion: reduce) {
   .im-chat-root.chat-pans-keyboard .im-chat-body,
   .im-chat-root.chat-pans-keyboard .im-chat-starters,
-    .im-chat-root.chat-pans-keyboard .im-chat-ended { transition: none; }
+  .im-chat-root.chat-pans-keyboard .im-chat-ended { transition: none; }
 }
 
-/* On a phone the window IS the root — it adds nothing and simply passes its
-   children through the flex column. The desktop rules above turn it into an
-   actual framed window. */
+/* On a phone the window IS the root: it passes its children through the
+   flex column. The desktop rules below turn it into a framed window. */
 .im-chat-window {
   display: contents;
 }
@@ -77,44 +79,41 @@ html[data-keyboard-open] html[data-keyboard-open] .im-chat-root.chat-pans-keyboa
 .im-chat-head {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: max(10px, env(safe-area-inset-top)) 14px 10px;
-  border-bottom: 2px solid var(--im-rule, rgba(0, 0, 0, 0.08));
-  background: var(--im-lime);
-  color: #16130E;
+  gap: 10px;
+  padding: max(10px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 10px max(8px, env(safe-area-inset-left));
+  border-bottom: 1px solid var(--im-line);
+  background: var(--im-surface);
+  color: var(--im-text);
   flex-shrink: 0;
   cursor: pointer;
   user-select: none;
-  transform: none !important;
-}
-
-.im-chat-head:hover,
-.im-chat-head:active,
-.im-chat-head:focus {
-  transform: none !important;
-  opacity: 1 !important;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .im-chat-head:hover .im-chat-name {
   text-decoration: underline;
-  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
 }
 
 .im-chat-back {
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   flex-shrink: 0;
   padding: 0;
   border: 0;
   border-radius: 50%;
-  background: rgba(22, 19, 14, 0.09);
-  color: #16130E;
+  background: transparent;
+  color: var(--im-text);
   cursor: pointer;
+  transition: background-color 0.15s var(--im-ease), transform 0.15s var(--im-ease);
 }
-.im-chat-back svg { width: 20px; height: 20px; }
-.im-chat-back:hover { background: rgba(22, 19, 14, 0.16); }
+.im-chat-back svg { width: 22px; height: 22px; }
+.im-chat-back:hover { background: var(--im-surface-3); }
+.im-chat-back:active { transform: scale(0.94); }
+.im-chat-back:focus-visible { outline: 2px solid var(--im-blue); outline-offset: 2px; }
 
 .im-chat-avatar {
   width: 40px;
@@ -122,90 +121,44 @@ html[data-keyboard-open] html[data-keyboard-open] .im-chat-root.chat-pans-keyboa
   flex-shrink: 0;
   border-radius: 50%;
   overflow: hidden;
-  box-shadow: 0 0 0 2px rgba(22, 19, 14, 0.15);
+  background: var(--im-surface-2);
 }
 
 .im-chat-identity {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
   min-width: 0;
   flex: 1;
 }
 
 .im-chat-name {
-  font-family: var(--im-display);
-  font-size: 1.05rem;
-  line-height: 1.2;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.im-chat-bolt-wrap {
-  position: relative;
-  flex-shrink: 0;
+.im-chat-sub {
   display: inline-flex;
   align-items: center;
-}
-
-.im-chat-bolt-btn {
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: transparent;
-  color: #16130E;
-  cursor: pointer;
-  transition: transform 0.15s var(--im-ease), opacity 0.15s var(--im-ease);
-}
-
-.im-chat-bolt-btn:hover,
-.im-chat-bolt-wrap.is-open .im-chat-bolt-btn {
-  background: transparent;
-  transform: scale(1.1);
-}
-
-.im-chat-bolt-btn:active {
-  transform: scale(0.94);
-}
-
-.im-chat-bolt-icon {
-  width: 18px;
-  height: 18px;
-  display: block;
-}
-
-.im-chat-bolt-off {
-  background: transparent;
-  opacity: 0.5;
-}
-
-/* ── Custom Floating Hover / Click Tooltip Box ───────────────────────────── */
-
-.im-chat-bolt-tooltip {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  z-index: 60;
-  display: flex;
-  align-items: center;
-  padding: 6px 12px;
-  border-radius: 8px;
-  border: 1.5px solid rgba(255, 248, 234, 0.85);
-  background: #1B1815;
-  color: #FFF8EA;
-  font-family: var(--im-display);
-  font-size: 0.82rem;
-  letter-spacing: 0.02em;
+  gap: 5px;
+  min-width: 0;
+  font-size: 0.78rem;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--im-text-3);
   white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
-  pointer-events: none;
-  animation: im-pop-in 0.14s var(--im-ease-out) both;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
+.im-chat-sub-mark { width: 13px; height: 13px; flex-shrink: 0; color: var(--im-blue); }
+.im-chat-sub-time { font-variant-numeric: tabular-nums; color: var(--im-text-2); }
+.im-chat-sub.is-ended .im-chat-sub-mark { color: var(--im-text-3); }
 
 /* ── Why you matched ─────────────────────────────────────────────────────── */
 
@@ -213,20 +166,23 @@ html[data-keyboard-open] html[data-keyboard-open] .im-chat-root.chat-pans-keyboa
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  padding: 8px 14px;
+  gap: 8px;
+  padding: 8px 16px;
   flex-shrink: 0;
-  background: color-mix(in srgb, var(--im-sun) 22%, transparent);
-  color: var(--im-ink);
+  border-bottom: 1px solid var(--im-line-soft);
+  background: var(--im-surface);
+  color: var(--im-text-2);
   font-size: 0.82rem;
-  font-weight: 600;
+  font-weight: 500;
   text-align: center;
 }
+.im-chat-reason .im-icon-tile-sm { width: 24px; height: 24px; border-radius: 8px; }
+.im-chat-reason .im-icon-tile-sm svg { width: 14px; height: 14px; }
 
 /* ── Thread ──────────────────────────────────────────────────────────────── */
 
-/* `min-height: 0` is what lets the message list scroll inside the flex
-   column instead of pushing the composer off-screen. */
+/* `min-height: 0` lets the message list scroll inside the flex column
+   instead of pushing the composer off-screen. */
 .im-chat-body {
   flex: 1;
   min-height: 0;
@@ -240,130 +196,130 @@ html[data-keyboard-open] html[data-keyboard-open] .im-chat-root.chat-pans-keyboa
 
 .im-chat-starters {
   flex-shrink: 0;
-  padding: 8px 14px 4px;
-  /* Continuous, like every other divider in Instant Match. A dashed rule was
-     the only broken line left in the feature and read as an unfinished edge
-     rather than a separator. */
-  border-top: 1px solid var(--im-line);
-  background: var(--im-paper);
+  padding: 10px 16px 2px;
+  border-top: 1px solid var(--im-line-soft);
+  background: var(--im-surface);
 }
 
 .im-chat-starters-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 6px;
 }
 
-.im-chat-starters-head .im-eyebrow {
-  color: var(--im-ink-faint);
-  font-size: 0.65rem;
-  letter-spacing: 0.08em;
-  font-weight: 700;
-}
+.im-chat-starters-head .im-eyebrow { color: var(--im-text-3); }
 
 .im-chat-starters-hide {
   border: 0;
   background: none;
-  padding: 2px 4px;
-  font-size: 0.74rem;
+  padding: 4px 6px;
+  margin-right: -6px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 0.78rem;
   font-weight: 600;
-  color: var(--im-ink-faint);
+  color: var(--im-blue);
   cursor: pointer;
-  text-decoration: underline;
-  transition: color 0.14s var(--im-ease);
 }
-.im-chat-starters-hide:hover {
-  color: var(--im-ink);
-}
+.im-chat-starters-hide:hover { background: var(--im-blue-tint); }
 
 .im-chat-starter-list {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 0 -4px;
-  padding: 6px 4px 8px;
+  margin: 0 -16px;
+  padding: 8px 16px 10px;
   list-style: none;
   overflow-x: auto;
   scrollbar-width: none;
+  scroll-padding-inline: 16px;
+  -webkit-overflow-scrolling: touch;
 }
 .im-chat-starter-list::-webkit-scrollbar { display: none; }
+.im-chat-starter-list > li { flex-shrink: 0; }
 
 .im-chat-starter {
   white-space: nowrap;
   padding: 8px 14px;
-  border: 1.5px solid var(--im-line-strong);
+  border: 1px solid var(--im-line);
   border-radius: 999px;
-  background: var(--im-paper-deep);
-  color: var(--im-ink);
-  font-size: 0.82rem;
-  font-weight: 600;
+  background: var(--im-surface);
+  color: var(--im-text);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 500;
   cursor: pointer;
-  box-shadow: var(--im-shadow-sm);
   transition: background-color 0.15s var(--im-ease), border-color 0.15s var(--im-ease),
-              color 0.15s var(--im-ease), transform 0.15s var(--im-ease), box-shadow 0.15s var(--im-ease);
+              color 0.15s var(--im-ease), transform 0.15s var(--im-ease);
 }
 .im-chat-starter:hover {
-  background: var(--im-accent-wash);
-  border-color: var(--im-accent);
-  color: var(--im-ink);
-  box-shadow: var(--im-shadow);
-  transform: translateY(-1px);
+  background: var(--im-blue-tint);
+  border-color: rgba(var(--im-blue-rgb), 0.35);
+  color: var(--im-blue);
 }
-.im-chat-starter:active {
-  transform: translateY(0);
-  box-shadow: var(--im-shadow-sm);
+.im-chat-starter:active { transform: scale(0.97); }
+.im-chat-starter:focus-visible { outline: 2px solid var(--im-blue); outline-offset: 2px; }
+
+/* Wide screens wrap the chips rather than scrolling them. */
+@media (min-width: 900px) {
+  .im-chat-starter-list { flex-wrap: wrap; overflow-x: visible; }
 }
 
 /* ── Composer / ended ────────────────────────────────────────────────────── */
 
 .im-chat-foot { flex-shrink: 0; }
 
-/**
- * The end-of-chat footer.
- *
- * Compact on purpose: it replaces the composer, so it should occupy about
- * what the composer did. The first version stacked a sticker, a heading, a
- * paragraph and a large button with generous padding and ate roughly a third
- * of the viewport, pushing the conversation the user came back to read up out
- * of sight.
- *
- * It also painted `--im-paper-2`, a token that does not exist. The fallback
- * was a light app colour while the text kept inheriting `--im-ink` — cream in
- * dark mode — so the "{name} left the match" line rendered near-white on
- * near-white and was effectively invisible. Both colours are now explicit and
- * come from the same theme pair.
- */
+/* The end-of-chat footer replaces the composer, so it stays compact and the
+   thread above remains readable. */
 .im-chat-ended {
   flex-shrink: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 6px 12px;
-  padding: 12px 20px calc(12px + env(safe-area-inset-bottom));
-  border-top: 2px solid var(--im-rule, rgba(0, 0, 0, 0.08));
-  background: var(--im-paper-deep);
-  color: var(--im-ink);
-  text-align: center;
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--im-line-soft);
+  background: var(--im-surface);
 }
+
+.im-chat-ended-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 4px 16px;
+  padding: 0 16px 14px;
+  border: 1px solid var(--im-line);
+  border-radius: var(--im-radius);
+  background: var(--im-surface);
+  overflow: hidden;
+}
+
+.im-chat-ended-scene {
+  grid-column: 1 / -1;
+  height: 64px;
+  margin: 0 -16px 2px;
+}
+
+.im-chat-ended-copy { min-width: 0; }
 
 .im-chat-ended-title {
   margin: 0;
-  font-family: var(--im-display);
-  font-size: 0.98rem;
-  color: var(--im-ink);
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--im-text);
 }
 
-/* The explanatory line is secondary; on a narrow screen it wraps to its own
-   row rather than squeezing the action. */
 .im-chat-ended-lede {
-  margin: 0;
-  font-size: 0.85rem;
-  color: var(--im-ink-soft);
+  margin: 2px 0 0;
+  font-size: 0.84rem;
+  line-height: 1.4;
+  color: var(--im-text-3);
 }
 
-.im-chat-ended .im-btn { flex-shrink: 0; }
+.im-chat-ended-btn { flex-shrink: 0; }
+
+@media (max-width: 480px) {
+  .im-chat-ended-card { grid-template-columns: 1fr; }
+  .im-chat-ended-btn { width: 100%; margin-top: 8px; }
+}
 
 /* ── Leave confirmation ──────────────────────────────────────────────────── */
 
@@ -371,87 +327,101 @@ html[data-keyboard-open] html[data-keyboard-open] .im-chat-root.chat-pans-keyboa
   position: fixed;
   inset: 0;
   z-index: 1300;
-  display: grid;
-  place-items: center;
-  padding: 20px;
-  background: rgba(12, 10, 8, 0.55);
-  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.5);
+  font-family: var(--im-font);
+  animation: im-leave-scrim-in 0.2s var(--im-ease-out) both;
 }
 
+/* Mobile: a bottom sheet. */
 .im-leave-card {
-  width: min(420px, 100%);
-  padding: 24px 22px 20px;
-  border-radius: 22px;
-  border: 2px solid var(--im-ink, #16130E);
-  background: var(--im-paper, #fff);
+  width: 100%;
+  padding: 10px 20px calc(20px + env(safe-area-inset-bottom));
+  border-radius: var(--im-radius-lg) var(--im-radius-lg) 0 0;
+  background: var(--im-surface);
+  color: var(--im-text);
   box-shadow: var(--im-shadow-lg);
-  text-align: center;
+  animation: im-leave-sheet-in 0.32s var(--im-ease-out) both;
 }
 
-.im-leave-title { margin: 0 0 8px; }
-.im-leave-body { margin: 0 0 20px; }
+.im-leave-card::before {
+  content: '';
+  display: block;
+  width: 36px;
+  height: 4px;
+  margin: 0 auto 18px;
+  border-radius: 999px;
+  background: var(--im-line);
+}
+
+.im-leave-title {
+  margin: 0 0 8px;
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--im-text);
+}
+.im-leave-body { margin: 0 0 22px; }
+.im-leave-body strong { color: var(--im-text); font-weight: 600; }
 
 .im-leave-actions {
   display: flex;
+  flex-direction: column-reverse;
   gap: 10px;
-  justify-content: center;
-  flex-wrap: wrap;
 }
-.im-leave-actions .im-btn { flex: 1 1 auto; min-width: 140px; }
+.im-leave-actions .im-btn { width: 100%; }
 
-/* Destructive, and styled to say so — this ends the chat for both people
-   with no way back to it. */
-.im-btn-danger {
-  background: var(--im-coral);
-  color: #16130E;
-  border: 2px solid var(--im-ink, #16130E);
+/* Desktop / tablet: a centred card. */
+@media (min-width: 640px) {
+  .im-leave-overlay { align-items: center; padding: 24px; }
+  .im-leave-card {
+    width: min(420px, 100%);
+    padding: 24px;
+    border-radius: var(--im-radius-lg);
+    animation-name: im-leave-card-in;
+    animation-duration: 0.22s;
+  }
+  .im-leave-card::before { display: none; }
+  .im-leave-actions { flex-direction: row; justify-content: flex-end; }
+  .im-leave-actions .im-btn { width: auto; }
 }
-.im-btn-danger:hover { filter: brightness(0.96); }
-.im-btn-danger:disabled { opacity: 0.6; cursor: default; }
+
+@keyframes im-leave-scrim-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes im-leave-sheet-in { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes im-leave-card-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
 
 /* ── Desktop: a window, not a takeover ───────────────────────────────────── */
 
-/**
- * On a phone the chat owns the screen, which is right — there is nowhere else
- * to be. On a desktop that reads as the app having navigated away, and it
- * wastes an enormous amount of space on a 1440px display.
- *
- * Above 900px it becomes a centred window on a dimmed backdrop: the app stays
- * visible behind it, so the chat is legibly a temporary thing you are looking
- * at rather than a place you have gone. Sized in viewport units with a cap, so
- * it always fits without the page scrolling.
- */
+/* Above 900px the chat becomes a centred window on a dimmed backdrop, sized
+   in viewport units with a cap so it never makes the page scroll. */
 @media (min-width: 900px) {
   .im-chat-root {
-    /* The dim layer fills the viewport; the window sits inside it. */
     display: grid;
     place-items: center;
     padding: 24px;
-    background: rgba(12, 10, 8, 0.55);
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
+    background: rgba(15, 23, 42, 0.5);
     animation: im-chat-scrim-in 0.2s var(--im-ease-out) both;
   }
 
   .im-chat-window {
     width: min(720px, 100%);
-    /* Never taller than the viewport minus the padding above — the window
-       must never be the reason the page scrolls. */
     height: min(760px, calc(100vh - 48px));
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    background: var(--im-paper);
-    border: var(--im-border);
+    background: var(--im-surface);
+    border: 1px solid var(--im-line);
     border-radius: var(--im-radius-lg);
     box-shadow: var(--im-shadow-lg);
-    /* Rises and settles once. Transform and opacity only, so it composites on
-       the GPU and stays smooth on a cheap laptop. */
     animation: im-chat-window-in 0.28s var(--im-ease-out) both;
   }
 
-  .im-chat-head { padding: 14px 20px; border-radius: 0; }
-  .im-chat-name { font-size: 1.15rem; }
+  .im-chat-head { padding: 12px 20px 12px 12px; }
 }
 
 @keyframes im-chat-scrim-in {
@@ -464,7 +434,6 @@ html[data-keyboard-open] html[data-keyboard-open] .im-chat-root.chat-pans-keyboa
   to { opacity: 1; transform: none; }
 }
 
-/* Larger displays get a slightly roomier window, still capped. */
 @media (min-width: 1400px) {
   .im-chat-window {
     width: min(820px, 100%);
@@ -474,12 +443,11 @@ html[data-keyboard-open] html[data-keyboard-open] .im-chat-root.chat-pans-keyboa
 
 @media (prefers-reduced-motion: reduce) {
   .im-chat-root,
-  .im-chat-window { animation: none; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .im-chat-starter { transition: none; }
-  .im-chat-starter:hover { transform: none; }
+  .im-chat-window,
+  .im-leave-overlay,
+  .im-leave-card { animation: none; }
+  .im-chat-starter,
+  .im-chat-back { transition: none; }
 }
 
 @media (max-width: 768px) {
@@ -487,3 +455,37 @@ html[data-keyboard-open] html[data-keyboard-open] .im-chat-root.chat-pans-keyboa
     display: none !important;
   }
 }
+
+/* ── Match request confirmation (RequestMatchModal) ─────────────────────── */
+
+.im-request-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+}
+.im-request-card .im-leave-actions { width: 100%; margin-top: 8px; }
+/* No grab bar: this dialog is not draggable, so it should not look it. */
+.im-request-card::before { content: none; }
+.im-request-card { padding-top: 24px; }
+@media (min-width: 640px) {
+  .im-request-card .im-leave-actions { justify-content: center; }
+}
+.im-request-card .im-leave-title { overflow-wrap: anywhere; }
+.im-request-face { position: relative; margin-bottom: 4px; }
+.im-request-face .im-face { border: 3px solid var(--im-surface); box-sizing: content-box; }
+.im-request-mark {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 3px solid var(--im-surface);
+  border-radius: 50%;
+  background: var(--im-blue);
+  color: #FFFFFF;
+}
+.im-request-mark .im-mark { width: 13px; height: 13px; }

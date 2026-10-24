@@ -1,7 +1,8 @@
-import { memo, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { useInstantMatch, useInstantMatchQueueStats } from '../context/InstantMatchContext';
-import { Bolt } from './decor/Decor';
+import { useInstantMatch } from '../context/InstantMatchContext';
+import { MatchMark } from './decor/Decor';
+import { ChatIcon } from './art/icons';
 import '../styles/instant-match.css';
 import '../styles/instant-match-fab.css';
 
@@ -39,7 +40,7 @@ const STATE_CONFIG = {
     announce: 'Instant Match is searching for a partner.',
   },
   reconnecting: {
-    tag: 'Reconnect',
+    tag: 'Reconnecting',
     label: 'Open Instant Match, reconnecting',
     announce: 'Reconnecting. Your Instant Match search is still running.',
   },
@@ -99,24 +100,6 @@ function progressOf(startedAt, expiresAt) {
   return Math.max(0, Math.min(1, (expiresAt - Date.now()) / total));
 }
 
-/**
- * The live queue figure.
- *
- * Split out on purpose: `queue:stats` is pushed whenever anyone anywhere joins
- * or leaves the queue, and subscribing to it from the launcher body meant a
- * stranger queueing re-rendered the launcher — and its countdown ring, badge
- * and halo — on top of someone's feed. Here the push updates one number.
- */
-const QueueCountBadge = memo(function QueueCountBadge() {
-  const queueStats = useInstantMatchQueueStats();
-  if (!(queueStats.count > 1)) return null;
-  return (
-    <span className="im-fab-count" aria-hidden="true">
-      {queueStats.count}
-    </span>
-  );
-});
-
 export default function InstantMatchFAB() {
   const {
     sheetOpen, buttonState, openSheet, matchCountdown, isVerified,
@@ -146,6 +129,11 @@ export default function InstantMatchFAB() {
     isVerified && showRing ? matchCountdown : null,
   );
 
+  // The pill peeks: it shows for a moment whenever the launcher comes back
+  // on screen or changes state (sending a search to the background is both),
+  // then tucks away. Hover and keyboard focus bring it back (the CSS).
+  const peeking = usePeek(`${hidden}:${state}`, !hidden);
+
   if (!isVerified) return null;
 
   // A skeleton, deliberately non-interactive: tapping a launcher whose state
@@ -158,13 +146,13 @@ export default function InstantMatchFAB() {
       >
         <span className="im-fab-wrap">
           <span
-            className="im-fab im-fab-initializing im-fab-bare"
+            className="im-fab im-fab-initializing"
             role="status"
             aria-label={config.label}
             aria-busy="true"
           >
             <span className="im-fab-face">
-              <Bolt className="im-fab-bolt" />
+              <MatchMark className="im-fab-glyph" />
             </span>
           </span>
         </span>
@@ -172,9 +160,10 @@ export default function InstantMatchFAB() {
     );
   }
 
-  // Matched drops the label entirely — the glyph plus the ring say it, and
-  // the word competed with both.
-  const showTag = state !== 'matched';
+  // A state pill sits to the left of the button only when there is news to
+  // read: idle and matched say it with the glyph (and the ring) alone.
+  const showTag = state === 'searching' || state === 'reconnecting'
+    || state === 'ended' || state === 'error';
 
   return (
     <div
@@ -183,13 +172,22 @@ export default function InstantMatchFAB() {
          rather than leaving an invisible focus stop behind. */
       inert={hidden ? '' : undefined}
     >
+      {showTag && (
+        <span
+          className={`im-fab-pill im-fab-pill-${state} ${peeking ? 'is-peek' : ''}`}
+          aria-hidden="true"
+        >
+          {state === 'searching' && <span className="im-live-dot" />}
+          {config.tag}
+        </span>
+      )}
+
       <span className="im-fab-wrap">
-        {/* Scanning halo — the sonar sweep, shrunk to the launcher. Sits
-            behind the button in DOM order so the button's own surface masks
-            all but the rim. */}
+        {/* Searching: a blue arc orbiting the button. One element rotated
+            by transform, so it runs on the compositor. */}
         {showHalo && (
           <span
-            className={`im-fab-halo ${state === 'reconnecting' ? 'im-fab-halo-idlewait' : ''}`}
+            className={`im-fab-orbit ${state === 'reconnecting' ? 'im-fab-orbit-slow' : ''}`}
             aria-hidden="true"
           />
         )}
@@ -200,40 +198,23 @@ export default function InstantMatchFAB() {
 
         <button
           type="button"
-          className={`im-fab im-fab-${state} ${showTag ? '' : 'im-fab-bare'}`}
+          className={`im-fab im-fab-${state}`}
           onClick={openSheet}
           aria-label={config.label}
           data-state={state}
         >
-          {/* The inner face is a separate, untransformed element. The
-              launcher's playful tilt lives on the outer wrapper only, so no
-              transform is ever inherited by the text or the icon — that
-              inheritance was what made both look skewed. */}
           <span className="im-fab-face">
-            {state === 'matched' || state === 'ended'
-              ? <MatchedGlyph />
-              : <Bolt className="im-fab-bolt" />}
+            {state === 'matched'
+              ? <ChatIcon className="im-fab-glyph" />
+              : <MatchMark className="im-fab-glyph" />}
           </span>
-          {showTag && (
-            <span className="im-fab-tag" aria-hidden="true">{config.tag}</span>
-          )}
         </button>
 
-        {/* New messages waiting in the Instant Match chat. Circular, sits on
-            the launcher's rim, and carries the count itself so the badge and
-            the number can never disagree. */}
-        {showUnread && (
-          <span className="im-fab-unread" aria-hidden="true">
-            {unreadCount > 9 ? '9+' : unreadCount}
-          </span>
-        )}
+        {/* New messages in the Instant Match chat: a red dot on the rim. The
+            count is for screen readers (the live region below); visually a
+            dot says "something new" without competing with the ring. */}
+        {showUnread && <span className="im-fab-unread" aria-hidden="true" />}
       </span>
-
-      {/* Everyone on Instant Match right now, this user included — the same
-          global figure the searching screen leads with. Its own component, so
-          the platform-wide `queue:stats` firehose re-renders this one badge
-          rather than the whole launcher sitting over the Home feed. */}
-      {state === 'searching' && <QueueCountBadge />}
 
       {/* Politely announced so a screen-reader user learns what the launcher
           is doing without it stealing focus. */}
@@ -244,6 +225,29 @@ export default function InstantMatchFAB() {
       </span>
     </div>
   );
+}
+
+/** How long the state pill stays out before it tucks away. */
+const PEEK_MS = 1500;
+
+/**
+ * True for PEEK_MS after `key` changes while `active`, then false. One timer
+ * per change; nothing ticks while the pill is simply sitting there.
+ */
+function usePeek(key, active) {
+  const [peeking, setPeeking] = useState(active);
+
+  useEffect(() => {
+    if (!active) {
+      setPeeking(false);
+      return undefined;
+    }
+    setPeeking(true);
+    const id = window.setTimeout(() => setPeeking(false), PEEK_MS);
+    return () => window.clearTimeout(id);
+  }, [key, active]);
+
+  return peeking;
 }
 
 /**
@@ -266,26 +270,6 @@ function CountdownRing({ remaining }) {
         strokeDasharray={RING_CIRCUMFERENCE}
         strokeDashoffset={RING_CIRCUMFERENCE * (1 - remaining)}
       />
-    </svg>
-  );
-}
-
-/** Two chat bubbles struck together — reads as "you have someone" at 26px,
- *  where a second bolt would just look like the idle state. */
-function MatchedGlyph() {
-  return (
-    <svg
-      className="im-fab-bolt"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M20 11.5a7.5 7.5 0 0 1-10.9 6.7L4 20l1.8-4.6A7.5 7.5 0 1 1 20 11.5Z" />
-      <path d="M12.4 7.6 10.4 11h3.2l-2 3.4" />
     </svg>
   );
 }

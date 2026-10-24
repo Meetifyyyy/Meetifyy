@@ -1,9 +1,10 @@
-import { MATCH_ACTIVITIES, accentVars } from '../../constants/matchConstants';
-import { Ticks } from '../decor/Decor';
+import { MATCH_ACTIVITIES } from '../../constants/matchConstants';
+import { ActivityIcon, CheckIcon } from '../art/icons';
 
 /**
- * Activity picker. Each tile is its own little poster, coloured by the
- * activity, so the grid reads as a set of options rather than a list of words.
+ * Activity picker: a grid of quiet tiles, each a duotone icon over its label.
+ * One accent colour — the app's blue — marks the choice. Picking one moves
+ * the flow on, so the tile is the whole action.
  */
 export default function ActivityStep({ selectedActivity, onSelect, activities = MATCH_ACTIVITIES }) {
   return (
@@ -20,15 +21,14 @@ export default function ActivityStep({ selectedActivity, onSelect, activities = 
               role="radio"
               aria-checked={selected}
               className={`im-activity-tile ${selected ? 'is-selected' : ''}`}
-              style={accentVars(activity)}
+              style={{ '--im-i': i }}
               onClick={() => onSelect(activity.id)}
             >
-              {/* Every third tile gets a tick field, so the grid has rhythm
-                  without every cell being identically decorated. */}
-              {i % 3 === 1 && <Ticks className="im-activity-ticks" />}
-              <span className="im-activity-emoji im-emoji" aria-hidden="true">{activity.emoji}</span>
+              <span className="im-activity-icon" aria-hidden="true">
+                <ActivityIcon id={activity.id} className="im-duo" />
+              </span>
               <span className="im-activity-label">{activity.label}</span>
-              {selected && <span className="im-activity-check" aria-hidden="true">✓</span>}
+              <span className="im-activity-check" aria-hidden="true"><CheckIcon /></span>
             </button>
           );
         })}

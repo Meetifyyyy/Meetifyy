@@ -9,6 +9,7 @@ import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useAnimatedHeight } from '../hooks/useAnimatedHeight';
 import { useSearchingNow } from '../hooks/useSearchingNow';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
+import { useSheetDrag } from '@shared/hooks/useSheetDrag';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { KEYBOARD_OVERLAYS_PAGE } from '@shared/utils/keyboardOverlay';
 import PeopleStep from './steps/PeopleStep';
@@ -20,16 +21,19 @@ import SearchingScreen from './queue/SearchingScreen';
 import MatchedPanel from './match/MatchedPanel';
 import EndedPanel from './match/EndedPanel';
 import { resolveSheetPanel } from '../utils/sheetPanel';
-import { Bolt, PosterBackdrop, Squiggle } from './decor/Decor';
+import { PlanScene } from './art/CampusMap';
+import {
+  CloseIcon, BackIcon, ArrowRightIcon, AlertIcon, OfflineIcon,
+} from './art/icons';
 import '../styles/instant-match.css';
 import '../styles/instant-match-sheet.css';
 
 const STEP_COPY = {
   [STEP_PEOPLE]:   { eyebrow: 'Right now', title: "Who's searching",  lede: 'On Instant Match this minute.' },
-  [STEP_ACTIVITY]: { eyebrow: 'Step one', title: "What're you up for?", lede: 'Pick the thing you actually want to do right now.' },
-  [STEP_TIME]:     { eyebrow: 'Step two', title: 'When?',                lede: 'How soon do you want to be sitting across from someone?' },
-  [STEP_DETAILS]:  { eyebrow: 'Step three', title: 'Any detail?',        lede: 'One line. It helps us put you with the right person.' },
-  [STEP_LOCATION]: { eyebrow: 'Last step', title: 'Where are you?',      lede: 'Roughly is fine. Closer matches get found faster.' },
+  [STEP_ACTIVITY]: { title: "What're you up for?", lede: 'Pick the thing you actually want to do right now.' },
+  [STEP_TIME]:     { title: 'When?',               lede: 'How soon do you want to be sitting across from someone?' },
+  [STEP_DETAILS]:  { title: 'Any detail?',         lede: 'One line. It helps us put you with the right person.' },
+  [STEP_LOCATION]: { title: 'Where are you?',      lede: 'Roughly is fine. Closer matches get found faster.' },
 };
 
 export default function InstantMatchSheet() {
@@ -39,7 +43,6 @@ export default function InstantMatchSheet() {
     isVerified, cancelSearch,
   } = useInstantMatch();
 
-  const sheetRef = useRef(null);
   const titleId = useId();
 
   /**
@@ -85,6 +88,13 @@ export default function InstantMatchSheet() {
    * takes the whole surface rather than sitting under a title about people
    * who are not there. Only read while that screen is actually up.
    */
+  /*
+   * Drag down to dismiss on phones. The same close as the scrim, Escape and
+   * Back — so while searching, a drag minimises and the search keeps going.
+   * There is no header button any more; these are the ways out.
+   */
+  const sheetRef = useSheetDrag(closeSheet, { enabled: sheetActive });
+
   const roster = useSearchingNow(sheetActive && step === STEP_PEOPLE);
   const hasPeople = Boolean(roster.people?.length);
 
@@ -217,6 +227,8 @@ export default function InstantMatchSheet() {
     }
   };
 
+  const inForm = !browsing && !searching && !showingMatched && !showingEnded;
+
   const copy = (showingMatched || showingEnded) ? null
     // The roster announces itself only once it has people in it; loading,
     // empty and error each speak for themselves in the body.
@@ -238,7 +250,7 @@ export default function InstantMatchSheet() {
       }}
     >
       <div
-        className={`im-sheet ${searching ? 'im-sheet-searching' : ''}`}
+        className={`im-sheet ${searching ? 'im-sheet-searching' : ''} ${showingMatched || showingEnded ? 'im-sheet-panel' : ''}`}
         ref={sheetRef}
         role="dialog"
         aria-modal="true"
@@ -249,50 +261,51 @@ export default function InstantMatchSheet() {
         data-keyboard-dock={KEYBOARD_OVERLAYS_PAGE ? '' : undefined}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <PosterBackdrop tone={searching ? 'b' : 'a'} />
+        <span className="im-sheet-handle" data-sheet-handle aria-hidden="true" />
 
         <div className="im-sheet-content">
-          <header className="im-sheet-head">
-            <div className="im-sheet-brand">
-              <span className="im-sheet-boltbox"><Bolt /></span>
-              <span className="im-sheet-brandtext">
-                <span className="im-eyebrow">Meetifyy</span>
-                <span className="im-sheet-brandname">Instant Match</span>
-              </span>
-            </div>
+          {inForm && (
+            <ol className="im-progress" aria-label="Progress">
+              {visibleSteps.map((idx, i) => (
+                <li
+                  key={idx}
+                  className={`im-progress-seg ${step === idx ? 'is-active' : ''} ${step > idx ? 'is-done' : ''}`}
+                  aria-current={step === idx ? 'step' : undefined}
+                >
+                  <span className="im-sr-only">
+                    Step {i + 1} of {visibleSteps.length}
+                    {step === idx ? ' (current)' : ''}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          )}
 
-            <button
-              type="button"
-              className="im-sheet-close"
-              onClick={closeSheet}
-              aria-label={searching ? 'Minimise and keep searching' : 'Close Instant Match'}
-            >
-              {searching ? (
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <polyline points="6 9 12 15 18 9" />
-                </svg>
-              ) : (
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
-                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-              )}
-            </button>
-          </header>
+          {inForm && (
+            <PlanScene
+              className="im-sheet-plan"
+              activity={formData.activity}
+              area={formData.location.area}
+              time={formData.timePreference}
+            />
+          )}
 
           {!connected && (
             <p className="im-sheet-offline" role="status">
-              <span className="im-sheet-offline-dot" aria-hidden="true" />
+              <OfflineIcon />
               Reconnecting… your search is safe.
             </p>
           )}
 
           {copy && (
-            <div className="im-sheet-title-block">
-              <span className="im-eyebrow">{copy.eyebrow}</span>
-              <h2 id={titleId} className="im-display im-display-lg im-sheet-title">
-                {copy.title}
-              </h2>
-              <Squiggle className="im-sheet-squiggle" />
+            <div className="im-sheet-title-block" key={`title-${step}`}>
+              {copy.eyebrow && (
+                <span className="im-eyebrow">
+                  <span className="im-live-dot" aria-hidden="true" />
+                  {copy.eyebrow}
+                </span>
+              )}
+              <h2 id={titleId} className="im-title im-title-lg">{copy.title}</h2>
               <p className="im-lede">{copy.lede}</p>
             </div>
           )}
@@ -341,15 +354,15 @@ export default function InstantMatchSheet() {
               tabIndex={-1}
               ref={errorRef}
             >
-              <span className="im-sheet-error-mark" aria-hidden="true">!</span>
-              <span>{error}</span>
+              <AlertIcon />
+              <span className="im-sheet-error-text">{error}</span>
               <button
                 type="button"
                 className="im-sheet-error-dismiss"
                 onClick={dismissError}
                 aria-label="Dismiss this message"
               >
-                ×
+                <CloseIcon />
               </button>
             </div>
           )}
@@ -362,92 +375,74 @@ export default function InstantMatchSheet() {
             * what is left, which is what guarantees these stay on screen.
             */}
           {searching && (
-            <footer className="im-sheet-foot im-sheet-foot-panel">
-              <div className="im-sheet-actions im-sheet-actions-panel">
+            <footer className="im-sheet-foot">
+              <div className="im-sheet-actions">
                 <button
                   type="button"
-                  className="im-btn im-btn-ghost im-btn-sm"
-                  onClick={closeSheet}
+                  className="im-sheet-cancel"
+                  onClick={cancelSearch}
+                  disabled={busy || status !== 'searching'}
+                  aria-label={busy ? 'Stopping your search' : 'Cancel search'}
+                  title="Cancel search"
                 >
-                  Keep searching in background
+                  <CloseIcon />
                 </button>
                 <button
                   type="button"
-                  className="im-btn im-btn-sm im-searching-cancel"
-                  onClick={cancelSearch}
-                  disabled={busy || status !== 'searching'}
+                  className="im-btn im-btn-primary im-sheet-next"
+                  onClick={closeSheet}
                 >
-                  {busy ? 'Stopping…' : 'Cancel search'}
+                  Search in background
                 </button>
               </div>
             </footer>
           )}
 
           {browsing && !showingMatched && !showingEnded && (
-            <footer className="im-sheet-foot im-sheet-foot-people">
+            <footer className="im-sheet-foot">
               <div className="im-sheet-actions">
                 <button
                   type="button"
-                  className="im-btn im-btn-go"
+                  className="im-btn im-btn-primary im-btn-block"
                   onClick={() => setStep(STEP_ACTIVITY)}
                 >
                   Find my match
-                  <Bolt className="im-btn-bolt" />
+                  <ArrowRightIcon />
                 </button>
               </div>
             </footer>
           )}
 
-          {!browsing && !searching && !showingMatched && !showingEnded && (
+          {inForm && (
             <footer className="im-sheet-foot">
-              <ol className="im-steps" aria-label="Progress">
-                {visibleSteps.map((idx, i) => (
-                  <li
-                    key={idx}
-                    className={`im-step-dot ${step === idx ? 'is-active' : ''} ${step > idx ? 'is-done' : ''}`}
-                    aria-current={step === idx ? 'step' : undefined}
-                  >
-                    <span className="im-sr-only">
-                      Step {i + 1} of {visibleSteps.length}
-                      {step === idx ? ' (current)' : ''}
-                    </span>
-                  </li>
-                ))}
-              </ol>
-
               <div className="im-sheet-actions">
-                {step > STEP_ACTIVITY ? (
-                  <button type="button" className="im-btn im-btn-ghost im-btn-sm" onClick={goBack}>
-                    Back
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    className="im-btn im-btn-ghost im-btn-sm"
-                    onClick={() => setStep(STEP_PEOPLE)}
-                  >
-                    Back
-                  </button>
-                )}
+                <button
+                  type="button"
+                  className="im-sheet-back"
+                  onClick={step > STEP_ACTIVITY ? goBack : () => setStep(STEP_PEOPLE)}
+                  aria-label="Back"
+                >
+                  <BackIcon />
+                </button>
 
                 {step < STEP_LOCATION ? (
                   <button
                     type="button"
-                    className="im-btn im-btn-primary"
+                    className="im-btn im-btn-primary im-sheet-next"
                     onClick={goNext}
                     disabled={nextDisabled()}
                   >
-                    Next
+                    {step === STEP_DETAILS && !formData.optionalDetail ? 'Skip' : 'Next'}
                   </button>
                 ) : (
                   <button
                     type="button"
-                    className="im-btn im-btn-go"
+                    className="im-btn im-btn-primary im-sheet-next"
                     onClick={startSearch}
                     disabled={busy || !formData.activity || !formData.timePreference}
                   >
                     {busy ? 'Starting…' : 'Find my match'}
-                    {!busy && <Bolt className="im-btn-bolt" />}
+                    {!busy && <ArrowRightIcon />}
                   </button>
                 )}
               </div>

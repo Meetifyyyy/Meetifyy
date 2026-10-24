@@ -71,7 +71,7 @@ vi.mock('@shared/context/AuthContext', () => ({
   useAuth: () => ({ currentUser: CURRENT_USER, isLoggedIn: true, loading: false }),
   AuthProvider: ({ children }) => children,
 }));
-vi.mock('@shared/lib/idb', () => ({ idbGet: async () => null, idbSet: async () => {}, idbDelete: async () => {} }));
+vi.mock('@shared/lib/idb', () => ({ idbGet: async () => null, idbSet: async () => {}, idbDelete: async () => {}, idbEpoch: () => 0 }));
 vi.mock('@stores/useGlobalSocketStore', () => ({
   useGlobalSocketStore: Object.assign((sel) => { const st = { socket: null, isConnected: true }; return sel ? sel(st) : st; }, {
     getState: () => ({ socket: null, isConnected: true }),
@@ -86,9 +86,9 @@ vi.mock('@stores/useGlobalSocketStore', () => ({
 const counts = { radar: 0, fab: 0, activity: 0, time: 0, location: 0 };
 globalThis.__IM_COUNTS = counts;
 
-vi.mock('@features/instant-match/components/queue/SearchRadar', async (io) => {
-  const mod = await io(); const Real = mod.default;
-  return { ...mod, default: (p) => { globalThis.__IM_COUNTS.radar++; return <Real {...p} />; } };
+vi.mock('@features/instant-match/components/art/CampusMap', async (io) => {
+  const mod = await io(); const Real = mod.SearchScene;
+  return { ...mod, SearchScene: (p) => { globalThis.__IM_COUNTS.radar++; return <Real {...p} />; } };
 });
 vi.mock('@features/instant-match/components/steps/ActivityStep', async (io) => {
   const mod = await io(); const Real = mod.default;
@@ -188,7 +188,7 @@ describe('Instant Match', () => {
       radarRenders: counts.radar,
       queueJoinEmits: emitted.filter((e) => e[0] === 'queue:join').length,
       actualMs: +rec.get('im').actual.toFixed(2),
-      onScreen: document.querySelector('.im-radar') ? 'SearchingScreen' : 'other',
+      onScreen: document.querySelector('.im-scene-search') ? 'SearchingScreen' : 'other',
       status: ctl.status,
     }));
 

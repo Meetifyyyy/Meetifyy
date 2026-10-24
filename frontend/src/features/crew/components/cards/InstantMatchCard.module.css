@@ -1,200 +1,116 @@
 /**
- * Instant Match — one low strip, poster-loud.
+ * Instant Match — one low Meetifyy card.
  *
- * It sits above a column of activity cards, so it earns its place by being
- * short: everything is on one row. The character comes from three flat marks —
- * the lime bolt disc, a striped wedge running off the right edge, and a small
- * star — rather than from height, illustration or shadow.
- *
- * Light and dark are painted explicitly. `.im-scope`'s own dark values are
- * tuned for a full-screen Instant Match surface; this strip has to live in a
- * column of the app's cards, so it takes a matching dark ground and lifts the
- * ink and accents onto it. The one thing that never changes is the mark: the
- * lime disc and its ink bolt are the feature's signature in both themes.
+ * Neutral surface, one blue accent, Inter. The only texture is a slice of the
+ * campus-map scene on the right, masked so it fades out before the copy.
+ * Colours come from `.im-scope`, which already carries light and dark values.
  */
 .strip {
   composes: im-scope from global;
-  --strip-paper: #FFFBF2;
-  --strip-ink: #16130E;
-  --strip-ink-soft: #4A4238;
-  --strip-edge: rgba(22, 19, 14, 0.2);
-  --strip-stripe: rgba(109, 59, 235, 0.2);
-  --strip-star: #FFC44D;
-  --strip-cta: #16130E;
-  --strip-cta-ink: #FFFBF2;
-  --strip-mark-ring: rgba(22, 19, 14, 0.55);
 
   position: relative;
+  isolation: isolate;
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 0.875rem;
   width: 100%;
-  padding: 0.9rem 1rem;
-  border: 1.5px solid var(--strip-edge);
-  border-radius: var(--im-radius, 18px);
-  background: var(--strip-paper);
+  min-height: 76px;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--im-line);
+  border-radius: var(--im-radius);
+  background: var(--im-surface);
+  color: var(--im-text);
+  box-shadow: var(--im-shadow-sm);
   overflow: hidden;
   cursor: pointer;
   text-align: left;
-  font-family: var(--im-body);
+  font-family: var(--im-font);
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.2s var(--im-ease), border-color 0.2s var(--im-ease);
 }
 
-:global([data-theme='dark']) .strip {
-  --strip-paper: #1E1B18;
-  --strip-ink: #FFF8EA;
-  --strip-ink-soft: #C4BAAA;
-  --strip-edge: rgba(255, 248, 234, 0.16);
-  /* A saturated ink has almost no contrast on near-black, so the stripes and
-     the marks lift to the light end of the palette. */
-  --strip-stripe: rgba(169, 139, 255, 0.26);
-  --strip-star: #FFD37A;
-  --strip-cta: #C6F04A;
-  --strip-cta-ink: #16130E;
-  /* The disc and bolt stay as they are; only the ring drawn *around* them on
-     the page's ground has to flip, or it disappears into the dark. */
-  --strip-mark-ring: rgba(255, 248, 234, 0.4);
-}
+.strip:hover { border-color: rgba(var(--im-blue-rgb), 0.35); }
+.strip:active { transform: scale(0.99); }
+.strip:focus-visible { outline: 2px solid var(--im-blue); outline-offset: 2px; }
 
-/* Diagonal riso stripes, cut on a slant and bleeding off the right edge. This
-   is where most of the card's character lives, so it is drawn rather than
-   textured: hard-edged bands, no blur, no gradient falloff. */
-.wedge {
+.scene {
   position: absolute;
   top: 0;
   right: 0;
   bottom: 0;
   width: 46%;
-  background-image: repeating-linear-gradient(
-    -58deg,
-    var(--strip-stripe) 0,
-    var(--strip-stripe) 7px,
-    transparent 7px,
-    transparent 18px
-  );
-  clip-path: polygon(22% 0, 100% 0, 100% 100%, 0 100%);
+  z-index: -1;
   pointer-events: none;
+  opacity: 0.85;
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, #000 60%);
+  mask-image: linear-gradient(to right, transparent 0%, #000 60%);
 }
 
-/* Sits where the wedge begins, so the two read as one mark. */
-.strip .star {
-  position: absolute;
-  top: 13px;
-  right: 41%;
-  width: 26px;
-  height: 26px;
-  color: var(--strip-star);
-  transform: rotate(-10deg);
-  pointer-events: none;
-}
-
-/* ── The mark ────────────────────────────────────────────────────────────── */
 .mark {
-  position: relative;
-  z-index: 1;
-  flex-shrink: 0;
-  width: 48px;
-  height: 48px;
   display: grid;
   place-items: center;
-  border-radius: 50%;
-  /* Pinned, not tokenised: identical in both themes on purpose. */
-  background: #C6F04A;
-  transform: rotate(-6deg);
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border-radius: var(--im-radius-sm);
+  background: var(--im-blue-tint);
+  color: var(--im-blue);
 }
+.markGlyph { width: 22px; height: 22px; }
 
-/* A second circle offset from the disc — the off-register print look. */
-.markRing {
-  position: absolute;
-  inset: -5px;
-  border: 1.5px solid var(--strip-mark-ring);
-  border-radius: 50%;
-}
-
-.markBolt {
-  position: relative;
-  width: 25px;
-  height: 25px;
-  color: #16130E;
-}
-
-/* ── Copy ────────────────────────────────────────────────────────────────── */
 .copy {
-  position: relative;
-  z-index: 1;
-  flex: 1;
-  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
+  flex: 1;
 }
 
 .title {
-  font-family: var(--im-display);
-  font-weight: 400;
-  font-size: 1.22rem;
-  line-height: 1.05;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  color: var(--strip-ink);
+  font-size: 0.98rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  color: var(--im-text);
 }
 
 .lede {
-  font-size: 0.8rem;
+  font-size: 0.84rem;
   line-height: 1.35;
-  color: var(--strip-ink-soft);
-  text-wrap: pretty;
+  color: var(--im-text-3);
 }
 
-/* ── The action ──────────────────────────────────────────────────────────── */
 .cta {
-  position: relative;
-  z-index: 1;
-  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 0.62rem 1.05rem;
+  gap: 6px;
+  flex-shrink: 0;
+  height: 36px;
+  padding: 0 14px;
   border-radius: 999px;
-  background: var(--strip-cta);
-  color: var(--strip-cta-ink);
-  font-family: var(--im-display);
-  font-size: 0.85rem;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  line-height: 1;
+  background: var(--im-blue);
+  color: var(--im-on-blue);
+  font-size: 0.84rem;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(var(--im-blue-rgb), 0.22);
+  transition: transform 0.2s var(--im-ease), background-color 0.2s var(--im-ease);
+}
+.ctaArrow { width: 15px; height: 15px; transition: transform 0.2s var(--im-ease); }
+
+.strip:hover .cta { background: var(--im-blue-hover); }
+.strip:hover .ctaArrow { transform: translateX(2px); }
+
+@media (max-width: 380px) {
+  .lede { display: none; }
 }
 
-.ctaArrow {
-  width: 14px;
-  height: 14px;
+@media (hover: none) {
+  .strip:hover .ctaArrow { transform: none; }
 }
 
-/* Nothing on this strip moves on hover or press, on any device: no lift, no
-   nudge, no scale. The colour blocks and the cursor are the whole affordance. */
-
-@media (max-width: 760px) {
-  .strip { gap: 0.85rem; }
-
-  /* The star lands under the copy at this width, and the wedge does the job on
-     its own. */
-  .strip .star { display: none; }
-}
-
-@media (max-width: 560px) {
-  .strip {
-    flex-wrap: wrap;
-    padding: 0.9rem;
-  }
-
-  /* Kept narrow so the stripes stay behind the empty right side rather than
-     running under the copy, which is what the extra width did. */
-  .wedge { width: 42%; }
-
-  /* The action drops to its own full-width row rather than squeezing the copy
-     into a three-line column beside it. */
-  .cta {
-    order: 3;
-    width: 100%;
-    justify-content: center;
-  }
+@media (prefers-reduced-motion: reduce) {
+  .strip,
+  .cta,
+  .ctaArrow { transition: none; }
 }

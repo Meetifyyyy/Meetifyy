@@ -1,16 +1,17 @@
 import { useInstantMatch } from '@features/instant-match/context/InstantMatchContext';
-import { Bolt, Starburst } from '@features/instant-match/components/decor/Decor';
+import { MatchMark } from '@features/instant-match/components/decor/Decor';
+import { MeetScene } from '@features/instant-match/components/art/CampusMap';
+import { ArrowRightIcon } from '@features/instant-match/components/art/icons';
 import '@features/instant-match/styles/instant-match.css';
 import styles from './InstantMatchCard.module.css';
 
 /**
  * The crew page's entry point into Instant Match.
  *
- * One low strip: the bolt mark, a line of display type, a line of copy, and the
- * action, with a striped riso wedge running off the right edge. Short by
- * design — it sits above a column of activity cards and must not read as one —
- * and deliberately unlike the Create Activity card (tall, portrait, blue),
- * because the two start different things.
+ * One low Meetifyy card: the feature mark in a blue-tint square, a title and
+ * one line of copy, and a "Match me" chip. A faded slice of the campus-map
+ * scene sits behind the right edge as quiet texture. Short by design — it
+ * sits above a column of activity cards and must not read as one.
  *
  * The whole strip is the button, and the tap opens the same sheet the floating
  * launcher does, so an in-flight search or a live match is picked up where the
@@ -28,12 +29,10 @@ export default function InstantMatchCard({ className = '' }) {
       onClick={openSheet}
       aria-label="Start an Instant Match"
     >
-      <span className={styles.wedge} aria-hidden="true" />
-      <Starburst className={styles.star} points={4} />
+      <MeetScene variant="match" className={styles.scene} />
 
-      <span className={styles.mark}>
-        <span className={styles.markRing} aria-hidden="true" />
-        <Bolt className={styles.markBolt} />
+      <span className={styles.mark} aria-hidden="true">
+        <MatchMark className={styles.markGlyph} />
       </span>
 
       <span className={styles.copy}>
@@ -43,10 +42,7 @@ export default function InstantMatchCard({ className = '' }) {
 
       <span className={styles.cta}>
         Match me
-        <svg className={styles.ctaArrow} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <line x1="5" y1="12" x2="19" y2="12" />
-          <polyline points="12 5 19 12 12 19" />
-        </svg>
+        <ArrowRightIcon className={styles.ctaArrow} />
       </span>
     </button>
   );

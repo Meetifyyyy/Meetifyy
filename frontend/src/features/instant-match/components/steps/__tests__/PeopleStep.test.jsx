@@ -15,7 +15,10 @@ import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 vi.mock('@shared/components/avatar/Avatar', () => ({
   getProcessedAvatarUrl: (key) => (key ? `https://cdn.test/${key}` : ''),
 }));
+vi.mock('@shared/hooks/useScrollLock', () => ({ useScrollLock: () => {} }));
+vi.mock('@shared/hooks/useOverlayBack', () => ({ useOverlayBack: () => {} }));
 
+const { InstantMatchContext } = await import('../../../context/InstantMatchContext');
 const { default: PeopleStep } = await import('../PeopleStep');
 
 const person = (overrides = {}) => ({
@@ -31,8 +34,17 @@ const person = (overrides = {}) => ({
   ...overrides,
 });
 
+const requestMatch = vi.fn(async () => true);
+
 const show = (props = {}) =>
-  render(<PeopleStep people={[]} loading={false} error={null} retry={() => {}} {...props} />);
+  render(
+    <InstantMatchContext.Provider value={{ requestMatch, busy: false }}>
+      <PeopleStep people={[]} loading={false} error={null} retry={() => {}} {...props} />
+    </InstantMatchContext.Provider>,
+  );
+
+/** The list sits one tap behind the summary box. */
+const openList = () => fireEvent.click(screen.getByRole('button', { name: /searching/i }));
 
 afterEach(cleanup);
 
@@ -46,6 +58,7 @@ describe('PeopleStep', () => {
         optionalDetail: 'the one near the gate',
       })],
     });
+    openList();
 
     expect(screen.getByText('Riya')).toBeTruthy();
     expect(screen.getByText('Coffee')).toBeTruthy();
@@ -57,14 +70,39 @@ describe('PeopleStep', () => {
 
   it('omits a line entirely when that person gave nothing for it', () => {
     show({ people: [person()] });
+    openList();
     // No area was given, so no area is claimed — not "unknown", not a blank.
     expect(screen.queryByText(/📍/)).toBeNull();
   });
 
-  it('never makes a row pressable', () => {
+  it('folds everyone into one summary before the list is opened', () => {
+    show({ people: [person(), person({ user: { ...person().user, id: 'u2', displayName: 'Sana' } })] });
+    expect(screen.getByText('Riya and Sana are searching')).toBeTruthy();
+    // The rows themselves are one tap away, not on the first screen.
+    expect(screen.queryByRole('list', { name: /people searching/i })).toBeNull();
+  });
+
+  it('asks before sending a match request, then sends it for that person', () => {
+    requestMatch.mockClear();
+    const riya = person();
+    show({ people: [riya] });
+    openList();
+
+    fireEvent.click(screen.getByRole('button', { name: /send a match request to riya/i }));
+    // Nothing is sent on the first tap.
+    expect(requestMatch).not.toHaveBeenCalled();
+    expect(screen.getByRole('alertdialog')).toBeTruthy();
+    expect(screen.getByText('Send a match request to @riya?')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /send request/i }));
+    expect(requestMatch).toHaveBeenCalledWith(riya);
+  });
+
+  it('slides back from the list to the summary', () => {
     show({ people: [person()] });
-    expect(screen.queryByRole('button')).toBeNull();
-    expect(screen.queryByRole('link')).toBeNull();
+    openList();
+    fireEvent.click(screen.getByRole('button', { name: /^back$/i }));
+    expect(screen.getByText('Riya is searching')).toBeTruthy();
   });
 
   it('says so in a word when the queue is empty', () => {

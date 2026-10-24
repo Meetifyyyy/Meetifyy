@@ -1,0 +1,343 @@
+/**
+ * The campus map (components/art/CampusMap.jsx).
+ *
+ * Palette first, both themes, then the pieces. Walkers and pins move by
+ * `transform`, so the motion composites. Inside an SVG a CSS `px` in a
+ * transform is one user unit, which lets the keyframes reuse route numbers.
+ */
+
+.im-scope {
+  /* A campus blueprint in the app's blue: the map is a bold colour field,
+     buildings are lighter blocks on it, landmarks are pastel, and everything
+     that is *you* (pins, routes, walkers) is white or yellow on top. */
+  --im-map-road: #2459E6;
+  --im-map-road-2: #1D4ED8;
+  --im-map-lane: rgba(255, 255, 255, 0.22);
+  --im-bld-roof: #3E6EF0;
+  --im-bld-wall: #1A43BE;
+  --im-bld-shadow: rgba(10, 25, 80, 0.28);
+
+  --im-lm-blue-roof: #DCE7FF;    --im-lm-blue-wall: #9DB8F7;    --im-lm-blue-mark: #1D4ED8;
+  --im-lm-violet-roof: #E7DEFF;  --im-lm-violet-wall: #AF9BF0;  --im-lm-violet-mark: #6D28D9;
+  --im-lm-amber-roof: #FFE7B8;   --im-lm-amber-wall: #E9B865;   --im-lm-amber-mark: #B45309;
+  --im-lm-rose-roof: #FFD9E2;    --im-lm-rose-wall: #EBA2B4;    --im-lm-rose-mark: #BE123C;
+
+  --im-map-park: #34C68E;
+  --im-map-tree: #A7F3D0;
+  --im-map-tree-shade: rgba(10, 25, 80, 0.25);
+  --im-field-grass: #2FB57F;
+  --im-field-line: rgba(255, 255, 255, 0.85);
+  --im-gate: #FFFFFF;
+
+  --im-lit-roof: #FDE047;
+  --im-lit-wall: #D9A90B;
+  --im-lit-mark: #713F12;
+
+  --im-map-route: #FFFFFF;
+  --im-map-route-soft: rgba(255, 255, 255, 0.55);
+  --im-map-accent: #FDE047;
+  --im-pin-ring: #FFFFFF;
+  --im-pin-shade: rgba(10, 25, 80, 0.4);
+}
+
+[data-theme='dark'] .im-scope {
+  --im-map-road: #18359A;
+  --im-map-road-2: #132B80;
+  --im-map-lane: rgba(255, 255, 255, 0.14);
+  --im-bld-roof: #284AB8;
+  --im-bld-wall: #11286F;
+  --im-bld-shadow: rgba(0, 0, 0, 0.4);
+
+  --im-lm-blue-roof: #B9CCFF;    --im-lm-blue-wall: #6F8FE0;
+  --im-lm-violet-roof: #CDBEFF;  --im-lm-violet-wall: #8C74DE;
+  --im-lm-amber-roof: #FAD592;   --im-lm-amber-wall: #C9963F;
+  --im-lm-rose-roof: #F9BFCD;    --im-lm-rose-wall: #C97A8E;
+
+  --im-map-park: #1F9A6C;
+  --im-map-tree: #6EE7B7;
+  --im-field-grass: #1C8A61;
+  --im-field-line: rgba(255, 255, 255, 0.6);
+
+  --im-map-route: #FFFFFF;
+  --im-map-route-soft: rgba(255, 255, 255, 0.45);
+  --im-pin-ring: #FFFFFF;
+  --im-pin-shade: rgba(0, 0, 0, 0.45);
+}
+
+/* ── Frame ───────────────────────────────────────────────────────────────── */
+
+.im-scene {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--im-map-road);
+  color-scheme: dark;
+}
+
+/* Light falls from the top-left: a soft vignette gives the flat map depth. */
+.im-scene::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background:
+    radial-gradient(120% 90% at 20% 0%, rgba(255, 255, 255, 0.14), transparent 55%),
+    radial-gradient(100% 80% at 100% 100%, rgba(8, 20, 70, 0.32), transparent 60%);
+  pointer-events: none;
+}
+
+.im-map {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* ── Ground ──────────────────────────────────────────────────────────────── */
+
+.im-map-road { fill: var(--im-map-road); }
+.im-map-lane path {
+  fill: none;
+  stroke: var(--im-map-lane);
+  stroke-width: 1.4;
+  stroke-dasharray: 5 6;
+  stroke-linecap: round;
+}
+
+.im-bld-shadow { fill: var(--im-bld-shadow); }
+.im-bld-wall { fill: var(--im-bld-wall); }
+.im-bld-roof { fill: var(--im-bld-roof); }
+
+.im-bld.is-blue   { --im-bld-roof: var(--im-lm-blue-roof);   --im-bld-wall: var(--im-lm-blue-wall); }
+.im-bld.is-violet { --im-bld-roof: var(--im-lm-violet-roof); --im-bld-wall: var(--im-lm-violet-wall); }
+.im-bld.is-amber  { --im-bld-roof: var(--im-lm-amber-roof);  --im-bld-wall: var(--im-lm-amber-wall); }
+.im-bld.is-rose   { --im-bld-roof: var(--im-lm-rose-roof);   --im-bld-wall: var(--im-lm-rose-wall); }
+
+.im-landmark-mark { color: var(--im-lm-blue-mark); }
+.im-landmark.is-violet .im-landmark-mark { color: var(--im-lm-violet-mark); }
+.im-landmark.is-amber .im-landmark-mark { color: var(--im-lm-amber-mark); }
+.im-landmark.is-rose .im-landmark-mark { color: var(--im-lm-rose-mark); }
+
+/* The chosen area lights up in the app's blue. */
+.im-bld.is-lit { --im-bld-roof: var(--im-lit-roof); --im-bld-wall: var(--im-lit-wall); }
+.im-landmark.is-lit .im-landmark-mark { color: var(--im-lit-mark); }
+.im-bld-roof, .im-bld-wall, .im-field-grass, .im-gate-post, .im-landmark-mark {
+  transition: fill 0.35s ease, color 0.35s ease, stroke 0.35s ease;
+}
+
+.im-map-park { fill: var(--im-map-park); }
+.im-map-tree { fill: var(--im-map-tree); }
+.im-map-tree-shadow { fill: var(--im-map-tree-shade); }
+
+.im-field-grass { fill: var(--im-field-grass); }
+.im-field-line { fill: none; stroke: var(--im-field-line); stroke-width: 1.4; }
+.im-field.is-lit .im-field-grass { fill: var(--im-lit-roof); }
+.im-field.is-lit .im-field-line { stroke: var(--im-lit-wall); }
+
+.im-gate-post { fill: var(--im-gate); }
+.im-gate-arch { fill: none; stroke: var(--im-gate); stroke-width: 3; stroke-linecap: round; }
+.im-gate.is-lit .im-gate-post { fill: var(--im-lit-roof); }
+.im-gate.is-lit .im-gate-arch { stroke: var(--im-lit-roof); }
+
+/* ── Routes ──────────────────────────────────────────────────────────────── */
+
+.im-map-trail {
+  fill: none;
+  stroke: var(--im-map-route-soft);
+  stroke-width: 3;
+  stroke-dasharray: 0.1 7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.im-map-route {
+  fill: none;
+  stroke: var(--im-map-route);
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+  animation: im-route-draw 0.9s var(--im-ease-out) both;
+}
+.im-map-route-b { animation-delay: 0.08s; }
+
+@keyframes im-route-draw {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+
+.im-scene-ended .im-map-route {
+  stroke: rgba(255, 255, 255, 0.45);
+  stroke-width: 3;
+  stroke-dasharray: 0.012 0.03;
+  animation: none;
+}
+
+.im-map-open {
+  fill: rgba(255, 255, 255, 0.12);
+  stroke: var(--im-map-route);
+  stroke-width: 1.6;
+  stroke-dasharray: 3 4;
+}
+.im-scene-empty .im-map-open {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: im-map-breathe 3s ease-in-out infinite;
+}
+@keyframes im-map-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.14); }
+}
+
+/* ── Pins ────────────────────────────────────────────────────────────────── */
+
+.im-pin { --im-pin: var(--im-pin-l, #1D4ED8); }
+.im-pin-shadow { fill: var(--im-pin-shade); }
+.im-pin-body { fill: #FFFFFF; stroke: var(--im-pin); stroke-width: 0; }
+.im-pin-glyph { color: var(--im-pin); }
+.im-pin-dot { fill: var(--im-pin); }
+
+/* Your own pin is the loudest thing on the map: yellow, with a dark glyph. */
+.im-pin-you .im-pin-body { fill: var(--im-map-accent); }
+.im-pin-you .im-pin-glyph { color: #1E293B; }
+.im-pin-you .im-pin-dot { fill: #1E293B; }
+.im-pin-you { animation: im-pin-bob 2.6s ease-in-out infinite; }
+@keyframes im-pin-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2.5px); }
+}
+
+.im-pin-ghost .im-pin-body {
+  fill: rgba(255, 255, 255, 0.18);
+  stroke: #FFFFFF;
+  stroke-width: 1.6;
+  stroke-dasharray: 3 3;
+}
+.im-pin-ghost .im-pin-dot { fill: #FFFFFF; }
+
+/* A pin gliding to a new area. */
+.im-pin-move { transition: transform 0.6s var(--im-spring); }
+
+/* A new activity pops into the pin. */
+.im-pin-pop {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: im-pin-pop 0.45s var(--im-spring) both;
+}
+@keyframes im-pin-pop {
+  from { transform: scale(0.55); }
+  to { transform: scale(1); }
+}
+
+/* Roster pins drop in, one after another. */
+.im-pin-drop { animation: im-pin-drop 0.5s var(--im-spring) both; }
+@keyframes im-pin-drop {
+  from { opacity: 0; transform: translateY(-14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* "Later today" warms the light over the plan. */
+.im-scene-plan::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(180deg, rgba(251, 146, 60, 0.18), rgba(251, 191, 36, 0.06));
+  opacity: 0;
+  transition: opacity 0.5s ease;
+  pointer-events: none;
+}
+.im-scene-plan[data-time='today']::after { opacity: 1; }
+
+/* ── Searching ───────────────────────────────────────────────────────────── */
+
+.im-map-signal {
+  fill: none;
+  stroke: var(--im-map-route);
+  stroke-width: 1.6;
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  animation: im-map-signal 3.2s var(--im-ease-out) infinite;
+}
+.im-map-signal-2 { animation-delay: -1.6s; }
+@keyframes im-map-signal {
+  0% { transform: scale(1); opacity: 0.55; }
+  100% { transform: scale(4); opacity: 0; }
+}
+
+.im-map-walker { opacity: 0; animation: 6.4s linear infinite; }
+.im-map-walker circle { fill: var(--im-map-accent); stroke: #FFFFFF; stroke-width: 2.5; }
+.im-map-walker-west  { animation-name: im-walk-west;  animation-delay: 0s; }
+.im-map-walker-north { animation-name: im-walk-north; animation-delay: -1.6s; }
+.im-map-walker-east  { animation-name: im-walk-east;  animation-delay: -3.2s; }
+.im-map-walker-south { animation-name: im-walk-south; animation-delay: -4.8s; }
+
+/* West: (-10,36) → (160,36) → (160,100). 170 + 64 units. */
+@keyframes im-walk-west {
+  0% { transform: translate(-10px, 36px); opacity: 0; }
+  6% { opacity: 1; }
+  64% { transform: translate(160px, 36px); }
+  86% { transform: translate(160px, 100px); opacity: 1; }
+  92%, 100% { transform: translate(160px, 100px); opacity: 0; }
+}
+/* East: (330,164) → (160,164) → (160,100). */
+@keyframes im-walk-east {
+  0% { transform: translate(330px, 164px); opacity: 0; }
+  6% { opacity: 1; }
+  64% { transform: translate(160px, 164px); }
+  86% { transform: translate(160px, 100px); opacity: 1; }
+  92%, 100% { transform: translate(160px, 100px); opacity: 0; }
+}
+/* North: (260,-10) → (260,100) → (160,100). 110 + 100 units. */
+@keyframes im-walk-north {
+  0% { transform: translate(260px, -10px); opacity: 0; }
+  6% { opacity: 1; }
+  46% { transform: translate(260px, 100px); }
+  86% { transform: translate(160px, 100px); opacity: 1; }
+  92%, 100% { transform: translate(160px, 100px); opacity: 0; }
+}
+/* South: (60,210) → (60,100) → (160,100). */
+@keyframes im-walk-south {
+  0% { transform: translate(60px, 210px); opacity: 0; }
+  6% { opacity: 1; }
+  46% { transform: translate(60px, 100px); }
+  86% { transform: translate(160px, 100px); opacity: 1; }
+  92%, 100% { transform: translate(160px, 100px); opacity: 0; }
+}
+
+.im-scene[data-paused='true'] .im-map-walker,
+.im-scene[data-paused='true'] .im-map-signal { animation-play-state: paused; }
+
+/* ── Overlays ────────────────────────────────────────────────────────────── */
+
+/* Whatever sits on the meeting point: avatars, a node, a mark. */
+.im-scene-center {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+/* Kept as a hook; a vivid map reads best as a crisp, rounded band. */
+.im-scene-fade::after { content: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .im-map-walker { display: none; }
+  .im-map-route { stroke-dashoffset: 0; }
+  .im-pin-move { transition: none; }
+}
+
+/* Faces standing on the map: solid, ringed in white, so they lift off it. */
+.im-scene .im-face {
+  background: #E2EBFF;
+  color: #1D4ED8;
+}
+.im-scene .im-pair-face,
+.im-scene .im-ended-face { border-color: #FFFFFF; }
+.im-scene .im-pair-node { border-color: #FFFFFF; }

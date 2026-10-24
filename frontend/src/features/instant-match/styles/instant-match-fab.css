@@ -1,4 +1,6 @@
-/* Instant Match launcher — a soft poster sticker with a scanning rim. */
+/* Instant Match launcher — a 56px Meetifyy-blue button with the feature's
+   mark, and a small state pill to its left when there is something to say.
+   Every motion here is transform or opacity. */
 
 .im-fab-dock {
   position: fixed;
@@ -7,6 +9,8 @@
   z-index: 880;
   display: flex;
   align-items: center;
+  gap: 10px;
+  font-family: var(--im-font);
   transition: opacity 0.28s var(--im-ease-out), transform 0.28s var(--im-ease-out);
 }
 
@@ -16,109 +20,132 @@
   pointer-events: none;
 }
 
-/**
- * The tilt lives here, on a wrapper, and NOT on the button.
- *
- * It used to sit on `.im-fab` itself, so every child — the bolt, the label —
- * inherited the -3deg rotation and rendered on a skewed pixel grid: text with
- * fringed, slightly wavy edges that read as "crooked" at every size. Worse,
- * the hover/active/breathe rules each restated `rotate(-3deg)` alongside
- * their own transform, so any one of them going out of step visibly jolted
- * the button. Keeping the rotation one level up means the button's own
- * transforms compose cleanly and its contents are never rotated at all.
- */
 .im-fab-wrap {
   position: relative;
   display: block;
-  transform: rotate(-3deg);
 }
 
 .im-fab {
   position: relative;
-  /* Above both the halo and the countdown ring, so neither can paint over
-     the glyph or the label. */
   z-index: 2;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 1px;
-  width: 66px;
-  height: 66px;
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
   padding: 0;
   border: 0;
   border-radius: 50%;
-  background: var(--im-lime);
-  color: #16130E;
+  background: var(--im-blue);
+  color: var(--im-on-blue);
   cursor: pointer;
-  box-shadow: var(--im-shadow);
-  transition: transform 0.2s var(--im-ease), box-shadow 0.2s var(--im-ease),
-    background-color 0.2s var(--im-ease);
-  /* Snap the label to whole pixels. Combined with the un-rotated children
-     above, this is what keeps the text crisp and perfectly horizontal. */
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
+  box-shadow: 0 6px 18px rgba(var(--im-blue-rgb), 0.28), 0 2px 6px rgba(15, 23, 42, 0.12);
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.2s var(--im-ease), background-color 0.2s var(--im-ease);
 }
 
-.im-fab:hover { transform: translateY(-2px); box-shadow: var(--im-shadow-lg); }
-.im-fab:active { transform: scale(0.95); box-shadow: var(--im-shadow-sm); }
+.im-fab:hover { transform: translateY(-2px); background: var(--im-blue-hover); }
+.im-fab:active { transform: scale(0.94); }
 
 .im-fab:focus-visible {
-  outline: 3px solid var(--im-ink, #16130E);
-  outline-offset: 3px;
+  outline: 2px solid var(--im-blue);
+  outline-offset: 4px;
 }
 
 .im-fab-face {
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
-  /* Counter-rotate the wrapper's tilt so the glyph itself stands upright. */
-  transform: rotate(3deg);
+  width: 24px;
+  height: 24px;
 }
-.im-fab-bolt { width: 26px; height: 26px; color: currentColor; }
+.im-fab-glyph { width: 24px; height: 24px; color: currentColor; }
 
-.im-fab-tag {
-  font-family: var(--im-display);
-  font-size: 0.6rem;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  line-height: 1;
-  /* Same counter-rotation: the label reads dead horizontal in every state,
-     while the sticker itself keeps its poster tilt. */
-  transform: rotate(3deg);
+/* ── State pill ──────────────────────────────────────────────────────────── */
+
+.im-fab-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--im-line);
+  border-radius: 999px;
+  background: var(--im-surface);
+  color: var(--im-text);
+  font-size: 0.8rem;
+  font-weight: 600;
   white-space: nowrap;
+  box-shadow: var(--im-shadow);
+  pointer-events: none;
+  /* Tucked away by default; it peeks (`is-peek`) when the launcher comes
+     back or changes state, and on hover or keyboard focus. */
+  opacity: 0;
+  transform: translate3d(12px, 0, 0) scale(0.92);
+  transform-origin: right center;
+  pointer-events: none;
+  /* Out: a gentle glide back into the button. In: a touch quicker, with a
+     soft settle. Opacity and transform only, so it composites everywhere. */
+  transition:
+    opacity 0.32s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: opacity, transform;
 }
+.im-fab-pill.is-peek,
+.im-fab-dock:has(.im-fab:focus-visible) .im-fab-pill {
+  transition:
+    opacity 0.26s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.42s cubic-bezier(0.34, 1.3, 0.64, 1);
+}
+/* The pill can arrive already peeking (the launcher reappearing mid-search):
+   start it from the tucked position so it glides in rather than popping. */
+@starting-style {
+  .im-fab-pill.is-peek { opacity: 0; transform: translate3d(12px, 0, 0) scale(0.92); }
+}
+/* Keyboard focus only (`:focus-visible`). `:focus-within` also matched the
+   focus the sheet hands back to the launcher when it closes after a tap,
+   which pinned the pill open on phones. */
+.im-fab-pill.is-peek,
+.im-fab-dock:has(.im-fab:focus-visible) .im-fab-pill {
+  opacity: 1;
+  transform: none;
+}
+@media (hover: hover) {
+  .im-fab-dock:hover .im-fab-pill { opacity: 1; transform: none; }
+}
+.im-fab-pill .im-live-dot { background: var(--im-blue); }
+.im-fab-pill-reconnecting,
+.im-fab-pill-ended { color: var(--im-text-2); }
+.im-fab-pill-error { color: var(--im-danger); }
+
 
 /* ── Searching ───────────────────────────────────────────────────────────── */
 
-/* Ink on coral in both themes — cream on this coral fails AA. */
-.im-fab-searching,
-.im-fab-reconnecting {
-  background: var(--im-coral);
-  color: #16130E;
-  animation: im-fab-breathe 3.4s ease-in-out infinite;
+/**
+ * A blue arc orbiting the button: a bordered circle with only its top edge
+ * coloured, rotated by transform so it never repaints.
+ */
+.im-fab-orbit {
+  position: absolute;
+  inset: -5px;
+  z-index: 1;
+  border-radius: 50%;
+  border: 2.5px solid rgba(var(--im-blue-rgb), 0.14);
+  border-top-color: var(--im-blue);
+  pointer-events: none;
+  animation: im-spin 1.1s linear infinite;
+  will-change: transform;
 }
 
-/* Reconnecting is searching, held: same colour, but the motion stalls so the
-   difference is legible without inventing a third palette. */
-.im-fab-reconnecting {
-  animation-duration: 5.2s;
-  opacity: 0.85;
-}
+/* Reconnecting: the same arc, held almost still. */
+.im-fab-orbit-slow { animation-duration: 3.2s; opacity: 0.7; }
+.im-fab-reconnecting { background: var(--im-blue-hover); }
 
 /* ── Countdown ring ──────────────────────────────────────────────────────── */
 
-/**
- * Sits outside the button's own circle and above the dock, so the arc reads
- * as a strip wrapped around the launcher rather than a border on it.
- * `pointer-events: none` keeps the whole face tappable.
- */
 .im-fab-ring {
   position: absolute;
-  inset: -7px;
-  width: calc(100% + 14px);
-  height: calc(100% + 14px);
+  inset: -6px;
+  width: calc(100% + 12px);
+  height: calc(100% + 12px);
   /* Start the arc at twelve o'clock and deplete clockwise. */
   transform: rotate(-90deg);
   overflow: visible;
@@ -129,184 +156,74 @@
 .im-fab-ring-track,
 .im-fab-ring-arc {
   fill: none;
-  stroke-width: 6;
+  stroke-width: 4;
   stroke-linecap: round;
 }
 
-.im-fab-ring-track {
-  stroke: color-mix(in srgb, var(--im-ink, #16130E) 12%, transparent);
-}
+.im-fab-ring-track { stroke: rgba(var(--im-blue-rgb), 0.14); }
 
 .im-fab-ring-arc {
-  stroke: var(--im-lime);
-  /* Covers the 30s repaint interval, so the strip closes continuously
-     instead of stepping once every half minute. */
+  stroke: var(--im-blue);
+  /* Covers the 30s repaint interval, so the strip closes continuously. */
   transition: stroke-dashoffset 1.2s linear;
 }
 
-/* ── Matched ─────────────────────────────────────────────────────────────── */
+/* ── Matched / ended / error ─────────────────────────────────────────────── */
 
-/* Lime, the affirmative colour used by the accept button and the Matched
-   sticker, so the launcher and the panel agree at a glance. */
-.im-fab-matched {
-  background: var(--im-lime);
-  color: #16130E;
-  animation: im-fab-pop 0.42s var(--im-ease-out) 1;
-}
+.im-fab-matched { animation: im-fab-pop 0.42s var(--im-ease-out) 1; }
 
-/* No label in this state: the glyph centres on its own and grows into the
-   space the word used to take. */
-.im-fab-bare { gap: 0; }
-.im-fab-bare .im-fab-face { width: 34px; height: 34px; }
-.im-fab-bare .im-fab-bolt { width: 32px; height: 32px; }
-
-.im-fab-error {
-  background: var(--im-sun);
-  color: #16130E;
-}
-
-/* Ended: still clearly "you had a match", but spent — muted rather than
-   celebratory, so it does not read as a live chat waiting to be opened. */
+/* Ended: still the launcher, but spent — a neutral surface, not blue. */
 .im-fab-ended {
-  background: var(--im-paper-deep);
-  color: var(--im-ink);
-  box-shadow: var(--im-shadow-sm);
+  background: var(--im-surface);
+  color: var(--im-text-2);
+  box-shadow: var(--im-shadow), inset 0 0 0 1px var(--im-line);
 }
+.im-fab-ended:hover { background: var(--im-surface-2); }
 
 @keyframes im-fab-pop {
-  0%   { transform: scale(0.86); }
-  55%  { transform: scale(1.06); }
+  0%   { transform: scale(0.88); }
+  60%  { transform: scale(1.04); }
   100% { transform: scale(1); }
 }
 
-/* Scale only — the tilt is the wrapper's business, so this animation can no
-   longer fight it. */
-@keyframes im-fab-breathe {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.035); }
-}
-
-/**
- * The halo is a conic sweep clipped to a ring: a bright arc chases the
- * launcher's rim on the same cadence as the sonar on the searching screen,
- * so "still looking" reads the same wherever the user sees it.
- */
-.im-fab-halo {
-  position: absolute;
-  inset: -5px;
-  border-radius: 50%;
-  background: conic-gradient(
-    from 0turn,
-    transparent 0turn 0.55turn,
-    color-mix(in srgb, var(--im-coral) 30%, transparent) 0.8turn,
-    var(--im-coral) 0.96turn,
-    transparent 0.985turn
-  );
-  animation: im-spin 2.6s linear infinite;
-  pointer-events: none;
-}
-
-/* Held connection: the sweep slows almost to a stop rather than vanishing,
-   so "still working on it" stays distinguishable from "searching". */
-.im-fab-halo-idlewait,
-.im-fab-halo-idlewait::after { animation-duration: 7s; }
-
-/* A second, slower sweep on the opposite phase keeps the rim alive without
-   the arc ever appearing to stall at the seam. */
-.im-fab-halo::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: conic-gradient(
-    from 0.5turn,
-    transparent 0turn 0.72turn,
-    color-mix(in srgb, var(--im-sun) 65%, transparent) 0.93turn,
-    transparent 0.97turn
-  );
-  animation: im-spin 4.1s linear infinite reverse;
-}
-
-.im-fab-count {
-  position: absolute;
-  top: -8px;
-  left: -10px;
-  min-width: 24px;
-  height: 24px;
-  padding: 0 5px;
-  display: grid;
-  place-items: center;
-  border-radius: 999px;
-  background: var(--im-sun);
-  color: #16130E;
-  font-family: var(--im-display);
-  font-size: 0.75rem;
-  box-shadow: var(--im-shadow-sm);
-  z-index: 2;
-}
 
 /* ── Unread badge ─────────────────────────────────────────────────────────
-   New messages waiting in the live Instant Match chat. Circular by
-   construction (a fixed height with a matching min-width and a pill radius, so
-   a one-digit count is a circle and "9+" widens into a stadium rather than
-   clipping), and pinned to the launcher's top-right rim — the opposite corner
-   from the queue count, which can legitimately be on screen at the same time.
-
-   `pointer-events: none` so it can never intercept the tap it is advertising:
-   the whole launcher stays one target. The count is also announced through the
-   dock's live region, so the badge itself is aria-hidden decoration. */
+   Pinned to the button's top-right rim. `pointer-events: none` so the whole
+   launcher stays one target; the count is also announced through the dock's
+   live region. */
 .im-fab-unread {
   position: absolute;
-  top: -6px;
-  right: -6px;
-  min-width: 22px;
-  height: 22px;
-  padding: 0 6px;
-  display: grid;
-  place-items: center;
-  border-radius: 999px;
-  /* Coral against the matched launcher's lime: the one pairing in this
-     palette that reads as "attention" without competing with the countdown
-     ring. Ink rather than cream on it — cream on this coral fails AA, as the
-     searching state notes above. */
-  background: var(--im-coral);
-  color: #16130E;
-  font-family: var(--im-display);
-  font-size: 0.7rem;
-  line-height: 1;
-  /* Reads as a badge sitting *on* the button rather than behind it, at every
-     launcher colour. */
-  border: 2px solid var(--im-paper);
-  box-shadow: var(--im-shadow-sm);
+  top: 1px;
+  right: 1px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--im-danger);
+  border: 2.5px solid var(--im-surface);
+  box-sizing: content-box;
   pointer-events: none;
   z-index: 3;
 }
 
 /* ── Initializing ─────────────────────────────────────────────────────────
-   The launcher before the state is known. A dimmed, gently pulsing version of
-   the resting shape: it holds the launcher's exact place and size, so nothing
-   moves when the real state lands. */
+   The launcher before the state is known: same place and size, dimmed and
+   gently pulsing, so nothing moves when the real state lands. */
 .im-fab-initializing {
   opacity: 0.55;
   cursor: default;
+  box-shadow: none;
   animation: im-fab-initializing-pulse 1.4s ease-in-out infinite;
 }
+.im-fab-initializing:hover { transform: none; background: var(--im-blue); }
 
 @keyframes im-fab-initializing-pulse {
   0%, 100% { opacity: 0.4; }
   50% { opacity: 0.7; }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .im-fab-initializing { animation: none; }
-}
-
 /* ── Auto-hiding chrome (mobile) ──────────────────────────────────────────
-   The launcher rides down with the bottom nav it sits above, so the two move
-   as one piece of furniture rather than the button hanging in mid-air over a
-   nav that has gone. Driven by the same `data-chrome-hidden` attribute; the
-   dock's existing hidden state still wins, since a live match card outranks
-   a scroll gesture. */
+   The launcher rides down with the bottom nav it sits above. The dock's own
+   hidden state still wins. */
 @media (max-width: 768px) {
   html[data-chrome-hidden] .im-fab-dock:not(.im-fab-dock-hidden) {
     transform: translateY(calc(100% + 78px + env(safe-area-inset-bottom)));
@@ -317,21 +234,18 @@
 
 @media (min-width: 900px) {
   .im-fab-dock { bottom: max(28px, env(safe-area-inset-bottom)); right: 28px; }
-  .im-fab { width: 74px; height: 74px; }
-  .im-fab-bolt { width: 30px; height: 30px; }
-  .im-fab-bare .im-fab-bolt { width: 36px; height: 36px; }
-  .im-fab-bare .im-fab-face { width: 38px; height: 38px; }
+}
+
+@media (hover: none) {
+  .im-fab:hover { transform: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .im-fab-searching,
-  .im-fab-reconnecting,
-  .im-fab-matched { animation: none; }
-  .im-fab-halo,
-  .im-fab-halo::after { animation: none; }
-  /* The ring still shows the remaining time — it just snaps to each new
-     value instead of sliding to it. */
+  .im-fab-matched,
+  .im-fab-initializing { animation: none; }
+  /* Still clearly "searching", just not moving. */
+  .im-fab-orbit { animation: none; border-color: rgba(var(--im-blue-rgb), 0.5); }
+  /* The ring snaps to each new value instead of sliding to it. */
   .im-fab-ring-arc { transition: none; }
-  /* Still clearly "active", just not moving. */
-  .im-fab-halo { background: color-mix(in srgb, var(--im-coral) 45%, transparent); }
+  .im-fab { transition: none; }
 }
