@@ -3,6 +3,9 @@ import { createPortal } from 'react-dom';
 import { X, ImagePlus, CalendarRange } from '@shared/components/icons';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
+import { useSystemBars } from '@shared/hooks/useSystemBars';
+import { useMediaQuery } from '@shared/hooks/useMediaQuery';
+import { useTheme } from '@shared/context/ThemeContext';
 import { getMediaUrl } from '@shared/api/apiClient';
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
 import {
@@ -86,6 +89,17 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
   const footerRef = useRef(null);
   const keyboardProps = useKeyboardOverlayForm({ bodyRef, footerRef });
   useScrollLock(true);
+
+  // On a phone the form is a full-screen page whose own surface sits under the
+  // status bar (the header pads for it), but the overlay is `data-bars-ignore`,
+  // so the sampled icon colour came from the Campus page behind it and could be
+  // white on the form's white surface. While the page is open, the icons
+  // contrast with the form itself: its surface follows the theme. Released as
+  // soon as it starts leaving, so the page underneath is sampled again.
+  const theme = useTheme()?.theme;
+  const fullScreen = useMediaQuery('(max-width: 768px)');
+  const icons = theme === 'dark' ? 'light' : 'dark';
+  useSystemBars({ statusIcons: icons, navigationIcons: icons }, fullScreen === true && !closing);
   // Single day: one date, a start and an end time. Multi-day: each end has its
   // own date. The payload is the same either way (startTime / endTime).
   const [multiDay, setMultiDay] = useState(

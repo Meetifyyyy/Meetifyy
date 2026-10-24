@@ -72,13 +72,18 @@ export function buildTimeSlots(stepMinutes = 15) {
   return slots;
 }
 
-/** 30 -> '30 min', 60 -> '1 hr', 90 -> '1.5 hrs', 150 -> '2.5 hrs'. */
+/** 45 -> '45 min', 60 -> '1 hr', 90 -> '1 hr 30 min', 1500 -> '1 day 1 hr', 4535 -> '3 days 3 hr 35 min'. */
 export function formatDuration(minutes) {
   if (!Number.isFinite(minutes) || minutes <= 0) return '';
-  if (minutes < 60) return `${minutes} min`;
-  const hours = minutes / 60;
-  const label = Number.isInteger(hours) ? String(hours) : hours.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
-  return `${label} ${hours === 1 ? 'hr' : 'hrs'}`;
+  const total = Math.round(minutes);
+  const days = Math.floor(total / (24 * 60));
+  const hours = Math.floor((total % (24 * 60)) / 60);
+  const mins = total % 60;
+  const parts = [];
+  if (days) parts.push(`${days} ${days === 1 ? 'day' : 'days'}`);
+  if (hours) parts.push(`${hours} hr`);
+  if (mins) parts.push(`${mins} min`);
+  return parts.join(' ');
 }
 
 /** Local 'YYYY-MM-DD' for a Date. */

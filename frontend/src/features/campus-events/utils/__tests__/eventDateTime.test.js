@@ -69,8 +69,12 @@ describe('time helpers', () => {
   it('labels durations', () => {
     expect(formatDuration(15)).toBe('15 min');
     expect(formatDuration(60)).toBe('1 hr');
-    expect(formatDuration(90)).toBe('1.5 hrs');
-    expect(formatDuration(135)).toBe('2.25 hrs');
+    expect(formatDuration(90)).toBe('1 hr 30 min');
+    expect(formatDuration(135)).toBe('2 hr 15 min');
+    expect(formatDuration(24 * 60)).toBe('1 day');
+    expect(formatDuration(25 * 60)).toBe('1 day 1 hr');
+    expect(formatDuration(3 * 24 * 60 + 3 * 60 + 35)).toBe('3 days 3 hr 35 min');
+    expect(formatDuration(2 * 24 * 60 + 5)).toBe('2 days 5 min');
     expect(formatDuration(0)).toBe('');
   });
 });
