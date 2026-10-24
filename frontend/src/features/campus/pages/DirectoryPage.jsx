@@ -185,8 +185,8 @@ const DirectoryCard = memo(function DirectoryCard({ user, courses, onSelect, isS
       <Avatar
         src={user.avatar}
         name={user.displayName || user.username}
-        size="56px"
-        /* 56px on screen against a 512px original — ask for the 160px variant. */
+        size="88px"
+        /* 88px on screen against a 512px original — ask for the 160px variant. */
         thumbnail
       />
       <div className={`${styles.cardText} ${isSelf ? styles.cardTextSelf : ''}`}>
@@ -205,10 +205,10 @@ const DirectoryCard = memo(function DirectoryCard({ user, courses, onSelect, isS
 function DirectoryCardSkeleton() {
   return (
     <div className={styles.directoryCard} style={{ cursor: 'default' }} aria-hidden="true">
-      <Skeleton type="circle" width="56px" height="56px" />
-      <div className={styles.cardText} style={{ gap: '0.45rem' }}>
-        <Skeleton type="text" width="60%" height="1rem" style={{ margin: 0 }} />
-        <Skeleton type="text" width="40%" height="0.8rem" style={{ margin: 0 }} />
+      <Skeleton type="circle" width="88px" height="88px" />
+      <div className={styles.cardText} style={{ gap: '0.35rem' }}>
+        <Skeleton type="text" width="64px" height="0.7rem" style={{ margin: '0 auto' }} />
+        <Skeleton type="text" width="48px" height="0.6rem" style={{ margin: '0 auto' }} />
       </div>
     </div>
   );

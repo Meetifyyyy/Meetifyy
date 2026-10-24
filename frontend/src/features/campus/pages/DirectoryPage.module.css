@@ -450,3 +450,65 @@
   color: var(--color-text-muted);
   font-size: 0.9rem;
 }
+
+/* ---- People as on the Campus page --------------------------------------------
+   The same tile as "you may know" (CampusPage .knowCard): a large round
+   avatar with the name under it, no card frame, in a grid that fills the
+   width. The academic line stays, smaller, under the name. Declared last so
+   it wins over the row card above without editing each rule. */
+.directoryGrid {
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 1.1rem 0.75rem;
+}
+
+.directoryCard,
+:global([data-theme="dark"]) .directoryCard {
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  border-radius: 12px;
+  background: none;
+  box-shadow: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.directoryCard:hover,
+:global([data-theme="dark"]) .directoryCard:hover {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.directoryCard .cardText {
+  width: 100%;
+  align-items: center;
+  text-align: center;
+}
+
+.directoryCard .cardName {
+  font-size: 0.75rem;
+  line-height: 1.2;
+}
+
+.directoryCard .cardSubtitle {
+  margin-top: 0.15rem;
+  font-size: 0.68rem;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+@media (max-width: 768px) {
+  .directoryGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .directoryCard:active {
+    transform: scale(0.95) !important;
+  }
+}
