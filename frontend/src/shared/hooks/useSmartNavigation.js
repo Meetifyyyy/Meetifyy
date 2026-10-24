@@ -261,11 +261,17 @@ export function useSmartNavigation() {
       //    the session's first entry. Go to the fallback instead, replacing so
       //    we don't grow a stack the user never walked. Already there? Stay
       //    put: the next Back is the browser's, and leaves the app.
+      //
+      //    "There" includes the query. A sub-view owned by a search param
+      //    (the profile's ?tab=followers list) falls back to its own page's
+      //    path; compared on the path alone it looked like "already there",
+      //    so its close button did nothing whenever it was the first entry
+      //    (a notification or link straight to the list, or a restored app).
       const route = plan.route || fallbackPath;
-      if (location.pathname === route) return;
+      if (`${location.pathname}${location.search}` === route) return;
       navigate(route, { replace: true, ...options });
     },
-    [navigate, location.pathname]
+    [navigate, location.pathname, location.search]
   );
 
   const smartNavigate = useCallback(
