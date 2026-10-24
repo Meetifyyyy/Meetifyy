@@ -15,11 +15,18 @@ export interface AddressMailer {
 
   sendPersonalEmailOtp(email: string, name: string, otp: string): Promise<void>;
 
-  /** Notice to the PREVIOUS sign-in address; `newEmailMasked` is masked. */
+  /** Re-proves control of the CURRENT sign-in address (passwordless accounts). */
+  sendReauthCode(email: string, name: string, otp: string): Promise<void>;
+
+  /**
+   * Notice to the PREVIOUS sign-in address; `newEmailMasked` is masked.
+   * `idempotencyKey` names the change, so a retry cannot send it twice.
+   */
   sendSignInEmailChangedNotice(
     previousEmail: string,
     name: string,
     newEmailMasked: string,
+    idempotencyKey?: string,
   ): Promise<void>;
 }
 

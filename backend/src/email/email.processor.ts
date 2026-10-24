@@ -304,6 +304,17 @@ export class EmailProcessor extends WorkerHost implements OnModuleInit {
           );
           break;
 
+        case 'send-reauth-otp':
+          subject = "Confirm it's you on Meetifyy";
+          html = await render(
+            createElement(EmailAddressOtpEmail, {
+              name: job.data.name,
+              otp: job.data.otp,
+              kind: 'reauth',
+            }),
+          );
+          break;
+
         case 'send-signin-email-changed':
           subject = 'Your Meetifyy sign-in email was changed';
           html = await render(

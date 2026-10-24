@@ -115,19 +115,46 @@ export class EmailService {
     });
   }
 
-  /** Tells the PREVIOUS sign-in address that it was replaced. */
+  async sendReauthCode(email: string, name: string, otp: string) {
+    this.logger.log('Queuing reauthentication OTP email');
+    await this.emailQueue.add('send-reauth-otp', {
+      email,
+      name,
+      otp,
+      from: config.email.securityFrom,
+    });
+  }
+
+  /**
+   * Tells the PREVIOUS sign-in address that it was replaced.
+   *
+   * Retried with backoff, because this is the one message an owner who did
+   * not make the change relies on. `idempotencyKey` (the change's event id)
+   * becomes the job id, so enqueueing the same change twice queues one job.
+   */
   async sendSignInEmailChangedNotice(
     previousEmail: string,
     name: string,
     newEmailMasked: string,
+    idempotencyKey?: string,
   ) {
     this.logger.log('Queuing sign-in email changed notice');
-    await this.emailQueue.add('send-signin-email-changed', {
-      email: previousEmail,
-      name,
-      newEmailMasked,
-      from: config.email.securityFrom,
-    });
+    await this.emailQueue.add(
+      'send-signin-email-changed',
+      {
+        email: previousEmail,
+        name,
+        newEmailMasked,
+        from: config.email.securityFrom,
+      },
+      {
+        ...(idempotencyKey
+          ? { jobId: `signin-email-changed:${idempotencyKey}` }
+          : {}),
+        attempts: 5,
+        backoff: { type: 'exponential', delay: 30_000 },
+      },
+    );
   }
 
   /**

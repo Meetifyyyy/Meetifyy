@@ -12,6 +12,9 @@ import type { DomainEventService } from '../events/domain-event.service';
 import type { AuthService } from '../auth/auth.service';
 import type { AddressMailer } from '../otp/address-mailer';
 import type { AuthenticatedUser } from '../common/types/authenticated-request';
+import type { ReauthService } from '../account-security/reauth.service';
+import type { EmailChangePolicyService } from '../account-security/email-change-policy.service';
+import type { RateLimitService } from '../common/rate-limit/rate-limit.service';
 
 /**
  * Campus college-email verification, end to end through the real OTP service
@@ -307,6 +310,7 @@ describe('CampusAffiliationService', () => {
         return Promise.resolve();
       }),
       sendPersonalEmailOtp: jest.fn(() => Promise.resolve()),
+      sendReauthCode: jest.fn(() => Promise.resolve()),
       sendSignInEmailChangedNotice: jest.fn(() => Promise.resolve()),
     };
     service = new CampusAffiliationService(
@@ -315,6 +319,24 @@ describe('CampusAffiliationService', () => {
       new DomainValidatorService(prisma),
       stub<DomainEventService>({ emit }),
       stub<AuthService>({ verifyPassword }),
+      // Grants and cooldowns are covered against a real database in
+      // account-security/email-change.db.spec.ts; here they always pass.
+      stub<ReauthService>({
+        assertGrant: jest.fn(() => Promise.resolve()),
+        consumeGrant: jest.fn(() => Promise.resolve()),
+      }),
+      stub<EmailChangePolicyService>({
+        lockUser: jest.fn(() => Promise.resolve(new Date())),
+        assertEligible: jest.fn(() => Promise.resolve()),
+        hasCollegeHistory: jest.fn(() => Promise.resolve(false)),
+        getCooldowns: jest.fn(() =>
+          Promise.resolve({ personal: null, college: null }),
+        ),
+        record: jest.fn(() => Promise.resolve({ id: 'event-1' })),
+      }),
+      stub<RateLimitService>({
+        consume: jest.fn(() => Promise.resolve({ allowed: true })),
+      }),
       mailer,
     );
     access = new CampusAccessService(prisma);
@@ -596,10 +618,9 @@ describe('CampusAffiliationService', () => {
       await verifyAs(ME, 'me@gla.ac.in');
       expect(
         await errorCode(
-          service.remove(
-            stub<AuthenticatedUser>({ id: ME, email: 'x' }),
-            'bad',
-          ),
+          service.remove(stub<AuthenticatedUser>({ id: ME, email: 'x' }), {
+            password: 'bad',
+          }),
         ),
       ).toBe('invalid_password');
       expect(affiliations.has(ME)).toBe(true);
@@ -610,7 +631,7 @@ describe('CampusAffiliationService', () => {
       await expect(
         service.remove(
           stub<AuthenticatedUser>({ id: ME, email: 'stale@token' }),
-          'right-password',
+          { password: 'right-password' },
         ),
       ).resolves.toEqual({ success: true });
 
@@ -659,7 +680,9 @@ describe('CampusAffiliationService', () => {
       ).toBe('affiliation_revoked');
       expect(
         await errorCode(
-          service.remove(stub<AuthenticatedUser>({ id: ME }), 'right-password'),
+          service.remove(stub<AuthenticatedUser>({ id: ME }), {
+            password: 'right-password',
+          }),
         ),
       ).toBe('affiliation_revoked');
     });

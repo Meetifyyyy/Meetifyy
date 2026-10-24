@@ -272,6 +272,9 @@ model User {
   settings                   UserSettings?
   verificationRequests       VerificationRequest[]
   otps                       UserOtp[]
+  emailChangeEvents          EmailChangeEvent[]
+  reauthGrants               ReauthGrant[]
+  authEmailChangeIntent      AuthEmailChangeIntent?
   legalAcknowledgements      LegalAcknowledgement[]
   sessions                   UserSession[]
   pushDevices                PushDevice[]
@@ -1053,6 +1056,106 @@ enum UserOtpPurpose {
   COLLEGE_EMAIL
   /// Proves control of a new personal (login) address.
   PERSONAL_EMAIL
+  /// Re-proves control of the current sign-in address, for an account that has
+  /// no password to re-enter (see ReauthGrant).
+  REAUTH
+}
+
+/// The sensitive operations a ReauthGrant can be spent on. One grant, one purpose.
+enum ReauthPurpose {
+  PERSONAL_EMAIL_CHANGE
+  COLLEGE_EMAIL_CHANGE
+  COLLEGE_EMAIL_REMOVE
+}
+
+/// Which address an EmailChangeEvent is about. Each has its own cooldown.
+enum EmailChannel {
+  PERSONAL
+  COLLEGE
+}
+
+enum EmailChangeAction {
+  /// The address was replaced by another one.
+  CHANGE
+  /// An address was added where there was none (college only).
+  ADD
+  /// The user removed the address (college only).
+  REMOVE
+  /// Super Admin revoked it. Recovery, not a user change: no cooldown.
+  ADMIN_REVOKE
+  /// Super Admin reset it. Recovery, not a user change: no cooldown.
+  ADMIN_RELEASE
+}
+
+/// Append-only record of every completed email identity transition.
+///
+/// The 30-day cooldowns are computed from it (the latest row per channel with
+/// `countsTowardCooldown`), against the database clock. Only the backend
+/// writes it: the Data API roles have no grant on it and RLS is on. Nothing is
+/// written for a failed, abandoned or expired attempt, so those never start a
+/// cooldown.
+model EmailChangeEvent {
+  id                   String            @id @default(uuid())
+  userId               String
+  channel              EmailChannel
+  action               EmailChangeAction
+  countsTowardCooldown Boolean
+  previousEmail        String?
+  newEmail             String?
+  createdAt            DateTime          @default(now())
+  user                 User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// The cooldown lookup: latest row per (user, channel).
+  @@index([userId, channel, createdAt])
+}
+
+/// Proof that the account holder re-authenticated moments ago, for exactly one
+/// sensitive operation.
+///
+/// The client holds the token; only its SHA-256 is stored (it is 256 random
+/// bits, so an unkeyed hash is not reversible). Bound to the user, the purpose,
+/// the session it was issued to and the address its live code was sent to.
+/// Short-lived and single-use: `consumedAt` is set by the same conditional
+/// update that accepts it, inside the transaction that applies the change.
+model ReauthGrant {
+  id         String        @id @default(uuid())
+  userId     String
+  purpose    ReauthPurpose
+  tokenHash  String        @unique
+  /// The UserSession it was issued to; null only for a caller with no session id.
+  sessionId  String?
+  /// 'password' or 'email_code'.
+  method     String        @db.VarChar(16)
+  /// The normalized address the live code for this grant was sent to.
+  target     String?
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime      @default(now())
+  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose])
+  @@index([expiresAt])
+}
+
+/// A sign-in email change between the moment it is authorised and the moment
+/// both sides (Supabase Auth and `User.email`) hold the new address.
+///
+/// The trigger on `auth.users` refuses any change of a user's auth email unless
+/// a live row here names that exact address, and refuses the self-service
+/// `email_change` staging outright. That is what stops a client calling
+/// Supabase Auth directly (`PUT /auth/v1/user`) to change the address around
+/// the reauthentication, verification and cooldown here. The primary key makes
+/// it at most one in-flight change per account; a row left by a crash or a
+/// timed-out admin call is reconciled on the next request.
+model AuthEmailChangeIntent {
+  userId        String   @id
+  previousEmail String
+  newEmail      String
+  /// The window in which the trigger accepts the auth write. Short.
+  expiresAt     DateTime
+  createdAt     DateTime @default(now())
+  /// Cascade: an account deleted mid-change leaves no addresses behind.
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 /// One-time codes for the account-deletion lifecycle.

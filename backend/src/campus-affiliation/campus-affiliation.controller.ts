@@ -13,6 +13,7 @@ import { JwtGuard } from '../common/guards/jwt.guard';
 import { RateLimit } from '../common/rate-limit/rate-limit.decorator';
 import { RateLimitPolicyGuard } from '../common/rate-limit/rate-limit-policy.guard';
 import { clientIp } from '../common/rate-limit/client-ip.util';
+import { currentSessionId } from '../auth/session/current-session-id';
 import { CampusAffiliationService } from './campus-affiliation.service';
 import {
   RemoveAffiliationDto,
@@ -51,7 +52,11 @@ export class CampusAffiliationController {
     return this.affiliation.requestOtp(
       req.user.id,
       { collegeId: dto.collegeId, email: dto.email },
-      { ip: clientIp(req) || null },
+      {
+        ip: clientIp(req) || null,
+        sessionId: currentSessionId(req),
+        reauthToken: dto.reauthToken,
+      },
     );
   }
 
@@ -64,17 +69,25 @@ export class CampusAffiliationController {
   ) {
     return this.affiliation.verify(req.user.id, dto.code, {
       ip: clientIp(req) || null,
+      sessionId: currentSessionId(req),
+      reauthToken: dto.reauthToken,
     });
   }
 
-  /** Re-proves the password, so a borrowed session cannot release the address. */
+  /**
+   * Needs a fresh reauthentication (grant, or the password from older apps),
+   * so a borrowed session cannot release the address. The legacy password
+   * body spends `auth.verifypassword.user` in the service.
+   */
   @Delete()
-  @UseGuards(RateLimitPolicyGuard)
-  @RateLimit('auth.verifypassword.user')
   async remove(
     @Req() req: AuthenticatedRequest,
     @Body() dto: RemoveAffiliationDto,
   ) {
-    return this.affiliation.remove(req.user, dto.password);
+    return this.affiliation.remove(req.user, {
+      sessionId: currentSessionId(req),
+      reauthToken: dto.reauthToken,
+      password: dto.password,
+    });
   }
 }

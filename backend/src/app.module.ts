@@ -33,6 +33,7 @@ import { CampusEventsModule } from './campus-events/campus-events.module';
 import { ConfessionsModule } from './confessions/confessions.module';
 import { CampusAffiliationModule } from './campus-affiliation/campus-affiliation.module';
 import { AccountEmailModule } from './account-email/account-email.module';
+import { AccountSecurityModule } from './account-security/account-security.module';
 import { UsersModule } from './users/users.module';
 import { MessagesModule } from './messages/messages.module';
 import { MessagingCoreModule } from './messages/core/messaging-core.module';
@@ -200,6 +201,7 @@ import { requestIdFrom } from './common/utils/request-id.util';
     ConfessionsModule,
     CampusAffiliationModule,
     AccountEmailModule,
+    AccountSecurityModule,
     UsersModule,
     MessagesModule,
     MessagingCoreModule,

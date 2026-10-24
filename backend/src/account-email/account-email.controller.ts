@@ -12,6 +12,7 @@ import { JwtGuard } from '../common/guards/jwt.guard';
 import { RateLimit } from '../common/rate-limit/rate-limit.decorator';
 import { RateLimitPolicyGuard } from '../common/rate-limit/rate-limit-policy.guard';
 import { clientIp } from '../common/rate-limit/client-ip.util';
+import { currentSessionId } from '../auth/session/current-session-id';
 import { AccountEmailService } from './account-email.service';
 import {
   RequestPersonalEmailOtpDto,
@@ -39,20 +40,27 @@ export class AccountEmailController {
   ) {
     return this.accountEmail.requestOtp(req.user.id, dto.email, {
       ip: clientIp(req) || null,
+      sessionId: currentSessionId(req),
+      reauthToken: dto.reauthToken,
     });
   }
 
-  /** Re-proves the password, so it shares that budget. */
+  /**
+   * Code attempts are capped per code and per IP (UserOtpService). The legacy
+   * password body spends `auth.verifypassword.user` in the service, so a
+   * grant-carrying verify does not eat into the password budget.
+   */
   @Post('verify')
   @HttpCode(200)
-  @UseGuards(RateLimitPolicyGuard)
-  @RateLimit('auth.verifypassword.user')
   async verify(
     @Req() req: AuthenticatedRequest,
     @Body() dto: VerifyPersonalEmailDto,
   ) {
-    return this.accountEmail.verify(req.user, dto.code, dto.currentPassword, {
+    return this.accountEmail.verify(req.user, dto.code, {
       ip: clientIp(req) || null,
+      sessionId: currentSessionId(req),
+      reauthToken: dto.reauthToken,
+      currentPassword: dto.currentPassword,
     });
   }
 }

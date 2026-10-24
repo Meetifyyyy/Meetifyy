@@ -8,8 +8,11 @@ interface EmailAddressOtpEmailProps {
   name?: string;
   otp?: string;
   expiryTime?: string;
-  /** Which address is being confirmed. */
-  kind?: 'college' | 'personal';
+  /**
+   * Which address is being confirmed. `reauth` re-proves the CURRENT sign-in
+   * address before an email change, for an account with no password.
+   */
+  kind?: 'college' | 'personal' | 'reauth';
   /** College name, for the `college` kind. */
   collegeName?: string;
 }
@@ -33,7 +36,9 @@ export const EmailAddressOtpEmail = ({
   const isCollege = kind === 'college';
   const title = isCollege
     ? 'Verify your college email'
-    : 'Confirm your new email';
+    : kind === 'reauth'
+      ? "Confirm it's you"
+      : 'Confirm your new email';
 
   return (
     <BaseLayout previewText={title}>
@@ -43,6 +48,11 @@ export const EmailAddressOtpEmail = ({
             {greeting} enter the code below on the Campus page to link this
             address{collegeName ? ` to ${collegeName}` : ''} and unlock your
             campus on Meetifyy.
+          </>
+        ) : kind === 'reauth' ? (
+          <>
+            {greeting} enter the code below to confirm it&apos;s you before
+            changing an email on your Meetifyy account.
           </>
         ) : (
           <>
@@ -68,10 +78,17 @@ export const EmailAddressOtpEmail = ({
       <Paragraph>
         For your security, please do not share this code with anyone.
       </Paragraph>
-      <Paragraph>
-        If you did not ask for this, you can safely ignore this email. Nothing
-        changes unless the code is entered.
-      </Paragraph>
+      {kind === 'reauth' ? (
+        <Paragraph>
+          If you did not ask for this, someone may be signed in to your account.
+          Do not share the code, and contact Meetifyy Support straight away.
+        </Paragraph>
+      ) : (
+        <Paragraph>
+          If you did not ask for this, you can safely ignore this email. Nothing
+          changes unless the code is entered.
+        </Paragraph>
+      )}
 
       <Notice>
         This is an automated email. Please do not reply directly to this

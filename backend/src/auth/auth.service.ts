@@ -1280,6 +1280,12 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
   async verifyPassword(
     user: AuthenticatedUser,
     password: string,
+    /**
+     * The sign-in address, when the caller has just read it from Supabase
+     * Auth itself (ReauthService does). Saves the lookup; never the token's
+     * claim and never a value from a request.
+     */
+    signInEmail?: string,
   ): Promise<{ valid: boolean }> {
     if (!this.supabaseService.isConfigured) {
       throw new UnauthorizedException('Authentication is not configured.');
@@ -1289,7 +1295,9 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     // personal-email change (/api/account/email) a live token still carries
     // the previous address until it refreshes, and checking against it would
     // fail every password check in between.
-    const email = (await this.currentSignInEmail(user)).trim().toLowerCase();
+    const email = (signInEmail ?? (await this.currentSignInEmail(user)))
+      .trim()
+      .toLowerCase();
     // A placeholder address means the account has no password identity to
     // verify against; treating that as "wrong password" is the safe answer.
     if (!email || email.endsWith('@meetifyy.user') || !password) {

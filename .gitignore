@@ -219,6 +219,7 @@ docs/*
 !docs/testing-log.md
 !docs/mobile-auth-decision.md
 !docs/push-notifications.md
+!docs/email-change-security.md
 
 diff_*.txt
 all_files.txt

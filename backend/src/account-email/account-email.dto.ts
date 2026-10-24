@@ -1,5 +1,6 @@
 import {
   IsNotEmpty,
+  IsOptional,
   IsString,
   Length,
   Matches,
@@ -13,6 +14,12 @@ export class RequestPersonalEmailOtpDto {
   @IsNotEmpty()
   @MaxLength(254)
   email!: string;
+
+  /** From `/api/account/reauth`. Optional only for apps that predate it. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  reauthToken?: string;
 }
 
 /**
@@ -32,8 +39,20 @@ export class VerifyPersonalEmailDto {
   })
   code!: string;
 
+  /**
+   * One of these two is required (checked by the service, which answers
+   * `reauth_required` without either). `reauthToken` is a grant from
+   * `/api/account/reauth`; `currentPassword` is what installed apps that
+   * predate grants send, and it is re-checked here at the commit point.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  reauthToken?: string;
+
+  @IsOptional()
   @IsString()
   @IsNotEmpty()
   @MaxLength(1024)
-  currentPassword!: string;
+  currentPassword?: string;
 }
