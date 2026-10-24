@@ -10,10 +10,14 @@ import { MemoryRouter } from 'react-router-dom';
  * the fallback that keeps it closed for this session if the call fails.
  */
 
-const { usersApi, signup } = vi.hoisted(() => ({
+const { usersApi, signup, net, authState } = vi.hoisted(() => ({
   usersApi: { snoozeProfilePrompt: vi.fn() },
   signup: { inProgress: false },
+  net: { online: true },
+  authState: { profileFromCache: false, loading: false },
 }));
+
+vi.mock('@shared/lib/networkStatus', () => ({ useOnlineStatus: () => net.online }));
 
 vi.mock('@shared/api/apiClient', () => ({ usersApi }));
 vi.mock('@features/auth/context/SignupContext', () => ({
@@ -32,6 +36,8 @@ vi.mock('@shared/context/AuthContext', () => ({
       currentUser,
       updateCurrentUser: setCurrentUser,
       updateProfile: vi.fn().mockResolvedValue({}),
+      profileFromCache: authState.profileFromCache,
+      loading: authState.loading,
     };
   },
 }));
@@ -51,6 +57,9 @@ const dialog = () => screen.queryByRole('dialog');
 
 beforeEach(() => {
   signup.inProgress = false;
+  net.online = true;
+  authState.profileFromCache = false;
+  authState.loading = false;
   usersApi.snoozeProfilePrompt.mockReset().mockResolvedValue({ snoozed: true });
   sessionStorage.clear();
   localStorage.clear();
@@ -85,6 +94,33 @@ describe('ProfileCompletionModal visibility', () => {
 
   it('treats a backend without promptSnoozed as not snoozed', () => {
     mount({ needsGender: true, needsPersonalEmail: false });
+    expect(dialog()).not.toBeNull();
+  });
+});
+
+describe('only the server\'s confirmed answer opens it', () => {
+  const needs = { needsGender: true, needsPersonalEmail: true, promptSnoozed: false };
+
+  it('stays closed while offline, even though the flags say it is needed', () => {
+    net.online = false;
+    mount(needs);
+    expect(dialog()).toBeNull();
+  });
+
+  it('stays closed when the user is the copy this device saved (server not reached)', () => {
+    authState.profileFromCache = true;
+    mount(needs);
+    expect(dialog()).toBeNull();
+  });
+
+  it('stays closed while the session is still being decided', () => {
+    authState.loading = true;
+    mount(needs);
+    expect(dialog()).toBeNull();
+  });
+
+  it('opens once online with a server-supplied user', () => {
+    mount(needs);
     expect(dialog()).not.toBeNull();
   });
 });

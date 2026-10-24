@@ -6,6 +6,7 @@ import { GENDER_OPTIONS } from '@shared/constants/gender';
 import { showToast } from '@shared/utils/toast';
 import { usersApi } from '@shared/api/apiClient';
 import PersonalEmailForm from '@shared/components/AccountEmail/PersonalEmailForm';
+import { useOnlineStatus } from '@shared/lib/networkStatus';
 import { isSignupInProgress } from '@features/auth/context/SignupContext';
 import styles from './ProfileCompletionModal.module.css';
 
@@ -48,9 +49,13 @@ function writeDismissed(userId) {
  * it in localStorage for 10 days on this browser, so it stays closed across
  * reopens even if that call fails or the backend predates `promptSnoozed`. It does not open during signup (the
  * signup flow collects gender itself).
+ *
+ * It opens only on the server's confirmed answer: never offline and never from
+ * the profile this device saved earlier (see `serverConfirmed`).
  */
 export default function ProfileCompletionModal() {
-  const { currentUser, updateProfile, updateCurrentUser } = useAuth();
+  const { currentUser, updateProfile, updateCurrentUser, profileFromCache, loading } = useAuth();
+  const online = useOnlineStatus();
   const location = useLocation();
   const userId = currentUser?.id;
   const needsGender = Boolean(currentUser?.profileCompletion?.needsGender);
@@ -66,7 +71,16 @@ export default function ProfileCompletionModal() {
   }, [userId]);
 
   const inSignup = location.pathname.startsWith('/signup') || isSignupInProgress();
-  const open = Boolean(userId) && !dismissed && !snoozed && !inSignup && (needsGender || needsPersonalEmail);
+  // The flags are the SERVER's answer, so they only count once the server has
+  // given them to this session. Not while offline, not while `currentUser` is
+  // the copy this device saved last time (`profileFromCache`, or still booting),
+  // and not from a failed request: a saved copy can be days old, or from before
+  // the person answered on another device, and asking again from it is wrong.
+  // When the connection or the server's answer returns, the flags are fresh and
+  // this opens then.
+  const serverConfirmed = online && !profileFromCache && !loading;
+  const open =
+    Boolean(userId) && serverConfirmed && !dismissed && !snoozed && !inSignup && (needsGender || needsPersonalEmail);
 
   useScrollLock(open);
 
