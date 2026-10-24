@@ -14,84 +14,88 @@ describe('useCollapsingHeader cover transition', () => {
     document.documentElement.style.removeProperty('--profile-cover-height');
   });
 
-  // The cover scrolls away with the page and pins at the header's height,
-  // crossfading into its blurred copy. It used to be squashed with scaleY.
-  it('scrolls the existing cover away and blurs it through intermediate and reverse positions', () => {
+  /*
+   * A card: the cover (200px), then the info block with the avatar hanging
+   * 30px over the cover's bottom edge (top 170, 96px tall, bottom at 266).
+   * Header 80px. The cover's box pins at 120 (200 - 80); its picture pans a
+   * further 66px, until the avatar's bottom (266) reaches the header's bottom:
+   * the pin is at 186.
+   */
+  const buildCard = ({ coverHeight = () => 200 } = {}) => {
+    const card = document.createElement('div');
+    const cover = document.createElement('div');
+    const info = document.createElement('div');
+    const avatar = document.createElement('div');
+    avatar.setAttribute('data-cover-avatar', '');
+    avatar.setAttribute('data-exit-track', 'avatar');
+    avatar.setAttribute('data-exit-through', '');
+    Object.defineProperty(cover, 'offsetHeight', { get: coverHeight });
+    Object.defineProperty(info, 'offsetTop', { get: () => coverHeight() });
+    Object.defineProperties(avatar, { offsetTop: { value: 170 }, offsetHeight: { value: 96 } });
+    info.appendChild(avatar);
+    card.append(cover, info);
+    document.body.appendChild(card);
+    return { card, cover, avatar };
+  };
+
+  it('scrolls the cover with the page, blurs it, and pins it when the avatar bottom reaches the header bottom', () => {
     let scrollY = 0;
-    let nextFrame = null;
-    vi.stubGlobal('requestAnimationFrame', (callback) => {
-      nextFrame = callback;
-      return 1;
-    });
+    vi.stubGlobal('requestAnimationFrame', () => 1);
     vi.stubGlobal('cancelAnimationFrame', vi.fn());
-    Object.defineProperty(window, 'scrollY', {
-      configurable: true,
-      get: () => scrollY,
-    });
+    Object.defineProperty(window, 'scrollY', { configurable: true, get: () => scrollY });
 
     const header = document.createElement('div');
-    const coverPlaceholder = document.createElement('div');
-    Object.defineProperties(header, { offsetHeight: { value: 80 } });
-    coverPlaceholder.getBoundingClientRect = () => ({ height: 200 });
-
-    const headerRef = { current: header };
-    const coverRef = { current: coverPlaceholder };
-    const runPendingFrame = () => {
-      const callback = nextFrame;
-      nextFrame = null;
-      callback?.();
-    };
+    Object.defineProperty(header, 'offsetHeight', { value: 80 });
+    const { card, cover, avatar } = buildCard();
+    const blurLayer = document.createElement('div');
+    blurLayer.setAttribute('data-cover-blur', '');
+    cover.appendChild(blurLayer);
 
     const { unmount } = renderHook(() => useCollapsingHeader({
       enabled: true,
-      headerRef,
-      coverRef,
+      headerRef: { current: header },
+      coverRef: { current: cover },
       coverBackground: true,
     }));
+    const scrollTo = (y) => act(() => {
+      scrollY = y;
+      window.dispatchEvent(new Event('scroll'));
+    });
 
     expect(document.documentElement.style.getPropertyValue('--profile-cover-height')).toBe('200px');
-    expect(header.style.getPropertyValue('--cover-h')).toBe('200');
-    expect(header.style.getPropertyValue('--cover-shift')).toBe('0');
-    expect(header.style.getPropertyValue('--cover-blur')).toBe('0.000');
+    expect(cover.style.getPropertyValue('--cover-pin-top')).toBe('-120px');
+    expect(cover.style.getPropertyValue('--cover-extend')).toBe('66px');
+    expect(cover.style.getPropertyValue('--cover-pan')).toBe('0');
+    expect(blurLayer.style.getPropertyValue('--cover-blur')).toBe('0.000');
 
-    act(() => {
-      scrollY = 60;
-      window.dispatchEvent(new Event('scroll'));
-      runPendingFrame();
-    });
-    expect(header.style.getPropertyValue('--collapse')).toBe('0.500');
-    expect(header.style.getPropertyValue('--cover-shift')).toBe('60');
-    expect(header.style.getPropertyValue('--cover-blur')).toBe('0.500');
+    // Before the box pins: the page moves the cover (sticky), no pan yet.
+    scrollTo(93);
+    expect(cover.style.getPropertyValue('--cover-pan')).toBe('0');
+    expect(blurLayer.style.getPropertyValue('--cover-blur')).toBe('0.500');
 
-    act(() => {
-      scrollY = 120;
-      window.dispatchEvent(new Event('scroll'));
-      runPendingFrame();
-    });
-    expect(header.style.getPropertyValue('--collapse')).toBe('1.000');
-    expect(header.style.getPropertyValue('--cover-shift')).toBe('120');
-    expect(header.style.getPropertyValue('--cover-blur')).toBe('1.000');
+    // Box pinned, the picture keeps moving 1:1 inside it.
+    scrollTo(150);
+    expect(cover.style.getPropertyValue('--cover-pan')).toBe('30');
+    expect(avatar.style.getPropertyValue('--exit')).toBe('0.625');
 
-    act(() => {
-      scrollY = 30;
-      window.dispatchEvent(new Event('scroll'));
-      runPendingFrame();
-    });
-    expect(header.style.getPropertyValue('--collapse')).toBe('0.250');
-    expect(header.style.getPropertyValue('--cover-shift')).toBe('30');
-    expect(header.style.getPropertyValue('--cover-blur')).toBe('0.156');
+    // Avatar bottom on the header bottom: pinned, fully blurred, avatar gone.
+    scrollTo(186);
+    expect(cover.style.getPropertyValue('--cover-pan')).toBe('66');
+    expect(blurLayer.style.getPropertyValue('--cover-blur')).toBe('1.000');
+    expect(avatar.style.getPropertyValue('--exit')).toBe('1.000');
 
-    // Past the pin point the cover stays put as the header's background.
-    act(() => {
-      scrollY = 400;
-      window.dispatchEvent(new Event('scroll'));
-      runPendingFrame();
-    });
-    expect(header.style.getPropertyValue('--cover-shift')).toBe('120');
-    expect(header.style.getPropertyValue('--cover-blur')).toBe('1.000');
+    scrollTo(900);
+    expect(cover.style.getPropertyValue('--cover-pan')).toBe('66');
+
+    // And back.
+    scrollTo(30);
+    expect(cover.style.getPropertyValue('--cover-pan')).toBe('0');
+    expect(avatar.style.getPropertyValue('--exit')).toBe('0.000');
 
     unmount();
     expect(document.documentElement.hasAttribute('data-collapsing-header')).toBe(false);
+    expect(cover.style.getPropertyValue('--cover-pin-top')).toBe('');
+    card.remove();
   });
 
   it('re-measures when the cover resizes without a window resize (status-bar inset)', () => {
@@ -111,20 +115,20 @@ describe('useCollapsingHeader cover transition', () => {
 
     let coverHeight = 120;
     const header = document.createElement('div');
-    const coverPlaceholder = document.createElement('div');
     Object.defineProperty(header, 'offsetHeight', { value: 56 });
-    coverPlaceholder.getBoundingClientRect = () => ({ height: coverHeight });
+    const { card, cover } = buildCard({ coverHeight: () => coverHeight });
 
     renderHook(() => useCollapsingHeader({
       enabled: true,
       headerRef: { current: header },
-      coverRef: { current: coverPlaceholder },
+      coverRef: { current: cover },
       coverBackground: true,
     }));
     expect(document.documentElement.style.getPropertyValue('--profile-cover-height')).toBe('120px');
+    expect(cover.style.getPropertyValue('--cover-pin-top')).toBe('-64px');
 
     act(() => {
-      coverHeight = 152; // the inset arrived and the placeholder grew
+      coverHeight = 152; // the inset arrived and the cover grew
       observers.forEach((o) => o.callback([]));
       const callback = nextFrame;
       nextFrame = null;
@@ -132,6 +136,8 @@ describe('useCollapsingHeader cover transition', () => {
     });
     expect(document.documentElement.style.getPropertyValue('--profile-cover-height')).toBe('152px');
     expect(header.style.getPropertyValue('--cover-h')).toBe('152');
+    expect(cover.style.getPropertyValue('--cover-pin-top')).toBe('-96px');
+    card.remove();
   });
 });
 
@@ -236,9 +242,10 @@ describe('useCollapsingHeader exit tracking', () => {
     scrollTo(35);
     expect(edit.style.pointerEvents).toBe('');
 
-    // The page's own cover blurs with the header band, on its own element.
+    // The page's own cover is the header, so only its blur layer is written.
     scrollTo(60);
-    expect(pageBlur.style.getPropertyValue('--cover-blur')).toBe(header.style.getPropertyValue('--cover-blur'));
+    expect(pageBlur.style.getPropertyValue('--cover-blur')).not.toBe('');
+    expect(header.style.getPropertyValue('--cover-blur')).toBe('');
     expect(card.style.getPropertyValue('--cover-blur')).toBe('');
     expect(card.style.getPropertyValue('--exit')).toBe('');
     expect(document.documentElement.style.getPropertyValue('--exit')).toBe('');

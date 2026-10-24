@@ -31,22 +31,31 @@ const smoothstep = (t) => t * t * (3 - 2 * t);
  * over the cover and follow the theme once the header is solid. The mobile
  * system-bar installer observes these root attributes and updates native bars.
  *
- * With `coverBackground` (Profile) the header also carries the page's cover:
- * `--cover-shift` scrolls it away 1:1 with the page until only a header's
- * height of it is left, where it pins; `--cover-blur` (0..1) crossfades it into
- * a blurred copy over the same distance, so the cover itself becomes the
- * header's background. It used to be squashed with `scaleY` instead, which
- * distorted the photo. Sizes are re-measured whenever the cover or the header
- * resizes: the status-bar inset arrives after mount and changes the cover's
- * height without a window resize, which left the fixed copy at a stale height,
- * out of line with the page.
+ * With `coverBackground` (Profile and Community) the page's own cover IS the
+ * header. Both pages make their cover element `position: sticky`; this hook
+ * gives it `--cover-pin-top` for its sticky `top` (measured, resize-only; a
+ * variable, so a layout where the cover is not sticky is left alone) so it pins exactly when the BOTTOM of
+ * the page's avatar (`data-cover-avatar`: profile picture, community icon)
+ * reaches the header's bottom line. Until then the cover scrolls 1:1 with the
+ * page. The avatar hangs below the cover's bottom edge, so the cover's own
+ * box pins first (sticky, done by the compositor in the frame of the scroll)
+ * and its picture keeps panning up inside that box for the remaining distance
+ * (`--cover-pan`, px, written per scroll onto the cover element only and read
+ * as a `translate`). The picture is drawn `--cover-extend` px taller than the
+ * box (resize-only) so the header band is always full. `--cover-blur` (0..1)
+ * crossfades the picture into a pre-blurred copy (BlurredCover) by opacity
+ * over the whole distance to the pin, proportional to scroll. There is no
+ * second header: the pinned, blurred cover stays as the header's background.
+ * Only transform/opacity change per frame; nothing reads layout per scroll.
  *
  * Elements inside the page's card marked `data-exit-track="<name>"` get an
  * `--exit` variable (0..1): 0 while the element is well clear of the header, 1
  * once its top edge has reached the header's bottom. They are meant to be
  * invisible by then, so the header's opaque edge never slices through them
  * (it used to cut the avatar flat as it slid underneath). `data-exit-lead`
- * is how many px of scroll that takes (default 40). `data-exit-after` is the
+ * is how many px of scroll that takes (default 40). `data-exit-through` runs
+ * from the element's top edge reaching the header's bottom to its bottom edge
+ * doing so (the avatar dissolves into the pinned cover). `data-exit-after` is the
  * other kind: the element is pinned on the header's bottom line by the page
  * (`position: sticky`, `data-exit-sticky`) and fades over that many px of
  * scroll after touching it, never going behind the header. `data-exit-inert`
@@ -90,10 +99,12 @@ export function useCollapsingHeader({
   coverRef,
   coverBackground = false,
   collapseRangeMultiplier = 1,
+  coverIsPhoto = true,
 }) {
   useLayoutEffect(() => {
     const header = headerRef.current;
     if (!enabled || !header) return undefined;
+    const coverAtMount = coverRef.current;
 
     const root = document.documentElement;
     // Before update() below writes its own icon preference.
@@ -146,12 +157,16 @@ export function useCollapsingHeader({
         // Otherwise it must be gone by `end`, and starts going `lead` px before.
         const after = Number.parseFloat(el.getAttribute('data-exit-after')) || 0;
         const lead = Number.parseFloat(el.getAttribute('data-exit-lead')) || DEFAULT_EXIT_LEAD_PX;
-        const start = after > 0 ? end : Math.max(0, end - lead);
+        const through = el.hasAttribute('data-exit-through') ? el.offsetHeight : 0;
+        const start = after > 0 || through > 0 ? end : Math.max(0, end - lead);
+        let span = Math.max(1, end - start);
+        if (through > 0) span = through;
+        else if (after > 0) span = after;
         return {
           el,
           name: el.getAttribute('data-exit-track'),
           start,
-          span: after > 0 ? after : Math.max(1, end - start),
+          span,
           inert: el.hasAttribute('data-exit-inert'),
           last: '',
         };
@@ -163,26 +178,53 @@ export function useCollapsingHeader({
     let coverHeight = 0;
     let headerHeight = 0;
     let trackerRetries = 20;
+    // Scroll position at which the cover's own box pins, and how much further
+    // its picture pans before the avatar's bottom reaches the header's bottom.
+    let boxPinAt = 1;
+    let extend = 0;
+    let lastExtend = -1;
+    let lastTop = '';
+    let lastPan = '';
+    let lastBlur = '';
 
     /*
      * Sizes: measured on mount, on resize and when the cover or header resizes
      * - never per scroll event, where a layout read would be forced in every
-     * frame of a fling.
+     * frame of a fling. offsetHeight/offsetTop ignore transforms (the pull's
+     * zoom, the pan), so they never move the points measured from.
      */
     const measure = () => {
-      // Sub-pixel: offsetHeight rounds, which left the fixed cover up to half a
-      // pixel off the page's placeholder.
-      coverHeight = coverRef.current?.getBoundingClientRect().height || 0;
+      const cover = coverRef.current;
+      coverHeight = cover?.offsetHeight || 0;
       headerHeight = header.offsetHeight;
-      if (!coverBackground) return;
-      // Sizes change rarely (layout, the status-bar inset); only then are
-      // they written, and only then on the root.
+      if (!coverBackground || !cover) return;
       if (coverHeight !== lastCoverHeight || headerHeight !== lastHeaderHeight) {
         lastCoverHeight = coverHeight;
         lastHeaderHeight = headerHeight;
         root.style.setProperty('--profile-cover-height', `${coverHeight}px`);
         root.style.setProperty('--profile-cover-h', String(Math.max(1, coverHeight)));
         header.style.setProperty('--cover-h', String(Math.max(1, coverHeight)));
+      }
+      // Where the sticky cover sits in the flow: offsetTop would include the
+      // offset sticky applies while it is stuck, so it is read from the
+      // element that follows it (never sticky), minus the cover's height.
+      const next = cover.nextElementSibling;
+      const coverTop = next instanceof HTMLElement
+        ? docTop(next) - (Number.parseFloat(window.getComputedStyle(next).marginTop) || 0) - coverHeight
+        : docTop(cover);
+      boxPinAt = Math.max(1, coverTop + coverHeight - headerHeight);
+      const avatar = cover.parentElement?.querySelector('[data-cover-avatar]');
+      const avatarBottom = avatar && avatar.offsetHeight > 0 ? docTop(avatar) + avatar.offsetHeight : 0;
+      extend = Math.max(0, Math.round(avatarBottom - headerHeight - boxPinAt));
+      if (extend !== lastExtend) {
+        lastExtend = extend;
+        cover.style.setProperty('--cover-extend', `${extend}px`);
+      }
+      // The box pins with only the header's height of it left on screen.
+      const top = `${headerHeight - coverHeight}px`;
+      if (top !== lastTop) {
+        lastTop = top;
+        cover.style.setProperty('--cover-pin-top', top);
       }
       // Cheap, and what the name's height does when its web font arrives.
       measureTrackers(headerHeight);
@@ -195,15 +237,19 @@ export function useCollapsingHeader({
       if (coverBackground) {
         // The page can mount after this hook first measures, so keep looking
         // for the marked elements for a little while.
-        if (trackers.length === 0 && trackerRetries-- > 0 && coverRef.current) measureTrackers(headerHeight);
-        const pinAt = Math.max(1, coverHeight - headerHeight);
+        if (trackers.length === 0 && trackerRetries-- > 0 && coverRef.current) measure();
         const scrolled = Math.max(0, window.scrollY);
-        header.style.setProperty('--cover-shift', String(Math.min(scrolled, pinAt)));
+        const pinAt = boxPinAt + extend;
+        const pan = String(Math.round(Math.min(Math.max(0, scrolled - boxPinAt), extend) * 10) / 10);
+        if (pan !== lastPan) {
+          lastPan = pan;
+          coverRef.current?.style.setProperty('--cover-pan', pan);
+        }
         const blur = smoothstep(clamp01(scrolled / pinAt)).toFixed(3);
-        header.style.setProperty('--cover-blur', blur);
-        // The page's own cover blurs with the header band, so the band's
-        // edge never shows as a sharp/blurred division across the photo.
-        for (const el of blurEls) el.style.setProperty('--cover-blur', blur);
+        if (blur !== lastBlur) {
+          lastBlur = blur;
+          for (const el of blurEls) el.style.setProperty('--cover-blur', blur);
+        }
         for (const t of trackers) {
           const exit = clamp01((scrolled - t.start) / t.span).toFixed(3);
           if (exit === t.last) continue;
@@ -214,7 +260,10 @@ export function useCollapsingHeader({
         }
       }
       const dark = root.getAttribute('data-theme') === 'dark';
-      const wanted = coverBackground || progress < 0.5 || dark ? 'light' : 'dark';
+      // Over a photo the icons are light; over a plain cover (no picture) they
+      // follow the theme.
+      const onCover = coverBackground ? coverIsPhoto : progress < 0.5;
+      const wanted = onCover || dark ? 'light' : 'dark';
       /*
        * Yields to anyone else's preference. A sheet over the cover (the
        * community's details page) asks for the icons ITS background needs
@@ -283,10 +332,15 @@ export function useCollapsingHeader({
       resizeObserver?.disconnect();
       themeObserver.disconnect();
       releaseCoverAttributes(root);
+      if (coverBackground && coverAtMount) {
+        coverAtMount.style.removeProperty('--cover-pin-top');
+        coverAtMount.style.removeProperty('--cover-extend');
+        coverAtMount.style.removeProperty('--cover-pan');
+      }
       if (previousCoverHeight) root.style.setProperty('--profile-cover-height', previousCoverHeight);
       else root.style.removeProperty('--profile-cover-height');
       if (previousCoverH) root.style.setProperty('--profile-cover-h', previousCoverH);
       else root.style.removeProperty('--profile-cover-h');
     };
-  }, [enabled, headerRef, coverRef, coverBackground, collapseRangeMultiplier]);
+  }, [enabled, headerRef, coverRef, coverBackground, collapseRangeMultiplier, coverIsPhoto]);
 }

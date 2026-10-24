@@ -14,14 +14,11 @@ import styles from './CollapsingHeader.module.css';
  * `coverRef` is the cover element: its height is the scroll distance over
  * which the header fills in.
  *
- * With `coverBackground`, `coverContent` is a copy of the page's cover that
- * becomes the header's background. It is clipped to the header band, so the
- * page's own cover (and the avatar over it) is never painted over; inside the
- * band the copy lines up with the page's cover exactly, scrolls away with it,
- * pins, and crossfades into `coverBackdrop` (the same cover, blurred once by
- * CSS). A pull zooms it from the top edge and widens the band to the pulled
- * distance, so the area the pull opens is always filled; the header's buttons
- * travel down with the page (see useCollapsingHeader and PullToRefresh).
+ * With `coverBackground` the header has no background of its own: the page's
+ * cover is sticky beneath it, scrolls up with the page, blurs and pins as the
+ * header once the avatar's bottom edge reaches the header's bottom line (see
+ * useCollapsingHeader). Only the buttons and the title live here; there is no
+ * second header that replaces the cover.
  */
 export default function CollapsingHeader({
   coverRef,
@@ -31,8 +28,7 @@ export default function CollapsingHeader({
   backVariant = 'default',
   coverShade = true,
   coverBackground = false,
-  coverContent,
-  coverBackdrop,
+  coverIsPhoto = true,
   collapseRangeMultiplier = 1,
   headerRef: providedHeaderRef,
   rightAction,
@@ -45,6 +41,7 @@ export default function CollapsingHeader({
     coverRef,
     coverBackground,
     collapseRangeMultiplier,
+    coverIsPhoto,
   });
 
   if (!IS_MOBILE_BUILD) return null;
@@ -54,21 +51,6 @@ export default function CollapsingHeader({
       ref={headerRef}
       className={`${styles.header} ${coverShade ? '' : styles.noCoverShade} ${backVariant === 'profile' ? styles.profileHeader : ''} ${coverBackground ? styles.withCover : ''}`}
     >
-      {coverBackground && coverContent && (
-        <div className={styles.coverClip} aria-hidden="true">
-          <div className={styles.coverBackground}>
-            <div className={styles.coverStretch}>
-              <div className={styles.coverSharp}>{coverContent}</div>
-              {coverBackdrop && (
-                <>
-                  <div className={`${styles.coverBlur} ${styles.coverBlurScroll}`}>{coverBackdrop}</div>
-                  <div className={`${styles.coverBlur} ${styles.coverBlurPull}`}>{coverBackdrop}</div>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
       {!coverBackground && <div className={styles.surface} aria-hidden="true" />}
       <button
         type="button"

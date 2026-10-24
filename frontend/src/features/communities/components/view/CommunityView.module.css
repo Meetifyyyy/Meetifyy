@@ -2373,9 +2373,52 @@
     height: 100%;
   }
 
+  /*
+   * The cover is the header (the same behaviour as Profile, see
+   * useCollapsingHeader). It is sticky: it scrolls up with the page and its
+   * box pins with only the header's height of it left (`top`, set by the hook
+   * from measured sizes); its picture keeps panning up inside the box
+   * (`--cover-pan`) until the icon's bottom edge reaches the header's bottom,
+   * then stays, blurred. A sticky element pins only inside its parent, and
+   * the hero card is short, so the card stops being a box here and its
+   * surface moves to the content block below the cover.
+   */
+  :global(html[data-collapsing-header]) .heroSection {
+    display: contents;
+  }
+
+  :global(html[data-collapsing-header]) .heroContent {
+    background: var(--color-bg-white);
+  }
+
   :global(html[data-collapsing-header]) .heroCover {
-    height: calc(clamp(100px, 15cqi, 155px) + var(--status-bar-inset, 0px));
+    /* vw, not cqi: the card is no longer a container (display: contents);
+       on a phone the card is the screen's width, so the size is the same. */
+    height: calc(clamp(100px, 15vw, 155px) + var(--status-bar-inset, 0px));
     max-height: none;
+    position: sticky;
+    top: var(--cover-pin-top, calc(56px - clamp(100px, 15vw, 155px)));
+    /* Above the content that scrolls beneath it, below the header (60). */
+    z-index: 5;
+    /* The picture is drawn `--cover-extend` px taller than the box; clipped
+       at the bottom and sides only, so a pull's zoom still grows above it. */
+    clip-path: inset(-100vh 0 0 0);
+  }
+
+  :global(html[data-collapsing-header]) .heroCoverImg,
+  :global(html[data-collapsing-header]) .coverSkeleton,
+  :global(html[data-collapsing-header]) .coverPullBlur {
+    bottom: auto;
+    height: calc(100% + var(--cover-extend, 0px));
+    /* The pan: compositor-only, the one value that changes per scroll. */
+    translate: 0 calc(var(--cover-pan, 0) * -1px);
+  }
+
+  /* The scroll's share of the blur, proportional to the distance to the pin. */
+  :global(html[data-collapsing-header]) .coverPullBlur.coverScrollBlur {
+    opacity: var(--cover-blur, 0);
+    transition: none;
+    will-change: opacity;
   }
 
 }

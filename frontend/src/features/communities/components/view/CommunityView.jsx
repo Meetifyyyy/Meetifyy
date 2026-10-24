@@ -1,4 +1,14 @@
 import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from 'react';
+import { isImageComplete } from '@shared/utils/imageReveal';
+
+/**
+ * Cover and icon URLs this session has already shown. Reopening a community
+ * mounts the view afresh, and its "loaded" state started empty, so the cover
+ * and icon went back to a shimmer and faded in again although the WebView had
+ * them cached. A URL seen once shows at once; after a relaunch (empty set) an
+ * image the cache completes before paint is caught by `catchComplete`.
+ */
+const shownImages = new Set();
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
@@ -106,16 +116,25 @@ function HeroSection({ coverRef, comm, joined, joining, onToggleJoin, onCreatePo
    * error event names it. Every upload is stored under a new key, so the URL
    * always changes and the cache can never serve the old picture.
    */
-  const [loadedAvatar, setLoadedAvatar] = useState(null);
+  const [loadedAvatar, setLoadedAvatar] = useState(() => (shownImages.has(avatarUrl) ? avatarUrl : null));
   const [failedAvatar, setFailedAvatar] = useState(null);
-  const [loadedCover, setLoadedCover] = useState(null);
+  const [loadedCover, setLoadedCover] = useState(() => (shownImages.has(resolvedCover) ? resolvedCover : null));
   const [failedCover, setFailedCover] = useState(null);
   const imgError = Boolean(avatarUrl) && failedAvatar === avatarUrl;
-  const avatarLoading = Boolean(avatarUrl) && loadedAvatar !== avatarUrl && !imgError;
+  // Also read the session set directly: the community's data can arrive after
+  // mount, when the useState initialiser has already run without its URLs.
+  const avatarLoading = Boolean(avatarUrl) && loadedAvatar !== avatarUrl && !shownImages.has(avatarUrl) && !imgError;
   const coverError = Boolean(resolvedCover) && failedCover === resolvedCover;
-  const coverLoading = loadedCover !== resolvedCover && !coverError;
+  const coverLoading = loadedCover !== resolvedCover && !shownImages.has(resolvedCover) && !coverError;
+  const markAvatar = useCallback((url) => { shownImages.add(url); setLoadedAvatar(url); }, []);
+  const markCover = useCallback((url) => { shownImages.add(url); setLoadedCover(url); }, []);
+  // An <img> the cache has already completed when it is attached never needs
+  // the shimmer: mark it in the commit, before the first paint.
+  const catchAvatar = useCallback((img) => { if (isImageComplete(img)) markAvatar(img.getAttribute('src')); }, [markAvatar]);
+  const catchCover = useCallback((img) => { if (isImageComplete(img)) markCover(img.getAttribute('src')); }, [markCover]);
   const avatarEvents = {
-    onLoad: () => setLoadedAvatar(avatarUrl),
+    ref: catchAvatar,
+    onLoad: () => markAvatar(avatarUrl),
     onError: () => setFailedAvatar(avatarUrl),
   };
 
@@ -189,14 +208,21 @@ function HeroSection({ coverRef, comm, joined, joining, onToggleJoin, onCreatePo
             src={resolvedCover}
             alt=""
             className={`${styles.heroCoverImg} ${coverLoading ? styles.imgHidden : styles.imgVisible}`}
-            onLoad={() => setLoadedCover(resolvedCover)}
+            ref={catchCover}
+            onLoad={() => markCover(resolvedCover)}
             onError={() => setFailedCover(resolvedCover)}
             draggable={false}
             style={{ cursor: 'default', userSelect: 'none', pointerEvents: 'none' }}
           />
         )}
         {IS_MOBILE_BUILD && hasCover && (
-          /* The same cover, blurred, faded in by a pull (see CommunityView.module.css). */
+          /* The same cover, blurred: faded in by scrolling (useCollapsingHeader
+             writes --cover-blur here) and by a pull. */
+          <div className={`${styles.coverPullBlur} ${styles.coverScrollBlur}`} data-cover-blur aria-hidden="true">
+            <BlurredCover cover={resolvedCover} />
+          </div>
+        )}
+        {IS_MOBILE_BUILD && hasCover && (
           <div className={styles.coverPullBlur} aria-hidden="true">
             <BlurredCover cover={resolvedCover} />
           </div>
@@ -421,8 +447,9 @@ function HeroSection({ coverRef, comm, joined, joining, onToggleJoin, onCreatePo
         {/* MOBILE LAYOUT */}
         <div className={styles.mobileHeroLayout}>
           <div className={styles.mobileHeroTopRow}>
-            <div 
+            <div
               className={styles.mobileAvatar}
+              data-cover-avatar
               style={{ background: (!avatarUrl || imgError) ? (comm.color || 'var(--color-primary)') : 'var(--color-bg-white)' }}
             >
               {avatarLoading && avatarUrl && !imgError && (
@@ -1168,15 +1195,13 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
         subtitle={`${memberTotal} ${memberTotal === 1 ? 'member' : 'members'}`}
         onBack={onBack}
         backVariant="profile"
-        // The header carries its own copy of the cover, which scrolls away with
-        // the page, pins at the header's height and crossfades into a blurred
-        // copy (CollapsingHeader's coverContent/coverBackdrop). Without a cover
-        // the header faded in a plain themed surface, solid white or black.
-        // The page's own cover cannot pin itself as Profile's does: its parent
-        // is the short hero card, which a sticky element cannot outlive.
-        coverBackground={Boolean(headerCover)}
-        coverContent={headerCover ? <img src={headerCover} alt="" draggable={false} style={{ objectFit: 'cover' }} /> : undefined}
-        coverBackdrop={headerCover ? <BlurredCover cover={headerCover} /> : undefined}
+        // The page's own cover is the header: it scrolls up with the page,
+        // blurs, and pins once the icon's bottom edge reaches the header's
+        // bottom (useCollapsingHeader, the same behaviour as Profile). No
+        // cover picture: the plain cover pins the same way and the status-bar
+        // icons follow the theme.
+        coverBackground
+        coverIsPhoto={Boolean(headerCover)}
         headerRef={collapsingHeaderRef}
         // The installed app's fixed header paints over the page's own menu
         // button, so there the menu lives in the header (as Profile's does).

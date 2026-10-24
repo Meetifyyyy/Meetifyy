@@ -760,18 +760,23 @@
   :global(html[data-collapsing-header]) .coverWrap {
     height: calc(100vw / 3 + var(--status-bar-inset, 0px));
     /*
-     * The page's own cover is what the header shows. It scrolls away with the
-     * page and pins when only the header's height (56px + the status bar) of it
-     * is left, which is `top` = that height minus its own (the inset cancels).
-     * Sticky is done by the compositor in the frame of the scroll, so there is
-     * a single cover and nothing to keep aligned with a copy - the fixed copy
-     * this replaces was moved from script and trailed the page by a frame,
-     * which read as the header overlapping the cover.
+     * The page's own cover is the header (one shared behaviour with the
+     * Community page, see useCollapsingHeader). It scrolls up with the page
+     * and its box pins when only the header's height of it is left: `top` is
+     * that height minus its own, set by the hook from measured sizes (this
+     * value is the same thing before the first measurement). Sticky is done by
+     * the compositor in the frame of the scroll. Its picture then keeps
+     * panning up inside the pinned box (`--cover-pan`) until the avatar's
+     * bottom edge reaches the header's bottom, and stays there, blurred.
      */
     position: sticky;
-    top: calc(56px - 100vw / 3);
+    top: var(--cover-pin-top, calc(56px - 100vw / 3));
     /* Above the content that scrolls beneath it, below the header (60). */
     z-index: 5;
+    /* The picture is drawn `--cover-extend` px taller than the box (what the
+       pan reveals); clipped at the box's bottom and sides only, so a pull's
+       zoom can still grow above it. Static: never changes while scrolling. */
+    clip-path: inset(-100vh 0 0 0);
   }
 
   /* No stacking context of its own, so the avatar (z-index 10) still sits over
@@ -782,7 +787,15 @@
 
   :global(html[data-collapsing-header]) .coverPhoto {
     aspect-ratio: auto;
-    height: 100%;
+    height: calc(100% + var(--cover-extend, 0px));
+  }
+
+  :global(html[data-collapsing-header]) .editCoverBtn {
+    bottom: calc(10px + var(--cover-extend, 0px));
+  }
+
+  :global(html[data-collapsing-header]) .coverProgress {
+    bottom: var(--cover-extend, 0px);
   }
 
   /*
@@ -796,7 +809,10 @@
    */
   :global(html[data-collapsing-header]) .coverWrap > .coverPhoto,
   :global(html[data-collapsing-header]) .coverPullBlur {
-    transform-origin: 50% 100%;
+    /* The pan: compositor-only, the one value that changes per scroll. */
+    translate: 0 calc(var(--cover-pan, 0) * -1px);
+    /* The box's bottom edge, not the taller picture's. */
+    transform-origin: 50% calc(100% - var(--cover-extend, 0px));
     transform: scale(calc(1 + var(--ptr-offset, 0) / var(--profile-cover-h, 1)));
     transition: transform var(--ptr-timing, 0s);
   }
@@ -804,6 +820,7 @@
   :global(html[data-collapsing-header]) .coverPullBlur {
     position: absolute;
     inset: 0;
+    bottom: calc(-1 * var(--cover-extend, 0px));
     pointer-events: none;
     overflow: hidden;
     /* The pull's share of the blur. */
@@ -823,24 +840,20 @@
   }
 
   /*
-   * The avatar sticks to the header's bottom line when its top edge reaches it
-   * (`position: sticky`: the page pins it, so it sits exactly on the line with
-   * no lag) and from then on keeps shrinking toward that line and fading, never
-   * going behind the header. `--exit` (0..1) is that progress, written onto the
-   * element by useCollapsingHeader (`data-exit-track`, `data-exit-after`).
+   * The avatar sits over the cover until its top edge reaches the header's
+   * bottom line, then shrinks a little toward its own bottom edge and
+   * dissolves as it crosses it; it is gone exactly when its bottom edge
+   * reaches the line, which is when the cover pins. `--exit` (0..1) is written
+   * onto the element by useCollapsingHeader (`data-exit-through`).
    *
-   * NOT a view-timeline animation, as it was: on the installed app any one
-   * scroll-driven animation on this page made a fast flick stall for ~1.6 s and
-   * then jump (13 frames per flick instead of 106). See useCollapsingHeader.
+   * NOT a view-timeline animation, as it once was: on the installed app any
+   * one scroll-driven animation on this page made a fast flick stall for
+   * ~1.6 s and then jump (13 frames per flick instead of 106).
    */
   :global(html[data-collapsing-header]) .avatarWrapper {
-    position: sticky !important;
-    top: calc(56px + var(--status-bar-inset, 0px));
-    transform-origin: 50% 0;
-    transform: scale(calc(1 - 0.55 * var(--exit, 0)));
-    /* Gone a little before it has finished shrinking, so the name rising to it
-       never overlaps something still clearly visible. */
-    opacity: calc(1 - min(1, var(--exit, 0) * 1.6));
+    transform-origin: 50% 100%;
+    transform: scale(calc(1 - 0.3 * var(--exit, 0)));
+    opacity: calc(1 - var(--exit, 0));
     will-change: transform, opacity;
   }
 

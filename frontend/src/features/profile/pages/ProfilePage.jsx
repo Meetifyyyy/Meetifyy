@@ -534,7 +534,6 @@ export default function ProfilePage() {
         onBack={() => goBack('/home')}
         backVariant="profile"
         coverBackground
-        collapseRangeMultiplier={1.45}
         headerRef={collapsingHeaderRef}
         rightAction={IS_MOBILE_BUILD ? (
           <div className={s.menuWrap}>
@@ -619,7 +618,7 @@ export default function ProfilePage() {
               )}
             </div>
             <div className={s.profileInfo}>
-            <div className={s.avatarWrapper} data-exit-track="avatar" data-exit-sticky data-exit-after="110" data-exit-inert>
+            <div className={s.avatarWrapper} data-exit-track="avatar" data-exit-through data-exit-inert data-cover-avatar>
                 <Avatar
                   src={effectiveUser.avatar}
                   name={effectiveUser.displayName || effectiveUser.name || effectiveUser.username}

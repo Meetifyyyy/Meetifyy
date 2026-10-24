@@ -40,83 +40,6 @@
   display: none;
 }
 
-.coverClip {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 0;
-  /*
-   * The header band, widened to the pulled distance during a pull. Clipping
-   * here is what keeps this copy off the page's own cover and the avatar
-   * that overlaps it. The height follows the content's spring back.
-   */
-  /* + 4px of overlap with the page's cover (identical pixels there): the two
-     edges meet on fractional pixels, and without it the anti-aliased row
-     between them showed the page surface as a thin white line. */
-  height: max(100%, calc(var(--pull-to-refresh-distance, 0px) + 4px));
-  transition: height var(--pull-to-refresh-timing, 0s);
-  overflow: hidden;
-  pointer-events: none;
-}
-
-.coverBackground {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: var(--profile-cover-height, calc(100vw / 3 + var(--status-bar-inset, 0px)));
-  /* Scrolls away 1:1 with the page, then pins (--cover-shift, written by
-     useCollapsingHeader). */
-  transform: translate3d(0, calc(var(--cover-shift, 0) * -1px), 0);
-  will-change: transform;
-}
-
-/*
- * The pull. Zooms from the top of the screen by (h + pull) / h: the same
- * mapping the page's cover gets by zooming about its bottom edge (see
- * ProfilePage.module.css), so the two meet without a seam.
- */
-.coverStretch {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  transform-origin: 50% 0;
-  transform: scale(calc(1 + var(--pull-to-refresh-offset, 0) / var(--cover-h, 1)));
-  transition: transform var(--pull-to-refresh-timing, 0s);
-  will-change: transform;
-}
-
-.coverSharp,
-.coverBlur {
-  position: absolute;
-  inset: 0;
-}
-
-.coverSharp > *,
-.coverBlur > * {
-  width: 100%;
-  height: 100%;
-  aspect-ratio: auto;
-}
-
-/*
- * The same cover, blurred (BlurredCover: a tiny pre-blurred bitmap stretched
- * by the GPU, no CSS filter) and crossfaded in by opacity alone. Two layers,
- * because the scroll and the pull each own a share and opacities cannot be
- * added in CSS: the scroll's share follows --cover-blur (useCollapsingHeader),
- * the pull's follows the pulled distance.
- */
-.coverBlurScroll {
-  opacity: var(--cover-blur, 0);
-  will-change: opacity;
-}
-
-.coverBlurPull {
-  opacity: min(1, calc(var(--pull-to-refresh-offset, 0) / 120));
-  transition: opacity var(--pull-to-refresh-timing, 0s);
-}
-
 /*
  * A cover header stays in place during a pull (its cover fills the gap); its
  * buttons and titles travel down with the page, like the rest of the screen.
@@ -126,7 +49,7 @@
   transition: none;
 }
 
-.withCover > :not(.coverClip) {
+.withCover > * {
   transform: translate3d(0, var(--pull-to-refresh-distance, 0px), 0);
   transition: var(--pull-to-refresh-transition, none);
 }
