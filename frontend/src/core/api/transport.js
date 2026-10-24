@@ -908,11 +908,17 @@ export function createTransport({
       let errorMessage = `API error ${res.status}`;
       let errorCode;
       let retryAfterFromBody = null;
+      let availableAtFromBody = null;
       try {
         const errorBody = await res.json();
         errorMessage = errorBody?.message || errorMessage;
         if (typeof errorBody?.retryAfterSeconds === 'number') {
           retryAfterFromBody = errorBody.retryAfterSeconds;
+        }
+        // A server-computed "allowed again at" (the email-change cooldown), so
+        // the caller can show it in the viewer's own time zone.
+        if (typeof errorBody?.availableAt === 'string') {
+          availableAtFromBody = errorBody.availableAt;
         }
         // Authorization failures carry a machine-readable code (e.g.
         // COLLEGE_RESTRICTED, PRIVATE) that callers use to pick the right UI
@@ -926,6 +932,7 @@ export function createTransport({
       const err = new Error(errorMessage);
       err.status = res.status;
       if (errorCode) err.code = errorCode;
+      if (availableAtFromBody) err.availableAt = availableAtFromBody;
 
       // Rate limited. The server sends `code: 'rate_limited'`, a human-readable
       // message and how long to wait; surface all three rather than letting a

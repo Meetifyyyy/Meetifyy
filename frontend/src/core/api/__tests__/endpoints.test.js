@@ -60,6 +60,7 @@ const EXPECTED_NAMESPACES = [
   'confessionsApi',
   'campusAffiliationApi',
   'accountEmailApi',
+  'reauthApi',
   'notificationsApi',
   'pushApi',
   'searchApi',
@@ -97,7 +98,7 @@ describe('createEndpoints', () => {
     const { transport } = stubTransport();
     const api = createEndpoints(transport);
     const total = Object.values(api).reduce((n, ns) => n + Object.keys(ns).length, 0);
-    expect(total).toBe(223); // +confessionsApi (getMe/checkHandle/createProfile/list/create/relate/unrelate/remove); 215 +pushApi (getConfig/registerDevice/unregisterDevice/getPreferences/updatePreferences); 210 +usersApi.snoozeProfilePrompt; 198 + campusAffiliationApi (get/sendOtp/verify/remove/listColleges/requestCollege) + accountEmailApi (get/sendOtp/verify) + legalApi (listVersions/getVersion)
+    expect(total).toBe(227); // +reauthApi (methods/withPassword/sendCode/withCode); 223 +confessionsApi (getMe/checkHandle/createProfile/list/create/relate/unrelate/remove); 215 +pushApi (getConfig/registerDevice/unregisterDevice/getPreferences/updatePreferences); 210 +usersApi.snoozeProfilePrompt; 198 + campusAffiliationApi (get/sendOtp/verify/remove/listColleges/requestCollege) + accountEmailApi (get/sendOtp/verify) + legalApi (listVersions/getVersion)
   });
 
   it('is a factory, not a singleton — two calls yield independent objects', () => {
@@ -131,25 +132,51 @@ describe('createEndpoints', () => {
     api.campusAffiliationApi.get();
     api.campusAffiliationApi.sendOtp({ collegeId: 'c1', email: 'a@uni.edu' });
     api.campusAffiliationApi.verify({ code: '123456' });
-    api.campusAffiliationApi.remove({ password: 'pw' });
+    api.campusAffiliationApi.sendOtp({ collegeId: 'c2', email: 'b@uni.edu', reauthToken: 'g1' });
+    api.campusAffiliationApi.verify({ code: '123456', reauthToken: 'g1' });
+    api.campusAffiliationApi.remove({ reauthToken: 'g2' });
     api.campusAffiliationApi.requestCollege({
       name: 'Asha', collegeName: 'New College', collegeEmail: 'a@new.edu', personalEmail: 'a@mail.com', city: 'x',
     });
-    api.accountEmailApi.sendOtp({ email: 'me@mail.com' });
-    api.accountEmailApi.verify({ code: '654321', currentPassword: 'pw' });
+    api.accountEmailApi.sendOtp({ email: 'me@mail.com', reauthToken: 'g3' });
+    api.accountEmailApi.verify({ code: '654321', reauthToken: 'g3' });
+    api.reauthApi.methods();
+    api.reauthApi.withPassword({ purpose: 'college_email_remove', password: 'pw' });
+    api.reauthApi.sendCode({ purpose: 'personal_email_change' });
+    api.reauthApi.withCode({ purpose: 'personal_email_change', code: '111111' });
     expect(calls).toEqual([
       { method: 'GET', path: '/api/campus/affiliation', rest: [] },
       { method: 'POST', path: '/api/campus/affiliation/otp', rest: [{ collegeId: 'c1', email: 'a@uni.edu' }] },
       { method: 'POST', path: '/api/campus/affiliation/verify', rest: [{ code: '123456' }] },
-      { method: 'DELETE', path: '/api/campus/affiliation', rest: [{ body: { password: 'pw' } }] },
+      // A first verification sends no grant; a change sends one.
+      {
+        method: 'POST',
+        path: '/api/campus/affiliation/otp',
+        rest: [{ collegeId: 'c2', email: 'b@uni.edu', reauthToken: 'g1' }],
+      },
+      { method: 'POST', path: '/api/campus/affiliation/verify', rest: [{ code: '123456', reauthToken: 'g1' }] },
+      // Removal carries the grant, never a password.
+      { method: 'DELETE', path: '/api/campus/affiliation', rest: [{ body: { reauthToken: 'g2' } }] },
       // Only the DTO's four fields: the server forbids unknown ones.
       {
         method: 'POST',
         path: '/api/auth/request-college',
         rest: [{ name: 'Asha', collegeName: 'New College', collegeEmail: 'a@new.edu', personalEmail: 'a@mail.com' }],
       },
-      { method: 'POST', path: '/api/account/email/otp', rest: [{ email: 'me@mail.com' }] },
-      { method: 'POST', path: '/api/account/email/verify', rest: [{ code: '654321', currentPassword: 'pw' }] },
+      { method: 'POST', path: '/api/account/email/otp', rest: [{ email: 'me@mail.com', reauthToken: 'g3' }] },
+      { method: 'POST', path: '/api/account/email/verify', rest: [{ code: '654321', reauthToken: 'g3' }] },
+      { method: 'GET', path: '/api/account/reauth', rest: [] },
+      {
+        method: 'POST',
+        path: '/api/account/reauth/password',
+        rest: [{ purpose: 'college_email_remove', password: 'pw' }],
+      },
+      { method: 'POST', path: '/api/account/reauth/code', rest: [{ purpose: 'personal_email_change' }] },
+      {
+        method: 'POST',
+        path: '/api/account/reauth/code/verify',
+        rest: [{ purpose: 'personal_email_change', code: '111111' }],
+      },
     ]);
   });
 

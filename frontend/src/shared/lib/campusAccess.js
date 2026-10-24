@@ -100,8 +100,66 @@ function describeRateLimit(err) {
     : 'Too many requests. Wait a moment and try again.';
 }
 
+/**
+ * A server-computed "allowed again at" in the viewer's own time zone and
+ * locale. The server decides when; the device only renders it.
+ */
+export function formatEligibleDate(iso) {
+  const date = iso ? new Date(iso) : null;
+  if (!date || Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+/** Codes every email-change flow can meet, in one place. */
+function describeEmailSecurityError(err) {
+  switch (err?.code) {
+    case 'email_change_cooldown': {
+      const when = formatEligibleDate(err.availableAt);
+      return when
+        ? `For account security, you can change this email again on ${when}.`
+        : err?.message || 'For account security, you can change this email only once every 30 days.';
+    }
+    case 'reauth_required':
+      return "For your security, confirm it's you again to continue.";
+    case 'email_change_in_progress':
+      return 'An email change is already in progress. Try again in a minute.';
+    default:
+      return null;
+  }
+}
+
+/** For the "confirm it's you" step. */
+export function describeReauthError(err) {
+  switch (err?.code) {
+    case 'invalid_password':
+      return 'That password is incorrect.';
+    case 'password_not_set':
+      return "This account doesn't use a password. Confirm by email instead.";
+    case 'use_password':
+      return 'Confirm with your password.';
+    case 'no_reauth_method':
+      return "We can't confirm it's you from here. Contact support to make this change.";
+    case 'invalid_code':
+      return "That code isn't right. Check the email and try again.";
+    case 'expired_code':
+      return 'That code has expired. Send a new one.';
+    case 'too_many_attempts':
+      return 'Too many wrong codes. Send a new one and try again.';
+    case 'rate_limited':
+    case 'OTP_COOLDOWN':
+    case 'OTP_RATE_LIMITED':
+      return err?.message || describeRateLimit(err);
+    default:
+      if (err?.status === 429) return err?.message || 'Too many attempts. Wait a few minutes and try again.';
+      if (!err?.status) return "We couldn't reach Meetifyy. Check your connection and try again.";
+      return err?.message || 'Something went wrong. Please try again.';
+  }
+}
+
 /** Maps the contract's error codes to sentences a student can act on. */
 export function describeCampusOtpError(err) {
+  const security = describeEmailSecurityError(err);
+  if (security) return security;
   switch (err?.code) {
     case 'invalid_college':
       return 'That college is not available for verification any more. Pick it again from the list.';
@@ -136,6 +194,8 @@ export function describeCampusOtpError(err) {
 
 /** Same, for the personal-email change flow. */
 export function describeAccountEmailError(err) {
+  const security = describeEmailSecurityError(err);
+  if (security) return security;
   switch (err?.code) {
     case 'email_taken':
       return 'That email is already used by another account.';

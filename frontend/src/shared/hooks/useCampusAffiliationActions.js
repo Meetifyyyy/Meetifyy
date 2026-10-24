@@ -19,8 +19,8 @@ export function useCampusAffiliationActions() {
   const userId = currentUser?.id;
 
   const sendCode = useCallback(
-    async ({ collegeId, email }) => {
-      const res = await campusAffiliationApi.sendOtp({ collegeId, email });
+    async ({ collegeId, email, reauthToken }) => {
+      const res = await campusAffiliationApi.sendOtp({ collegeId, email, reauthToken });
       // The pending state now lives on the server; let the status query see it.
       queryClient.invalidateQueries({ queryKey: CAMPUS_AFFILIATION_QUERY_KEY });
       return res;
@@ -40,6 +40,8 @@ export function useCampusAffiliationActions() {
         pending: null,
       });
       queryClient.invalidateQueries({ queryKey: ['profile'] });
+      // Settings → Email shows the college cooldown this change just started.
+      queryClient.invalidateQueries({ queryKey: ['account', 'email'] });
       // The server's copy of the user is the truth for everything the patch
       // above cannot know (profileCompletion, mirrored fields). Background.
       Promise.resolve(refreshCurrentUser?.()).catch(() => {});
@@ -48,8 +50,8 @@ export function useCampusAffiliationActions() {
   );
 
   const verifyCode = useCallback(
-    async (code) => {
-      const res = await campusAffiliationApi.verify({ code });
+    async (code, reauthToken) => {
+      const res = await campusAffiliationApi.verify({ code, reauthToken });
       const affiliation = res?.affiliation || null;
       applyAffiliation(affiliation);
       return affiliation;
@@ -58,8 +60,8 @@ export function useCampusAffiliationActions() {
   );
 
   const removeAffiliation = useCallback(
-    async (password) => {
-      await campusAffiliationApi.remove({ password });
+    async (reauthToken) => {
+      await campusAffiliationApi.remove({ reauthToken });
       applyAffiliation(null);
     },
     [applyAffiliation],

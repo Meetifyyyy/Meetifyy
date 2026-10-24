@@ -598,14 +598,26 @@ export function createEndpoints({
   const campusAffiliationApi = {
     /** `{ affiliation, pending }` — both may be null. Restores a pending code across reloads. */
     get: () => apiClient.get('/api/campus/affiliation'),
-    /** `{ sent, emailMasked, expiresAt, resendAvailableAt }` */
-    sendOtp: ({ collegeId, email }) =>
-      apiClient.post('/api/campus/affiliation/otp', { collegeId, email }),
+    /**
+     * `{ sent, emailMasked, expiresAt, resendAvailableAt }`. `reauthToken` (a
+     * `college_email_change` grant) is required for every address after an
+     * account's first; the server says `reauth_required` without it.
+     */
+    sendOtp: ({ collegeId, email, reauthToken }) =>
+      apiClient.post('/api/campus/affiliation/otp', {
+        collegeId,
+        email,
+        ...(reauthToken ? { reauthToken } : {}),
+      }),
     /** `{ affiliation }` */
-    verify: ({ code }) => apiClient.post('/api/campus/affiliation/verify', { code }),
-    /** Releases the college email. The password is re-confirmed server side. */
-    remove: ({ password }) =>
-      apiClient.delete('/api/campus/affiliation', { body: { password } }),
+    verify: ({ code, reauthToken }) =>
+      apiClient.post('/api/campus/affiliation/verify', {
+        code,
+        ...(reauthToken ? { reauthToken } : {}),
+      }),
+    /** Releases the college email. Needs a `college_email_remove` grant. */
+    remove: ({ reauthToken }) =>
+      apiClient.delete('/api/campus/affiliation', { body: { reauthToken } }),
     /** Public college list (`{ colleges: [{ id, name, logoUrl, ... }] }`). */
     listColleges: () => apiClient.get('/api/academics/colleges'),
     /**
@@ -619,13 +631,31 @@ export function createEndpoints({
 
   // ── Account email (the login address) ─────────────────────────────────────
   const accountEmailApi = {
-    /** `{ email, collegeEmail, needsPersonalEmail }` */
+    /** `{ email, collegeEmail, needsPersonalEmail, cooldowns: { personal, college } }` */
     get: () => apiClient.get('/api/account/email'),
     /** `{ sent, emailMasked, expiresAt, resendAvailableAt }` */
-    sendOtp: ({ email }) => apiClient.post('/api/account/email/otp', { email }),
+    sendOtp: ({ email, reauthToken }) =>
+      apiClient.post('/api/account/email/otp', { email, reauthToken }),
     /** `{ email }` */
-    verify: ({ code, currentPassword }) =>
-      apiClient.post('/api/account/email/verify', { code, currentPassword }),
+    verify: ({ code, reauthToken }) =>
+      apiClient.post('/api/account/email/verify', { code, reauthToken }),
+  };
+
+  // ── Reauthentication ("confirm it's you") ─────────────────────────────────
+  //
+  // Each success is `{ reauthToken, expiresAt }`: single use, for the named
+  // purpose (`personal_email_change`, `college_email_change`,
+  // `college_email_remove`), from this session only. Held in memory, never
+  // stored.
+  const reauthApi = {
+    /** `{ methods: ['password'] | ['email_code'] | [] }` */
+    methods: () => apiClient.get('/api/account/reauth'),
+    withPassword: ({ purpose, password }) =>
+      apiClient.post('/api/account/reauth/password', { purpose, password }),
+    /** `{ sent, emailMasked, expiresAt, resendAvailableAt }` */
+    sendCode: ({ purpose }) => apiClient.post('/api/account/reauth/code', { purpose }),
+    withCode: ({ purpose, code }) =>
+      apiClient.post('/api/account/reauth/code/verify', { purpose, code }),
   };
 
   // ── Campus Events (official campus event discovery) ────────────────────────────
@@ -872,6 +902,7 @@ export function createEndpoints({
     confessionsApi,
     campusAffiliationApi,
     accountEmailApi,
+    reauthApi,
     notificationsApi,
     pushApi,
     searchApi,

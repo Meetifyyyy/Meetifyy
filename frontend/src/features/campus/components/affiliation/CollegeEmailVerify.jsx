@@ -1,4 +1,6 @@
 import { useCallback, useState } from 'react';
+import { REAUTH_CANCELLED, useReauth } from '@shared/components/AccountEmail/ReauthModal';
+import { withReauth } from '@shared/components/AccountEmail/withReauth';
 import { AlertCircle, Loader2 } from '@shared/components/icons';
 import OtpCodeInput, { useResendCountdown } from '@shared/components/OtpCodeInput';
 import { useCampusAffiliationActions } from '@shared/hooks/useCampusAffiliationActions';
@@ -14,9 +16,18 @@ import styles from './CampusAffiliation.module.css';
  * `initialChallenge` is a code already sent (restored from the server's
  * `pending` after a reload). Its full address is not known here, only the
  * masked one, so a resend from that state asks for the address again.
+ *
+ * An account's first college email needs only the code. Any later one (a
+ * change, or adding one back after removing it) also needs "confirm it's
+ * you": the server answers `reauth_required` and the dialog opens, then the
+ * same request is retried. The server also enforces the 30-day cooldown.
  */
 export default function CollegeEmailVerify({ college, initialChallenge = null, onChangeCollege, onVerified }) {
   const { sendCode, verifyCode } = useCampusAffiliationActions();
+  const reauth = useReauth('college_email_change', {
+    description: "For your security, confirm it's you before changing your college email.",
+  });
+  const { ensure, invalidate, current } = reauth;
   const [email, setEmail] = useState('');
   const [challenge, setChallenge] = useState(initialChallenge);
   const [code, setCode] = useState('');
@@ -35,7 +46,11 @@ export default function CollegeEmailVerify({ college, initialChallenge = null, o
       setSending(true);
       setError(null);
       try {
-        const res = await sendCode({ collegeId: college.id, email: normalized });
+        const res = await withReauth(
+          { ensure, invalidate, current },
+          (reauthToken) => sendCode({ collegeId: college.id, email: normalized, reauthToken }),
+          { optional: true },
+        );
         setChallenge({
           emailMasked: res?.emailMasked || normalized,
           expiresAt: res?.expiresAt || null,
@@ -43,12 +58,12 @@ export default function CollegeEmailVerify({ college, initialChallenge = null, o
         });
         setCode('');
       } catch (err) {
-        setError(describeCampusOtpError(err));
+        if (err?.code !== REAUTH_CANCELLED) setError(describeCampusOtpError(err));
       } finally {
         setSending(false);
       }
     },
-    [college.id, sendCode],
+    [college.id, sendCode, ensure, invalidate, current],
   );
 
   const verify = useCallback(
@@ -57,16 +72,21 @@ export default function CollegeEmailVerify({ college, initialChallenge = null, o
       setVerifying(true);
       setError(null);
       try {
-        const affiliation = await verifyCode(value);
+        const affiliation = await withReauth(
+          { ensure, invalidate, current },
+          (reauthToken) => verifyCode(value, reauthToken),
+          { optional: true },
+        );
+        invalidate();
         showToast('Welcome to campus!', 'success');
         onVerified?.(affiliation);
       } catch (err) {
-        setError(describeCampusOtpError(err));
+        if (err?.code !== REAUTH_CANCELLED) setError(describeCampusOtpError(err));
         setCode('');
         setVerifying(false);
       }
     },
-    [verifying, verifyCode, onVerified],
+    [verifying, verifyCode, onVerified, ensure, invalidate, current],
   );
 
   const editEmail = () => {
@@ -79,6 +99,7 @@ export default function CollegeEmailVerify({ college, initialChallenge = null, o
 
   return (
     <div className={styles.card}>
+      {reauth.modal}
       <div className={styles.selected}>
         <CollegeLogo name={college.name} logoUrl={college.logoUrl} large />
         <p className={styles.selectedName}>{college.name}</p>

@@ -184,3 +184,19 @@
   color: var(--color-text-main, #0f172a);
   overflow-wrap: anywhere;
 }
+
+/* "Confirm it's you" dialog: the ConfirmModal shell, with a left-aligned form. */
+.reauthModal {
+  width: 380px;
+}
+
+.reauthModal .form {
+  text-align: left;
+}
+
+.reauthLoading {
+  display: flex;
+  justify-content: center;
+  padding: 1.5rem 0 0.5rem;
+  color: var(--color-text-secondary, #64748b);
+}

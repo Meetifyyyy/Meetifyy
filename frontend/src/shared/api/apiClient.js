@@ -211,6 +211,7 @@ export const campusEventsApi = endpoints.campusEventsApi;
 export const confessionsApi = endpoints.confessionsApi;
 export const campusAffiliationApi = endpoints.campusAffiliationApi;
 export const accountEmailApi = endpoints.accountEmailApi;
+export const reauthApi = endpoints.reauthApi;
 export const notificationsApi = endpoints.notificationsApi;
 export const pushApi = endpoints.pushApi;
 export const searchApi = endpoints.searchApi;
