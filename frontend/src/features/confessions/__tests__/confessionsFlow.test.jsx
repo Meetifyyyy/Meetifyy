@@ -78,7 +78,7 @@ describe('first visit', () => {
     renderPage();
     expect(await screen.findByText('01')).toBeTruthy();
     const headings = screen.getAllByRole('heading', { level: 2, hidden: true }).map((h) => h.textContent.trim());
-    expect(headings).toEqual(['Speak Freely.', 'Your Secret Identity.', 'A Campus That Listens.']);
+    expect(headings).toEqual(['Say it, no name.', 'One name. Only yours.', 'You’re not alone.']);
 
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
@@ -123,7 +123,7 @@ describe('choosing the name', () => {
     expect(screen.getByText('Start with a letter.')).toBeTruthy();
     await new Promise((r) => setTimeout(r, 450));
     expect(api.checkHandle).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: 'Enter Confessions' }).disabled).toBe(true);
+    expect(screen.getByRole('button', { name: 'Slip in unseen' }).disabled).toBe(true);
   });
 
   it('shows a taken name as taken and keeps the button off', async () => {
@@ -133,7 +133,7 @@ describe('choosing the name', () => {
     typeHandle('quiet.fox');
     expect(await screen.findByText('Already taken. Try another.')).toBeTruthy();
     expect(api.checkHandle).toHaveBeenCalledWith('quiet.fox', expect.anything());
-    expect(screen.getByRole('button', { name: 'Enter Confessions' }).disabled).toBe(true);
+    expect(screen.getByRole('button', { name: 'Slip in unseen' }).disabled).toBe(true);
   });
 
   it('says so when name checks are rate limited', async () => {
@@ -151,7 +151,7 @@ describe('choosing the name', () => {
     await screen.findByLabelText('Anonymous name');
     typeHandle('midnight.moth');
     await screen.findByText('It’s yours if you want it.');
-    fireEvent.click(screen.getByRole('button', { name: 'Enter Confessions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Slip in unseen' }));
     expect(await screen.findByText('Write a confession…')).toBeTruthy();
     expect(api.createProfile).toHaveBeenCalledWith('midnight.moth');
     expect(await screen.findByText('@lunar.koi')).toBeTruthy();
@@ -164,7 +164,7 @@ describe('choosing the name', () => {
     await screen.findByLabelText('Anonymous name');
     typeHandle('midnight.moth');
     await screen.findByText('It’s yours if you want it.');
-    fireEvent.click(screen.getByRole('button', { name: 'Enter Confessions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Slip in unseen' }));
     expect(await screen.findByText('Someone just took that one. Try another.')).toBeTruthy();
   });
 });
@@ -250,5 +250,40 @@ describe('the feed', () => {
     expect(await screen.findByText('The confessions didn’t load.')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(await screen.findByText('@lunar.koi')).toBeTruthy();
+  });
+});
+
+describe('opening without waiting for the server', () => {
+  it('draws the deck at once for someone the device has never seen', () => {
+    api.getMe.mockReturnValue(new Promise(() => {}));
+    renderPage();
+    // Synchronously, in the first render: no spinner first.
+    expect(screen.getByText('01')).toBeTruthy();
+    expect(screen.queryByLabelText('Loading')).toBeNull();
+  });
+
+  it('opens on the feed at once for an account the device knows has a name', async () => {
+    window.localStorage.setItem('meetifyy:confessions:has-profile:me', '1');
+    let answer;
+    api.getMe.mockReturnValue(new Promise((r) => { answer = r; }));
+    renderPage();
+    expect(screen.getByLabelText('Confessions')).toBeTruthy();
+    answer({ profile: { handle: 'lunar.koi' } });
+    expect((await screen.findAllByText('@lunar.koi')).length).toBeGreaterThan(0);
+  });
+
+  it('remembers only whether there is a name, never the name', async () => {
+    api.getMe.mockResolvedValue({ profile: { handle: 'lunar.koi' } });
+    renderPage();
+    await screen.findAllByText('@lunar.koi');
+    await waitFor(() => expect(window.localStorage.getItem('meetifyy:confessions:has-profile:me')).toBe('1'));
+    expect(JSON.stringify({ ...window.localStorage })).not.toContain('lunar.koi');
+  });
+
+  it('switches the deck to the feed in place when the server says there is a name', async () => {
+    api.getMe.mockResolvedValue({ profile: { handle: 'lunar.koi' } });
+    renderPage();
+    expect(screen.getByText('01')).toBeTruthy();
+    expect((await screen.findAllByText('@lunar.koi')).length).toBeGreaterThan(0);
   });
 });

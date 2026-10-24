@@ -17,7 +17,6 @@
   min-height: calc(100dvh - var(--root-inset-top, 0px) - var(--bottom-nav-clearance, 0px));
   background: var(--color-surface-screen, var(--cf-surface));
   color: var(--cf-ink);
-  animation: enter 560ms cubic-bezier(0.2, 0.85, 0.2, 1) both;
 }
 
 :global([data-theme='dark']) .screen {
@@ -25,16 +24,6 @@
   --cf-accent: #ff7a5f;
 }
 
-@media (min-width: 769px) {
-  .screen {
-    min-height: min(760px, calc(100dvh - 7.5rem));
-    margin: 1rem 1rem 0;
-    border: 1px solid var(--cf-line);
-    border-radius: 28px;
-    background: var(--cf-surface);
-    box-shadow: var(--shadow-sm);
-  }
-}
 
 .inner {
   flex: 1;
@@ -48,39 +37,33 @@
 .backLink {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  min-height: 36px;
-  margin: 0 0 clamp(16px, 4dvh, 40px) -4px;
-  padding: 0 4px;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  margin: 0 0 8px -8px;
+  padding: 0;
   border: none;
+  border-radius: 50%;
   background: none;
-  color: var(--cf-soft);
-  font: inherit;
-  font-size: 0.875rem;
-  font-weight: 600;
+  color: var(--cf-ink);
   cursor: pointer;
 }
 
-.backLink svg {
-  width: 18px;
-  height: 18px;
+.backLink:active {
+  background: color-mix(in srgb, var(--cf-ink) 8%, transparent);
 }
 
-.eyebrow {
-  margin: 0 0 12px;
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--cf-brand);
+.backLink svg {
+  width: 22px;
+  height: 22px;
 }
 
 .title {
   margin: 0;
-  font-size: min(12vw, 3.75rem);
+  font-size: min(9.6vw, 2.9rem);
   font-weight: 850;
-  line-height: 0.96;
-  letter-spacing: -0.05em;
+  line-height: 1.02;
+  letter-spacing: -0.04em;
 }
 
 .titleAccent {
@@ -89,8 +72,8 @@
 
 .lede {
   max-width: 34ch;
-  margin: 14px 0 clamp(22px, 4dvh, 36px);
-  font-size: 1rem;
+  margin: 8px 0 18px;
+  font-size: 0.9375rem;
   line-height: 1.5;
   color: var(--cf-soft);
 }
@@ -102,27 +85,23 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  height: 68px;
-  padding: 0 18px;
-  border: 2px solid var(--cf-line);
-  border-radius: 20px;
+  height: 48px;
+  padding: 0 14px;
+  border: 1.5px solid var(--cf-line);
+  border-radius: 14px;
   background: var(--cf-surface);
   cursor: text;
-  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+  transition: border-color 0.18s ease;
 }
 
 .field:focus-within {
   border-color: var(--cf-brand);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--cf-brand) 16%, transparent);
 }
 
 .field[data-state='available'] {
   border-color: var(--cf-good);
 }
 
-.field[data-state='available']:focus-within {
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--cf-good) 16%, transparent);
-}
 
 .field[data-state='taken'],
 .field[data-state='reserved'],
@@ -131,15 +110,9 @@
   border-color: var(--cf-bad);
 }
 
-.field[data-state='taken']:focus-within,
-.field[data-state='reserved']:focus-within,
-.field[data-state='invalid']:focus-within,
-.field[data-state='bad']:focus-within {
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--cf-bad) 14%, transparent);
-}
 
 .at {
-  font-size: 1.6rem;
+  font-size: 1.1rem;
   font-weight: 800;
   color: var(--cf-brand);
 }
@@ -154,8 +127,8 @@
   background: transparent;
   color: var(--cf-ink);
   font: inherit;
-  font-size: 1.45rem;
-  font-weight: 750;
+  font-size: 1rem;
+  font-weight: 650;
   letter-spacing: -0.02em;
 }
 
@@ -178,16 +151,16 @@
   align-items: center;
   gap: 8px;
   min-height: 1.4em;
-  margin: 10px 4px 0;
-  font-size: 0.875rem;
-  font-weight: 600;
+  margin: 6px 4px 0;
+  font-size: 0.75rem;
+  font-weight: 400;
   color: var(--cf-soft);
 }
 
 .statusDot {
   flex: none;
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: currentColor;
   opacity: 0.6;
@@ -202,12 +175,12 @@
 /* ---- Suggestions ------------------------------------------------------------ */
 
 .suggest {
-  margin-top: 22px;
+  margin-top: 14px;
 }
 
 .suggestLabel {
   display: block;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
   font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -218,7 +191,7 @@
 .chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
 }
 
 .chip,
@@ -226,31 +199,31 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 38px;
+  height: 30px;
   border: 1px solid var(--cf-line);
   border-radius: 999px;
   background: var(--cf-surface);
   color: var(--cf-ink);
   font: inherit;
-  font-size: 0.875rem;
-  font-weight: 650;
+  font-size: 0.8125rem;
+  font-weight: 550;
   cursor: pointer;
   transition: border-color 0.15s ease, transform 0.12s ease;
 }
 
 .chip {
-  padding: 0 14px;
+  padding: 0 11px;
 }
 
 .shuffle {
-  width: 38px;
+  width: 30px;
   padding: 0;
   color: var(--cf-soft);
 }
 
 .shuffle svg {
-  width: 18px;
-  height: 18px;
+  width: 15px;
+  height: 15px;
 }
 
 .chip:hover,
@@ -267,9 +240,9 @@
 
 .note {
   display: flex;
-  gap: 14px;
-  margin-top: 28px;
-  padding: 16px;
+  gap: 12px;
+  margin-top: 18px;
+  padding: 14px;
   border-radius: 18px;
   background: color-mix(in srgb, var(--cf-brand) 8%, transparent);
 }
@@ -319,41 +292,131 @@
 @media (min-width: 769px) {
   .footer {
     position: static;
+    flex: none;
+    max-width: 520px;
+    padding: 18px 0 0;
     background: none;
   }
 }
 
 .submit {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
   width: 100%;
   height: 56px;
   border: none;
   border-radius: 999px;
-  background: var(--cf-brand);
-  color: #fff;
+  /* Ink, not brand colour: the one solid dark object on the page, the way a
+     mask is. White in dark mode for the same reason. */
+  background: var(--cf-ink);
+  color: var(--cf-surface);
   font: inherit;
   font-size: 1rem;
-  font-weight: 700;
+  font-weight: 750;
+  letter-spacing: -0.01em;
   cursor: pointer;
-  transition: opacity 0.2s ease, transform 0.12s ease;
+  -webkit-tap-highlight-color: transparent;
+  transition: opacity 0.2s ease, transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.submitMask {
+  width: 30px;
+  height: 19px;
+  flex: none;
+  transition: transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.submitMaskBand {
+  fill: currentColor;
+}
+
+/* The eye holes show the button's own colour through the band. */
+.submitMaskEye {
+  fill: var(--cf-ink);
 }
 
 .submit:disabled {
-  opacity: 0.4;
+  opacity: 0.35;
   cursor: not-allowed;
 }
 
 .submit:not(:disabled):active {
-  transform: scale(0.98);
+  transform: scale(0.97);
 }
 
-@keyframes enter {
-  from { opacity: 0; transform: translate3d(28px, 0, 0); }
-  to { opacity: 1; transform: none; }
+/* Pressed: the mask drops a little and tilts, as if pulled on. */
+.submit:not(:disabled):active .submitMask {
+  transform: translateY(1px) rotate(-6deg) scale(1.08);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .submit:not(:disabled):hover .submitMask {
+    transform: rotate(-6deg) scale(1.06);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .submit,
+  .submitMask {
+    transition: none;
+  }
 }
 
 @keyframes blink { to { opacity: 0.15; } }
 
 @media (prefers-reduced-motion: reduce) {
-  .screen { animation: none; }
   .status[data-tone='busy'] .statusDot { animation: none; }
+}
+
+/* ---- Large screens: the Messages-sized box ---------------------------------- */
+
+@media (min-width: 769px) {
+  .screen {
+    /* Exactly the Messages section's box (global.css `.centre--messages` and
+       MessagesLayout.module.css `.messagesLayout`): the full width of the
+       content column, the viewport's height under the 60px header less
+       0.5rem, the same radius, border, shadow and surface. */
+    box-sizing: border-box;
+    height: calc(100dvh - 60px - 0.5rem);
+    max-height: calc(100dvh - 60px - 0.5rem);
+    min-height: 0;
+    margin: 0;
+    border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+    border-radius: var(--radius-xl, 20px);
+    background: var(--color-surface-screen);
+    box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.04));
+    overflow: hidden;
+    position: relative;
+    /* One centred column, the form and its button together, in the middle of
+       the box; it scrolls inside the box only if the window is very short. */
+    justify-content: safe center;
+    align-items: center;
+    padding: 72px 40px 40px;
+    overflow-y: auto;
+  }
+
+  .inner {
+    flex: none;
+    max-width: 520px;
+    padding: 0;
+  }
+
+  /* Out of the column, into the box's corner: it belongs to the box. */
+  .backLink {
+    position: absolute;
+    top: 16px;
+    left: 16px;
+    margin: 0;
+  }
+
+  .title {
+    font-size: clamp(2.35rem, 3.35vw, 2.9rem);
+  }
+
+  .lede {
+    margin-bottom: 20px;
+  }
 }

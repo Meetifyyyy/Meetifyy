@@ -13,7 +13,7 @@ import styles from './HandleSetup.module.css';
  * person's own username), comes back as an error and is shown in the same
  * place as the live feedback.
  */
-export default function HandleSetup({ onCreated, onBack }) {
+export default function HandleSetup({ onCreated, onBack, ready = true }) {
   const [handle, setHandle] = useState('');
   const [submitError, setSubmitError] = useState(null);
   const [suggestions, setSuggestions] = useState(() => suggestHandles(3));
@@ -24,8 +24,9 @@ export default function HandleSetup({ onCreated, onBack }) {
   const noteId = useId();
 
   useEffect(() => {
-    // After the deck's exit has finished, so the keyboard does not open over it.
-    const t = setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 420);
+    // A beat after mounting, so the keyboard does not open over the deck's
+    // last frame.
+    const t = setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 200);
     return () => clearTimeout(t);
   }, []);
 
@@ -35,11 +36,11 @@ export default function HandleSetup({ onCreated, onBack }) {
     setSubmitError(null);
   }, []);
 
-  const canSubmit = availability.state === 'available' && !create.isPending;
+  const canSubmit = ready && availability.state === 'available' && !create.isPending;
 
   const onSubmit = useCallback(async (e) => {
     e.preventDefault();
-    if (!validateHandle(handle).ok || create.isPending) return;
+    if (!ready || !validateHandle(handle).ok || create.isPending) return;
     setSubmitError(null);
     try {
       const data = await create.mutateAsync(handle.trim());
@@ -52,7 +53,7 @@ export default function HandleSetup({ onCreated, onBack }) {
       else if (code === 'rate_limited') setSubmitError(err.message || 'Too many tries. Wait a moment.');
       else if (err?.name !== 'OfflineError') showToast(err?.message || 'Couldn’t save your name. Try again.', 'error');
     }
-  }, [handle, create, onCreated]);
+  }, [ready, handle, create, onCreated]);
 
   const status = submitError
     ? { tone: 'bad', text: submitError }
@@ -61,21 +62,19 @@ export default function HandleSetup({ onCreated, onBack }) {
   return (
     <form className={styles.screen} onSubmit={onSubmit} noValidate>
       <div className={styles.inner}>
-        <button type="button" className={styles.backLink} onClick={onBack}>
+        <button type="button" className={styles.backLink} onClick={onBack} aria-label="Back to the intro">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
-          Back to the intro
         </button>
 
-        <p className={styles.eyebrow}>Step 2 of 2 · Your anonymous name</p>
         <h2 className={styles.title}>
           Who will you
           <br />
           <span className={styles.titleAccent}>be here?</span>
         </h2>
         <p className={styles.lede}>
-          This is the only name your campus will see on your confessions.
+          The only name your campus sees on your confessions.
         </p>
 
         <label className={styles.field} data-state={submitError ? 'bad' : availability.state}>
@@ -105,8 +104,7 @@ export default function HandleSetup({ onCreated, onBack }) {
           {status.text}
         </p>
 
-        <div className={styles.suggest}>
-          <span className={styles.suggestLabel}>Or take one</span>
+        <div className={styles.suggest} role="group" aria-label="Suggested names">
           <div className={styles.chips}>
             {suggestions.map((s) => (
               <button
@@ -138,16 +136,25 @@ export default function HandleSetup({ onCreated, onBack }) {
             <rect x="10" y="14" width="20" height="6" rx="3" className={styles.noteEye} />
           </svg>
           <p>
-            <strong>Separate from your Meetifyy profile.</strong> Other students never see your
-            real name, photo or username here. Our moderators can link it to your account only
-            to deal with reports. Your name can’t be changed later.
+            <strong>Not linked to your profile.</strong> Your real name and photo stay private
+            here. Choose carefully, as your name can’t be changed later.
           </p>
         </div>
       </div>
 
       <div className={styles.footer}>
         <button type="submit" className={styles.submit} disabled={!canSubmit}>
-          {create.isPending ? 'Saving…' : 'Enter Confessions'}
+          {/* A mask that slides down over the eyes as the button is pressed:
+              the one moment the person actually goes anonymous. */}
+          <svg className={styles.submitMask} viewBox="0 0 32 20" aria-hidden="true">
+            <path
+              className={styles.submitMaskBand}
+              d="M2 6c4-3 9-4 14-4s10 1 14 4c0 6-4 11-9 11-3 0-4-3-5-3s-2 3-5 3C6 17 2 12 2 6z"
+            />
+            <ellipse className={styles.submitMaskEye} cx="10" cy="8.5" rx="3" ry="2.2" />
+            <ellipse className={styles.submitMaskEye} cx="22" cy="8.5" rx="3" ry="2.2" />
+          </svg>
+          <span>{create.isPending ? 'Putting on the mask…' : 'Slip in unseen'}</span>
         </button>
       </div>
     </form>

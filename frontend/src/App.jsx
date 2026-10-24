@@ -112,7 +112,16 @@ const DirectoryPage = lazyRoute(() => import('./features/campus/pages/DirectoryP
 const CampusCommunitiesPage = lazyRoute(() => import('./features/campus/pages/CampusCommunitiesPage'));
 const CampusEventsPage = lazyRoute(() => import('./features/campus-events/pages/CampusEventsPage'));
 const CampusEventDetailPage = lazyRoute(() => import('./features/campus-events/pages/CampusEventDetailPage'));
-const ConfessionsPage = lazyRoute(() => import('./features/confessions/pages/ConfessionsPage'));
+// Fetched in idle time after boot as well as on navigation: the page is opened
+// from Campus, and waiting for its chunk on the tap was a blank frame or more
+// before anything (the status bar colour included) could change.
+const loadConfessionsPage = () => import('./features/confessions/pages/ConfessionsPage');
+const ConfessionsPage = lazyRoute(loadConfessionsPage);
+if (typeof window !== 'undefined') {
+  const warm = () => { loadConfessionsPage().catch(() => {}); }; // a failure resurfaces on navigation
+  if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(warm, { timeout: 8000 });
+  else setTimeout(warm, 4000);
+}
 const SavedPage = lazyRoute(() => import('./features/feed/pages/SavedPage'));
 const AboutPage = lazyRoute(() => import('./features/info/pages/AboutPage'));
 // The legal pages are website-only. In the installed app each of their routes

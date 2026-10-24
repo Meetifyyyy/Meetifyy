@@ -9,19 +9,11 @@
            .slide          .art (drawn graphic) + .copy (eyebrow, headline, body)
        .controls           back · Next / Choose your name
 
-   `--deck-pg` (see useSwipeDeck) is the only moving number. Per slide:
-     --d   signed distance from this slide: 0 here, +1 one slide past it
-     --ad  the same, unsigned (max(d, -d) — CSS has no abs() everywhere yet)
-   Each line of the headline and each graphic layer offsets itself by a
-   different multiple of --d, which is what makes them arrive in a stagger.
-   Transform and opacity only.
+   Nothing here animates the slides: useSwipeDeck writes a transform (and an
+   opacity) onto each `data-deck` element every frame of a drag or a spring,
+   so this sheet only lays them out. No transitions on them, no custom
+   property driving them, no scroll- or animation-timeline.
    ========================================================================= */
-
-@property --deck-pg {
-  syntax: '<number>';
-  inherits: true;
-  initial-value: 0;
-}
 
 .deck {
   --cf-brand: var(--color-brand-primary, #5c47fa);
@@ -43,11 +35,9 @@
   background: var(--color-surface-screen, var(--cf-surface));
   color: var(--cf-ink);
   container-type: inline-size;
-  transition: --deck-pg 760ms cubic-bezier(0.22, 0.8, 0.2, 1);
   user-select: none;
   -webkit-user-select: none;
   -webkit-tap-highlight-color: transparent;
-  animation: deckIn 520ms cubic-bezier(0.2, 0.85, 0.2, 1) both;
 }
 
 :global([data-theme='dark']) .deck {
@@ -57,18 +47,22 @@
   --cf-stripe: rgba(160, 150, 255, 0.4);
 }
 
-.deck[data-drag] {
-  transition: none;
-}
-
 @media (min-width: 769px) {
   .deck {
-    height: min(760px, calc(100dvh - 7.5rem));
-    margin: 1rem 1rem 0;
-    border: 1px solid var(--cf-line);
-    border-radius: 28px;
-    background: var(--cf-surface);
-    box-shadow: var(--shadow-sm);
+    /* Exactly the Messages section's box (global.css `.centre--messages` and
+       MessagesLayout.module.css `.messagesLayout`): the full width of the
+       content column, the viewport's height under the 60px header less
+       0.5rem, the same radius, border, shadow and surface. */
+    box-sizing: border-box;
+    height: calc(100dvh - 60px - 0.5rem);
+    max-height: calc(100dvh - 60px - 0.5rem);
+    min-height: 0;
+    margin: 0;
+    border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+    border-radius: var(--radius-xl, 20px);
+    background: var(--color-surface-screen);
+    box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.04));
+    overflow: hidden;
   }
 }
 
@@ -104,7 +98,7 @@
   border-radius: inherit;
   background: var(--cf-ink);
   transform-origin: left center;
-  transform: scaleX(clamp(0, calc(var(--deck-pg) - var(--n) + 1), 1));
+  transform: scaleX(0);
 }
 
 .counter {
@@ -150,14 +144,10 @@
   display: flex;
   width: 300%;
   height: 100%;
-  transform: translate3d(calc(var(--deck-pg) * -33.3333%), 0, 0);
   will-change: transform;
 }
 
 .slide {
-  --d: calc(var(--deck-pg) - var(--n));
-  --ad: max(var(--d), calc(var(--d) * -1));
-
   flex: 0 0 33.3333%;
   min-width: 0;
   box-sizing: border-box;
@@ -174,12 +164,8 @@
   align-items: center;
   justify-content: center;
   padding: clamp(8px, 2dvh, 24px) 0;
-  /* The graphic moves against the slide, a little bigger on the way out. */
-  transform:
-    translate3d(calc(var(--d) * -22vw), 0, 0)
-    rotate(calc(var(--d) * -6deg))
-    scale(calc(1 - var(--ad) * 0.12));
-  opacity: calc(1 - var(--ad) * 0.9);
+  /* Moved against the slide by useSwipeDeck: its own layer. */
+  will-change: transform, opacity;
 }
 
 .svg {
@@ -197,18 +183,14 @@
 
 .eyebrow {
   margin: 0 0 clamp(8px, 1.4dvh, 14px);
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font-size: 0.875rem;
+  font-weight: 600;
   color: var(--cf-brand);
-  transform: translate3d(calc(var(--d) * 10vw), 0, 0);
-  opacity: calc(1 - var(--ad) * 1.6);
 }
 
 .headline {
   margin: 0;
-  font-size: min(13.4vw, 7.6dvh, 5.25rem);
+  font-size: min(12vw, 6.8dvh, 4.5rem);
   font-weight: 850;
   line-height: 0.94;
   letter-spacing: -0.055em;
@@ -218,8 +200,7 @@
 .line {
   display: block;
   white-space: nowrap;
-  transform: translate3d(calc(var(--d) * (14vw + var(--i) * 12vw)), 0, 0);
-  opacity: calc(1 - var(--ad) * (1.3 + var(--i) * 0.3));
+  will-change: transform, opacity;
 }
 
 .stop {
@@ -237,8 +218,6 @@
   font-weight: 500;
   line-height: 1.5;
   color: var(--cf-soft);
-  transform: translate3d(calc(var(--d) * 40vw), 0, 0);
-  opacity: calc(1 - var(--ad) * 2);
 }
 
 /* A wide deck (desktop, a tablet held sideways): graphic right, words left. */
@@ -370,23 +349,7 @@
   stroke-linecap: round;
 }
 
-.noteLines rect { fill: rgba(255, 255, 255, 0.92); }
-.noteLines .noteSign { fill: rgba(255, 255, 255, 0.55); }
-.fold { fill: rgba(0, 0, 0, 0.18); }
 
-/* Layers of a graphic spread apart as the slide leaves, by different amounts. */
-.notesBack,
-.notesMid,
-.notesFront,
-.idCard,
-.idChip {
-  transform-box: view-box;
-  transform-origin: 160px 150px;
-}
-
-.notesBack { transform: translate(calc(var(--d) * -46px), calc(var(--ad) * -18px)) rotate(calc(var(--d) * -12deg)); }
-.notesMid { transform: translate(calc(var(--d) * 30px), calc(var(--ad) * 14px)) rotate(calc(var(--d) * 9deg)); }
-.notesFront { transform: translate(calc(var(--d) * -12px), calc(var(--ad) * 26px)); }
 
 .stripe { fill: var(--cf-stripe); }
 .ringStroke {
@@ -405,50 +368,23 @@
   letter-spacing: -0.01em;
 }
 
-.idCard { transform: translate(calc(var(--d) * -24px), calc(var(--ad) * -10px)) rotate(calc(-4deg + var(--d) * -8deg)); }
-.idChip { transform: translate(calc(var(--d) * 70px), calc(var(--ad) * 30px)) rotate(calc(3deg + var(--d) * 10deg)); }
 
-.ringFaint {
+.fillTint { fill: var(--cf-tint); }
+.glyph,
+.glyphBrand {
   fill: none;
-  stroke: var(--cf-line);
-  stroke-width: 1.5;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
-
-.orbit {
-  transform-box: view-box;
-  transform-origin: 160px 150px;
-  animation: spin 18s linear infinite;
+.glyph { stroke: #ffffff; }
+.glyphBrand { stroke: var(--cf-brand); }
+.heart { fill: #ffffff; }
+.onBrand { fill: rgba(255, 255, 255, 0.85); }
+.handleText,
+.countText {
+  font-family: 'Inter', sans-serif;
+  font-weight: 650;
 }
-.orbitB { animation-duration: 26s; animation-direction: reverse; }
-.orbitC { animation-duration: 12s; }
-
-.pulse {
-  fill: none;
-  stroke: var(--cf-brand);
-  stroke-width: 2;
-  transform-box: view-box;
-  transform-origin: 160px 150px;
-  animation: pulse 2.8s cubic-bezier(0.2, 0.7, 0.3, 1) infinite;
-}
-
-/* Off-screen slides do not spend frames on loops nobody can see. */
-.slide[aria-hidden='true'] .orbit,
-.slide[aria-hidden='true'] .pulse {
-  animation-play-state: paused;
-}
-
-@keyframes spin { to { transform: rotate(360deg); } }
-@keyframes pulse {
-  from { transform: scale(1); opacity: 0.7; }
-  to { transform: scale(4.6); opacity: 0; }
-}
-@keyframes deckIn {
-  from { opacity: 0; transform: translate3d(0, 16px, 0); }
-  to { opacity: 1; transform: none; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .deck { transition: none; animation: none; }
-  .orbit, .pulse { animation: none; }
-  .pulse { opacity: 0; }
-}
+.handleText { fill: var(--cf-soft); font-size: 18px; }
+.countText { fill: #ffffff; font-size: 14px; }

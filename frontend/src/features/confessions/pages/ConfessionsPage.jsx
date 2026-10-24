@@ -60,7 +60,7 @@ export default function ConfessionsPage() {
 function ConfessionsFlow() {
   const { currentUser } = useAuth();
   const userId = currentUser?.id;
-  const { profile, isLoading, isError, refetch } = useConfessionProfile();
+  const { profile, hint, isError, refetch } = useConfessionProfile();
   const [step, setStep] = useState(() => (readDeckSeen(userId) ? 'handle' : 'deck'));
 
   const finishDeck = useCallback(() => {
@@ -68,22 +68,29 @@ function ConfessionsFlow() {
     setStep('handle');
   }, [userId]);
 
-  if (isLoading || profile === undefined) {
-    if (isError) {
-      return (
-        <div className={styles.fullState}>
-          <p className={styles.stateTitle}>Couldn’t open Confessions.</p>
-          <button type="button" className={styles.stateButton} onClick={() => refetch()}>Try again</button>
-        </div>
-      );
-    }
-    return <div className={styles.fullState} aria-busy="true"><span className={styles.spinner} aria-label="Loading" /></div>;
+  // The first screen is drawn at once, never behind a spinner. Until the
+  // server answers, the device's last answer for this account decides it (an
+  // account with a name opens on the feed, its name filled in when it lands);
+  // with no answer on the device, the onboarding it would most likely get. A
+  // server answer that disagrees replaces it in place.
+  const hasProfile = profile !== undefined ? Boolean(profile) : hint === true;
+
+  if (profile === undefined && isError && hint !== false) {
+    return (
+      <div className={styles.fullState}>
+        <p className={styles.stateTitle}>Couldn’t open Confessions.</p>
+        <button type="button" className={styles.stateButton} onClick={() => refetch()}>Try again</button>
+      </div>
+    );
   }
 
-  if (profile) return <ConfessionsHome handle={profile.handle} />;
+  if (hasProfile) return <ConfessionsHome handle={profile?.handle ?? null} />;
   if (step === 'deck') return <ConfessionsDeck onDone={finishDeck} />;
   return (
     <HandleSetup
+      // Creating needs the server's answer first: until it lands, an account
+      // that already has a name (a new device) must not be offered another.
+      ready={profile !== undefined}
       onBack={() => setStep('deck')}
       onCreated={(created) => {
         if (!created) refetch();
@@ -154,9 +161,9 @@ function ConfessionsHome({ handle }) {
           <ArrowLeft size={20} />
         </button>
         <span className={styles.topTitle}>Confessions</span>
-        <span className={styles.meChip}>
+        <span className={styles.meChip} aria-busy={handle ? undefined : 'true'}>
           <HandleMark handle={handle} size={22} />
-          @{handle}
+          {handle ? `@${handle}` : '\u00a0'}
         </span>
       </header>
 
@@ -173,7 +180,7 @@ function ConfessionsHome({ handle }) {
             <HandleMark handle={handle} size={44} />
             <div>
               <span className={styles.identityLabel}>You are</span>
-              <span className={styles.identityName}>@{handle}</span>
+              <span className={styles.identityName}>{handle ? `@${handle}` : '\u00a0'}</span>
             </div>
           </div>
           <ol className={styles.guidelines}>

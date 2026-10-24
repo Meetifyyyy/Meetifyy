@@ -23,7 +23,7 @@ export function ComposerTrigger({ handle, onOpen }) {
       <HandleMark handle={handle} size={40} />
       <span className={styles.triggerText}>
         <span className={styles.triggerPrompt}>Write a confession…</span>
-        <span className={styles.triggerMeta}>Posting as @{handle}</span>
+        <span className={styles.triggerMeta}>Posting as @{handle ?? '…'}</span>
       </span>
       <span className={styles.triggerPen} aria-hidden="true">
         <svg viewBox="0 0 24 24">
@@ -134,7 +134,7 @@ export default function ConfessionComposer({ open, handle, onClose }) {
         <div className={styles.sheetBody}>
           <div className={styles.as}>
             <HandleMark handle={handle} size={28} />
-            <span>Posting as <strong>@{handle}</strong></span>
+            <span>Posting as <strong>@{handle ?? '…'}</strong></span>
           </div>
           <textarea
             ref={areaRef}

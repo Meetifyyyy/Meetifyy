@@ -24,9 +24,46 @@ export const CONFESSION_KEYS = {
   handle: (key) => ['confessions', 'handle', key],
 };
 
-/** The caller's anonymous profile: `undefined` while loading, `null` if none yet. */
+/**
+ * Whether this account has an anonymous name, remembered on the device so the
+ * page can open on the right screen at once instead of behind a spinner while
+ * `GET /confessions/me` answers.
+ *
+ * Only a yes/no, per account id — never the name itself: the device must not
+ * hold a mapping from an account to the handle it hides behind. The server's
+ * answer always replaces it.
+ */
+const HAS_PROFILE_PREFIX = 'meetifyy:confessions:has-profile';
+const hasProfileKey = (userId) => `${HAS_PROFILE_PREFIX}:${userId}`;
+
+/** `true` / `false` as last seen on this device, or `undefined` if never seen. */
+export function readHasProfileHint(userId) {
+  if (!userId) return undefined;
+  try {
+    const v = window.localStorage.getItem(hasProfileKey(userId));
+    return v === '1' ? true : v === '0' ? false : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function writeHasProfileHint(userId, has) {
+  if (!userId) return;
+  try {
+    window.localStorage.setItem(hasProfileKey(userId), has ? '1' : '0');
+  } catch {
+    // Storage blocked: the next visit simply waits for the server again.
+  }
+}
+
+/**
+ * The caller's anonymous profile: `undefined` while loading, `null` if none yet.
+ * `hint` is the device's last-known answer (see readHasProfileHint), for
+ * choosing the first screen before the server has replied.
+ */
 export function useConfessionProfile() {
-  const { isLoggedIn } = useAuth();
+  const { isLoggedIn, currentUser } = useAuth();
+  const userId = currentUser?.id;
   const hasAccess = useHasCampusAccess();
   const onDenied = useCampusDeniedHandler();
   const query = useQuery({
@@ -39,8 +76,14 @@ export function useConfessionProfile() {
     enabled: Boolean(isLoggedIn) && hasAccess,
     staleTime: 5 * 60_000,
   });
+  const profile = query.data ? query.data.profile ?? null : undefined;
+  useEffect(() => {
+    if (profile !== undefined) writeHasProfileHint(userId, Boolean(profile));
+  }, [profile, userId]);
+  const [hint] = useState(() => readHasProfileHint(userId));
   return {
-    profile: query.data ? query.data.profile ?? null : undefined,
+    profile,
+    hint,
     isLoading: query.isLoading,
     isError: query.isError,
     refetch: query.refetch,
