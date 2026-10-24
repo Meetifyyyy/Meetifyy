@@ -86,15 +86,16 @@ describe('Activity feed scopes', () => {
     return lastWhere?.AND?.[0];
   };
 
-  it('restricts the College section to COLLEGE_ONLY activities of my college', async () => {
+  it('shows every activity of my college in the College section, "Anyone" ones included', async () => {
     const filter = await scopeFilterFor('college');
-    expect(filter!.visibility).toBe('COLLEGE_ONLY');
+    // No visibility pin: who may see each one is the policy clause's job.
+    expect(filter!.visibility).toBeUndefined();
     expect(filter!.collegeId).toBe(MY_COLLEGE);
   });
 
   it('applies the identical rule to the Campus surface', async () => {
     const filter = await scopeFilterFor('campus');
-    expect(filter!.visibility).toBe('COLLEGE_ONLY');
+    expect(filter!.visibility).toBeUndefined();
     expect(filter!.collegeId).toBe(MY_COLLEGE);
   });
 

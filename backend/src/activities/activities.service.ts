@@ -66,12 +66,7 @@ import {
   assertMediaIdOwnedBy,
   assertMediaRefsOwnedBy,
 } from '../uploads/media-ownership.util';
-import {
-  ActivityVisibility,
-  CrewActivityMember,
-  NotificationType,
-  Prisma,
-} from '@prisma/client';
+import { CrewActivityMember, NotificationType, Prisma } from '@prisma/client';
 import { detach } from '../common/utils/detach.util';
 import { errorMessage } from '../common/utils/error.util';
 import { VerificationAccessService } from '../common/verification/verification-access.service';
@@ -475,14 +470,13 @@ export class ActivitiesService implements OnModuleInit {
   /**
    * Scoped feed. `scope` selects which slice of activities to return:
    *   - 'public'      → everything the viewer may discover (the "Recent" feed)
-   *   - 'college'     → COLLEGE_ONLY activities belonging to the viewer's own
-   *                     college. Deliberately NOT "everything hosted by my
-   *                     college": a PUBLIC activity from the same college
-   *                     belongs to the All section, and mixing it in here made
-   *                     the College section misrepresent an activity's audience.
-   *                     PRIVATE never appears — the discovery policy excludes it
-   *                     structurally.
-   *   - 'campus'      → the same COLLEGE_ONLY slice, surfaced on the Campus
+   *   - 'college'     → every activity from the viewer's own college that they
+   *                     may discover, "Anyone" and college-only alike. It used
+   *                     to be college-only activities alone, which left a
+   *                     college whose hosts pick "Anyone" with an empty
+   *                     section. PRIVATE never appears — the discovery policy
+   *                     excludes it structurally.
+   *   - 'campus'      → the same slice, surfaced on the Campus
    *                     page. It shares the college scope's rules exactly so the
    *                     two surfaces can never disagree about who may see what.
    *   - 'one_on_one'  → discoverable activities with exactly 2 slots
@@ -586,17 +580,11 @@ export class ActivitiesService implements OnModuleInit {
         deletedAt: null,
         status: 'OPEN',
         startDate: { gt: now },
-        // College and Campus are the COLLEGE_ONLY surfaces. Pinning the
-        // visibility here (not just the college id) is what keeps "Anyone"
-        // activities out of the College section, and it is applied in the
-        // DATABASE query so the rule cannot be bypassed by a client that asks
-        // for the scope directly.
-        ...(isCollegeScope
-          ? {
-              collegeId: scopeCollegeId,
-              visibility: ActivityVisibility.COLLEGE_ONLY,
-            }
-          : {}),
+        // College and Campus are every activity from the viewer's college that
+        // they may discover: "Anyone" and college-only alike. Who may see each
+        // one is still decided by the policy filter below, in the DATABASE
+        // query, so asking for the scope directly cannot widen it.
+        ...(isCollegeScope ? { collegeId: scopeCollegeId } : {}),
         ...(scope === 'one_on_one' ? { maxMembers: 2 } : {}),
         ...(excludedUserIds.length > 0
           ? { creatorId: { notIn: excludedUserIds } }
@@ -991,7 +979,12 @@ export class ActivitiesService implements OnModuleInit {
       .map((i) => (i || '').trim())
       .filter((i) => i.length >= MIN_INTEREST_LENGTH)
       .slice(0, 10);
-    const [soonest, social, interesting] = await Promise.all([
+    // A fourth arm for the viewer's own college: `sameCollege` was scored, but
+    // nothing put a college activity INTO the pool, so one that did not start
+    // among the soonest FOR_YOU_POOL anywhere was never ranked at all, and the
+    // All tab showed no activities from the viewer's college.
+    const viewerCollegeId = viewer?.collegeId ?? null;
+    const [soonest, social, interesting, fromCollege] = await Promise.all([
       this.prisma.crewActivity.findMany({
         where: candidateWhere({}),
         take: ActivitiesService.FOR_YOU_POOL,
@@ -1031,9 +1024,22 @@ export class ActivitiesService implements OnModuleInit {
             select: candidateSelect,
           })
         : Promise.resolve([]),
+      viewerCollegeId
+        ? this.prisma.crewActivity.findMany({
+            where: candidateWhere({ collegeId: viewerCollegeId }),
+            take: ActivitiesService.FOR_YOU_POOL,
+            orderBy: { startDate: 'asc' },
+            select: candidateSelect,
+          })
+        : Promise.resolve([]),
     ]);
     const seenCandidate = new Set<string>();
-    const candidates = [...soonest, ...social, ...interesting].filter((a) => {
+    const candidates = [
+      ...soonest,
+      ...social,
+      ...interesting,
+      ...fromCollege,
+    ].filter((a) => {
       if (seenCandidate.has(a.id)) return false;
       seenCandidate.add(a.id);
       // Full, and the viewer is not in it: the join would be refused, so it
@@ -1373,18 +1379,11 @@ export class ActivitiesService implements OnModuleInit {
       ),
       collegeId
         ? this.prisma.crewActivity.findMany({
-            // COLLEGE_ONLY only — same rule as the `college` feed scope behind
+            // Every activity from the viewer's college they may see, "Anyone"
+            // ones included: the same rule as the `college` feed scope behind
             // this section's "See all", so the preview and the full list agree.
-            // A PUBLIC activity from the same college belongs to For You / All.
             where: {
-              AND: [
-                {
-                  ...baseFilter,
-                  collegeId,
-                  visibility: ActivityVisibility.COLLEGE_ONLY,
-                },
-                policyWhere,
-              ],
+              AND: [{ ...baseFilter, collegeId }, policyWhere],
             },
             take: PREVIEW + 1,
             // Same ordering as the full list behind "See all", so the preview
