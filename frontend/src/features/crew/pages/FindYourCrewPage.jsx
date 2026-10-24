@@ -2,10 +2,11 @@ import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import PullToRefresh from '@shared/components/PullToRefresh';
-import { ChevronLeft, ChevronRight } from '@shared/components/icons';
+import { ChevronLeft, ChevronRight, Search } from '@shared/components/icons';
 import { useAuth } from '@shared/context/AuthContext';
 import { CREW_KEYS, useActivities, useCrewDiscover, useSavedActivitiesQuery, useMyActivitiesQuery } from '@shared/hooks/useCrew';
 import { useDebounce } from '@shared/hooks/useDebounce';
+import { useIsMobile } from '@shared/hooks/useIsMobile';
 import { useUrlState } from '@shared/hooks/useUrlState';
 import { prefetchActivity } from '@shared/hooks/prefetch';
 import { openVerificationModal } from '@shared/stores/verificationModalStore';
@@ -58,6 +59,10 @@ export default function FindYourCrewPage() {
   const isVerified = currentUser?.verificationStatus === 'VERIFIED';
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  // Phones search on their own page (/crew/search) opened from a button beside
+  // the title; creating is the "Create activity" card on the All tab. Desktop
+  // keeps the inline search box and the + button.
+  const isMobile = useIsMobile();
 
   // The tab lives in the URL (?tab=saved), so a refresh, a shared link and the
   // Back button all agree on which list is showing. Slugs are fixed even though
@@ -66,6 +71,11 @@ export default function FindYourCrewPage() {
   const [allView, setAllView] = useUrlState('view', 'sections', { allowed: ALL_VIEWS, push: true });
   const [searchQuery, setSearchQuery] = useState('');
   const debouncedSearchQuery = useDebounce(searchQuery, 200);
+  // The inline box is not rendered on phones; a query typed on a wider window
+  // must not keep filtering a list that has no visible way to clear it.
+  useEffect(() => {
+    if (isMobile) setSearchQuery('');
+  }, [isMobile]);
 
   // ── Discovery previews for the All tab (For You + college + 1-on-1) ────────
   const { collegeName: discCollegeName, forYou, college, oneOnOne, isLoading: discoverLoading } = useCrewDiscover();
@@ -350,17 +360,27 @@ export default function FindYourCrewPage() {
     <PullToRefresh onRefresh={handleRefresh}>
       <PageLayout>
         <div className={styles.page}>
+          {isMobile && (
+            <button
+              type="button"
+              className={styles.mobileSearchBtn}
+              onClick={() => navigate('/crew/search', { state: { fromCrew: true } })}
+              aria-label="Search activities"
+            >
+              <Search size={20} strokeWidth={2.5} />
+            </button>
+          )}
           <PageHeader
             title="Crew"
             subtitle="Discover activities and people to do them with."
             backPath="/home"
-            searchProps={{
+            searchProps={isMobile ? undefined : {
               value: searchQuery,
               onChange: (e) => setSearchQuery(e.target.value),
               placeholder: 'Search activities, sports, hangouts...',
               borderless: true,
             }}
-            actions={
+            actions={isMobile ? undefined : (
               <button
                 type="button"
                 className={styles.createIconBtn}
@@ -373,7 +393,7 @@ export default function FindYourCrewPage() {
                   <line x1="5" y1="12" x2="19" y2="12" />
                 </svg>
               </button>
-            }
+            )}
             tabs={tabs}
             activeTab={selectedTab}
             onTabChange={setSelectedTab}

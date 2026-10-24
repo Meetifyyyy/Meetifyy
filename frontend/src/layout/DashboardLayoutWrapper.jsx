@@ -41,6 +41,8 @@ export default function DashboardLayoutWrapper() {
     match.pathname.startsWith('/saved') ||
     match.pathname.startsWith('/settings') ||
     match.pathname.startsWith('/search') ||
+    // The Crew search page is full-bleed on phones, like the Communities one.
+    match.pathname === '/crew/search' ||
     // /communities paints its own full-bleed surface (and gutter) on phones.
     /^\/communities(\/.+)?$/.test(match.pathname)
   );
@@ -57,6 +59,7 @@ export default function DashboardLayoutWrapper() {
   const hideBottomNav = matches.some(match =>
     match.pathname.startsWith('/saved') ||
     match.pathname.startsWith('/settings') ||
+    match.pathname === '/crew/search' ||
     match.pathname.startsWith('/communities/')
   );
 
@@ -69,6 +72,7 @@ export default function DashboardLayoutWrapper() {
     match.pathname.startsWith('/notifications') ||
     match.pathname === '/search' ||
     match.pathname === '/communities/search' ||
+    match.pathname === '/crew/search' ||
     (match.pathname.startsWith('/communities/') && match.pathname !== '/communities/search') ||
     (match.pathname.startsWith('/messages/') && match.pathname.length > '/messages/'.length)
   );

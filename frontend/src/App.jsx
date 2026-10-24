@@ -105,6 +105,7 @@ const SettingsRoute = lazyRoute(() => import('./features/settings/pages/Settings
 const FindYourCrewPage = lazyRoute(() => import('./features/crew/pages/FindYourCrewPage'));
 const ActivityDetailPage = lazyRoute(() => import('./features/crew/pages/ActivityDetailPage'));
 const CreateActivityPage = lazyRoute(() => import('./features/crew/pages/CreateActivityPage'));
+const CrewSearchRoute = lazyRoute(() => import('./features/crew/pages/CrewSearchRoute'));
 const NotificationsRoute = lazyRoute(() => import('./features/notifications/pages/NotificationsRoute'));
 const CampusPage = lazyRoute(() => import('./features/campus/pages/CampusPage'));
 const DirectoryPage = lazyRoute(() => import('./features/campus/pages/DirectoryPage'));
@@ -546,6 +547,7 @@ export default function App({ homeElement, rootExtras = null }) {
             { path: '/campus/events/:id',          element: withBoundary(<CampusEventDetailPage />, null), handle: { wide: true } },
             { path: '/campus/confessions',         element: withBoundary(<ConfessionsPage />, null), handle: { wide: true } },
             { path: '/crew',                       element: withBoundary(<FindYourCrewPage />, <CrewSkeleton />), handle: { wide: true } },
+            { path: '/crew/search',                element: withBoundary(<CrewSearchRoute />, null) },
             { path: '/crew/create',                element: withBoundary(<CreateActivityPage />, null), handle: { wide: true } },
             { path: '/crew/:id',                   element: withBoundary(<ActivityDetailPage />, <ActivityDetailSkeleton />), handle: { wide: true } },
             { path: '/saved',                      element: withBoundary(<SavedPage />, <SavedPageSkeleton />) },

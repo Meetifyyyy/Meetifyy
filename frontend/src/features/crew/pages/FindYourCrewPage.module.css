@@ -543,3 +543,49 @@
     font-size: 0.82rem;
   }
 }
+/* Phones: search opens /crew/search from this button, on the title's line.
+   PageHeader owns the title row, so the button sits over its right end. */
+.mobileSearchBtn {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .page {
+    position: relative;
+  }
+
+  .mobileSearchBtn {
+    position: absolute;
+    top: 8px; /* PageHeader's mobile top padding (8px + 4px row padding, centred on the title) */
+    right: 0;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border: 1px solid var(--color-border, rgba(0, 0, 0, 0.1));
+    border-radius: 50%;
+    /* The same surface as the filter chips under it: a solid white circle
+       (soft glass in dark mode), not an outline floating over the page. */
+    background: var(--color-bg-white, #ffffff);
+    color: var(--color-text-main);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color var(--transition-fast, 0.15s ease), transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  :global([data-theme='dark']) .mobileSearchBtn {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .mobileSearchBtn:active {
+    transform: scale(0.94);
+  }
+
+  .mobileSearchBtn:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+}
