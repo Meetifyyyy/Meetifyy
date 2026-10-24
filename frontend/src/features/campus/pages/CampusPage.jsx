@@ -6,6 +6,7 @@ import { useCampusUsers } from '@shared/hooks/useProfile';
 import { useCampusCommunities } from '@shared/hooks/useCommunities';
 import { useCampusEvents, useDeleteCampusEvent } from '@shared/hooks/useCampusEvents';
 import { showToast } from '@shared/utils/toast';
+import { useSystemBars } from '@shared/hooks/useSystemBars';
 import Avatar from '@shared/components/avatar/Avatar';
 import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
 import sharedStyles from '../components/skeletons/CampusShared.module.css';
@@ -247,6 +248,11 @@ export default function CampusPage() {
   const [searchParams] = useSearchParams();
   const isChangingCollege = campus.isActive && searchParams.get('verify') === 'change';
   const finishCollegeChange = useCallback(() => navigate('/campus', { replace: true }), [navigate]);
+
+  // The red banner runs up under the status bar (`.headerBanner` starts at the top
+  // and pads its content clear of the inset, see CampusShared.module.css), so the strip is clear and
+  // the clock sits on the banner. The pick-a-college flow has no banner.
+  useSystemBars({ status: 'transparent', statusIcons: 'light' }, (campus.isActive || campus.isLoading) && !isChangingCollege);
 
   const online = useOnlineStatus();
   const { campusUsers, isLoading: campusUsersLoading } = useCampusUsers(50);

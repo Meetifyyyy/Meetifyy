@@ -84,7 +84,18 @@ const lastStacks = new Map();
 
 function stackAt(key, x, y) {
   const stack = document.elementsFromPoint(x, y);
-  const blind = stack.every((el) => el === document.documentElement);
+  const root = document.getElementById('root');
+  // While the media viewer (or any overlay that inerts the app) is open, #root
+  // is `inert` and hit-testing skips it: what is left is <html>, <body> and the
+  // overlay. Once the overlay is `data-bars-ignore` (it is closing, or being
+  // dragged away) nothing else is left to read, and <body> alone reads as the
+  // page gradient - the strips turned the blue backdrop under a white screen
+  // for the length of the fade. The page has not moved, so its last stack
+  // still carries the right colours, as for a view transition.
+  const pageHidden = Boolean(root?.hasAttribute('inert'))
+    && stack.every((el) => el === document.documentElement || el === document.body
+      || el.closest('[data-bars-ignore]'));
+  const blind = pageHidden || stack.every((el) => el === document.documentElement);
   if (!blind) {
     lastStacks.set(key, stack);
     return stack;

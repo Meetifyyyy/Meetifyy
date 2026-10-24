@@ -325,6 +325,8 @@ export function installSystemBars(systemBars, { readEdges } = {}) {
       'data-navigation-bar',
       'data-navigation-bar-icons',
       'data-collapsing-header',
+      // Messages' white page gradient (global.css).
+      'data-white-surface',
       // The header and the bottom navigation slide away on scroll; the page
       // behind them is what the strips continue once they have.
       'data-chrome-hidden',
@@ -348,13 +350,24 @@ export function installSystemBars(systemBars, { readEdges } = {}) {
   window.addEventListener('meetifyy:text-entry-end', () => setTimeout(scheduleWithSettle, 50));
   window.addEventListener('resize', schedule);
   /**
-   * Once a scroll has stopped: what sits at the bottom edge of a long page
-   * changes as it scrolls, and nothing in the DOM changes when it does. One
-   * sample after the scroll settles, never one per frame of it.
+   * While a page scrolls, and once it has stopped: what sits at the top and
+   * bottom edge of a long page changes as it scrolls (Campus's red banner
+   * leaving the status bar, a sheet reaching the navigation bar), and nothing in
+   * the DOM changes when it does. Sampling only after the scroll had been quiet
+   * for 160ms left the bar in the old colour for the whole scroll and then
+   * snapped it, so a sample also runs during the scroll, at most every
+   * SCROLL_SAMPLE_MS, and one more follows the last scroll event.
    */
+  const SCROLL_SAMPLE_MS = 90;
   let scrollTimer = 0;
+  let lastScrollSample = -Infinity;
   const onScroll = () => {
     clearTimeout(scrollTimer);
+    const now = performance.now();
+    if (now - lastScrollSample >= SCROLL_SAMPLE_MS) {
+      lastScrollSample = now;
+      schedule();
+    }
     scrollTimer = setTimeout(schedule, 160);
   };
   window.addEventListener('scroll', onScroll, { passive: true });

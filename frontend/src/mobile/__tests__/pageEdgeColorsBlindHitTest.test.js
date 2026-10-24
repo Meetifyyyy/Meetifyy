@@ -30,4 +30,27 @@ describe('readPageEdgeColors while hit-testing is blind', () => {
     document.elementsFromPoint = () => [document.documentElement];
     expect(readPageEdgeColors().top).toBe('#111111');
   });
+
+  it('keeps reading the page while an ignored overlay is all that is hit over an inert #root', () => {
+    const appRoot = document.createElement('div');
+    appRoot.id = 'root';
+    const page = document.createElement('div');
+    page.style.backgroundColor = 'rgb(253, 253, 253)';
+    appRoot.appendChild(page);
+    const overlay = document.createElement('div');
+    overlay.setAttribute('data-bars-ignore', '');
+    document.body.append(appRoot, overlay);
+    vi.spyOn(page, 'getBoundingClientRect').mockReturnValue({ width: window.innerWidth });
+    // <body> paints the blue page gradient; reading it was the bug.
+    document.body.style.backgroundImage = 'radial-gradient(circle, #d8e6fa, #d4e2f6)';
+
+    document.elementsFromPoint = () => [page, appRoot];
+    expect(readPageEdgeColors().bottom).toBe('#fdfdfd');
+
+    // The viewer is closing: #root is inert, hit-testing sees only the fading
+    // overlay and the document.
+    appRoot.setAttribute('inert', '');
+    document.elementsFromPoint = () => [overlay, document.body, document.documentElement];
+    expect(readPageEdgeColors().bottom).toBe('#fdfdfd');
+  });
 });
