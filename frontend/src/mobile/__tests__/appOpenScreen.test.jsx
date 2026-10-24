@@ -52,11 +52,17 @@ const setReducedMotion = (reduce) => {
 
 const screenEl = () => document.querySelector('[data-launch-surface]');
 const pager = () => document.querySelector('[class*="_pager_"]');
-const progress = () => screenEl().style.getPropertyValue('--pg');
+// The slide the motion is heading for (set the moment a gesture or a dot decides it).
+const progress = () => screenEl().dataset.target ?? '0';
+// Where the track is drawn right now, in slides (0 = first), from its transform.
+const trackPos = () => {
+  const m = /translate3d\((-?[\d.]+)%/.exec(document.querySelector('[class*="_track_"]').style.transform);
+  return m ? -Number(m[1]) / (100 / 3) : NaN;
+};
 const currentDot = () => document.querySelector('button[aria-current="true"]')?.getAttribute('aria-label');
 
 /** Drag the pager sideways like a thumb: down, a few moves, up. */
-const swipe = (fromX, toX, { toY = 300, ms = 400 } = {}) => {
+const swipe = (fromX, toX, { toY = 300, ms = 400, settle = true } = {}) => {
   const el = pager();
   let t = 1000;
   const fire = (type, x, y) => {
@@ -70,6 +76,7 @@ const swipe = (fromX, toX, { toY = 300, ms = 400 } = {}) => {
   fire('pointermove', fromX + (toX - fromX) * 0.8, toY);
   fire('pointermove', toX, toY);
   fire('pointerup', toX, toY);
+  if (settle) act(() => { vi.advanceTimersByTime(1500); }); // let the spring land
 };
 
 beforeEach(() => {
@@ -130,7 +137,8 @@ describe('AppOpenScreen', () => {
     expect(navigate).toHaveBeenCalledWith('/signup', { state: { fromOpenScreen: true } });
   });
 
-  it('stays on the first slide until somebody moves it', () => {
+  it('stays on the first slide under reduced motion, however long it waits', () => {
+    setReducedMotion(true);
     mount();
     act(() => { vi.advanceTimersByTime(30_000); });
     expect(currentDot()).toMatch(/slide 1 of 3/);
@@ -179,7 +187,7 @@ describe('AppOpenScreen', () => {
     expect(currentDot()).toMatch(/slide 1 of 3/);
   });
 
-  it('follows the finger while dragging, and lets the stylesheet animate once released', () => {
+  it('follows the finger while dragging, and springs to a slide once released', () => {
     mount();
     const el = pager();
     const fire = (type, x) => fireEvent(el, new window.PointerEvent(type, {
@@ -189,11 +197,32 @@ describe('AppOpenScreen', () => {
     fire('pointermove', 500);
     fire('pointermove', 300);
     // 300px of a 1024px-wide window: partway between slide 1 and slide 2.
+    act(() => { vi.advanceTimersByTime(32); }); // the drag is drawn once per frame
     expect(screenEl().dataset.drag).toBe('true');
-    expect(Number(progress())).toBeGreaterThan(0.2);
-    expect(Number(progress())).toBeLessThan(0.5);
+    // It follows the finger 1:1 from where the drag was recognised (the first
+    // move past the touch slop, at x = 500), without jumping by the slop.
+    expect(trackPos()).toBeCloseTo(200 / 1024, 3);
     fire('pointerup', 300);
     expect(screenEl().dataset.drag).toBeUndefined();
+  });
+
+  it('lands exactly on the slide once the spring settles', () => {
+    mount();
+    swipe(700, 200);
+    expect(trackPos()).toBe(1);
+    expect(screenEl().dataset.drag).toBeUndefined();
+  });
+
+  it('carries on forward when swiped again before the last swipe has settled', () => {
+    mount();
+    swipe(700, 200, { settle: false });
+    act(() => { vi.advanceTimersByTime(80); }); // part-way to slide 2
+    const mid = trackPos();
+    expect(mid).toBeGreaterThan(0.4);
+    expect(mid).toBeLessThan(1);
+    swipe(700, 450); // a short forward drag from mid-flight
+    expect(currentDot()).toMatch(/slide 3 of 3|slide 2 of 3/);
+    expect(trackPos()).toBeGreaterThanOrEqual(1);
   });
 
   it('jumps to a slide when its dot is tapped', () => {
@@ -209,5 +238,94 @@ describe('AppOpenScreen', () => {
     expect(hidden()).toEqual([null, 'true', 'true']);
     fireEvent.click(screen.getByRole('button', { name: /slide 2 of 3/ }));
     expect(hidden()).toEqual(['true', null, 'true']);
+  });
+
+  describe('auto-advance', () => {
+    const wait = (ms) => act(() => { vi.advanceTimersByTime(ms); });
+    const setVisibility = (state) => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
+      document.dispatchEvent(new Event('visibilitychange'));
+    };
+    afterEach(() => { delete document.visibilityState; });
+
+    it('turns to the next slide after about four seconds, with the swipe\'s own spring', () => {
+      mount();
+      wait(3900);
+      expect(currentDot()).toMatch(/slide 1 of 3/);
+      wait(200);
+      expect(currentDot()).toMatch(/slide 2 of 3/);
+      expect(progress()).toBe('1');
+      // Mid-flight it is between slides, then it lands exactly.
+      wait(1500);
+      expect(trackPos()).toBe(1);
+    });
+
+    it('keeps going and loops back to the first slide after the last', () => {
+      mount();
+      wait(4100);
+      expect(currentDot()).toMatch(/slide 2 of 3/);
+      wait(4000);
+      expect(currentDot()).toMatch(/slide 3 of 3/);
+      wait(4000);
+      expect(currentDot()).toMatch(/slide 1 of 3/);
+      wait(1500);
+      expect(trackPos()).toBeCloseTo(0, 5);
+    });
+
+    it('waits while a finger is down and counts again from the release', () => {
+      mount();
+      const el = pager();
+      const fire = (type, x) => fireEvent(el, new window.PointerEvent(type, {
+        bubbles: true, clientX: x, clientY: 300, pointerId: 1, pointerType: 'touch',
+      }));
+      wait(3000);
+      fire('pointerdown', 600);
+      wait(20_000);
+      expect(currentDot()).toMatch(/slide 1 of 3/);
+      fire('pointerup', 600); // a tap: nothing to turn
+      wait(3900);
+      expect(currentDot()).toMatch(/slide 1 of 3/);
+      wait(200);
+      expect(currentDot()).toMatch(/slide 2 of 3/);
+    });
+
+    it('counts again from a swipe instead of turning right after it', () => {
+      mount();
+      wait(3500);
+      swipe(700, 200, { settle: false }); // to slide 2 at 3.5s
+      wait(3900);
+      expect(currentDot()).toMatch(/slide 2 of 3/);
+      wait(200);
+      expect(currentDot()).toMatch(/slide 3 of 3/);
+    });
+
+    it('counts again after a dot is tapped', () => {
+      mount();
+      wait(3500);
+      fireEvent.click(screen.getByRole('button', { name: /slide 2 of 3/ }));
+      wait(3900);
+      expect(currentDot()).toMatch(/slide 2 of 3/);
+      wait(200);
+      expect(currentDot()).toMatch(/slide 3 of 3/);
+    });
+
+    it('does not turn while the page is hidden, and counts afresh when it is back', () => {
+      mount();
+      wait(2000);
+      setVisibility('hidden');
+      wait(30_000);
+      expect(currentDot()).toMatch(/slide 1 of 3/);
+      setVisibility('visible');
+      wait(3900);
+      expect(currentDot()).toMatch(/slide 1 of 3/);
+      wait(200);
+      expect(currentDot()).toMatch(/slide 2 of 3/);
+    });
+
+    it('stops its timer when the screen goes away', () => {
+      const { unmount } = mount();
+      unmount();
+      expect(vi.getTimerCount()).toBe(0);
+    });
   });
 });

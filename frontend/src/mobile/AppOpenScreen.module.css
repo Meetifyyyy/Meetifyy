@@ -13,18 +13,13 @@
            .dots             which slide you are on (and buttons to jump)
            .actions          Create your account / Log in
 
-   ONE NUMBER DRIVES THE MOTION
-   `--pg` is how far along the slides you are, 0 to 2, as a decimal. The track,
-   the photo parallax and the three shapes behind are all functions of it, so
-   they always agree with each other:
-
-     - a finger drag writes `--pg` directly on every move (`data-drag` turns
-       the transition off for that), so everything follows the thumb;
-     - letting go, a tap on a dot, anything else sets it to a whole number and
-       the transition below animates it there.
-
-   It is a registered property (`@property`) only so that it can transition.
-   Where that is unsupported it simply jumps, and the screen still works.
+   MOTION LIVES IN JAVASCRIPT (openScreenMotion.js)
+   The track, the photo parallax and the three circles are moved by writing
+   `transform` onto those seven elements once per frame, from one position
+   number: following the finger while dragging, and a spring seeded with the
+   release velocity afterwards. Nothing in this stylesheet animates them; it
+   only gives each its own compositor layer (`will-change: transform`) so a
+   frame is a re-composite, never a repaint of the slides.
 
    Light and dark are two token sets (right below), not one set inverted.
 
@@ -33,12 +28,6 @@
 
    MOTION: only `transform` and `opacity` animate (the dots' colour aside).
    ========================================================================= */
-
-@property --pg {
-  syntax: '<number>';
-  inherits: true;
-  initial-value: 0;
-}
 
 .screen {
   /* The app's own tokens, so light/dark follow the global theme. */
@@ -76,10 +65,7 @@
   color: var(--ink);
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   opacity: 0;
-  --pg: 0;
-  transition:
-    opacity 260ms ease-out,
-    --pg 720ms cubic-bezier(0.22, 0.8, 0.2, 1);
+  transition: opacity 260ms ease-out;
   user-select: none;
   -webkit-user-select: none;
   overscroll-behavior: none;
@@ -107,11 +93,6 @@
   opacity: 1;
 }
 
-/* While a finger is dragging, `--pg` must follow it exactly, not lag behind. */
-.screen[data-drag] {
-  transition: opacity 260ms ease-out;
-}
-
 /* Nothing plays until the native splash starts handing over. */
 .screen:not(.visible) * {
   animation-play-state: paused !important;
@@ -129,50 +110,25 @@
   border: 0;
 }
 
-/* ---- Shapes behind the content -------------------------------------------
+/* ---- Circles behind the content -------------------------------------------
 
-   Three flat, true circles. As `--pg` goes 0 → 2 each one drifts and grows or
-   shrinks, by a different amount and in a different direction, so they read as
-   one group that reshapes itself with every slide. The scale is uniform, which
-   is what keeps them circles at every point of the move, not only at rest.
-   Transform only: nothing here is repainted while it moves. */
+   Three flat circles. Their size, place and motion are set from JavaScript
+   (openScreenMotion.js): anchored in fractions of the screen so any size and
+   either orientation gets the same composition, turning one place clockwise
+   round the edges per slide, and never overlapping. Here: only their paint,
+   and a box at the top-left corner that the transform moves. */
 
 .blob {
   position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
   border-radius: 50%;
   background: var(--blob);
   pointer-events: none;
+  transform-origin: 50% 50%;
   will-change: transform;
-}
-
-.blobTop {
-  width: 78vw;
-  height: 78vw;
-  top: -30vw;
-  right: -34vw;
-  transform:
-    translate3d(calc(var(--pg) * -12vw), calc(var(--pg) * 12vw), 0)
-    scale(calc(1 + var(--pg) * 0.3));
-}
-
-.blobSide {
-  width: 64vw;
-  height: 64vw;
-  top: 38%;
-  left: -46vw;
-  transform:
-    translate3d(calc(var(--pg) * 20vw), calc(var(--pg) * -12vw), 0)
-    scale(calc(1 - var(--pg) * 0.22));
-}
-
-.blobBottom {
-  width: 96vw;
-  height: 96vw;
-  bottom: -62vw;
-  right: -48vw;
-  transform:
-    translate3d(calc(var(--pg) * -26vw), calc(var(--pg) * -10vw), 0)
-    scale(calc(1 + var(--pg) * 0.12));
 }
 
 /* ---- Layout ---------------------------------------------------------------- */
@@ -202,16 +158,17 @@
   flex: 1 1 0;
   min-height: 0;
   overflow: hidden;
-  /* Vertical gestures stay the browser's; sideways ones are ours. */
-  touch-action: pan-y;
+  /* The screen never scrolls, so every gesture here is ours. With `pan-y` the
+     WebView could claim a slightly diagonal swipe as a scroll and cancel the
+     pointer half-way, snapping the slide back under the finger. */
+  touch-action: none;
 }
 
 .track {
   display: flex;
   width: 300%;
   height: 100%;
-  /* One panel is a third of the track, so `--pg` panels is that many thirds. */
-  transform: translate3d(calc(var(--pg) * -33.3333%), 0, 0);
+  /* Moved from JavaScript; its own layer so moving it never repaints it. */
   will-change: transform;
 }
 
@@ -222,7 +179,8 @@
   display: flex;
   flex-direction: column;
   padding: 0 var(--pad-r) 0 var(--pad-l);
-  /* The side cards are cut at the screen's edge, not seen in the next panel. */
+  /* Nothing in a panel should reach its edge (the fan is sized to fit), but
+     during a swipe a panel must never paint into its neighbour. */
   overflow: hidden;
 }
 
@@ -287,15 +245,20 @@
   min-height: 130px;
   /* Lets the cards size themselves from the room the stage actually has. */
   container-type: size;
-  --cw: min(72vw, 34dvh);
-  /* Parallax: the photos trail a little behind their slide. */
-  transform: translate3d(calc((var(--pg) - var(--n)) * 9vw), 0, 0);
+  --cw: min(58vw, 30dvh);
+  /* Parallax, moved from JavaScript. Its own layer: without it, every frame
+     of the swipe repainted the whole track (photos included). */
+  will-change: transform;
 }
 
 @supports (width: 1cqw) {
   .stage {
-    /* 100cqh leaves room above the card for the badge that overhangs it. */
-    --cw: min(78cqw, 94cqh);
+    /* 94cqh leaves room above the card for the badge that overhangs it.
+       60cqw keeps the whole fan inside the stage: a side card reaches
+       0.38cw (its offset) + ~0.43cw (half its rotated, scaled width) from the
+       centre, about 0.49 of the stage width — so no photo is cut by the
+       screen's edge. */
+    --cw: min(60cqw, 94cqh);
   }
 }
 
@@ -316,12 +279,12 @@
 
 .right {
   z-index: 2;
-  transform: translate3d(72%, 4%, 0) rotate(6deg) scale(0.84);
+  transform: translate3d(38%, 4%, 0) rotate(6deg) scale(0.78);
 }
 
 .left {
   z-index: 1;
-  transform: translate3d(-72%, 4%, 0) rotate(-8deg) scale(0.84);
+  transform: translate3d(-38%, 4%, 0) rotate(-7deg) scale(0.78);
 }
 
 .photo {
@@ -475,7 +438,8 @@
 
 .dotOn::before {
   background: var(--accent);
-  transform: scaleX(2.4);
+  /* Uniform, so the active dot stays a circle — only bigger and in colour. */
+  transform: scale(1.35);
 }
 
 .actions {
@@ -555,9 +519,6 @@
 
   .copy { margin-top: 0; }
   .stage { align-self: stretch; --cw: min(30vw, 56dvh); }
-  /* Keep the side cards inside their own column, clear of the copy. */
-  .right { transform: translate3d(62%, 4%, 0) rotate(6deg) scale(0.8); }
-  .left { transform: translate3d(-62%, 4%, 0) rotate(-8deg) scale(0.8); }
   .tiles { display: none; }
 
   .footer { flex-direction: row; align-items: center; gap: 16px; }
@@ -571,7 +532,7 @@
 
 @supports (width: 1cqw) {
   @media (orientation: landscape) and (max-height: 520px) {
-    .stage { --cw: min(50cqw, 100cqh); }
+    .stage { --cw: min(60cqw, 94cqh); }
   }
 }
 

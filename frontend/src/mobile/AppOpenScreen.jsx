@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   AcademicCapIcon,
@@ -27,6 +27,7 @@ import chai from '../features/auth/landing/assets/chai.webp';
 import laptopPair from '../features/auth/landing/assets/laptop-pair.webp';
 import { preloadAuthScreens } from '../features/auth/routes/authRoutes';
 import { useSystemBars } from '../shared/hooks/useSystemBars';
+import { useSlidePager } from './openScreenMotion';
 import styles from './AppOpenScreen.module.css';
 
 /**
@@ -65,7 +66,7 @@ import styles from './AppOpenScreen.module.css';
  * thumb; letting go sets it to a whole number and the stylesheet animates it
  * there (it is a registered property, which is what lets it transition). The
  * track, the parallax on the photos and the three background shapes are all
- * functions of it, so the shapes morph — stretch, turn and drift — in step with
+ * functions of it, so the circles rearrange themselves in step with
  * the slide, whether it is dragged, flicked or tapped.
  *
  * Everything that moves is `transform` or `opacity`. `prefers-reduced-motion`
@@ -76,6 +77,8 @@ import styles from './AppOpenScreen.module.css';
 
 /** Long enough for the exit fade to read, short enough not to feel like a wait. */
 const EXIT_MS = 170;
+/** How long a slide stays before the screen turns to the next by itself (it loops). */
+const AUTO_ADVANCE_MS = 4000;
 
 /** Where a card sits in a slide's fan, by the order its photo is listed. */
 const FAN = ['front', 'right', 'left'];
@@ -126,7 +129,7 @@ const SLIDES = [
   {
     id: 'plans',
     headline: [['Make a ', { accent: 'plan' }, ','], ['bring your crew.']],
-    sub: 'Start an activity, invite your crew, or find someone to join in \u2014 today.',
+    sub: 'Start an activity, invite your crew, or find someone to join in today.',
     badge: 'Join a game',
     BadgeIcon: BoltIcon,
     photos: [
@@ -143,26 +146,12 @@ const SLIDES = [
   },
 ];
 
-const LAST = SLIDES.length - 1;
-
-/** A drag past this share of the width, or a flick faster than this, turns the page. */
-const TURN_DISTANCE = 0.2;
-const TURN_SPEED = 0.45; // px per ms
-
-/** Past either end the slides still give a little, then stop. */
-const RUBBER = 0.35;
-
 export default function AppOpenScreen() {
   const navigate = useNavigate();
   const [leaving, setLeaving] = useState(false);
   const [splashExited, setSplashExited] = useState(false);
-  const [active, setActive] = useState(0);
   // Slides that have been shown: their underline stays drawn once it has been.
   const [seen, setSeen] = useState(() => SLIDES.map((_, i) => i === 0));
-  const screenRef = useRef(null);
-  const pagerRef = useRef(null);
-  const activeRef = useRef(0);
-  const gestureRef = useRef(null);
 
   // Android killed the app while it was in the background mid-signup (the
   // browser for the Terms, the mail app for the code): put the person back on
@@ -190,6 +179,18 @@ export default function AppOpenScreen() {
       window.matchMedia('(prefers-reduced-motion: reduce)').matches,
     [],
   );
+
+  /** The slide motion: see `openScreenMotion.js` for why it is JavaScript. */
+  const markSeen = useCallback((next) => {
+    setSeen((prev) => (prev[next] ? prev : prev.map((v, i) => v || i === next)));
+  }, []);
+  const pager = useSlidePager({
+    count: SLIDES.length,
+    reduceMotion,
+    onTarget: markSeen,
+    autoAdvanceMs: AUTO_ADVANCE_MS,
+  });
+  const active = pager.index;
 
   /**
    * One navigation, and the screen fades before it happens.
@@ -271,6 +272,8 @@ export default function AppOpenScreen() {
     statusIcons: barIcons,
     navigation: 'transparent',
     navigationIcons: barIcons,
+    // Landscape: run under the camera cutout / side navigation bar too.
+    sides: 'transparent',
   });
 
   // On Android, bring this screen in as the native splash starts to fade, so
@@ -303,80 +306,6 @@ export default function AppOpenScreen() {
     };
   }, []);
 
-  /**
-   * Settle on a slide: remember it and hand `--pg` its whole number, which the
-   * stylesheet animates to. `--pg` is written straight onto the element rather
-   * than through React state, because during a drag it changes on every pointer
-   * move and nothing but the stylesheet needs to know.
-   */
-  const settle = useCallback((target) => {
-    const next = Math.max(0, Math.min(LAST, target));
-    activeRef.current = next;
-    setActive(next);
-    setSeen((prev) => (prev[next] ? prev : prev.map((v, i) => v || i === next)));
-    const el = screenRef.current;
-    if (!el) return;
-    delete el.dataset.drag;
-    el.style.setProperty('--pg', String(next));
-  }, []);
-
-  const onPointerDown = useCallback((e) => {
-    if (e.pointerType === 'mouse' && e.button !== 0) return;
-    gestureRef.current = {
-      id: e.pointerId,
-      x: e.clientX,
-      y: e.clientY,
-      lastX: e.clientX,
-      lastT: e.timeStamp,
-      speed: 0,
-      dragging: false,
-    };
-  }, []);
-
-  const onPointerMove = useCallback((e) => {
-    const g = gestureRef.current;
-    const el = screenRef.current;
-    const pager = pagerRef.current;
-    if (!g || g.id !== e.pointerId || !el || !pager) return;
-    const dx = e.clientX - g.x;
-    if (!g.dragging) {
-      const dy = e.clientY - g.y;
-      if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
-      // Mostly vertical: not ours.
-      if (Math.abs(dy) > Math.abs(dx)) {
-        gestureRef.current = null;
-        return;
-      }
-      g.dragging = true;
-      el.dataset.drag = 'true';
-      pager.setPointerCapture?.(e.pointerId);
-    }
-    const width = pager.clientWidth || window.innerWidth || 1;
-    let pg = activeRef.current - dx / width;
-    if (pg < 0) pg *= RUBBER;
-    else if (pg > LAST) pg = LAST + (pg - LAST) * RUBBER;
-    el.style.setProperty('--pg', pg.toFixed(4));
-
-    const dt = e.timeStamp - g.lastT;
-    if (dt > 0) g.speed = (e.clientX - g.lastX) / dt;
-    g.lastX = e.clientX;
-    g.lastT = e.timeStamp;
-  }, []);
-
-  const onPointerEnd = useCallback((e) => {
-    const g = gestureRef.current;
-    if (!g || g.id !== e.pointerId) return;
-    gestureRef.current = null;
-    if (!g.dragging) return;
-    const width = pagerRef.current?.clientWidth || window.innerWidth || 1;
-    const dx = e.clientX - g.x;
-    const turned = e.type === 'pointerup'
-      && (Math.abs(dx) > width * TURN_DISTANCE || Math.abs(g.speed) > TURN_SPEED);
-    // Left is forward. A flick wins over where the finger happens to be.
-    const direction = Math.abs(g.speed) > TURN_SPEED ? -Math.sign(g.speed) : -Math.sign(dx);
-    settle(turned ? activeRef.current + direction : activeRef.current);
-  }, [settle]);
-
   const leaveTo = useCallback(
     (path) => {
       if (isLeavingRef.current) return;
@@ -404,102 +333,42 @@ export default function AppOpenScreen() {
 
   return (
     <div
-      ref={screenRef}
+      ref={pager.rootRef}
       data-launch-surface
       className={`${styles.screen} ${splashExited ? styles.visible : ''} ${leaving ? styles.leaving : ''}`}
     >
       {/*
-        Flat shapes behind everything; decorative, so out of the a11y tree. They
-        stretch, turn and drift as the slides move (see the stylesheet).
+        Three flat circles behind everything; decorative, so out of the a11y
+        tree. Placed and moved from JavaScript (openScreenMotion.js).
       */}
-      <span className={`${styles.blob} ${styles.blobTop}`} aria-hidden="true" />
-      <span className={`${styles.blob} ${styles.blobSide}`} aria-hidden="true" />
-      <span className={`${styles.blob} ${styles.blobBottom}`} aria-hidden="true" />
+      {[0, 1, 2].map((i) => (
+        <span
+          key={i}
+          ref={(el) => pager.registerCircle(i, el)}
+          className={styles.blob}
+          aria-hidden="true"
+        />
+      ))}
 
       <div className={styles.content}>
         <h1 className={styles.srOnly}>Meetifyy</h1>
 
         <div
-          ref={pagerRef}
+          ref={pager.viewportRef}
           className={`${styles.pager} ${styles.enter}`}
           style={{ '--d': '0ms' }}
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerEnd}
-          onPointerCancel={onPointerEnd}
+          {...pager.handlers}
         >
-          <div className={styles.track}>
+          <div ref={pager.trackRef} className={styles.track}>
             {SLIDES.map((slide, n) => (
-              <section
+              <Slide
                 key={slide.id}
-                className={`${styles.panel} ${seen[n] ? styles.seen : ''}`}
-                style={{ '--n': n }}
-                aria-roledescription="slide"
-                aria-label={`${n + 1} of ${SLIDES.length}`}
-                aria-hidden={n === active ? undefined : 'true'}
-              >
-                <div className={styles.copy}>
-                  <h2 className={styles.headline}>
-                    {slide.headline.map((line) => (
-                      <span key={line.map((part) => part.accent ?? part).join('')} className={styles.headlineLine}>
-                        {line.map((part) => (typeof part === 'string' ? part : (
-                          <span key={part.accent} className={styles.accent}>
-                            {part.accent}
-                            <svg
-                              className={styles.underline}
-                              viewBox="0 0 200 14"
-                              preserveAspectRatio="none"
-                              aria-hidden="true"
-                              focusable="false"
-                            >
-                              <path
-                                d="M3 9.5C38 3 82 12.5 122 6.5C150 2.5 178 5.5 197 8.5"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="4"
-                                strokeLinecap="round"
-                                vectorEffect="non-scaling-stroke"
-                              />
-                            </svg>
-                          </span>
-                        )))}
-                      </span>
-                    ))}
-                  </h2>
-                  <p className={styles.sub}>{slide.sub}</p>
-                </div>
-
-                <div className={styles.stage}>
-                  {slide.photos.map((photo, i) => (
-                    <div key={photo.src} className={`${styles.card} ${styles[FAN[i]]}`}>
-                      <div className={styles.photo}>
-                        <img
-                          src={photo.src}
-                          alt=""
-                          decoding="async"
-                          draggable="false"
-                          style={{ objectPosition: photo.position }}
-                        />
-                      </div>
-                      {i === 0 && (
-                        <span className={styles.badge}>
-                          <slide.BadgeIcon className={styles.badgeIcon} aria-hidden="true" />
-                          {slide.badge}
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-
-                <ul className={styles.tiles}>
-                  {slide.tiles.map(({ label, Icon }) => (
-                    <li key={label} className={styles.tile}>
-                      <Icon className={styles.tileIcon} aria-hidden="true" />
-                      <span className={styles.tileLabel}>{label}</span>
-                    </li>
-                  ))}
-                </ul>
-              </section>
+                slide={slide}
+                n={n}
+                seen={seen[n]}
+                hidden={n !== active}
+                registerStage={pager.registerStage}
+              />
             ))}
           </div>
         </div>
@@ -513,7 +382,7 @@ export default function AppOpenScreen() {
                 className={`${styles.dot} ${index === active ? styles.dotOn : ''}`}
                 aria-label={`Show slide ${index + 1} of ${SLIDES.length}: ${slide.badge}`}
                 aria-current={index === active ? 'true' : undefined}
-                onClick={() => settle(index)}
+                onClick={() => pager.goTo(index)}
               />
             ))}
           </div>
@@ -542,3 +411,82 @@ export default function AppOpenScreen() {
     </div>
   );
 }
+
+/**
+ * One slide. Memoised: changing slide re-renders only the two whose
+ * `hidden` or `seen` changed, not all three panels and their photos, in the
+ * frame the motion starts.
+ */
+const Slide = memo(function Slide({ slide, n, seen, hidden, registerStage }) {
+  const stageRef = useCallback((el) => registerStage(n, el), [registerStage, n]);
+  return (
+    <section
+      className={`${styles.panel} ${seen ? styles.seen : ''}`}
+      aria-roledescription="slide"
+      aria-label={`${n + 1} of ${SLIDES.length}`}
+      aria-hidden={hidden ? 'true' : undefined}
+    >
+      <div className={styles.copy}>
+        <h2 className={styles.headline}>
+          {slide.headline.map((line) => (
+            <span key={line.map((part) => part.accent ?? part).join('')} className={styles.headlineLine}>
+              {line.map((part) => (typeof part === 'string' ? part : (
+                <span key={part.accent} className={styles.accent}>
+                  {part.accent}
+                  <svg
+                    className={styles.underline}
+                    viewBox="0 0 200 14"
+                    preserveAspectRatio="none"
+                    aria-hidden="true"
+                    focusable="false"
+                  >
+                    <path
+                      d="M3 9.5C38 3 82 12.5 122 6.5C150 2.5 178 5.5 197 8.5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                      strokeLinecap="round"
+                      vectorEffect="non-scaling-stroke"
+                    />
+                  </svg>
+                </span>
+              )))}
+            </span>
+          ))}
+        </h2>
+        <p className={styles.sub}>{slide.sub}</p>
+      </div>
+
+      <div ref={stageRef} className={styles.stage}>
+        {slide.photos.map((photo, i) => (
+          <div key={photo.src} className={`${styles.card} ${styles[FAN[i]]}`}>
+            <div className={styles.photo}>
+              <img
+                src={photo.src}
+                alt=""
+                decoding="async"
+                draggable="false"
+                style={{ objectPosition: photo.position }}
+              />
+            </div>
+            {i === 0 && (
+              <span className={styles.badge}>
+                <slide.BadgeIcon className={styles.badgeIcon} aria-hidden="true" />
+                {slide.badge}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <ul className={styles.tiles}>
+        {slide.tiles.map(({ label, Icon }) => (
+          <li key={label} className={styles.tile}>
+            <Icon className={styles.tileIcon} aria-hidden="true" />
+            <span className={styles.tileLabel}>{label}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+});

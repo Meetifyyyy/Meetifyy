@@ -241,6 +241,24 @@ public class SystemUiPlugin extends Plugin {
         call.resolve();
     }
 
+    /**
+     * Whether the page draws under the side insets (a landscape cutout or a
+     * side navigation bar). Normally the decor view is padded by them and the
+     * strips show the window colour; a screen that runs edge to edge (the
+     * opening screen, the auth pages) turns the padding off and keeps its own
+     * content clear with `--side-inset-left/right`, which are always published.
+     */
+    @PluginMethod
+    public void setSides(PluginCall call) {
+        final boolean drawn = Boolean.TRUE.equals(call.getBoolean("drawn", false));
+        pageDrawsSides = drawn;
+        final Activity activity = getActivity();
+        if (activity != null) {
+            activity.runOnUiThread(() -> ViewCompat.requestApplyInsets(activity.getWindow().getDecorView()));
+        }
+        call.resolve();
+    }
+
     /** The bars' current heights, in CSS px. Lets the page fill its own layout before the first paint. */
     @PluginMethod
     public void getInsets(PluginCall call) {
@@ -275,7 +293,13 @@ public class SystemUiPlugin extends Plugin {
 
     private int lastTop = 0;
     private int lastBottom = 0;
+    private int lastLeft = 0;
+    private int lastRight = 0;
     private boolean published = false;
+
+    // The page draws under the LEFT and RIGHT insets too (setSides). Off by
+    // default: the decor is padded there, as every screen expects.
+    private volatile boolean pageDrawsSides = false;
 
     // An IME animation has been prepared and has not started yet: the insets
     // dispatched in between are its END state, published from onStart.
@@ -346,11 +370,14 @@ public class SystemUiPlugin extends Plugin {
             final int types = WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout();
             final Insets bars = insets.getInsets(types);
 
-            // Sides only, for a landscape cutout / side navigation. Never the
-            // bottom: the keyboard no longer resizes the WebView (see above).
-            if (v.getPaddingLeft() != bars.left || v.getPaddingTop() != 0
-                || v.getPaddingRight() != bars.right || v.getPaddingBottom() != 0) {
-                v.setPadding(bars.left, 0, bars.right, 0);
+            // Sides only, for a landscape cutout / side navigation — unless the
+            // page draws there itself (setSides). Never the bottom: the
+            // keyboard no longer resizes the WebView (see above).
+            final int padLeft = pageDrawsSides ? 0 : bars.left;
+            final int padRight = pageDrawsSides ? 0 : bars.right;
+            if (v.getPaddingLeft() != padLeft || v.getPaddingTop() != 0
+                || v.getPaddingRight() != padRight || v.getPaddingBottom() != 0) {
+                v.setPadding(padLeft, 0, padRight, 0);
             }
 
             final float density = activity.getResources().getDisplayMetrics().density;
@@ -358,7 +385,10 @@ public class SystemUiPlugin extends Plugin {
             // WebView still reaches the bottom of the screen, under both. (It
             // used to drop to 0 with the keyboard, a restyle of every element
             // on the page in the middle of the slide.)
-            publish(Math.round(bars.top / density), Math.round(bars.bottom / density));
+            publish(
+                Math.round(bars.top / density), Math.round(bars.bottom / density),
+                Math.round(bars.left / density), Math.round(bars.right / density)
+            );
 
             final boolean imeVisible = insets.isVisible(WindowInsetsCompat.Type.ime());
             final int imeHeight = imeHeightCss(insets, density);
@@ -489,20 +519,30 @@ public class SystemUiPlugin extends Plugin {
         getBridge().executeOnMainThread(() -> getBridge().getWebView().evaluateJavascript(js, null));
     }
 
-    /** One script for both values, and none at all when nothing changed. */
-    private void publish(int topCssPx, int bottomCssPx) {
-        if (published && topCssPx == lastTop && bottomCssPx == lastBottom) return;
+    /**
+     * One script for all four values, and none at all when nothing changed.
+     * The side insets are published as `--side-inset-*-raw` whether or not the
+     * page draws there: CSS only applies them under `[data-bars-sides]`, so a
+     * screen that keeps the window padding never double-counts them.
+     */
+    private void publish(int topCssPx, int bottomCssPx, int leftCssPx, int rightCssPx) {
+        if (published && topCssPx == lastTop && bottomCssPx == lastBottom
+            && leftCssPx == lastLeft && rightCssPx == lastRight) return;
         published = true;
         lastTop = topCssPx;
         lastBottom = bottomCssPx;
+        lastLeft = leftCssPx;
+        lastRight = rightCssPx;
         if (getBridge() == null || getBridge().getWebView() == null) return;
         final String js = String.format(
             Locale.US,
             "(function(){var s=document.documentElement.style;"
                 + "s.setProperty('--status-bar-inset','%dpx');"
                 + "s.setProperty('--navigation-bar-inset','%dpx');"
+                + "s.setProperty('--side-inset-left-raw','%dpx');"
+                + "s.setProperty('--side-inset-right-raw','%dpx');"
                 + "try{localStorage.setItem('meetifyy.insets','%d,%d')}catch(e){}})()",
-            topCssPx, bottomCssPx, topCssPx, bottomCssPx
+            topCssPx, bottomCssPx, leftCssPx, rightCssPx, topCssPx, bottomCssPx
         );
         getBridge().executeOnMainThread(() -> getBridge().getWebView().evaluateJavascript(js, null));
     }

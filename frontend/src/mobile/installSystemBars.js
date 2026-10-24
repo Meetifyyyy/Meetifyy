@@ -302,6 +302,19 @@ export function installSystemBars(systemBars, { readEdges } = {}) {
   sampledPath = location.pathname;
   sample();
 
+  // The side insets follow `data-bars-sides` at once, not on the settled
+  // sample: the screen asking for them has just mounted and is laid out for
+  // the full width.
+  let sidesDrawn = null;
+  const syncSides = () => {
+    const drawn = root.hasAttribute('data-bars-sides');
+    if (drawn === sidesDrawn) return;
+    sidesDrawn = drawn;
+    systemBars.setSides?.(drawn);
+  };
+  syncSides();
+  new MutationObserver(syncSides).observe(root, { attributes: true, attributeFilter: ['data-bars-sides'] });
+
   const observer = new MutationObserver(scheduleWithSettle);
   observer.observe(root, {
     attributes: true,

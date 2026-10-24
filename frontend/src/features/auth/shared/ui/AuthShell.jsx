@@ -256,6 +256,9 @@ function AuthShellMaster({
     status: 'transparent',
     statusIcons: darkHeroUnderStatusBar ? 'light' : null,
     navigation: 'transparent',
+    // Landscape: the canvas also runs under the camera cutout and a side
+    // navigation bar, rather than the window padding them with solid strips.
+    sides: 'transparent',
   });
 
   useLayoutEffect(() => {

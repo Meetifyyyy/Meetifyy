@@ -21,6 +21,12 @@ import { IS_MOBILE_BUILD } from '@config';
  *                               resized (the keyboard opening or closing) the
  *                               strip it exposes is the document, not the page,
  *                               and was a light patch across a dark screen.
+ *   sides: 'transparent'        the page also draws under the LEFT and RIGHT
+ *                               insets (a landscape camera cutout or a side
+ *                               navigation bar) instead of the window padding
+ *                               them; content is kept clear by
+ *                               `--side-inset-left/right` (safe-area-inset-left/
+ *                               right in the app's CSS resolve to them)
  *   scrollThrough: true         while the auto-hiding header and bottom navigation
  *                               are slid away, the page runs under both bars
  *                               (transparent strips), and they return in their
@@ -48,6 +54,7 @@ const ATTRIBUTES = {
   navigationIcons: 'data-navigation-bar-icons',
   canvas: 'data-bars-canvas',
   scrollThrough: 'data-bars-scroll-through',
+  sides: 'data-bars-sides',
 };
 
 const requests = [];

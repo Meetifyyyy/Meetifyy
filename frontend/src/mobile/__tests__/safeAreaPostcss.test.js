@@ -47,11 +47,23 @@ describe('withNativeNavigationInset', () => {
     );
   });
 
-  it('does not touch the top, left or right insets', () => {
-    for (const edge of ['top', 'left', 'right']) {
-      const v = `env(safe-area-inset-${edge}, 0px)`;
-      expect(withNativeNavigationInset(v)).toBe(v);
-    }
+  it('does not touch the top inset', () => {
+    const v = 'env(safe-area-inset-top, 0px)';
+    expect(withNativeNavigationInset(v)).toBe(v);
+  });
+
+  it('pairs the left and right insets with the side insets', () => {
+    expect(withNativeNavigationInset('calc(14px + env(safe-area-inset-left, 0px))')).toBe(
+      'calc(14px + max(env(safe-area-inset-left, 0px), var(--side-inset-left, 0px)))',
+    );
+    expect(withNativeNavigationInset('env(safe-area-inset-right)')).toBe(
+      'max(env(safe-area-inset-right), var(--side-inset-right, 0px))',
+    );
+  });
+
+  it('leaves an already-paired side inset alone', () => {
+    const v = 'max(env(safe-area-inset-left, 0px), var(--side-inset-left, 0px))';
+    expect(withNativeNavigationInset(v)).toBe(v);
   });
 
   it('ignores values without a safe-area env()', () => {

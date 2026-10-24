@@ -314,3 +314,22 @@ a,
 img {
   -webkit-user-drag: none;
 }
+
+/* Side insets (landscape camera cutout, side navigation bar).
+
+   The native shell publishes their sizes as --side-inset-*-raw on every
+   screen, but normally pads the window by them, so the page never reaches
+   them and they must count as 0 (every `env(safe-area-inset-left/right)` in
+   the app reads --side-inset-*, see safeAreaPostcss.js). A screen that draws
+   under them instead — `useSystemBars({ sides: 'transparent' })`, which sets
+   data-bars-sides and turns the native padding off — makes them real, so its
+   own safe-area padding keeps the content clear of the cutout. */
+:root {
+  --side-inset-left: 0px;
+  --side-inset-right: 0px;
+}
+
+:root[data-bars-sides] {
+  --side-inset-left: var(--side-inset-left-raw, 0px);
+  --side-inset-right: var(--side-inset-right-raw, 0px);
+}

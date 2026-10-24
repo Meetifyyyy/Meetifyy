@@ -148,6 +148,19 @@ export function createCapacitorSystemBars({ getComputed } = {}) {
       SystemUi.appReady({ theme: theme || '' }).catch(() => {});
     },
     /**
+     * Android: whether the page draws under the LEFT and RIGHT insets too (a
+     * landscape cutout or a side navigation bar). Normally the window is
+     * padded there and those strips show the window colour; a screen that
+     * opts in (`useSystemBars({ sides: 'transparent' })`) gets the full width
+     * and keeps its own content clear with `--side-inset-left/right`.
+     * Fire-and-forget: an older native shell without the method just keeps
+     * its padding.
+     */
+    setSides(drawn) {
+      if (!Capacitor.isNativePlatform?.() || Capacitor.getPlatform?.() !== 'android') return;
+      SystemUi.setSides({ drawn: !!drawn }).catch(() => {});
+    },
+    /**
      * Sets the bars' icon appearance. `status` and `navigation` are `true` for
      * LIGHT icons (drawn over a dark surface).
      */
