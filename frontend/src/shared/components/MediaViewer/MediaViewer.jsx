@@ -92,6 +92,10 @@ function MediaViewerSession() {
   const { open, items, index, meta } = state;
 
   const overlayRef  = useRef(null);
+  // The black behind the media, a layer of its own so a drag fades it by
+  // opacity on the compositor instead of repainting the whole overlay's
+  // background colour every frame.
+  const backdropRef = useRef(null);
   const stageRef    = useRef(null);
   const trackRef    = useRef(null);
   /** Ref forwarded to the media element (img or video) for vertical drag. */
@@ -358,15 +362,17 @@ function MediaViewerSession() {
     setBarsFollowPage(false);
     const animate = animated && !prefersReducedMotion();
     const media = mediaElRef.current;
-    const backdrop = overlayRef.current;
+    const backdrop = backdropRef.current;
     if (media) {
       media.style.transition = animate ? motionTransition('transform', 0.32) : 'none';
       media.style.transform  = '';
+      media.style.willChange = '';
     }
     if (backdrop) {
-      backdrop.style.transition = animate ? 'background-color 0.32s ease' : 'none';
-      backdrop.style.backgroundColor = '';
+      backdrop.style.transition = animate ? 'opacity 0.32s ease' : 'none';
+      backdrop.style.opacity = '';
     }
+    const overlay = overlayRef.current;
     // Clear after transition so CSS classes take over again
     if (animate) {
       snapbackTimerRef.current = setTimeout(() => {
@@ -376,10 +382,19 @@ function MediaViewerSession() {
           media.style.transform  = '';
         }
         if (backdrop) {
-          backdrop.style.transition      = '';
-          backdrop.style.backgroundColor = '';
+          backdrop.style.transition = '';
+          backdrop.style.opacity    = '';
+        }
+        // The backdrop is fully black again: give the colour back to the
+        // overlay, where the system bars read it.
+        if (overlay) {
+          overlay.style.transition = '';
+          overlay.style.background = '';
         }
       }, SNAPBACK_CLEANUP_MS);
+    } else if (overlay) {
+      overlay.style.transition = '';
+      overlay.style.background = '';
     }
   }, [cancelSnapbackCleanup, setBarsFollowPage]);
 
@@ -462,14 +477,24 @@ function MediaViewerSession() {
       const vh       = window.visualViewport?.height || window.innerHeight;
       const progress = Math.min(Math.abs(dampened) / (vh * 0.55), 1);
       const bgOpacity = 1 - (progress * 0.85);
+      // Shrinks a little as it is pulled away, so the drag reads as the photo
+      // being lifted off rather than the page sliding.
+      const scale = 1 - progress * 0.12;
 
       if (mediaElRef.current) {
         mediaElRef.current.style.transition = 'none';
-        mediaElRef.current.style.transform  = `translate3d(0, ${dampened}px, 0)`;
+        mediaElRef.current.style.willChange = 'transform';
+        mediaElRef.current.style.transform  = `translate3d(0, ${dampened}px, 0) scale(${scale})`;
       }
-      if (overlayRef.current) {
-        overlayRef.current.style.transition      = 'none';
-        overlayRef.current.style.backgroundColor = `rgba(0,0,0,${bgOpacity})`;
+      if (backdropRef.current) {
+        backdropRef.current.style.transition = 'none';
+        backdropRef.current.style.opacity    = String(bgOpacity);
+      }
+      // Hand the black over to the backdrop layer: one repaint at the start of
+      // the drag, then only opacity changes.
+      if (overlayRef.current && overlayRef.current.style.background !== 'transparent') {
+        overlayRef.current.style.transition = 'none';
+        overlayRef.current.style.background = 'transparent';
       }
       if (bgOpacity < 1) setBarsFollowPage(true);
 
@@ -581,11 +606,13 @@ function MediaViewerSession() {
         const finishY = sign * vh;
         if (mediaElRef.current) {
           mediaElRef.current.style.transition = motionTransition('transform', 0.24);
-          mediaElRef.current.style.transform  = `translate3d(0, ${finishY}px, 0)`;
+          // Keeps the shrink the drag reached, so the fly-out continues it.
+          const endScale = 1 - Math.min(Math.abs(dy * DISMISS_DRAG_DAMPEN) / (vh * 0.55), 1) * 0.12;
+          mediaElRef.current.style.transform  = `translate3d(0, ${finishY}px, 0) scale(${endScale})`;
         }
-        if (overlayRef.current) {
-          overlayRef.current.style.transition       = prefersReducedMotion() ? 'none' : 'background-color 0.24s ease';
-          overlayRef.current.style.backgroundColor  = 'rgba(0,0,0,0)';
+        if (backdropRef.current) {
+          backdropRef.current.style.transition = prefersReducedMotion() ? 'none' : 'opacity 0.24s ease';
+          backdropRef.current.style.opacity    = '0';
         }
         handleClose();
       } else {
@@ -856,6 +883,7 @@ function MediaViewerSession() {
       aria-modal="true"
       aria-label="Media viewer"
     >
+      <div ref={backdropRef} className={styles.backdrop} aria-hidden="true" />
       {/* ── Counter badge ── */}
       {hasMany && (
         <div className={`${styles.counterBadge} ${controlsVisible ? styles.controlsVisible : ''}`}>
