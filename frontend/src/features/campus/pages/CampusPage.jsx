@@ -8,6 +8,8 @@ import { useCampusEvents, useDeleteCampusEvent } from '@shared/hooks/useCampusEv
 import { usePrefetchConfessions } from '@shared/hooks/useConfessions';
 import { showToast } from '@shared/utils/toast';
 import { useSystemBars } from '@shared/hooks/useSystemBars';
+import { usePageTransition } from '@shared/hooks/usePageTransition';
+import { CENTRE_EFFECT } from '@shared/lib/navigation/centreTransition';
 import Avatar from '@shared/components/avatar/Avatar';
 import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
 import sharedStyles from '../components/skeletons/CampusShared.module.css';
@@ -233,6 +235,10 @@ const SuggestedUserCard = memo(function SuggestedUserCard({ user, onSelect }) {
 
 export default function CampusPage() {
   const navigate = useNavigate();
+  // What a card opens (a person, an activity) opens out of the centre of the
+  // screen in the app; the page's own tabs and links stay plain. Community
+  // cards are CommunityRow links, which do the same.
+  const { open: openPage } = usePageTransition({ effect: CENTRE_EFFECT });
   const { currentUser, collegeName: authCollegeName } = useAuth();
   const isCampusRep = Boolean(currentUser?.isCampusRep);
   // Campus opens on a verified college email (campus affiliation), not on the
@@ -250,6 +256,11 @@ export default function CampusPage() {
   const isChangingCollege = campus.isActive && searchParams.get('verify') === 'change';
   const finishCollegeChange = useCallback(() => navigate('/campus', { replace: true }), [navigate]);
 
+  // The red banner runs up under the status bar (`.headerBanner` starts at the top
+  // and pads its content clear of the inset, see CampusShared.module.css), so the strip is clear and
+  // the clock sits on the banner. The pick-a-college flow has no banner.
+  useSystemBars({ status: 'transparent', statusIcons: 'light' }, (campus.isActive || campus.isLoading) && !isChangingCollege);
+
   // Confessions opens from here. Knowing in advance whether the caller has a
   // name there (one small request, none once it is cached) lets the page open
   // on the right screen; the press on its tab also starts the first page of
@@ -266,11 +277,6 @@ export default function CampusPage() {
     return () => clearTimeout(t);
   }, [isVerified, prefetchConfessions]);
   const warmConfessionsFeed = useCallback(() => prefetchConfessions({ feed: true }), [prefetchConfessions]);
-
-  // The red banner runs up under the status bar (`.headerBanner` starts at the top
-  // and pads its content clear of the inset, see CampusShared.module.css), so the strip is clear and
-  // the clock sits on the banner. The pick-a-college flow has no banner.
-  useSystemBars({ status: 'transparent', statusIcons: 'light' }, (campus.isActive || campus.isLoading) && !isChangingCollege);
 
   const online = useOnlineStatus();
   const { campusUsers, isLoading: campusUsersLoading } = useCampusUsers(50);
@@ -356,17 +362,19 @@ export default function CampusPage() {
     [suggestedUsers, visibleSuggestedCount],
   );
 
+  // Only where a community has just been created: a plain navigation, since the
+  // create modal is still on screen.
   const openCommunity = useCallback((id) => {
     navigate(`/communities/${id}`, { state: { from: '/campus' } });
   }, [navigate]);
 
   const openProfile = useCallback((username) => {
-    navigate(`/profile/${username}`, { state: { from: '/campus' } });
-  }, [navigate]);
+    openPage(`/profile/${username}`, { state: { from: '/campus' } });
+  }, [openPage]);
 
   const openActivity = useCallback((id) => {
-    navigate(`/crew/${id}`, { state: { from: '/campus' } });
-  }, [navigate]);
+    openPage(`/crew/${id}`, { state: { from: '/campus' } });
+  }, [openPage]);
 
   const openGroupModal = useCallback(() => setIsGroupModalOpen(true), []);
   const closeGroupModal = useCallback(() => setIsGroupModalOpen(false), []);

@@ -9,6 +9,8 @@ import Menu, { MenuItem, useMenu } from '@shared/components/ui/Menu';
 import { Trash2, Flag } from '@shared/components/icons';
 import { normalizeBodyText, truncateBodyText, clipMentions, POST_LIMITS } from '@shared/utils/bodyText';
 import { useAuth } from '@shared/context/AuthContext';
+import { usePageTransition } from '@shared/hooks/usePageTransition';
+import { CENTRE_EFFECT } from '@shared/lib/navigation/centreTransition';
 import { useCommunities } from '@shared/hooks/useCommunities';
 import { timeAgo } from '@shared/utils/time';
 import styles from './Post.module.css';
@@ -126,6 +128,8 @@ function PollCard({ poll, postId }) {
 
 function Post({ postData, onClick, onCommentClick, onDeleted, isDetailed = false, hideCommunityTag = false }) {
   const { currentUser } = useAuth();
+  // The author's profile opens out of the centre of the screen in the app.
+  const { openFromLink: openProfileFromLink } = usePageTransition({ effect: CENTRE_EFFECT });
   const { communitiesById } = useCommunities();
   const { openViewer } = useMediaViewerActions();
   const menu = useMenu();
@@ -331,14 +335,22 @@ function Post({ postData, onClick, onCommentClick, onDeleted, isDetailed = false
       )}
       <div className={styles.postHeader}>
         <div className={styles.postAvatarContainer}>
-          <Link to={`/profile/${author.username}`} style={{ textDecoration: 'none' }} onClick={(e) => e.stopPropagation()}>
+          <Link
+            to={`/profile/${author.username}`}
+            style={{ textDecoration: 'none' }}
+            onClick={(e) => { e.stopPropagation(); openProfileFromLink(e, `/profile/${author.username}`); }}
+          >
             <div className={styles.postAvatar}>
               <Avatar src={author.avatar} name={author.displayName} size="100%" />
             </div>
           </Link>
         </div>
         <div className={styles.postUser}>
-          <Link to={`/profile/${author.username}`} style={{ textDecoration: 'none', color: 'inherit', display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }} onClick={(e) => e.stopPropagation()}>
+          <Link
+            to={`/profile/${author.username}`}
+            style={{ textDecoration: 'none', color: 'inherit', display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }}
+            onClick={(e) => { e.stopPropagation(); openProfileFromLink(e, `/profile/${author.username}`); }}
+          >
             <div className={`hover-underline ${styles.postName}`}>{author.displayName}</div>
             <CollegeRepresentativeBadge isCampusRep={author.isCampusRep} collegeName={authorCollegeName} user={author} size="md" />
           </Link>

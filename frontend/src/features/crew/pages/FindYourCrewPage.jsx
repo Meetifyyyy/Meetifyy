@@ -1,5 +1,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { usePageTransition } from '@shared/hooks/usePageTransition';
+import { CENTRE_EFFECT } from '@shared/lib/navigation/centreTransition';
 import { useQueryClient } from '@tanstack/react-query';
 import PullToRefresh from '@shared/components/PullToRefresh';
 import { ChevronLeft, ChevronRight, Search } from '@shared/components/icons';
@@ -59,6 +61,7 @@ export default function FindYourCrewPage() {
   const isVerified = currentUser?.verificationStatus === 'VERIFIED';
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const { open: openPage } = usePageTransition({ effect: CENTRE_EFFECT });
   // Phones search on their own page (/crew/search) opened from a button beside
   // the title; creating is the "Create activity" card on the All tab. Desktop
   // keeps the inline search box and the + button.
@@ -324,8 +327,8 @@ export default function FindYourCrewPage() {
       openVerificationModal('Verify with a live selfie to create activities.');
       return;
     }
-    navigate('/crew/create');
-  }, [currentUser?.verificationStatus, navigate]);
+    openPage('/crew/create');
+  }, [currentUser?.verificationStatus, openPage]);
 
   const handleActivityClick = useCallback((activityId) => {
     const activity = activitiesById.current.get(activityId);

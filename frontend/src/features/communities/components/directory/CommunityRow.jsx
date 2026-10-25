@@ -2,6 +2,8 @@ import { memo } from 'react';
 import { Link } from 'react-router-dom';
 import { Lock } from '@shared/components/icons';
 import { useAuth } from '@shared/context/AuthContext';
+import { usePageTransition } from '@shared/hooks/usePageTransition';
+import { CENTRE_EFFECT } from '@shared/lib/navigation/centreTransition';
 import { isCommunityMember, isCommunityOwner } from '@shared/utils/community';
 import CommunityAvatar from './CommunityAvatar';
 import JoinAction from './JoinAction';
@@ -25,6 +27,7 @@ const ROLE_LABEL = { OWNER: 'Owner', MODERATOR: 'Moderator' };
  */
 function CommunityRow({ community, from, showMembership = true, highlightOnHover = false }) {
   const { currentUser } = useAuth();
+  const { openFromLink } = usePageTransition({ effect: CENTRE_EFFECT });
   const role = showMembership ? ROLE_LABEL[community.userRole] : null;
   const joined = isCommunityOwner(community, currentUser) || isCommunityMember(community, currentUser);
   const showAction = showMembership || !joined;
@@ -42,6 +45,7 @@ function CommunityRow({ community, from, showMembership = true, highlightOnHover
             to={`/communities/${community.id}`}
             state={from ? { from } : undefined}
             className={styles.name}
+            onClick={(e) => openFromLink(e, `/communities/${community.id}`, from ? { state: { from } } : undefined)}
           >
             {community.name}
           </Link>

@@ -4,6 +4,7 @@ import { useLikePost, readPostLike } from '../../hooks/useLikePost';
 import { useSavePost } from '../../hooks/useSavePost';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
 import { Bookmark } from '@shared/components/icons';
+import { PAGE_FADE_EARLY } from '@shared/lib/navigation/centreTransition';
 import SharePostModal from '../modals/SharePostModal';
 import styles from './Post.module.css';
 
@@ -21,6 +22,11 @@ const PRESS_HANDLERS = {
   onPointerLeave: release,
 };
 
+/**
+ * The four buttons carry `PAGE_FADE_EARLY`: when the post closes with the centre
+ * opening they dissolve before the rest of the page, instead of ghosting over
+ * the identical row of the post beneath them in the feed.
+ */
 function PostActions({
   post,
   onCommentClick,
@@ -85,6 +91,7 @@ function PostActions({
       <div className={`${styles.postActions} ${className}`} style={{ marginTop: '0.5rem', paddingTop: '0', ...style }}>
         <button
           type="button"
+          {...PAGE_FADE_EARLY}
           className={`${styles.postActionBtn} ${isLikedByMe ? styles.liked : ''}`}
           onClick={toggleLikeHandler}
           {...PRESS_HANDLERS}
@@ -105,6 +112,7 @@ function PostActions({
 
         <button
           type="button"
+          {...PAGE_FADE_EARLY}
           className={styles.postActionBtn}
           onClick={handleCommentHandler}
           {...PRESS_HANDLERS}
@@ -127,6 +135,7 @@ function PostActions({
 
         <button
           type="button"
+          {...PAGE_FADE_EARLY}
           className={styles.postActionBtn}
           onClick={handleShare}
           {...PRESS_HANDLERS}
@@ -153,6 +162,7 @@ function PostActions({
 
         <button
           type="button"
+          {...PAGE_FADE_EARLY}
           className={`${styles.postActionBtn} ${isSaved ? styles.saved : ''}`}
           onClick={toggleSaveHandler}
           {...PRESS_HANDLERS}

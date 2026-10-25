@@ -1,4 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom';
+import { usePageTransition } from '@shared/hooks/usePageTransition';
+import { CENTRE_EFFECT } from '@shared/lib/navigation/centreTransition';
 import { useUrlState } from '@shared/hooks/useUrlState';
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
@@ -107,6 +109,9 @@ import { useProfileActionNeeded } from '@shared/hooks/useProfileActionNeeded';
 export default function ProfilePage() {
   const { profileUsername } = useParams();
   const navigate = useNavigate();
+  // In the app Settings slides in over the profile and a post opens out of the
+  // centre of the screen (shared/lib/navigation/pageTransition.js).
+  const { open: openPage } = usePageTransition();
   const goBack = useSmartBack();
   const queryClient = useQueryClient();
   // handleMessageClick called openDirectMessage without ever obtaining it, so
@@ -469,14 +474,14 @@ export default function ProfilePage() {
   };
 
   const handlePostClick = (post, options) => {
-    navigate(`/post/${post.id}`, {
+    openPage(`/post/${post.id}`, {
       state: {
         post,
         sourceContext: 'profile',
         from: location.pathname,
         focusComment: options?.focusComment || false,
       }
-    });
+    }, { effect: CENTRE_EFFECT });
   };
 
   const handleCommentClick = (post) => {
@@ -541,7 +546,7 @@ export default function ProfilePage() {
               <MoreVertical size={20} />
             </button>
             <Menu {...profileMenu.menuProps} size="md" ariaLabel="Profile options">
-              <MenuItem icon={Settings} onSelect={() => navigate('/settings')} onClose={profileMenu.close}>
+              <MenuItem icon={Settings} onSelect={() => openPage('/settings')} onClose={profileMenu.close}>
                 Settings
                 {profileAction.any && <ActionDot />}
               </MenuItem>
@@ -595,7 +600,7 @@ export default function ProfilePage() {
                     <MoreVertical size={20} />
                   </button>
                   <Menu {...profileMenu.menuProps} size="md" ariaLabel="Profile options">
-                    <MenuItem icon={Settings} onSelect={() => navigate('/settings')} onClose={profileMenu.close}>
+                    <MenuItem icon={Settings} onSelect={() => openPage('/settings')} onClose={profileMenu.close}>
                       Settings
                       {profileAction.any && <ActionDot />}
                     </MenuItem>

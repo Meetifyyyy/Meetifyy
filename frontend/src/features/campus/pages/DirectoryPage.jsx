@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef, useEffect, useCallback, memo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { usePageTransition } from '@shared/hooks/usePageTransition';
+import { CENTRE_EFFECT } from '@shared/lib/navigation/centreTransition';
 import { ArrowLeft, Search } from '@shared/components/icons';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { useAuth } from '@shared/context/AuthContext';
@@ -215,7 +216,7 @@ function DirectoryCardSkeleton() {
 }
 
 export default function DirectoryPage() {
-  const navigate = useNavigate();
+  const { open: openPage } = usePageTransition({ effect: CENTRE_EFFECT });
   const goBack = useSmartBack();
   const { currentUser } = useAuth();
 
@@ -266,8 +267,8 @@ export default function DirectoryPage() {
   }, [hasNextPage]);
 
   const openProfile = useCallback((username) => {
-    navigate(`/profile/${username}`, { state: { from: '/campus/directory' } });
-  }, [navigate]);
+    openPage(`/profile/${username}`, { state: { from: '/campus/directory' } });
+  }, [openPage]);
 
   const showCurrentUserCard = useMemo(() => {
     if (!currentUser) return false;

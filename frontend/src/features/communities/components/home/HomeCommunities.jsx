@@ -2,6 +2,8 @@ import { memo, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronRight, Users } from '@shared/components/icons';
 import { useMyCommunities } from '@shared/hooks/useCommunities';
+import { usePageTransition } from '@shared/hooks/usePageTransition';
+import { CENTRE_EFFECT } from '@shared/lib/navigation/centreTransition';
 import CommunityAvatar from '../directory/CommunityAvatar';
 import { byRecentActivity } from '../directory/communityMeta';
 import styles from './HomeCommunities.module.css';
@@ -15,6 +17,8 @@ const SHOWN = 10;
  */
 function HomeCommunities() {
   const { myCommunities, isLoading, isError } = useMyCommunities();
+  // In the app everything here opens out of the centre of the screen.
+  const { openFromLink } = usePageTransition({ effect: CENTRE_EFFECT });
   const shown = useMemo(
     () => [...myCommunities].sort(byRecentActivity).slice(0, SHOWN),
     [myCommunities],
@@ -24,7 +28,11 @@ function HomeCommunities() {
 
   if (!isLoading && shown.length === 0) {
     return (
-      <Link to="/communities?tab=explore" className={`${styles.card} ${styles.prompt}`}>
+      <Link
+        to="/communities?tab=explore"
+        className={`${styles.card} ${styles.prompt}`}
+        onClick={(e) => openFromLink(e, '/communities?tab=explore')}
+      >
         <span className={styles.promptIcon}><Users size={20} aria-hidden="true" /></span>
         <span className={styles.promptText}>
           <span className={styles.promptTitle}>Find your communities</span>
@@ -39,7 +47,7 @@ function HomeCommunities() {
     <section className={styles.card} aria-label="Your communities" aria-busy={isLoading}>
       <div className={styles.header}>
         <h2 className={styles.title}>Your communities</h2>
-        <Link to="/communities" className={styles.seeAll}>See all</Link>
+        <Link to="/communities" className={styles.seeAll} onClick={(e) => openFromLink(e, '/communities')}>See all</Link>
       </div>
       <ul className={styles.strip}>
         {isLoading
@@ -51,7 +59,13 @@ function HomeCommunities() {
           ))
           : shown.map((c) => (
             <li key={c.id} className={styles.item}>
-              <Link to={`/communities/${c.id}`} state={{ from: '/home' }} className={styles.tile} title={c.name}>
+              <Link
+                to={`/communities/${c.id}`}
+                state={{ from: '/home' }}
+                className={styles.tile}
+                title={c.name}
+                onClick={(e) => openFromLink(e, `/communities/${c.id}`, { state: { from: '/home' } })}
+              >
                 <CommunityAvatar community={c} size={56} />
                 <span className={styles.name}>{c.name}</span>
               </Link>

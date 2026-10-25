@@ -18,6 +18,9 @@ import { searchApi } from '@shared/api/apiClient';
 import Post from '@features/feed/components/post/Post';
 import CrewCard from '@features/crew/components/cards/CrewCard';
 import styles from './SearchResultsRoute.module.css';
+import { afterPageTransition, hasPageTransitionDriver, keepPageTransition } from '@shared/lib/navigation/pageTransition';
+import { usePageTransition } from '@shared/hooks/usePageTransition';
+import { CENTRE_EFFECT } from '@shared/lib/navigation/centreTransition';
 
 const QUICK_CHIPS = [
   { id: 'all', label: 'All', Icon: null },
@@ -92,6 +95,10 @@ export default function SearchResultsRoute() {
   const [searchParams, setSearchParams] = useSearchParams();
   const rawQ = searchParams.get('q') || '';
   const navigate = useNavigate();
+  // Whatever a result opens (a person, a community, an activity, a post) opens
+  // out of the centre of the screen in the app. The search page's own
+  // navigations (below) stay plain.
+  const { open: openPage } = usePageTransition({ effect: CENTRE_EFFECT });
   const location = useLocation();
   const goBack = useSmartBack();
   const containerRef = useRef(null);
@@ -119,17 +126,27 @@ export default function SearchResultsRoute() {
 
   useEffect(() => {
     if (location.state?.autoFocus) {
-      navigate(location.pathname + location.search, { replace: true, state: null });
+      // Keeps only the page-transition mark, so a search opened with the
+      // app's slide still closes with it.
+      navigate(location.pathname + location.search, { replace: true, state: keepPageTransition(location.state) });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     if (shouldAutoFocus) {
+      // After the app's slide has landed: the keyboard resizes the page, and
+      // raising it mid-motion moved the page under its own slide.
+      let cancelled = false;
       const focusTimer = setTimeout(() => {
-        searchInputRef.current?.focus();
+        afterPageTransition(() => {
+          if (!cancelled) searchInputRef.current?.focus();
+        });
       }, 50);
-      return () => clearTimeout(focusTimer);
+      return () => {
+        cancelled = true;
+        clearTimeout(focusTimer);
+      };
     }
   }, [shouldAutoFocus]);
 
@@ -269,25 +286,25 @@ export default function SearchResultsRoute() {
   const openEntity = useCallback((kind, data) => {
     if (kind === 'user') {
       addRecentSearch(data.username);
-      navigate(`/profile/${data.username}`);
+      openPage(`/profile/${data.username}`);
     } else if (kind === 'community') {
       if (data.name) addRecentSearch(data.name);
-      navigate(`/communities/${data.id}`);
+      openPage(`/communities/${data.id}`);
     } else if (kind === 'activity') {
       if (data.title) addRecentSearch(data.title);
-      navigate(`/crew/${data.id}`);
+      openPage(`/crew/${data.id}`);
     } else if (kind === 'post') {
-      navigate(`/post/${data.id}`);
+      openPage(`/post/${data.id}`);
     }
-  }, [addRecentSearch, navigate]);
+  }, [addRecentSearch, openPage]);
 
   const handlePostClick = useCallback((data, options) => {
     if (options?.focusComment) {
-      navigate(`/post/${data.id}`, { state: { post: data, focusComment: true, from: location.pathname } });
+      openPage(`/post/${data.id}`, { state: { post: data, focusComment: true, from: location.pathname } });
     } else {
       openEntity('post', data);
     }
-  }, [openEntity, navigate, location.pathname]);
+  }, [openEntity, openPage, location.pathname]);
 
   const handleCommentClick = useCallback((data) => {
     handlePostClick(data, { focusComment: true });
@@ -359,7 +376,7 @@ export default function SearchResultsRoute() {
               <input
                 ref={searchInputRef}
                 type="text"
-                autoFocus={shouldAutoFocus}
+                autoFocus={shouldAutoFocus && !hasPageTransitionDriver()}
                 className={styles.searchInput}
                 placeholder="Search..."
                 value={inputVal}
