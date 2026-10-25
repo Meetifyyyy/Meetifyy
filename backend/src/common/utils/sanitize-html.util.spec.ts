@@ -282,7 +282,7 @@ describe('sanitize-html utilities (configuration tests)', () => {
     it.each([
       ['a relative path', '/cookie-policy'],
       ['a fragment', '#section-3'],
-      ['a mailto', 'mailto:app.meetifyy@gmail.com'],
+      ['a mailto', 'mailto:support@meetifyy.app'],
     ])('leaves %s as an ordinary in-app link', (_label, href) => {
       // An internal cross-reference — the Privacy Policy linking the Cookie
       // Policy — must not open a second tab or carry nofollow on our own page.

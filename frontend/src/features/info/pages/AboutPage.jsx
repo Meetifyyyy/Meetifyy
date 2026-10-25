@@ -1,3 +1,4 @@
+import { config } from '@config';
 import StaticDocLayout from './StaticDocLayout';
 import styles from './StaticDocLayout.module.css';
 
@@ -71,6 +72,18 @@ export default function AboutPage() {
         </p>
         <p className={styles.highlightText} style={{ textAlign: 'center' }}>
           College is more than a degree. It's about the people you meet along the way.
+        </p>
+      </section>
+
+      {/* Contact */}
+      <section className={styles.centerSection}>
+        <span className={styles.bigEmoji}>✉️</span>
+        <h2 className={styles.cleanSectionTitle}>Get in Touch</h2>
+        <p className={styles.hierarchyParagraph}>
+          For partnerships, colleges, press or anything else, write to{' '}
+          <a href={`mailto:${config.app.contactEmail}`}>{config.app.contactEmail}</a>. Need help
+          with your account? Reach support at{' '}
+          <a href={`mailto:${config.app.supportEmail}`}>{config.app.supportEmail}</a>.
         </p>
       </section>
     </StaticDocLayout>

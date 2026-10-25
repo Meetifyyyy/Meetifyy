@@ -21,7 +21,7 @@ async function sendAll() {
     ignoreTLS: true,
   });
 
-  const targetEmail = 'sarthaksaini7770@gmail.com';
+  const targetEmail = 'preview@example.com';
   const from = 'Meetifyy <noreply@meetifyy.app>';
 
   const emails = [
@@ -79,7 +79,7 @@ async function sendAll() {
       subject: 'Support request received: #REQ-984210 | Meetifyy',
       component: createElement(SupportRequestReceivedEmail, {
         name: 'Sarthak Saini',
-        email: 'sarthaksaini7770@gmail.com',
+        email: 'preview@example.com',
         ticketNumber: 'REQ-984210',
         categoryLabel: 'Account & Login',
         subject: "Can't log in with institutional email",

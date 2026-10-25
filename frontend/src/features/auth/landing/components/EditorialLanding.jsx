@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { config } from '@config';
 import concertCrowd from '../assets/concert-crowd.webp';
 import chai from '../assets/chai.webp';
 import laptopPair from '../assets/laptop-pair.webp';
@@ -257,7 +258,7 @@ export default function EditorialLanding() {
             ))}
             <a
               className={styles.shareLink}
-              href="mailto:hello@meetifyy.app?subject=My%20Meetifyy%20Experience"
+              href={`mailto:${config.app.contactEmail}?subject=My%20Meetifyy%20Experience`}
             >
               Tell us your story →
             </a>

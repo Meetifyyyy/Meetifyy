@@ -15,10 +15,9 @@ import { authConfigValues } from './auth.config';
  *
  * This is what makes "just reply to this email" true, so it should point at a
  * monitored inbox rather than at the no-reply sender the rest of the
- * transactional mail uses. Falls back to the published SUPPORT_EMAIL. When
- * neither is set the header is simply omitted.
+ * transactional mail uses. Defaults to the published support address.
  */
-const replyTo = email('SUPPORT_REPLY_TO');
+const replyTo = email('SUPPORT_REPLY_TO', { default: 'support@meetifyy.app' });
 
 export const supportConfigValues = {
   replyTo: replyTo || undefined,

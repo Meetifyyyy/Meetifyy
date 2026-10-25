@@ -87,7 +87,10 @@ export const config = {
      * current origin always counts; this list covers the app's other domains.
      */
     internalDomains: csv('VITE_INTERNAL_DOMAINS'),
-    supportEmail: str('VITE_SUPPORT_EMAIL'),
+    /** Account help, safety reports and anything about a user's own data. */
+    supportEmail: str('VITE_SUPPORT_EMAIL', { fallback: 'support@meetifyy.app' }),
+    /** General enquiries: partnerships, press, colleges, feedback. */
+    contactEmail: str('VITE_CONTACT_EMAIL', { fallback: 'contact@meetifyy.app' }),
     /**
      * The Meta (Facebook) App ID Instagram requires, as `source_application`,
      * before it accepts a Story from another app. Public by design — Meta

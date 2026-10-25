@@ -44,7 +44,7 @@ describe('College Email Verification Rules', () => {
   });
 
   it('accepts domains explicitly configured/allowed by admin in the database', () => {
-    expect(validateCollegeEmail('sarthaksaini7770@gmail.com', glaWithGmailAllowed)).toBeNull();
+    expect(validateCollegeEmail('student.personal@gmail.com', glaWithGmailAllowed)).toBeNull();
   });
 
   it('requires college to be selected first if missing', () => {
@@ -57,7 +57,7 @@ describe('College Email Verification Rules', () => {
   });
 
   it('rejects unapproved or fake domains', () => {
-    const err = validateCollegeEmail('sarthaksaini7770@iitgn.com', iitGuwahati);
+    const err = validateCollegeEmail('student.personal@iitgn.com', iitGuwahati);
     expect(err).toBe('Please use your official IIT Guwahati email.');
   });
 
