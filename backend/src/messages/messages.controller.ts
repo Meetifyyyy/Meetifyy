@@ -11,7 +11,7 @@ import {
   Delete,
   BadRequestException,
 } from '@nestjs/common';
-import { inviteString } from './core/invite-data';
+import { inviteSummary } from './core/invite-data';
 import { requestedUserIds } from './core/requested-user-ids';
 import type { AuthenticatedRequest } from '../common/types/authenticated-request';
 import { MessagesService } from './messages.service';
@@ -300,9 +300,7 @@ export class MessagesController {
           text:
             message.text ||
             (message.inviteData
-              ? inviteString(message.inviteData, 'groupName')
-                ? `Group invite: ${inviteString(message.inviteData, 'groupName')}`
-                : 'Group invite'
+              ? inviteSummary(message.inviteData) || 'Group invite'
               : ''),
           createdAt: message.createdAt,
           senderId: userId,

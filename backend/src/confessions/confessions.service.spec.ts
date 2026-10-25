@@ -4,8 +4,14 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfessionStatus, Prisma, ReportTargetType } from '@prisma/client';
+import {
+  ConfessionReactionType,
+  ConfessionStatus,
+  Prisma,
+  ReportTargetType,
+} from '@prisma/client';
 import { stub } from '../common/testing/stub';
+import type { DomainEventService } from '../events/domain-event.service';
 import type { PrismaService } from '../prisma/prisma.service';
 import {
   ConfessionsService,
@@ -27,7 +33,6 @@ function row(id: string, profileId: string, createdAt = NOW) {
     id,
     content: 'something I never told anyone',
     createdAt,
-    relateCount: 2,
     profileId,
     profile: { handle: 'NightOwl' },
   };
@@ -58,7 +63,33 @@ async function codeOf(p: Promise<unknown>): Promise<unknown> {
   throw new Error('expected a rejection');
 }
 
-function build() {
+/** What the reaction statement answers: the state before its write. */
+function reactionRow(
+  over: Partial<{
+    hasProfile: boolean;
+    visible: boolean;
+    previous: string | null;
+    love: number;
+    funny: number;
+    sad: number;
+    surprised: number;
+    relatable: number;
+  }> = {},
+) {
+  return {
+    hasProfile: true,
+    visible: true,
+    previous: null,
+    love: 0,
+    funny: 0,
+    sad: 0,
+    surprised: 0,
+    relatable: 0,
+    ...over,
+  };
+}
+
+function build(opts: { events?: DomainEventService } = {}) {
   const profileFindUnique = jest.fn();
   const profileCreate = jest.fn();
   const userFindUnique = jest.fn(() =>
@@ -75,10 +106,24 @@ function build() {
     Promise.resolve({ relateCount: 1 }),
   );
   const relateFindMany = jest.fn(() =>
-    Promise.resolve([] as { confessionId: string }[]),
+    Promise.resolve(
+      [] as { confessionId: string; reaction: ConfessionReactionType }[],
+    ),
   );
-  const relateCreateMany = jest.fn(() => Promise.resolve({ count: 1 }));
-  const relateDeleteMany = jest.fn(() => Promise.resolve({ count: 1 }));
+  const relateGroupBy = jest.fn(() =>
+    Promise.resolve(
+      [] as {
+        confessionId: string;
+        reaction: ConfessionReactionType;
+        _count: { _all: number };
+      }[],
+    ),
+  );
+  /** The single reaction statement: its SQL text and the row it answers. */
+  const queryRaw = jest.fn(
+    (_strings: TemplateStringsArray, ..._values: unknown[]) =>
+      Promise.resolve([reactionRow()]),
+  );
   const calls: string[] = [];
   const executeRaw = jest.fn((sql: TemplateStringsArray) => {
     calls.push(sql.join('?'));
@@ -97,10 +142,6 @@ function build() {
       update: confessionUpdate,
       findUniqueOrThrow: confessionFindUniqueOrThrow,
     },
-    confessionRelate: {
-      createMany: relateCreateMany,
-      deleteMany: relateDeleteMany,
-    },
   };
   const prisma = stub<PrismaService>({
     user: { findUnique: userFindUnique },
@@ -114,11 +155,12 @@ function build() {
       create: confessionCreate,
       updateMany: confessionUpdateMany,
     },
-    confessionRelate: { findMany: relateFindMany },
+    confessionReaction: { findMany: relateFindMany, groupBy: relateGroupBy },
+    $queryRaw: queryRaw,
     $transaction: jest.fn((fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
   });
   return {
-    service: new ConfessionsService(prisma),
+    service: new ConfessionsService(prisma, opts.events),
     profileFindUnique,
     profileCreate,
     userFindUnique,
@@ -129,8 +171,8 @@ function build() {
     confessionUpdateMany,
     confessionFindUniqueOrThrow,
     relateFindMany,
-    relateCreateMany,
-    relateDeleteMany,
+    relateGroupBy,
+    queryRaw,
     executeRaw,
     calls,
   };
@@ -352,7 +394,21 @@ describe('ConfessionsService — feed', () => {
       row('a', 'other'),
       row('z', 'other', new Date('2026-09-30T00:00:00.000Z')),
     ]);
-    t.relateFindMany.mockResolvedValue([{ confessionId: 'a' }]);
+    t.relateFindMany.mockResolvedValue([
+      { confessionId: 'a', reaction: ConfessionReactionType.SAD },
+    ]);
+    t.relateGroupBy.mockResolvedValue([
+      {
+        confessionId: 'a',
+        reaction: ConfessionReactionType.SAD,
+        _count: { _all: 2 },
+      },
+      {
+        confessionId: 'a',
+        reaction: ConfessionReactionType.LOVE,
+        _count: { _all: 1 },
+      },
+    ]);
 
     const page = await t.service.list('u1', 'college-1', { limit: 2 });
 
@@ -371,6 +427,9 @@ describe('ConfessionsService — feed', () => {
           'handle',
           'id',
           'isMine',
+          'myReaction',
+          'reactionCount',
+          'reactions',
           'relateCount',
           'relatedByMe',
         ].sort(),
@@ -379,12 +438,25 @@ describe('ConfessionsService — feed', () => {
     expect(JSON.stringify(page)).not.toMatch(/profileId|userId|"me"|other/);
     expect(page.confessions[0]).toMatchObject({
       isMine: true,
+      myReaction: null,
+      reactionCount: 0,
       relatedByMe: false,
+      relateCount: 0,
     });
     expect(page.confessions[1]).toMatchObject({
       isMine: false,
+      myReaction: 'sad',
+      reactions: { love: 1, funny: 0, sad: 2, surprised: 0, relatable: 0 },
+      reactionCount: 3,
       relatedByMe: true,
+      relateCount: 3,
     });
+    // Counts and the caller's own reaction are read for the page only, in
+    // one grouped query each.
+    expect(t.relateGroupBy).toHaveBeenCalledTimes(1);
+    expect(t.relateGroupBy).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { confessionId: { in: ['b', 'a'] } } }),
+    );
     expect(page.nextCursor).toBe(`${NOW.toISOString()}|a`);
   });
 
@@ -411,68 +483,306 @@ describe('ConfessionsService — feed', () => {
   });
 });
 
-describe('ConfessionsService — relate', () => {
-  it('requires a profile', async () => {
-    const t = build();
-    t.profileFindUnique.mockResolvedValue(null);
-    await expect(
-      codeOf(t.service.relate('u1', 'c1', 'x')),
-    ).resolves.toMatchObject({ code: 'confession_profile_required' });
+describe('ConfessionsService — live totals', () => {
+  const withEvents = () => {
+    const emit = jest.fn((_type: string, _data: unknown, _targets?: string[]) =>
+      Promise.resolve(),
+    );
+    const t = build({ events: stub<DomainEventService>({ emit }) });
+    return { t, emit };
+  };
+
+  it('broadcasts the new totals to the campus when they move, and nothing else', async () => {
+    const { t, emit } = withEvents();
+    t.queryRaw.mockResolvedValue([reactionRow({ previous: 'LOVE', love: 2 })]);
+    await t.service.react('u1', 'college-1', 'x', 'sad');
+    expect(emit).toHaveBeenCalledTimes(1);
+    const [type, data, targets] = emit.mock.calls[0];
+    expect(type).toBe('confession.reactions');
+    expect(targets).toBeUndefined();
+    const { at, ...rest } = data as { at: unknown };
+    expect(typeof at).toBe('number');
+    expect(rest).toEqual({
+      collegeId: 'college-1',
+      confessionId: 'x',
+      reactions: { love: 1, funny: 0, sad: 1, surprised: 0, relatable: 0 },
+      reactionCount: 2,
+    });
+    // Totals only: nothing that says who reacted, or with what.
+    expect(JSON.stringify(data)).not.toMatch(/u1|myReaction|profile|user/i);
   });
 
-  it('404s outside the campus or when not visible', async () => {
+  it('sends nothing for a repeat or a no-op', async () => {
+    const { t, emit } = withEvents();
+    t.queryRaw.mockResolvedValue([reactionRow({ previous: 'SAD', sad: 1 })]);
+    await t.service.react('u1', 'college-1', 'x', 'sad');
+    t.queryRaw.mockResolvedValue([reactionRow()]);
+    await t.service.unreact('u1', 'college-1', 'x');
+    expect(emit).not.toHaveBeenCalled();
+  });
+
+  it('a failed broadcast does not fail the reaction', async () => {
+    const emit = jest.fn(() => Promise.reject(new Error('redis down')));
+    const t = build({ events: stub<DomainEventService>({ emit }) });
+    await expect(
+      t.service.react('u1', 'college-1', 'x', 'love'),
+    ).resolves.toMatchObject({ myReaction: 'love' });
+  });
+});
+
+describe('ConfessionsService — sync', () => {
+  it('returns newer confessions, fresh totals for those held, and which are gone', async () => {
     const t = build();
-    t.profileFindUnique.mockResolvedValue({ id: 'p1' });
-    t.confessionFindFirst.mockResolvedValue(null);
-    await expect(t.service.relate('u1', 'c1', 'x')).rejects.toBeInstanceOf(
-      NotFoundException,
+    t.profileFindUnique.mockResolvedValue({ id: 'me' });
+    t.confessionFindMany
+      .mockResolvedValueOnce([row('new1', 'other')]) // newer than the cursor
+      .mockResolvedValueOnce([{ id: 'a' }] as unknown as ReturnType<
+        typeof row
+      >[]); // still visible
+    t.relateFindMany.mockResolvedValue([
+      { confessionId: 'a', reaction: ConfessionReactionType.FUNNY },
+    ]);
+    t.relateGroupBy.mockResolvedValue([
+      {
+        confessionId: 'a',
+        reaction: ConfessionReactionType.FUNNY,
+        _count: { _all: 2 },
+      },
+    ]);
+
+    const out = await t.service.sync('u1', 'college-1', {
+      after: `${NOW.toISOString()}|top`,
+      ids: ['a', 'b', 'a'],
+    });
+
+    expect(t.confessionFindMany).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        where: {
+          collegeId: 'college-1',
+          status: ConfessionStatus.VISIBLE,
+          OR: [
+            { createdAt: { gt: NOW } },
+            { createdAt: NOW, id: { gt: 'top' } },
+          ],
+        },
+        take: 51,
+      }),
     );
+    expect(t.confessionFindMany).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        where: {
+          collegeId: 'college-1',
+          status: ConfessionStatus.VISIBLE,
+          id: { in: ['a', 'b'] },
+        },
+      }),
+    );
+    expect(out.newer.map((c) => c.id)).toEqual(['new1']);
+    expect(out.hasMoreNewer).toBe(false);
+    expect(out.gone).toEqual(['b']);
+    expect(out.states.a).toMatchObject({
+      reactionCount: 2,
+      myReaction: 'funny',
+    });
+    // One grouped count for new and held together.
+    expect(t.relateGroupBy).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(out)).not.toMatch(/profileId|userId/);
+  });
+
+  it('says to start again when more is new than one answer holds', async () => {
+    const t = build();
+    t.profileFindUnique.mockResolvedValue(null);
+    t.confessionFindMany.mockResolvedValueOnce(
+      Array.from({ length: 51 }, (_, i) => row(`n${i}`, 'other')),
+    );
+    const out = await t.service.sync('u1', 'c1', {
+      after: `${NOW.toISOString()}|top`,
+      ids: [],
+    });
+    expect(out.hasMoreNewer).toBe(true);
+    expect(out.newer).toHaveLength(50);
+  });
+
+  it('without a cursor, asks for nothing newer', async () => {
+    const t = build();
+    t.profileFindUnique.mockResolvedValue(null);
+    await t.service.sync('u1', 'c1', { ids: [] });
+    expect(t.confessionFindMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('ConfessionsService — get one', () => {
+  it('reads only a VISIBLE confession on the caller’s campus', async () => {
+    const t = build();
+    t.profileFindUnique.mockResolvedValue({ id: 'me' });
+    t.confessionFindFirst.mockResolvedValue(row('x', 'other'));
+    const { confession } = await t.service.get('u1', 'c1', 'x');
     expect(t.confessionFindFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'x', collegeId: 'c1', status: ConfessionStatus.VISIBLE },
       }),
     );
+    expect(confession).toMatchObject({
+      id: 'x',
+      handle: 'NightOwl',
+      isMine: false,
+    });
+    expect(JSON.stringify(confession)).not.toMatch(/profileId|userId|other/);
   });
 
-  it('increments only when a row was inserted', async () => {
+  it('404s a hidden, removed, deleted or other-campus confession alike', async () => {
     const t = build();
-    t.profileFindUnique.mockResolvedValue({ id: 'p1' });
-    t.confessionFindFirst.mockResolvedValue({ id: 'x' });
-    t.confessionUpdate.mockResolvedValue({ relateCount: 3 });
-    await expect(t.service.relate('u1', 'c1', 'x')).resolves.toEqual({
-      relateCount: 3,
-      relatedByMe: true,
-    });
-    expect(t.confessionUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { relateCount: { increment: 1 } } }),
+    t.confessionFindFirst.mockResolvedValue(null);
+    await expect(codeOf(t.service.get('u1', 'c1', 'x'))).resolves.toMatchObject(
+      {
+        code: 'confession_not_found',
+      },
     );
+  });
+});
 
-    // Second relate: the row already exists, the counter is untouched.
-    t.relateCreateMany.mockResolvedValue({ count: 0 });
-    t.confessionUpdate.mockClear();
-    t.confessionFindUniqueOrThrow.mockResolvedValue({ relateCount: 3 });
-    await expect(t.service.relate('u1', 'c1', 'x')).resolves.toEqual({
-      relateCount: 3,
-      relatedByMe: true,
+describe('ConfessionsService — reactions', () => {
+  /** The n-th reaction statement as Postgres gets it: `$n` placeholders. */
+  const statement = (t: ReturnType<typeof build>, n = 0) => {
+    const [strings, ...values] = t.queryRaw.mock.calls[n];
+    return Prisma.sql(strings, ...values);
+  };
+  const sqlOf = (t: ReturnType<typeof build>, n = 0) => statement(t, n).text;
+  const valuesOf = (t: ReturnType<typeof build>, n = 0) =>
+    statement(t, n).values;
+
+  it('is one statement per tap: no transaction, no separate lookups', async () => {
+    const t = build();
+    await t.service.react('u1', 'c1', 'x', 'love');
+    await t.service.unreact('u1', 'c1', 'x');
+    await t.service.relate('u1', 'c1', 'x');
+    expect(t.queryRaw).toHaveBeenCalledTimes(3);
+    expect(t.profileFindUnique).not.toHaveBeenCalled();
+    expect(t.confessionFindFirst).not.toHaveBeenCalled();
+  });
+
+  it('scopes every write to the caller’s profile and a VISIBLE confession on their campus', async () => {
+    const t = build();
+    await t.service.react('u1', 'c1', 'x', 'love');
+    const sql = sqlOf(t);
+    expect(sql).toMatch(/FROM "ConfessionProfile" WHERE "userId" = \$1/);
+    expect(sql).toMatch(/"collegeId" = \$3\s+AND status = 'VISIBLE'/);
+    expect(sql).toMatch(/FROM target, me/);
+    expect(valuesOf(t).slice(0, 3)).toEqual(['u1', 'x', 'c1']);
+    expect(valuesOf(t)).toContain(ConfessionReactionType.LOVE);
+  });
+
+  it('requires a profile, before saying anything about the confession', async () => {
+    const t = build();
+    t.queryRaw.mockResolvedValue([
+      reactionRow({ hasProfile: false, visible: false }),
+    ]);
+    await expect(
+      codeOf(t.service.react('u1', 'c1', 'x', 'love')),
+    ).resolves.toMatchObject({ code: 'confession_profile_required' });
+  });
+
+  it('404s outside the campus or when not visible', async () => {
+    const t = build();
+    t.queryRaw.mockResolvedValue([reactionRow({ visible: false })]);
+    await expect(
+      codeOf(t.service.react('u1', 'c1', 'x', 'love')),
+    ).resolves.toMatchObject({
+      code: 'confession_not_found',
     });
-    expect(t.confessionUpdate).not.toHaveBeenCalled();
-    expect(t.relateCreateMany).toHaveBeenCalledWith({
-      data: [{ confessionId: 'x', profileId: 'p1' }],
-      skipDuplicates: true,
+    await expect(
+      codeOf(t.service.unreact('u1', 'c1', 'x')),
+    ).resolves.toMatchObject({
+      code: 'confession_not_found',
     });
   });
 
-  it('decrements only when a row was removed', async () => {
+  it('a first reaction adds one to its kind', async () => {
     const t = build();
-    t.profileFindUnique.mockResolvedValue({ id: 'p1' });
-    t.confessionFindFirst.mockResolvedValue({ id: 'x' });
-    t.relateDeleteMany.mockResolvedValue({ count: 0 });
-    t.confessionFindUniqueOrThrow.mockResolvedValue({ relateCount: 0 });
-    await expect(t.service.unrelate('u1', 'c1', 'x')).resolves.toEqual({
-      relateCount: 0,
+    t.queryRaw.mockResolvedValue([reactionRow({ love: 3 })]);
+    await expect(t.service.react('u1', 'c1', 'x', 'love')).resolves.toEqual({
+      reactions: { love: 4, funny: 0, sad: 0, surprised: 0, relatable: 0 },
+      reactionCount: 4,
+      myReaction: 'love',
+      relateCount: 4,
+      relatedByMe: true,
+    });
+  });
+
+  it('a change moves one count to another kind; the total stays', async () => {
+    const t = build();
+    t.queryRaw.mockResolvedValue([
+      reactionRow({ previous: 'LOVE', love: 2, funny: 1 }),
+    ]);
+    await expect(
+      t.service.react('u1', 'c1', 'x', 'funny'),
+    ).resolves.toMatchObject({
+      reactions: { love: 1, funny: 2 },
+      reactionCount: 3,
+      myReaction: 'funny',
+    });
+  });
+
+  it('the same reaction again changes nothing', async () => {
+    const t = build();
+    t.queryRaw.mockResolvedValue([reactionRow({ previous: 'SAD', sad: 1 })]);
+    await expect(
+      t.service.react('u1', 'c1', 'x', 'sad'),
+    ).resolves.toMatchObject({
+      reactions: { sad: 1 },
+      reactionCount: 1,
+    });
+    // The upsert only rewrites a row whose reaction differs, and only an
+    // inserted row moves the stored total.
+    expect(sqlOf(t)).toMatch(/IS DISTINCT FROM EXCLUDED\."reaction"/);
+    expect(sqlOf(t)).toMatch(/EXISTS \(SELECT 1 FROM written WHERE added\)/);
+  });
+
+  it('removing takes one off the kind actually removed', async () => {
+    const t = build();
+    t.queryRaw.mockResolvedValue([
+      reactionRow({ previous: 'RELATABLE', relatable: 5 }),
+    ]);
+    await expect(t.service.unreact('u1', 'c1', 'x')).resolves.toMatchObject({
+      reactions: { relatable: 4 },
+      myReaction: null,
       relatedByMe: false,
     });
-    expect(t.confessionUpdate).not.toHaveBeenCalled();
+    expect(sqlOf(t)).toMatch(/GREATEST\("relateCount" - 1, 0\)/);
+
+    // Nothing to remove: nothing moves.
+    t.queryRaw.mockResolvedValue([reactionRow({ relatable: 5 })]);
+    await expect(t.service.unreact('u1', 'c1', 'x')).resolves.toMatchObject({
+      reactions: { relatable: 5 },
+    });
+  });
+
+  it('legacy relate adds Relatable but never overwrites a newer reaction', async () => {
+    const t = build();
+    t.queryRaw.mockResolvedValue([reactionRow()]);
+    await expect(t.service.relate('u1', 'c1', 'x')).resolves.toMatchObject({
+      myReaction: 'relatable',
+      relatedByMe: true,
+      relateCount: 1,
+    });
+    expect(sqlOf(t)).toMatch(
+      /ON CONFLICT \("confessionId", "profileId"\) DO NOTHING/,
+    );
+
+    t.queryRaw.mockResolvedValue([reactionRow({ previous: 'LOVE', love: 1 })]);
+    await expect(t.service.relate('u1', 'c1', 'x')).resolves.toMatchObject({
+      myReaction: 'love',
+      relatedByMe: true,
+      relateCount: 1,
+    });
+  });
+
+  it('legacy unrelate is unreact', async () => {
+    const t = build();
+    await t.service.unrelate('u1', 'c1', 'x');
+    expect(sqlOf(t)).toMatch(/DELETE FROM "ConfessionRelate"/);
   });
 });
 

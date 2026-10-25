@@ -1,5 +1,18 @@
-import { IsEnum, IsString, MaxLength } from 'class-validator';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsEnum,
+  IsIn,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+} from 'class-validator';
 import { ConfessionStatus } from '@prisma/client';
+import {
+  CONFESSION_REACTIONS,
+  type ConfessionReactionKey,
+} from '../confession-reactions';
 
 /**
  * The DTOs only establish that the field is a string of sane size. The real
@@ -25,4 +38,29 @@ export class CreateConfessionDto {
 export class ModerateConfessionDto {
   @IsEnum(ConfessionStatus)
   status!: ConfessionStatus;
+}
+
+/** Setting (or changing) the caller's reaction to a confession. */
+export class SetConfessionReactionDto {
+  @IsIn(CONFESSION_REACTIONS)
+  reaction!: ConfessionReactionKey;
+}
+
+/** Most confessions a sync refreshes the totals of: a few pages' worth. */
+export const SYNC_MAX_IDS = 100;
+
+/**
+ * What the feed has, for `POST /api/confessions/sync`: the newest confession
+ * it holds (as a feed cursor) and the ids it shows.
+ */
+export class SyncConfessionsDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  after?: string;
+
+  @IsArray()
+  @ArrayMaxSize(SYNC_MAX_IDS)
+  @IsUUID('all', { each: true })
+  ids!: string[];
 }

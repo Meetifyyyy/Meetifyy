@@ -1,6 +1,9 @@
+import { BadRequestException } from '@nestjs/common';
+import { isUUID } from 'class-validator';
+
 /**
  * Attachments a message can carry in `payload.inviteData`: a shared profile,
- * community, post, activity or event, or a group invite.
+ * community, post, activity, event or confession, or a group invite.
  *
  * It arrives from the client (SendMessageDto only checks it is an object) and
  * is stored as JSON, so no field is guaranteed; code that reads one narrows it.
@@ -62,4 +65,53 @@ export function inviteString(invite: unknown, key: string): string | undefined {
   if (typeof invite !== 'object' || invite === null) return undefined;
   const value = (invite as InviteData)[key];
   return typeof value === 'string' ? value : undefined;
+}
+
+/** `inviteData.type` of a confession shared into a chat. */
+export const CONFESSION_SHARE = 'confessionShare';
+
+/**
+ * The invite as it may be stored. Every kind passes through unchanged except
+ * a shared confession, which is cut down to its id.
+ *
+ * A confession is anonymous and can be deleted, hidden or removed at any time,
+ * and it is visible only on its own campus. A copy of its text stored in a
+ * message would outlive all three: it would stay readable after a takedown
+ * and reach a recipient on another campus. So the message holds only the id,
+ * and each client asks `GET /api/confessions/:id`, which applies the
+ * confession's own rules for that viewer at that moment. Whatever else a
+ * client puts beside the id is dropped here, before anything is written.
+ */
+export function storableInviteData(invite: unknown): unknown {
+  if (inviteString(invite, 'type') !== CONFESSION_SHARE) return invite;
+  const confessionId = inviteString(invite, 'confessionId');
+  if (!confessionId || !isUUID(confessionId)) {
+    throw new BadRequestException({
+      statusCode: 400,
+      code: 'invalid_shared_confession',
+      message: 'That confession can’t be shared.',
+    });
+  }
+  return { type: CONFESSION_SHARE, confessionId };
+}
+
+const SHARE_SUMMARY: Record<string, string> = {
+  postShare: 'Shared a post',
+  profileShare: 'Shared a profile',
+  communityShare: 'Shared a community',
+  activityShare: 'Shared an activity',
+  [CONFESSION_SHARE]: 'Shared a confession',
+};
+
+/**
+ * What a chat list shows for a message that is only an attachment: the kind
+ * of thing shared, or the group an invite is for. Never the shared content,
+ * which for a confession must not be copied anywhere (see above). Null when
+ * the invite is not one of these.
+ */
+export function inviteSummary(invite: unknown): string | null {
+  const type = inviteString(invite, 'type');
+  if (type && SHARE_SUMMARY[type]) return SHARE_SUMMARY[type];
+  const groupName = inviteString(invite, 'groupName');
+  return groupName ? `Group invite: ${groupName}` : null;
 }

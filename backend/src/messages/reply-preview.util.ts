@@ -1,4 +1,5 @@
 import { payloadFields, stringOrNull } from './core/message-payload';
+import { CONFESSION_SHARE } from './core/invite-data';
 
 /**
  * Builds the snapshot of a quoted message that is sent to clients as `replyTo`.
@@ -27,7 +28,10 @@ export type ReplyToSnapshot = {
   mediaType: string | null;
   mediaUrl: string | null;
   thumbnailUrl: string | null;
-  /** Semantic kind of any shared entity, e.g. 'profile' | 'community' | 'post'. */
+  /**
+   * Semantic kind of any shared entity, e.g. 'profile' | 'community' | 'post'
+   * | 'confession'.
+   */
   shareType: string | null;
   /**
    * The entity's own id. Lets the client look the entity up in live app state and
@@ -110,6 +114,19 @@ function describeShare(payloadValue: unknown): {
             : null,
       };
     }
+  }
+
+  // A shared confession is stored as its id alone (see storableInviteData):
+  // the quote carries the id and the client asks for the confession itself,
+  // under that viewer's access, so no text or handle is copied in here.
+  if (invite.type === CONFESSION_SHARE) {
+    return {
+      shareType: 'confession',
+      shareId: stringOrNull(invite.confessionId),
+      shareTitle: null,
+      shareAvatar: null,
+      shareColor: null,
+    };
   }
 
   // Group invites carry no nested entity, only a type discriminator.

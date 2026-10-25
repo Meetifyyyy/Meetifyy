@@ -1671,6 +1671,14 @@ enum ConfessionStatus {
   REMOVED
 }
 
+enum ConfessionReactionType {
+  LOVE
+  FUNNY
+  SAD
+  SURPRISED
+  RELATABLE
+}
+
 enum NotificationEntityType {
   POST
   COMMENT
@@ -2186,7 +2194,7 @@ model ConfessionProfile {
   createdAt   DateTime           @default(now())
   user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   confessions Confession[]
-  relates     ConfessionRelate[]
+  reactions   ConfessionReaction[]
 }
 
 model Confession {
@@ -2197,25 +2205,34 @@ model Confession {
   /// sha256 of the normalised, lower-cased content, for duplicate detection.
   contentHash String             @db.VarChar(64)
   status      ConfessionStatus   @default(VISIBLE)
+  /// Total reactions of every kind; per-kind counts are read from
+  /// ConfessionReaction. One total because the column predates reactions
+  /// and installed apps still read it as `relateCount`.
   relateCount Int                @default(0)
   reportCount Int                @default(0)
   createdAt   DateTime           @default(now())
   updatedAt   DateTime           @updatedAt
   college     College            @relation(fields: [collegeId], references: [id])
   profile     ConfessionProfile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  relates     ConfessionRelate[]
+  reactions   ConfessionReaction[]
 
   @@index([collegeId, status, createdAt(sort: Desc), id(sort: Desc)])
   @@index([profileId, createdAt])
 }
 
-model ConfessionRelate {
+/// One reaction per profile per confession: the primary key is what makes a
+/// second reaction a change rather than a duplicate. Anonymous like the rest
+/// of Confessions: only counts ever leave the server, never who reacted.
+/// The table keeps its original name, from when the only reaction was Relate.
+model ConfessionReaction {
   confessionId String
   profileId    String
-  createdAt    DateTime          @default(now())
-  confession   Confession        @relation(fields: [confessionId], references: [id], onDelete: Cascade)
-  profile      ConfessionProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  reaction     ConfessionReactionType @default(RELATABLE)
+  createdAt    DateTime               @default(now())
+  confession   Confession             @relation(fields: [confessionId], references: [id], onDelete: Cascade)
+  profile      ConfessionProfile      @relation(fields: [profileId], references: [id], onDelete: Cascade)
 
   @@id([confessionId, profileId])
   @@index([profileId])
+  @@map("ConfessionRelate")
 }

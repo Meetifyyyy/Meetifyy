@@ -48,6 +48,13 @@ import {
 } from '../common/campus/campus-access.service';
 import { ActivityAuthorizationService } from '../activities/activity-authorization.service';
 import { PushDispatcherService } from '../push/push-dispatcher.service';
+import { CampusAccessService } from '../common/campus/campus-access.service';
+import { CAMPUS_CHANGED_EVENT } from '../campus-affiliation/campus-affiliation.service';
+import {
+  CONFESSION_REACTIONS_EVENT,
+  CONFESSION_ROOM_PREFIX,
+  confessionRoom,
+} from '../confessions/confession-events';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { VerifiedOnly } from '../common/decorators/verified-only.decorator';
 import { VerificationAccessService } from '../common/verification/verification-access.service';
@@ -210,6 +217,10 @@ export class RealtimeGateway
     // reach it through NotificationsService.createNotification; this path
     // never did, so it hands off directly. Never awaited, never throws.
     @Optional() private readonly pushDispatcher?: PushDispatcherService,
+    // Who may hear a campus's confession activity. Optional only so tests
+    // that build the gateway positionally need not pass it; without it the
+    // confessions room refuses every join.
+    @Optional() private readonly campusAccess?: CampusAccessService,
   ) {}
 
   /**
@@ -432,6 +443,24 @@ export class RealtimeGateway
     // membership is read from the affiliation on every request
     // (CampusAccessService, deliberately uncached). The communities collegeId
     // cache that used to need evicting here is gone.
+    //
+    // The one thing held from an earlier check is a confessions room joined
+    // under the old campus: leave it now, so someone who left, moved or lost
+    // their affiliation stops receiving that campus's activity at once. The
+    // page re-joins under whatever campus they have next.
+    if (type === CAMPUS_CHANGED_EVENT) {
+      const changedUserId = inData('userId') || top('targetUserId');
+      if (changedUserId) this.leaveConfessionRooms(changedUserId);
+    }
+
+    // Reaction totals go to the campus's confessions room and nowhere else.
+    if (type === CONFESSION_REACTIONS_EVENT) {
+      const collegeId = inData('collegeId');
+      if (collegeId) {
+        this.server.to(confessionRoom(collegeId)).emit('domainEvent', payload);
+      }
+      return;
+    }
 
     if (type === 'user.settings_updated') {
       const uId = top('targetUserId') || inData('userId');
@@ -1304,6 +1333,57 @@ export class RealtimeGateway
       // Fail closed: an error resolving the policy must not grant the room.
       this.logger.error('Failed to authorize post room join', err);
       return false;
+    }
+  }
+
+  /**
+   * The confessions page joins its campus's room for live reaction totals.
+   * The room comes from the caller's ACTIVE affiliation, never the payload,
+   * so nobody can listen to another campus; without one the join is refused.
+   * Any room from an earlier campus is left first.
+   */
+  @SubscribeMessage('confessions:join')
+  async handleConfessionsJoin(@ConnectedSocket() client: AppSocket) {
+    const userId = client.data.userId;
+    if (!userId) return;
+    const limited = await this.limitEvent(userId, [
+      { policy: 'socket.roomjoin.user', identifier: userId },
+    ]);
+    if (limited) return limited;
+
+    let collegeId: string | null = null;
+    try {
+      collegeId = (await this.campusAccess?.getActiveCollegeId(userId)) ?? null;
+    } catch (err) {
+      this.logger.error('Failed to authorize confessions room join', err);
+    }
+    const room = collegeId ? confessionRoom(collegeId) : null;
+    for (const joined of client.rooms) {
+      if (joined.startsWith(CONFESSION_ROOM_PREFIX) && joined !== room) {
+        void client.leave(joined);
+      }
+    }
+    if (room) void client.join(room);
+  }
+
+  @SubscribeMessage('confessions:leave')
+  handleConfessionsLeave(@ConnectedSocket() client: AppSocket) {
+    for (const joined of client.rooms) {
+      if (joined.startsWith(CONFESSION_ROOM_PREFIX)) void client.leave(joined);
+    }
+  }
+
+  /** Every socket of `userId` on this instance leaves its confessions room. */
+  private leaveConfessionRooms(userId: string) {
+    const socketIds = this.server?.sockets?.adapter?.rooms?.get(userId);
+    if (!socketIds) return;
+    for (const socketId of socketIds) {
+      const socket = this.server.sockets.sockets.get(socketId);
+      if (!socket) continue;
+      for (const joined of socket.rooms) {
+        if (joined.startsWith(CONFESSION_ROOM_PREFIX))
+          void socket.leave(joined);
+      }
     }
   }
 

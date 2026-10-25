@@ -250,7 +250,7 @@ describe('AccountDeletionPurgeService — permanent deletion', () => {
         findUnique: jest.fn(() => Promise.resolve({ id: 'cprof-1' })),
         delete: record('confessionProfile', 'delete'),
       },
-      confessionRelate: {
+      confessionReaction: {
         findMany: jest.fn(() =>
           Promise.resolve([{ confessionId: 'cf-a' }, { confessionId: 'cf-b' }]),
         ),

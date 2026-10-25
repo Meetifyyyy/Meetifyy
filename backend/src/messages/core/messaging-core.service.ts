@@ -10,7 +10,11 @@ import {
   Logger,
 } from '@nestjs/common';
 import { StorageService } from '../../uploads/uploads.service';
-import { inviteString, withInviteExpiry } from './invite-data';
+import {
+  inviteSummary,
+  storableInviteData,
+  withInviteExpiry,
+} from './invite-data';
 import {
   arrayOrEmpty,
   payloadFields,
@@ -544,17 +548,14 @@ export class MessagingCoreService {
       validatedReplyToId = replyTarget ? replyTarget.id : null;
     }
 
-    const initialInviteData = withInviteExpiry(payload.inviteData);
+    const initialInviteData = withInviteExpiry(
+      storableInviteData(payload.inviteData),
+    );
 
     const now = new Date();
     const lastMsgText =
       payload.text ||
-      (inviteString(initialInviteData, 'type') === 'postShare'
-        ? 'Shared a post'
-        : null) ||
-      (inviteString(initialInviteData, 'groupName')
-        ? `Group invite: ${inviteString(initialInviteData, 'groupName')}`
-        : null) ||
+      inviteSummary(initialInviteData) ||
       (payload.mediaUrl
         ? payload.mediaType === 'image'
           ? 'Photo'

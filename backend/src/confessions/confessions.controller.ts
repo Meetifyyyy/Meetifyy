@@ -8,6 +8,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Put,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -23,12 +24,16 @@ import {
   type ConfessionDto,
   type ConfessionPage,
   type ConfessionProfileDto,
+  type ConfessionSync,
   type HandleAvailability,
+  type ReactionState,
   type RelateState,
 } from './confessions.service';
 import {
   CreateConfessionDto,
   CreateConfessionProfileDto,
+  SetConfessionReactionDto,
+  SyncConfessionsDto,
 } from './dto/confession.dto';
 
 /**
@@ -104,6 +109,59 @@ export class ConfessionsController {
     return this.service.create(user.id, collegeId, dto.content);
   }
 
+  /**
+   * The feed's catch-up on reopening: what is newer than the top of the feed,
+   * fresh totals for what it shows, and which of those are gone. A POST only
+   * because the ids do not fit a query string comfortably; it changes nothing.
+   */
+  @Post('sync')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(RateLimitPolicyGuard)
+  @RateLimit('confession.sync')
+  async sync(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: SyncConfessionsDto,
+  ): Promise<ConfessionSync> {
+    const { collegeId } = await this.campusAccess.requireAffiliation(user.id);
+    return this.service.sync(user.id, collegeId, dto);
+  }
+
+  /** One confession: for a link, or a card shared into a chat. */
+  @Get(':id')
+  async getOne(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<{ confession: ConfessionDto }> {
+    const { collegeId } = await this.campusAccess.requireAffiliation(user.id);
+    return this.service.get(user.id, collegeId, id);
+  }
+
+  /** Sets or changes the caller's reaction (one per confession). */
+  @Put(':id/reaction')
+  @UseGuards(RateLimitPolicyGuard)
+  @RateLimit('confession.relate')
+  async react(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: SetConfessionReactionDto,
+  ): Promise<ReactionState> {
+    const { collegeId } = await this.campusAccess.requireAffiliation(user.id);
+    return this.service.react(user.id, collegeId, id, dto.reaction);
+  }
+
+  @Delete(':id/reaction')
+  @UseGuards(RateLimitPolicyGuard)
+  @RateLimit('confession.relate')
+  async unreact(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<ReactionState> {
+    const { collegeId } = await this.campusAccess.requireAffiliation(user.id);
+    return this.service.unreact(user.id, collegeId, id);
+  }
+
+  // Relate is what builds from before reactions send. Kept for them: it maps
+  // onto the Relatable reaction (see ConfessionsService.relate).
   @Post(':id/relate')
   @HttpCode(HttpStatus.OK)
   @UseGuards(RateLimitPolicyGuard)

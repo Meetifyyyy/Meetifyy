@@ -13,6 +13,7 @@ import type { VerificationAccessService } from '../../common/verification/verifi
 import type { RateLimitService } from '../../common/rate-limit/rate-limit.service';
 import type { LegalConsentService } from '../../common/legal/legal-consent.service';
 import type { JwtGuard } from '../../common/guards/jwt.guard';
+import type { CampusAccessService } from '../../common/campus/campus-access.service';
 import { stub, type Stub } from '../../common/testing/stub';
 import { createVerificationAccessMock } from '../../common/verification/testing/verification-access.mock';
 import { createLegalConsentMock } from '../../common/legal/testing/legal-consent.mock';
@@ -37,6 +38,8 @@ export interface GatewayDependencies {
   rateLimit?: RateLimitService;
   legalConsent?: LegalConsentService;
   jwtGuard?: Stub<JwtGuard>;
+  /** Left out: the confessions room refuses every join, as in production without it. */
+  campusAccess?: Stub<CampusAccessService>;
 }
 
 export function buildGateway(deps: GatewayDependencies = {}): RealtimeGateway {
@@ -54,6 +57,10 @@ export function buildGateway(deps: GatewayDependencies = {}): RealtimeGateway {
     deps.rateLimit ?? allowAllRateLimit(),
     deps.legalConsent ?? createLegalConsentMock(),
     stub<JwtGuard>(deps.jwtGuard),
+    undefined,
+    deps.campusAccess
+      ? stub<CampusAccessService>(deps.campusAccess)
+      : undefined,
   );
 }
 

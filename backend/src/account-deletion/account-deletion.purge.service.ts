@@ -546,7 +546,7 @@ export class AccountDeletionPurgeService {
       select: { id: true },
     });
     if (!profile) return;
-    const relates = await tx.confessionRelate.findMany({
+    const relates = await tx.confessionReaction.findMany({
       where: { profileId: profile.id },
       select: { confessionId: true },
     });

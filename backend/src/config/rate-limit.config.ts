@@ -37,8 +37,10 @@ import { IS_PRODUCTION, APP_ENV, int, oneOf, str } from './env';
  *     the 5/hour support-request budget onto their own.
  * v11: anonymous confessions — handle checks, profile creation, posting
  *     (per 10 minutes and per day) and relating.
+ * v12: confessions feed sync (what is new, and fresh totals for what is
+ *     already on screen), asked when the page is reopened.
  */
-export const POLICY_VERSION = 11;
+export const POLICY_VERSION = 12;
 
 export type RateLimitAlgorithm = 'fixed-window' | 'token-bucket';
 
@@ -886,6 +888,14 @@ export const RATE_LIMIT_POLICIES = {
     dimension: 'user',
     onRedisFailure: 'open',
     message: 'Too many reactions. Please wait a few minutes.',
+  },
+  /** The feed's catch-up on reopening: generous, the client throttles it. */
+  'confession.sync': {
+    points: 60,
+    duration: 600,
+    dimension: 'user',
+    onRedisFailure: 'open',
+    message: 'Too many refreshes. Please wait a moment.',
   },
 } as const satisfies Record<string, RateLimitPolicy>;
 

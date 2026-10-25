@@ -11,7 +11,7 @@ import {
   UseGuards,
   BadRequestException,
 } from '@nestjs/common';
-import { inviteString } from '../core/invite-data';
+import { inviteSummary } from '../core/invite-data';
 import type { AuthenticatedRequest } from '../../common/types/authenticated-request';
 import { GroupChatsService } from './group-chats.service';
 import { JwtGuard } from '../../common/guards/jwt.guard';
@@ -176,9 +176,7 @@ export class GroupChatsController {
           text:
             message.text ||
             (message.inviteData
-              ? inviteString(message.inviteData, 'groupName')
-                ? `Group invite: ${inviteString(message.inviteData, 'groupName')}`
-                : 'Group invite'
+              ? inviteSummary(message.inviteData) || 'Group invite'
               : ''),
           createdAt: message.createdAt,
           senderId: userId,

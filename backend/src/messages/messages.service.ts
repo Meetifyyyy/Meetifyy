@@ -8,7 +8,11 @@ import {
   Logger,
   Optional,
 } from '@nestjs/common';
-import { withInviteExpiry } from './core/invite-data';
+import {
+  inviteSummary,
+  storableInviteData,
+  withInviteExpiry,
+} from './core/invite-data';
 import {
   arrayOrEmpty,
   payloadFields,
@@ -711,7 +715,9 @@ export class MessagesService
     // Normalize group-invite expiry at write time so it is identical on every
     // send path (this MessagesService path + the DM/group core path). A group
     // invite defaults to a 48h TTL; isExpired is recomputed on read below.
-    const initialInviteData = withInviteExpiry(payload.inviteData);
+    const initialInviteData = withInviteExpiry(
+      storableInviteData(payload.inviteData),
+    );
 
     // 3. Transactional Write
     const message = await this.prisma.$transaction(async (tx) => {
@@ -768,6 +774,7 @@ export class MessagesService
           lastMessageId: msg.id,
           lastMessageText:
             payload.text ||
+            inviteSummary(initialInviteData) ||
             (payload.mediaUrl
               ? payload.mediaType === 'image'
                 ? 'Photo'

@@ -250,4 +250,36 @@ describe('buildReplyToSnapshot', () => {
       });
     });
   });
+
+  describe('shared confession', () => {
+    const msg = {
+      id: 'msg-c',
+      senderId: 'alice',
+      state: null,
+      payload: {
+        text: '',
+        inviteData: {
+          type: 'confessionShare',
+          confessionId: '3f1c2b9e-8a4d-4c6e-9b7a-1d2e3f4a5b6c',
+        },
+      },
+      sender: { displayName: 'Alice', username: 'alice' },
+    };
+
+    it('quotes it by id only, with no text or handle copied in', () => {
+      expect(buildReplyToSnapshot(msg, 'viewer-1')).toMatchObject({
+        shareType: 'confession',
+        shareId: '3f1c2b9e-8a4d-4c6e-9b7a-1d2e3f4a5b6c',
+        shareTitle: null,
+        shareAvatar: null,
+        text: '',
+      });
+    });
+
+    it('drops the reference once the share is unsent', () => {
+      expect(
+        buildReplyToSnapshot({ ...msg, state: 'UNSENT' }, 'viewer-1'),
+      ).toMatchObject({ shareType: null, shareId: null, isUnsent: true });
+    });
+  });
 });

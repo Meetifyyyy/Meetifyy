@@ -3,10 +3,15 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
+  Optional,
   NotFoundException,
 } from '@nestjs/common';
 import { ConfessionStatus, Prisma, ReportStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { DomainEventService } from '../events/domain-event.service';
+import { CONFESSION_REACTIONS_EVENT } from './confession-events';
+import { errorMessage } from '../common/utils/error.util';
 import { parseKeysetCursor } from '../common/pagination.util';
 import {
   CONFESSION_AUTO_HIDE_REPORTERS,
@@ -17,18 +22,25 @@ import {
   handleKey,
   normaliseConfession,
 } from './confession-rules';
+import {
+  type ConfessionReactionKey,
+  type ReactionCounts,
+  emptyReactionCounts,
+  reactionKeyFromText,
+  reactionKeyOf,
+  reactionTypeOf,
+  totalReactions,
+} from './confession-reactions';
 
 /**
  * What a client sees of a confession. Deliberately carries no user id, profile
  * id, name, username, avatar or email: the handle is the only identity.
  */
-export interface ConfessionDto {
+export interface ConfessionDto extends ReactionState {
   id: string;
   handle: string;
   content: string;
   createdAt: string;
-  relateCount: number;
-  relatedByMe: boolean;
   isMine: boolean;
 }
 
@@ -48,16 +60,53 @@ export interface ConfessionPage {
   nextCursor: string | null;
 }
 
-export interface RelateState {
+/**
+ * A confession's reactions as the caller sees them: totals per kind and their
+ * own choice. Never who else reacted.
+ *
+ * `relateCount` and `relatedByMe` are what installed builds from before
+ * reactions read (they only knew Relate): the total, and whether the caller
+ * has reacted at all. They must stay until no such build is supported.
+ */
+export interface ReactionState {
+  reactions: ReactionCounts;
+  reactionCount: number;
+  myReaction: ConfessionReactionKey | null;
   relateCount: number;
   relatedByMe: boolean;
+}
+
+/**
+ * What changed since the feed was loaded, in one answer: confessions newer
+ * than the newest it holds, fresh totals for the ones it shows, and which of
+ * those are gone (deleted, hidden, removed, or no longer on this campus).
+ */
+export interface ConfessionSync {
+  newer: ConfessionDto[];
+  /** More newer than fit: the client starts the feed again instead. */
+  hasMoreNewer: boolean;
+  states: Record<string, ReactionState>;
+  gone: string[];
+}
+
+/** Most new confessions a sync returns before telling the client to reload. */
+const SYNC_MAX_NEWER = 50;
+
+/** What the legacy relate routes answer: the same state. */
+export type RelateState = ReactionState;
+
+/** The single row a reaction statement answers with (see reactionStatement). */
+interface ReactionRow extends ReactionCounts {
+  hasProfile: boolean;
+  visible: boolean;
+  /** The caller's reaction before this change, as the enum's text. */
+  previous: string | null;
 }
 
 const CONFESSION_SELECT = {
   id: true,
   content: true,
   createdAt: true,
-  relateCount: true,
   profileId: true,
   profile: { select: { handle: true } },
 } satisfies Prisma.ConfessionSelect;
@@ -116,7 +165,14 @@ function uniqueTarget(err: unknown): string[] {
  */
 @Injectable()
 export class ConfessionsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(ConfessionsService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    // Live reaction totals to the campus's confessions room. Optional so a
+    // test can build the service without it; nothing is broadcast then.
+    @Optional() private readonly events?: DomainEventService,
+  ) {}
 
   async getMyProfile(
     userId: string,
@@ -233,17 +289,92 @@ export class ConfessionsService {
   private toDto(
     row: ConfessionRow,
     myProfileId: string | null,
-    relatedByMe: boolean,
+    state: ReactionState,
   ): ConfessionDto {
     return {
       id: row.id,
       handle: row.profile.handle,
       content: row.content,
       createdAt: row.createdAt.toISOString(),
-      relateCount: row.relateCount,
-      relatedByMe,
       isMine: myProfileId !== null && row.profileId === myProfileId,
+      ...state,
     };
+  }
+
+  /**
+   * Per-kind counts for each of `ids`, in one grouped read. Counted from the
+   * reaction rows rather than a stored counter, so the split between kinds is
+   * always exact; a confession nobody reacted to gets all zeros.
+   */
+  private async countReactions(
+    db: Prisma.TransactionClient | PrismaService,
+    ids: string[],
+  ): Promise<Map<string, ReactionCounts>> {
+    const out = new Map<string, ReactionCounts>();
+    for (const id of ids) out.set(id, emptyReactionCounts());
+    if (ids.length === 0) return out;
+    const groups = await db.confessionReaction.groupBy({
+      by: ['confessionId', 'reaction'],
+      where: { confessionId: { in: ids } },
+      _count: { _all: true },
+    });
+    for (const g of groups) {
+      const counts = out.get(g.confessionId);
+      if (counts) counts[reactionKeyOf(g.reaction)] = g._count._all;
+    }
+    return out;
+  }
+
+  /** The caller's own reaction to each of `ids` that they reacted to. */
+  private async myReactions(
+    db: Prisma.TransactionClient | PrismaService,
+    profileId: string | null,
+    ids: string[],
+  ): Promise<Map<string, ConfessionReactionKey>> {
+    const out = new Map<string, ConfessionReactionKey>();
+    if (!profileId || ids.length === 0) return out;
+    const rows = await db.confessionReaction.findMany({
+      where: { profileId, confessionId: { in: ids } },
+      select: { confessionId: true, reaction: true },
+    });
+    for (const r of rows) out.set(r.confessionId, reactionKeyOf(r.reaction));
+    return out;
+  }
+
+  private static stateOf(
+    counts: ReactionCounts,
+    mine: ConfessionReactionKey | null,
+  ): ReactionState {
+    const total = totalReactions(counts);
+    return {
+      reactions: counts,
+      reactionCount: total,
+      myReaction: mine,
+      relateCount: total,
+      relatedByMe: mine !== null,
+    };
+  }
+
+  /** DTOs for rows already known to be visible to the caller. */
+  private async present(
+    rows: ConfessionRow[],
+    myProfileId: string | null,
+  ): Promise<ConfessionDto[]> {
+    const ids = rows.map((r) => r.id);
+    const [counts, mine] = await Promise.all([
+      this.countReactions(this.prisma, ids),
+      this.myReactions(this.prisma, myProfileId, ids),
+    ]);
+    return rows.map((r) =>
+      this.toDto(
+        r,
+        myProfileId,
+        ConfessionsService.stateOf(
+          counts.get(r.id) ?? emptyReactionCounts(),
+          mine.get(r.id) ?? null,
+        ),
+      ),
+    );
   }
 
   async list(
@@ -272,23 +403,9 @@ export class ConfessionsService {
     const page = rows.slice(0, opts.limit);
     const hasMore = rows.length > opts.limit;
 
-    let related = new Set<string>();
-    if (myProfileId && page.length > 0) {
-      const relates = await this.prisma.confessionRelate.findMany({
-        where: {
-          profileId: myProfileId,
-          confessionId: { in: page.map((r) => r.id) },
-        },
-        select: { confessionId: true },
-      });
-      related = new Set(relates.map((r) => r.confessionId));
-    }
-
     const last = page[page.length - 1];
     return {
-      confessions: page.map((r) =>
-        this.toDto(r, myProfileId, related.has(r.id)),
-      ),
+      confessions: await this.present(page, myProfileId),
       nextCursor:
         hasMore && last ? `${last.createdAt.toISOString()}|${last.id}` : null,
     };
@@ -340,73 +457,327 @@ export class ConfessionsService {
         select: CONFESSION_SELECT,
       });
     });
-    return { confession: this.toDto(row, profileId, false) };
+    return {
+      confession: this.toDto(
+        row,
+        profileId,
+        ConfessionsService.stateOf(emptyReactionCounts(), null),
+      ),
+    };
   }
 
-  /** A VISIBLE confession on this campus, or 404 — never a cross-campus hint. */
-  private async requireVisible(
-    tx: Prisma.TransactionClient,
-    id: string,
+  /**
+   * One confession, for a link or a card shared in a chat. The same rule as
+   * the feed: VISIBLE and on the caller's own campus, or 404 — a hidden,
+   * removed, deleted or other-campus confession is indistinguishable from one
+   * that never existed, so a stale share reveals nothing.
+   */
+  async get(
+    userId: string,
     collegeId: string,
-  ): Promise<void> {
-    const found = await tx.confession.findFirst({
-      where: { id, collegeId, status: ConfessionStatus.VISIBLE },
-      select: { id: true },
-    });
-    if (!found) throw notFound();
+    confessionId: string,
+  ): Promise<{ confession: ConfessionDto }> {
+    const [row, myProfileId] = await Promise.all([
+      this.prisma.confession.findFirst({
+        where: {
+          id: confessionId,
+          collegeId,
+          status: ConfessionStatus.VISIBLE,
+        },
+        select: CONFESSION_SELECT,
+      }),
+      this.profileIdOf(userId),
+    ]);
+    if (!row) throw notFound();
+    const [confession] = await this.present([row], myProfileId);
+    return { confession };
   }
 
+  /**
+   * The feed's catch-up, for reopening the page: instead of downloading every
+   * loaded page again, one request asks for what is newer than the top of the
+   * feed and the current totals of what it already shows. Four reads, the
+   * independent ones in parallel; the counts for new and old in one group-by.
+   */
+  async sync(
+    userId: string,
+    collegeId: string,
+    input: { after?: string; ids: string[] },
+  ): Promise<ConfessionSync> {
+    const ids = [...new Set(input.ids)];
+    const cursor = parseKeysetCursor(input.after);
+    const scope: Prisma.ConfessionWhereInput = {
+      collegeId,
+      status: ConfessionStatus.VISIBLE,
+    };
+    const [myProfileId, newerRows, stillVisible] = await Promise.all([
+      this.profileIdOf(userId),
+      cursor
+        ? this.prisma.confession.findMany({
+            where: {
+              ...scope,
+              OR: [
+                { createdAt: { gt: cursor.date } },
+                { createdAt: cursor.date, id: { gt: cursor.id } },
+              ],
+            },
+            orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+            take: SYNC_MAX_NEWER + 1,
+            select: CONFESSION_SELECT,
+          })
+        : Promise.resolve([] as ConfessionRow[]),
+      ids.length > 0
+        ? this.prisma.confession.findMany({
+            where: { ...scope, id: { in: ids } },
+            select: { id: true },
+          })
+        : Promise.resolve([] as { id: string }[]),
+    ]);
+
+    const newer = newerRows.slice(0, SYNC_MAX_NEWER);
+    const visibleIds = stillVisible.map((r) => r.id);
+    const countIds = [...new Set([...newer.map((r) => r.id), ...visibleIds])];
+    const [counts, mine] = await Promise.all([
+      this.countReactions(this.prisma, countIds),
+      this.myReactions(this.prisma, myProfileId, countIds),
+    ]);
+    const stateFor = (id: string) =>
+      ConfessionsService.stateOf(
+        counts.get(id) ?? emptyReactionCounts(),
+        mine.get(id) ?? null,
+      );
+
+    const visible = new Set(visibleIds);
+    const states: Record<string, ReactionState> = {};
+    for (const id of visibleIds) states[id] = stateFor(id);
+    return {
+      newer: newer.map((r) => this.toDto(r, myProfileId, stateFor(r.id))),
+      hasMoreNewer: newerRows.length > SYNC_MAX_NEWER,
+      states,
+      gone: ids.filter((id) => !visible.has(id)),
+    };
+  }
+
+  /**
+   * Sets the caller's reaction, replacing any other they had. One row per
+   * profile per confession (the primary key), so a repeat is a change, never
+   * a second reaction, and `relateCount` moves only when a row is added.
+   */
+  async react(
+    userId: string,
+    collegeId: string,
+    confessionId: string,
+    key: ConfessionReactionKey,
+  ): Promise<ReactionState> {
+    const reaction = reactionTypeOf(key);
+    const row = await this.reactionStatement(
+      userId,
+      collegeId,
+      confessionId,
+      Prisma.sql`
+        written AS (
+          INSERT INTO "ConfessionRelate" ("confessionId", "profileId", "reaction")
+          SELECT target.id, me.id, ${reaction}::"ConfessionReactionType"
+          FROM target, me
+          ON CONFLICT ("confessionId", "profileId") DO UPDATE
+            SET "reaction" = EXCLUDED."reaction"
+            WHERE "ConfessionRelate"."reaction" IS DISTINCT FROM EXCLUDED."reaction"
+          RETURNING (xmax = 0) AS added
+        ),
+        counted AS (
+          UPDATE "Confession" SET "relateCount" = "relateCount" + 1
+          WHERE id IN (SELECT id FROM target)
+            AND EXISTS (SELECT 1 FROM written WHERE added)
+          RETURNING id
+        )`,
+      Prisma.sql`(SELECT r.reaction::text FROM mine r)`,
+    );
+    return this.settle(collegeId, confessionId, row, key);
+  }
+
+  /** Takes the caller's reaction back, whichever kind it was. */
+  async unreact(
+    userId: string,
+    collegeId: string,
+    confessionId: string,
+  ): Promise<ReactionState> {
+    const row = await this.reactionStatement(
+      userId,
+      collegeId,
+      confessionId,
+      Prisma.sql`
+        written AS (
+          DELETE FROM "ConfessionRelate" r
+          USING target, me
+          WHERE r."confessionId" = target.id AND r."profileId" = me.id
+          RETURNING r.reaction
+        ),
+        counted AS (
+          UPDATE "Confession" SET "relateCount" = GREATEST("relateCount" - 1, 0)
+          WHERE id IN (SELECT id FROM target)
+            AND EXISTS (SELECT 1 FROM written)
+          RETURNING id
+        )`,
+      // What was actually removed, rather than what the snapshot saw.
+      Prisma.sql`(SELECT w.reaction::text FROM written w)`,
+    );
+    return this.settle(collegeId, confessionId, row, null);
+  }
+
+  /**
+   * The legacy Relate from builds that predate reactions. Adds RELATABLE when
+   * the caller has no reaction; one they already chose in a newer build is
+   * left alone rather than overwritten by an app that cannot show it.
+   */
   async relate(
     userId: string,
     collegeId: string,
     confessionId: string,
   ): Promise<RelateState> {
-    const profileId = await this.requireProfileId(userId);
-    return this.prisma.$transaction(async (tx) => {
-      await this.requireVisible(tx, confessionId, collegeId);
-      const inserted = await tx.confessionRelate.createMany({
-        data: [{ confessionId, profileId }],
-        skipDuplicates: true,
-      });
-      return this.finishRelate(tx, confessionId, inserted.count, true);
-    });
+    const row = await this.reactionStatement(
+      userId,
+      collegeId,
+      confessionId,
+      Prisma.sql`
+        written AS (
+          INSERT INTO "ConfessionRelate" ("confessionId", "profileId", "reaction")
+          SELECT target.id, me.id, 'RELATABLE'::"ConfessionReactionType"
+          FROM target, me
+          ON CONFLICT ("confessionId", "profileId") DO NOTHING
+          RETURNING true AS added
+        ),
+        counted AS (
+          UPDATE "Confession" SET "relateCount" = "relateCount" + 1
+          WHERE id IN (SELECT id FROM target)
+            AND EXISTS (SELECT 1 FROM written)
+          RETURNING id
+        )`,
+      Prisma.sql`(SELECT r.reaction::text FROM mine r)`,
+    );
+    // Kept: whatever they already had. Added: Relatable.
+    return this.settle(
+      collegeId,
+      confessionId,
+      row,
+      row.previous === null
+        ? 'relatable'
+        : (reactionKeyFromText(row.previous) ?? 'relatable'),
+    );
   }
 
+  /** The legacy un-relate: removes the caller's reaction, of any kind. */
   async unrelate(
     userId: string,
     collegeId: string,
     confessionId: string,
   ): Promise<RelateState> {
-    const profileId = await this.requireProfileId(userId);
-    return this.prisma.$transaction(async (tx) => {
-      await this.requireVisible(tx, confessionId, collegeId);
-      const removed = await tx.confessionRelate.deleteMany({
-        where: { confessionId, profileId },
-      });
-      return this.finishRelate(tx, confessionId, -removed.count, false);
-    });
+    return this.unreact(userId, collegeId, confessionId);
   }
 
-  /** Applies the row delta (0 when the call was a no-op) to the counter. */
-  private async finishRelate(
-    tx: Prisma.TransactionClient,
+  /**
+   * One reaction change as ONE statement, so a burst of taps costs one round
+   * trip each and holds no transaction open between them: the caller's
+   * profile, the visibility check (VISIBLE, this campus), the write (`written`),
+   * the stored total (`counted`), the caller's previous reaction and the
+   * per-kind counts. The write and the total commit together because they are
+   * one statement.
+   *
+   * Every CTE reads the snapshot from before the statement, so the counts and
+   * `previous` are the state the write was applied to; `after` adds the write.
+   * Nothing is written without a profile or a visible confession, because the
+   * write selects FROM `target, me` and either may be empty.
+   */
+  private async reactionStatement(
+    userId: string,
+    collegeId: string,
     confessionId: string,
-    delta: number,
-    relatedByMe: boolean,
-  ): Promise<RelateState> {
-    if (delta !== 0) {
-      const updated = await tx.confession.update({
-        where: { id: confessionId },
-        data: { relateCount: { increment: delta } },
-        select: { relateCount: true },
-      });
-      return { relateCount: Math.max(0, updated.relateCount), relatedByMe };
+    write: Prisma.Sql,
+    previous: Prisma.Sql,
+  ): Promise<ReactionRow> {
+    const rows = await this.prisma.$queryRaw<ReactionRow[]>`
+      WITH me AS (
+        SELECT id FROM "ConfessionProfile" WHERE "userId" = ${userId}
+      ),
+      target AS (
+        SELECT id FROM "Confession"
+        WHERE id = ${confessionId}
+          AND "collegeId" = ${collegeId}
+          AND status = 'VISIBLE'
+      ),
+      mine AS (
+        SELECT r.reaction FROM "ConfessionRelate" r, me
+        WHERE r."confessionId" = ${confessionId} AND r."profileId" = me.id
+      ),
+      ${write}
+      SELECT
+        EXISTS (SELECT 1 FROM me) AS "hasProfile",
+        EXISTS (SELECT 1 FROM target) AS "visible",
+        ${previous} AS "previous",
+        count(*) FILTER (WHERE c.reaction = 'LOVE')::int AS "love",
+        count(*) FILTER (WHERE c.reaction = 'FUNNY')::int AS "funny",
+        count(*) FILTER (WHERE c.reaction = 'SAD')::int AS "sad",
+        count(*) FILTER (WHERE c.reaction = 'SURPRISED')::int AS "surprised",
+        count(*) FILTER (WHERE c.reaction = 'RELATABLE')::int AS "relatable"
+      FROM "ConfessionRelate" c
+      WHERE c."confessionId" = ${confessionId}
+    `;
+    const row = rows[0];
+    // Same order as before: no profile is 403 wherever the confession is.
+    if (!row?.hasProfile) throw new ForbiddenException(PROFILE_REQUIRED);
+    if (!row.visible) throw notFound();
+    return row;
+  }
+
+  /**
+   * The caller's answer, and, when the totals actually moved, the same totals
+   * to everyone on the campus with the page open. A repeat or a no-op sends
+   * nothing. Only totals travel: never who reacted or what the caller chose.
+   * Fire-and-forget: a failed broadcast must not fail the reaction.
+   */
+  private settle(
+    collegeId: string,
+    confessionId: string,
+    row: ReactionRow,
+    mine: ConfessionReactionKey | null,
+  ): ReactionState {
+    const state = ConfessionsService.after(row, mine);
+    const previous =
+      row.previous === null ? null : reactionKeyFromText(row.previous);
+    if (this.events && previous !== mine) {
+      this.events
+        .emit(CONFESSION_REACTIONS_EVENT, {
+          collegeId,
+          confessionId,
+          reactions: state.reactions,
+          reactionCount: state.reactionCount,
+          at: Date.now(),
+        })
+        .catch((err: unknown) =>
+          this.logger.warn(`Reaction broadcast failed: ${errorMessage(err)}`),
+        );
     }
-    const current = await tx.confession.findUniqueOrThrow({
-      where: { id: confessionId },
-      select: { relateCount: true },
-    });
-    return { relateCount: Math.max(0, current.relateCount), relatedByMe };
+    return state;
+  }
+
+  /** The counts once the caller's reaction is `mine` instead of `previous`. */
+  private static after(
+    row: ReactionRow,
+    mine: ConfessionReactionKey | null,
+  ): ReactionState {
+    const counts: ReactionCounts = {
+      love: row.love,
+      funny: row.funny,
+      sad: row.sad,
+      surprised: row.surprised,
+      relatable: row.relatable,
+    };
+    const previous =
+      row.previous === null ? null : reactionKeyFromText(row.previous);
+    if (previous !== mine) {
+      if (previous) counts[previous] = Math.max(0, counts[previous] - 1);
+      if (mine) counts[mine] += 1;
+    }
+    return ConfessionsService.stateOf(counts, mine);
   }
 
   /**
