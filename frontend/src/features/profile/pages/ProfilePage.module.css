@@ -38,13 +38,10 @@
   flex-direction: column;
   width: 100%;
   max-width: 100%;
-  gap: 0rem;
-}
-
-@media (min-width: 1024px) {
-  .centerColumn {
-    gap: 0.5rem;
-  }
+  /* No gap: the card's margin-bottom spaces it from the posts. A column gap
+     would also land between the cover and the info block when the card goes
+     `display: contents` under the collapsing header. */
+  gap: 0;
 }
 
 /* ── Profile card (cover + info) ── */
@@ -53,7 +50,8 @@
   border: 1px solid var(--color-border-light);
   border-radius: var(--radius-lg);
   overflow: hidden;
-  margin-bottom: 0rem;
+  /* 8px to the first post, the same as between posts (.postsContainer). */
+  margin-bottom: 8px;
   box-shadow: none;
   width: 100%;
   max-width: 100%;
@@ -489,7 +487,13 @@
 .postsContainer {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 8px;
+}
+
+/* The gap alone spaces the cards: Post's own margin-bottom would add to it.
+   Two classes so this outranks Post.module.css whatever the load order. */
+.centerColumn .postsContainer > * {
+  margin-bottom: 0;
 }
 
 .emptyState {
@@ -582,7 +586,7 @@
     border-right: none;
     border-top: none;
     border-bottom: none;
-    margin-bottom: 0.75rem;
+    margin-bottom: 8px;
     width: 100% !important;
     max-width: 100% !important;
     box-shadow: none;
@@ -678,7 +682,7 @@
   }
 
   .postsContainer {
-    gap: 0.25rem;
+    gap: 8px;
     padding: 0 0.5rem;
     width: 100% !important;
     max-width: 100% !important;
@@ -886,7 +890,7 @@
   :global(html[data-collapsing-header]) .profileInfo {
     background: var(--color-bg-white);
     border-radius: 0 0 24px 24px;
-    margin-bottom: 0.75rem;
+    margin-bottom: 8px;
   }
 
   :global(html[data-collapsing-header]) .coverPullBlur > * {
