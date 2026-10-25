@@ -359,8 +359,28 @@
   justify-content: center;
 }
 
-/* Name, "(You)" and the representative badge on one line. Only the name
-   shrinks: min-width 0 lets it ellipsize inside the flex row. */
+/* The avatar and, on its lower-right edge, the representative badge. */
+.avatarWrap {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+/* Ringed in the card colour so it reads as sitting on the avatar's edge. Two
+   classes, to outrank the badge's own size and nudge. */
+.directoryCard .avatarBadge {
+  position: absolute;
+  right: 1px;
+  bottom: 3px;
+  margin: 0;
+  translate: none;
+  border-radius: 50%;
+  background: var(--color-bg-white);
+  box-shadow: 0 0 0 2px var(--color-bg-white);
+}
+
+/* Name and "(You)" on one line. Only the name shrinks: min-width 0 lets it
+   ellipsize inside the flex row. */
 .cardNameRow {
   display: flex;
   align-items: center;

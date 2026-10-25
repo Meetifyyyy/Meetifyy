@@ -184,20 +184,29 @@ const DirectoryCard = memo(function DirectoryCard({ user, courses, onSelect, isS
 
   return (
     <div className={styles.directoryCard} onClick={handleClick}>
-      <Avatar
-        src={user.avatar}
-        name={user.displayName || user.username}
-        size="88px"
-        /* 88px on screen against a 512px original — ask for the 160px variant. */
-        thumbnail
-      />
+      {/* The representative badge sits on the avatar's lower-right edge,
+          where a status mark usually goes, not in the name line. */}
+      <span className={styles.avatarWrap}>
+        <Avatar
+          src={user.avatar}
+          name={user.displayName || user.username}
+          size="88px"
+          /* 88px on screen against a 512px original — ask for the 160px variant. */
+          thumbnail
+        />
+        <CollegeRepresentativeBadge
+          isCampusRep={user.isCampusRep}
+          user={user}
+          size="lg"
+          className={styles.avatarBadge}
+        />
+      </span>
       <div className={`${styles.cardText} ${isSelf ? styles.cardTextSelf : ''}`}>
-        {/* The name gives way to the badge and "(You)", never the other way
-            round: a long name ends in an ellipsis, the rest stays whole. */}
+        {/* The name gives way to "(You)", never the other way round: a long
+            name ends in an ellipsis, with the whole of it in the title. */}
         <h4 className={styles.cardNameRow} title={user.displayName || undefined}>
           <span className={styles.cardName}>{user.displayName}</span>
           {isSelf && <span className={styles.cardNameYou}>(You)</span>}
-          <CollegeRepresentativeBadge isCampusRep={user.isCampusRep} user={user} size="sm" />
         </h4>
         <p className={styles.cardSubtitle}>
           {summary || 'Campus Member'}

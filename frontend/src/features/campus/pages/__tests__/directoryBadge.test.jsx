@@ -28,15 +28,19 @@ import DirectoryPage from '../DirectoryPage';
 afterEach(cleanup);
 
 describe('directory cards', () => {
-  it('shows the representative badge beside a representative’s name, however long', () => {
+  it('puts the representative badge on a representative’s avatar, not in the name line', () => {
     render(<MemoryRouter><DirectoryPage /></MemoryRouter>);
     const repName = screen.getByText(LONG);
     const row = repName.closest('h4');
     // The full name stays available when the line cuts it short.
     expect(row.getAttribute('title')).toBe(LONG);
-    expect(row.querySelector('[aria-label="Campus Representative"]')).toBeTruthy();
+    expect(row.querySelector('[aria-label$="Representative"]')).toBeNull();
+    const repCard = row.parentElement.parentElement;
+    const badge = repCard.querySelector('[aria-label="Campus Representative"]');
+    expect(badge).toBeTruthy();
+    expect(row.contains(badge)).toBe(false);
 
-    const member = screen.getByText('Diya').closest('h4');
-    expect(member.querySelector('[aria-label$="Representative"]')).toBeNull();
+    const memberCard = screen.getByText('Diya').closest('h4').parentElement.parentElement;
+    expect(memberCard.querySelector('[aria-label$="Representative"]')).toBeNull();
   });
 });
