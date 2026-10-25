@@ -15,6 +15,7 @@ import ReplyPreviewContent from './ReplyPreviewContent';
 import { PostReplyPreview, isPostReply } from './reply';
 import { SharedActivityPreview } from '../previews/SharedActivityPreview';
 import { SharedConfessionPreview } from '../previews/SharedConfessionPreview';
+import { useConfession } from '@shared/hooks/useConfessions';
 import VoiceMessagePlayer from './VoiceMessagePlayer';
 import styles from './ChatMessageList.module.css';
 import { useJoinCommunity } from '@features/communities/hooks/useJoinCommunity';
@@ -487,6 +488,43 @@ export function VideoPlayerWithOverlay({ src, poster = null, placeholder = null,
  * "Join Group" threw a TypeError that the catch block reported as
  * "Request failed". That was the reason invites could not be accepted at all.
  */
+/**
+ * A shared confession as a chat message. While the reader may see it, the
+ * card; once it is not theirs to see (deleted, taken down, another campus,
+ * no campus access), a plain message in the style of "This message was
+ * unsent", so it reads as a state of the message rather than a broken card.
+ * The lookup is the card's own (same query), so this costs no extra request.
+ */
+function ConfessionShareMessage({ confessionId, isMe, timeText, actions }) {
+  const { isGone } = useConfession(confessionId);
+  if (isGone) {
+    return (
+      <div className={`${styles.msgMainRow} ${isMe ? styles.msgMainRowMe : styles.msgMainRowThem}`}>
+        <div className={`${styles.msgBubble} ${isMe ? styles.msgBubbleMe : styles.msgBubbleThem}`}>
+          <div className={styles.msgTextTimeWrap}>
+            <span className={styles.msgText} style={{ fontStyle: 'italic', opacity: 0.7 }}>
+              This confession is no longer available
+            </span>
+            <div className={styles.msgTimeLabel} style={{ opacity: 0.6 }}>{timeText}</div>
+          </div>
+        </div>
+        {actions}
+      </div>
+    );
+  }
+  return (
+    <div className={styles.msgImageCardContainer}>
+      <div className={`${styles.msgMainRow} ${isMe ? styles.msgMainRowMe : styles.msgMainRowThem}`}>
+        <SharedConfessionPreview confessionId={confessionId} />
+        {actions}
+      </div>
+      <div className={`${styles.msgImageFooter} ${isMe ? styles.msgImageFooterMe : styles.msgImageFooterThem}`}>
+        {timeText}
+      </div>
+    </div>
+  );
+}
+
 function GroupInviteCard({ msg, currentUser, navigate, isMe }) {
   const { mutate: toggleJoin } = useJoinCommunity();
 
@@ -995,15 +1033,12 @@ const MessageBubble = memo(function MessageBubble({
     // Shared confession: the message holds only its id; the card asks for the
     // confession itself, as this reader (see SharedConfessionPreview).
     innerContent = (
-      <div className={styles.msgImageCardContainer}>
-        <div className={`${styles.msgMainRow} ${isMe ? styles.msgMainRowMe : styles.msgMainRowThem}`}>
-          <SharedConfessionPreview confessionId={inviteData.confessionId} />
-          <MessageHoverActions msg={msg} isMe={isMe} onReplyTo={replyHandler} onContextMenu={onContextMenu} />
-        </div>
-        <div className={`${styles.msgImageFooter} ${isMe ? styles.msgImageFooterMe : styles.msgImageFooterThem}`}>
-          {timeText}
-        </div>
-      </div>
+      <ConfessionShareMessage
+        confessionId={inviteData.confessionId}
+        isMe={isMe}
+        timeText={timeText}
+        actions={<MessageHoverActions msg={msg} isMe={isMe} onReplyTo={replyHandler} onContextMenu={onContextMenu} />}
+      />
     );
   } else if (inviteData && inviteData.type !== 'activityShare' && inviteData.type !== 'profileShare' && inviteData.type !== 'postShare' && inviteData.type !== 'communityShare') {
     // 2. Group Invite Card Message

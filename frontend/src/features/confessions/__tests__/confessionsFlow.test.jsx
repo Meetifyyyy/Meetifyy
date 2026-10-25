@@ -641,7 +641,7 @@ describe('a link to one confession', () => {
     api.getMe.mockResolvedValue({ profile: { handle: 'midnight.moth', createdAt: '2026-01-01T00:00:00Z' } });
   });
 
-  it('shows the confession first, once, above the feed', async () => {
+  it('shows the confession first under the composer, once, above the feed', async () => {
     api.get.mockResolvedValue({ confession: C({ id: 'c9', handle: 'quiet.fern', content: 'The one from the chat link.' }) });
     api.list.mockResolvedValue({ confessions: [C(), C({ id: 'c9', handle: 'quiet.fern', content: 'The one from the chat link.' })], nextCursor: null });
     renderAt('/campus/confessions/c9');
@@ -650,6 +650,9 @@ describe('a link to one confession', () => {
     const cards = screen.getAllByRole('article');
     expect(cards).toHaveLength(2);
     expect(within(cards[0]).getByText('@quiet.fern')).toBeTruthy();
+    // Directly after the composer, which keeps its place at the top.
+    const composer = screen.getByRole('button', { name: /Write a confession/ });
+    expect(composer.compareDocumentPosition(cards[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('says only that it is unavailable when the server will not serve it', async () => {

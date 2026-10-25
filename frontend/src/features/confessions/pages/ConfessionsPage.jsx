@@ -178,7 +178,8 @@ function ConfessionsShell() {
 
 function ConfessionsHome({ handle }) {
   // `/campus/confessions/:id`: one confession opened from a link (a card
-  // shared in a chat), shown first and marked, with the feed below it.
+  // shared in a chat), shown first under the composer and marked, with the
+  // feed below it.
   const { id: focusId } = useParams();
   const navigate = useNavigate();
   const feed = useConfessionsFeed();
@@ -277,6 +278,12 @@ function ConfessionsHome({ handle }) {
         </aside>
 
         <section className={styles.feedCol} aria-label="Confessions">
+          <ComposerTrigger handle={handle} onOpen={openComposer} />
+
+          {/* A confession opened from a link (a card shared in a chat) goes
+              straight under the composer, ahead of the feed, which keeps its
+              own order without it: the page opens at the top as usual, with
+              that confession first, instead of scrolling down to find it. */}
           {focusId && (
             <FocusedConfession
               id={focusId}
@@ -286,8 +293,6 @@ function ConfessionsHome({ handle }) {
               onDelete={setDeleteTarget}
             />
           )}
-
-          <ComposerTrigger handle={handle} onOpen={openComposer} />
 
           <FeedBody
             feed={feed}
