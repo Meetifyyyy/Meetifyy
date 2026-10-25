@@ -1,4 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useId } from 'react';
+import { IS_MOBILE_BUILD } from '@config';
+import { getMediaFullscreenDriver } from '@shared/lib/mediaFullscreen';
+import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useSignedMediaSrc } from '@shared/hooks/useSignedMediaSrc';
 import styles from './MediaViewer.module.css';
 import {
@@ -20,6 +23,50 @@ const HIDE_DELAY_MS = 3000;
 const SEEK_TOOLTIP_WIDTH = 52;
 const VOLUME_KEY = '__mv_volume__';
 const DOUBLE_TAP_MS = 280;
+/** After a double-tap seek, further taps on the same side keep seeking for this long. */
+const SEEK_CHAIN_MS = 700;
+const SEEK_STEP_S = 10;
+
+/**
+ * Fullscreen the player can actually enter here.
+ *
+ * In the installed app the web Fullscreen API is useless: Capacitor's
+ * WebChromeClient answers every fullscreen request by calling
+ * `onCustomViewHidden()` straight away, so the WebView left fullscreen in the
+ * frame it entered it. There the shell's driver does it instead (bars hidden,
+ * screen turned; see shared/lib/mediaFullscreen.js), while the viewer, which
+ * already covers the WebView, drops its own chrome.
+ *
+ * iPhone Safari (and an iOS shell with no driver) has no element fullscreen,
+ * only the native player through `webkitEnterFullscreen` on the <video>.
+ */
+const hasNativeVideoFullscreen = () => typeof HTMLVideoElement !== 'undefined'
+  && typeof HTMLVideoElement.prototype.webkitEnterFullscreen === 'function';
+
+function fullscreenSupported() {
+  if (typeof document === 'undefined') return false;
+  if (IS_MOBILE_BUILD) return Boolean(getMediaFullscreenDriver()) || hasNativeVideoFullscreen();
+  return Boolean(document.fullscreenEnabled) || hasNativeVideoFullscreen();
+}
+
+/**
+ * True when focus inside `el` came from the keyboard.
+ *
+ * The controls stay up while keyboard focus is in them, so a Tab user never
+ * has them vanish under the cursor. Testing focus alone also caught a button
+ * that was merely clicked or tapped - browsers focus those too - so after
+ * pressing Play the controls never auto-hid again until something else was
+ * clicked.
+ */
+function hasKeyboardFocusWithin(el) {
+  const active = typeof document !== 'undefined' ? document.activeElement : null;
+  if (!el || !active || !el.contains(active)) return false;
+  try {
+    return active.matches(':focus-visible');
+  } catch {
+    return true;
+  }
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function fmt(s) {
@@ -52,7 +99,7 @@ function saveVolume(v) {
 }
 
 // ─── Seek Ripple ──────────────────────────────────────────────────────────────
-function SeekRipple({ direction, visible }) {
+function SeekRipple({ direction, visible, seconds = SEEK_STEP_S }) {
   if (!visible) return null;
   const isLeft = direction === 'left';
   return (
@@ -69,13 +116,13 @@ function SeekRipple({ direction, visible }) {
           )}
         </svg>
       </div>
-      <span className={styles.seekRippleLabel}>{isLeft ? '-10s' : '+10s'}</span>
+      <span className={styles.seekRippleLabel}>{isLeft ? `-${seconds}s` : `+${seconds}s`}</span>
     </div>
   );
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
-export default function VideoViewer({ src: rawSrc, poster: rawPoster, mediaRef, onControlsChange, onStageClick, isCurrent = true }) {
+export default function VideoViewer({ src: rawSrc, poster: rawPoster, mediaRef, onControlsChange, onFullscreenChange, onStageClick, isCurrent = true }) {
   /*
    * The viewer is handed whatever the opener had — usually an unsigned
    * `/api/media/<key>` URL. For a conversation attachment that URL 404s inside
@@ -113,15 +160,26 @@ export default function VideoViewer({ src: rawSrc, poster: rawPoster, mediaRef, 
   const hideTimerRef  = useRef(null);
   const rafRef        = useRef(null);
 
-  // Pause video if slide becomes non-current
+  // Pause video if slide becomes non-current - and leave fullscreen, which
+  // otherwise held a paused, closing slide over the whole screen until the
+  // close animation finished and the unmount cleaned it up.
   useEffect(() => {
-    if (!isCurrent && videoRef.current && !videoRef.current.paused) {
+    if (isCurrent) return;
+    if (videoRef.current && !videoRef.current.paused) {
       videoRef.current.pause();
+    }
+    if (wrapRef.current && document.fullscreenElement === wrapRef.current) {
+      document.exitFullscreen?.().catch(() => {});
+    }
+    if (appFullscreenRef.current) {
+      appFullscreenRef.current = false;
+      setAppFullscreen(false);
+      void getMediaFullscreenDriver()?.exit(); // Nothing to wait for: the window restores itself.
     }
   }, [isCurrent]);
 
-  // Tap tracking
-  const lastTapRef          = useRef({ time: 0, x: 0, y: 0, zone: null });
+  // Tap tracking. `chain` counts the seeks of a run of double-taps on one side.
+  const lastTapRef          = useRef({ time: 0, x: 0, y: 0, zone: null, chain: 0 });
   const clickTimerRef        = useRef(null);
   const touchStartRef       = useRef({ x: 0, y: 0, time: 0 });
   const touchMovedRef       = useRef(false);
@@ -181,20 +239,33 @@ export default function VideoViewer({ src: rawSrc, poster: rawPoster, mediaRef, 
 
   // ── Fullscreen & PiP ────────────────────────────────────────────────────────
   const [isFullscreen, setIsFullscreen] = useState(false);
+  // The app's fullscreen, done by the shell's driver rather than the browser.
+  const [appFullscreen, setAppFullscreen] = useState(false);
+  const appFullscreenRef = useRef(false);
+  const [canFullscreen] = useState(fullscreenSupported);
+  /** Whether this player locked the screen to landscape, so only it unlocks. */
+  const orientationLockedRef = useRef(false);
+
+  /*
+   * Where a re-signed source should pick up. A signature that expires during a
+   * long pause makes the next range request fail; the element is replaced with
+   * a freshly signed one, which used to start again from 0:00.
+   */
+  const resumeRef = useRef(null);
 
   // ── Error ───────────────────────────────────────────────────────────────────
   const [error, setError]               = useState(false);
 
   // ── Seek ripple (mobile double-tap feedback) ────────────────────────────────
-  const [ripple, setRipple]             = useState(null); // 'left' | 'right' | null
+  const [ripple, setRipple]             = useState(null); // { dir: 'left' | 'right', seconds } | null
   const rippleTimerRef                  = useRef(null);
 
   // ── Center play/pause flash feedback ──────────────────────────────────────
-  const [tapFeedback, setTapFeedback]   = useState(null); // 'play' | 'pause' | null
+  const [tapFeedback, setTapFeedback]   = useState(null); // { type: 'play' | 'pause', id } | null
   const tapFeedbackTimerRef             = useRef(null);
+  const tapFeedbackIdRef                = useRef(0);
   // Frame callbacks and the touch-suppression timer, kept so unmount can cancel
   // them instead of letting them touch a component that is gone.
-  const feedbackRafRef                  = useRef(null);
   const rippleRafRef                    = useRef(null);
   const touchGuardTimerRef              = useRef(null);
 
@@ -203,9 +274,9 @@ export default function VideoViewer({ src: rawSrc, poster: rawPoster, mediaRef, 
     clearTimeout(hideTimerRef.current);
     // Auto-hide only when playing and not dragging
     const v = videoRef.current;
-    if (v && !v.paused && !v.ended && !isDraggingRef.current && !wrapRef.current?.contains(document.activeElement)) {
+    if (v && !v.paused && !v.ended && !isDraggingRef.current && !hasKeyboardFocusWithin(wrapRef.current)) {
       hideTimerRef.current = setTimeout(() => {
-        if (!wrapRef.current?.contains(document.activeElement)) setCtrlVisible(false);
+        if (!hasKeyboardFocusWithin(wrapRef.current)) setCtrlVisible(false);
       }, HIDE_DELAY_MS);
     }
   }, []);
@@ -227,7 +298,16 @@ export default function VideoViewer({ src: rawSrc, poster: rawPoster, mediaRef, 
     }
   }, [resetHideTimer]);
 
+  /*
+   * Mouse movement shows the controls - but not the movement a browser
+   * synthesises after a tap. Every tap is followed by a compatibility
+   * `mousemove`, which showed the controls a moment before the tap's own
+   * handler toggled them: a tap on either side that should have revealed the
+   * hidden controls flashed them and hid them again, so on a touchscreen they
+   * could only ever be brought back by pausing.
+   */
   const handleActivity = useCallback(() => {
+    if (isTouchHandledRef.current) return;
     showControls();
   }, [showControls]);
 
@@ -426,13 +506,40 @@ export default function VideoViewer({ src: rawSrc, poster: rawPoster, mediaRef, 
     const onWaiting      = () => setIsBuf(true);
     const onPlaying      = () => { setIsBuf(false); resetHideTimer(); };
     const onCanPlay      = () => { setMetaReady(true); setFrameReady(true); setIsBuf(false); };
-    const onLoadedMeta   = () => { setDuration(v.duration); setMetaReady(true); };
+    const onLoadedMeta   = () => {
+      setDuration(v.duration);
+      setMetaReady(true);
+      // A replacement element for a re-signed source: carry on from where the
+      // previous one stopped, not from the start.
+      const resume = resumeRef.current;
+      resumeRef.current = null;
+      if (resume && resume.time > 0 && Number.isFinite(v.duration)) {
+        v.currentTime = Math.min(resume.time, v.duration);
+      }
+    };
     const onLoadedData   = () => setFrameReady(true);
     const onLoadStart    = () => { setMetaReady(false); setFrameReady(false); setError(false); };
-    const onError        = () => { if (!recoverSrc()) setError(true); };
+    const onError        = () => {
+      const position = v.currentTime;
+      if (recoverSrc()) {
+        if (position > 0) resumeRef.current = { time: position };
+        return;
+      }
+      setError(true);
+    };
     const onVolumeChange = () => { setMuted(v.muted); setVolume(v.volume); };
     const onRateChange   = () => setSpeed(v.playbackRate);
-    const onFsChange     = () => setIsFullscreen(!!document.fullscreenElement);
+    // Only THIS player's fullscreen. Every mounted slide listens, and reading
+    // `!!document.fullscreenElement` made the neighbours think they were
+    // fullscreen too.
+    const onFsChange     = () => {
+      const mine = Boolean(wrapRef.current) && document.fullscreenElement === wrapRef.current;
+      setIsFullscreen(mine);
+      if (!mine && orientationLockedRef.current) {
+        orientationLockedRef.current = false;
+        try { window.screen?.orientation?.unlock?.(); } catch { /* not lockable here */ }
+      }
+    };
 
     v.addEventListener('play',             onPlay);
     v.addEventListener('pause',            onPause);
@@ -515,9 +622,13 @@ export default function VideoViewer({ src: rawSrc, poster: rawPoster, mediaRef, 
       clearTimeout(rippleTimerRef.current);
       clearTimeout(tapFeedbackTimerRef.current);
       clearTimeout(touchGuardTimerRef.current);
-      cancelAnimationFrame(feedbackRafRef.current);
       cancelAnimationFrame(rippleRafRef.current);
       if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+      // Never leave the app without its bars, or on its side.
+      if (appFullscreenRef.current) {
+        appFullscreenRef.current = false;
+        void getMediaFullscreenDriver()?.exit(); // Unmounting: nothing left to update.
+      }
     };
   }, [stopProgressLoop, registryId]);
 
@@ -571,23 +682,87 @@ export default function VideoViewer({ src: rawSrc, poster: rawPoster, mediaRef, 
     }
   }, []);
 
+  const exitAppFullscreen = useCallback(() => {
+    if (!appFullscreenRef.current) return;
+    appFullscreenRef.current = false;
+    setAppFullscreen(false);
+    void getMediaFullscreenDriver()?.exit(); // The window restores itself.
+  }, []);
+
   const toggleFullscreen = useCallback(() => {
     const el = wrapRef.current;
-    if (!el) return;
-    if (!document.fullscreenElement) {
-      el.requestFullscreen?.().catch(() => {});
-    } else {
-      document.exitFullscreen?.().catch(() => {});
+    const v = videoRef.current;
+    if (!el || !canFullscreen) return;
+    if (appFullscreenRef.current) {
+      exitAppFullscreen();
+      return;
     }
-  }, []);
+    const appDriver = IS_MOBILE_BUILD ? getMediaFullscreenDriver() : null;
+    if (appDriver) {
+      // The chrome goes at once; the bars and rotation follow from the shell.
+      appFullscreenRef.current = true;
+      setAppFullscreen(true);
+      appDriver.enter({ landscape: Boolean(v && v.videoWidth > v.videoHeight) }).then((ok) => {
+        if (ok || !appFullscreenRef.current) return;
+        appFullscreenRef.current = false;
+        setAppFullscreen(false);
+      });
+      return;
+    }
+    if (document.fullscreenElement) {
+      document.exitFullscreen?.().catch(() => {});
+      return;
+    }
+    if (document.fullscreenEnabled && el.requestFullscreen) {
+      el.requestFullscreen({ navigationUI: 'hide' })
+        .then(() => {
+          /*
+           * A landscape clip fills a phone only on its side. Where the browser
+           * allows it (Android Chrome, in fullscreen) the screen is turned for
+           * it; elsewhere `lock` rejects and the phone's own rotation applies.
+           */
+          if (v && v.videoWidth > v.videoHeight && window.screen?.orientation?.lock) {
+            window.screen.orientation.lock('landscape')
+              .then(() => { orientationLockedRef.current = true; })
+              .catch(() => {});
+          }
+        })
+        .catch(() => {});
+    } else if (v?.webkitEnterFullscreen) {
+      try { v.webkitEnterFullscreen(); } catch { /* refused outside a user gesture */ }
+    }
+  }, [canFullscreen, exitAppFullscreen]);
+
+  // Back leaves the app's fullscreen first, before it closes the viewer.
+  useOverlayBack(appFullscreen && isCurrent, exitAppFullscreen);
+
+  const fullscreenOn = isFullscreen || appFullscreen;
+  // The viewer hides its own chrome (close, counter, paging) while it is on.
+  useEffect(() => {
+    onFullscreenChange?.(fullscreenOn);
+  }, [fullscreenOn, onFullscreenChange]);
 
   // ─── Keyboard shortcuts ──────────────────────────────────────────────────
   useEffect(() => {
     const handler = (e) => {
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      const target = e.target;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
       const v = videoRef.current;
-      if (!v || !isCurrent || e.defaultPrevented || e.target.closest('[role="dialog"]') !== wrapRef.current?.closest('[role="dialog"]')) return;
-      if (e.target.closest('button, [role="slider"], [role="menu"]')) return;
+      if (!v || !isCurrent || e.defaultPrevented) return;
+      // Browser and OS shortcuts keep their meaning: Ctrl+F is Find, not
+      // fullscreen, and Ctrl+L is the address bar, not a 10-second skip.
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      /*
+       * Focus can fall to <body> while the viewer is open - a control that held
+       * it unmounts (the replay button) or is hidden and made inert. The viewer
+       * itself already treats that as "in the viewer"; the player has to as
+       * well, or Space and the arrows silently stopped working.
+       */
+      const orphaned = target === document.body || target === document.documentElement;
+      if (!orphaned) {
+        if (target.closest?.('[role="dialog"]') !== (wrapRef.current?.closest('[role="dialog"]') ?? null)) return;
+        if (target.closest('button, [role="slider"], [role="menu"], [role="listbox"]')) return;
+      }
       switch (e.key) {
         case ' ':
         case 'k':
@@ -679,6 +854,8 @@ export default function VideoViewer({ src: rawSrc, poster: rawPoster, mediaRef, 
 
   const handleProgressMouseDown = useCallback((e) => {
     e.stopPropagation();
+    // A right-click (context menu) or middle-click is not a seek.
+    if (e.button !== 0) return;
     isDraggingRef.current = true;
     setIsDragging(true);
     clearTimeout(hideTimerRef.current);
@@ -800,23 +977,27 @@ export default function VideoViewer({ src: rawSrc, poster: rawPoster, mediaRef, 
   }, []);
 
   // ─── Center flash feedback helper ────────────────────────────────────────
+  /*
+   * Each flash gets its own id, which keys the element so a new tap restarts
+   * the animation. The key used to be `type + Date.now()` computed in render,
+   * so ANY re-render during the 550 ms - the `playing` event, a buffering
+   * flip, the progress text - remounted the icon and restarted its animation:
+   * a stutter on nearly every tap that started playback.
+   */
   const triggerTapFeedback = useCallback((type) => {
-    setTapFeedback(null);
     clearTimeout(tapFeedbackTimerRef.current);
-    cancelAnimationFrame(feedbackRafRef.current);
-    feedbackRafRef.current = requestAnimationFrame(() => {
-      setTapFeedback(type);
-      tapFeedbackTimerRef.current = setTimeout(() => setTapFeedback(null), 550);
-    });
+    tapFeedbackIdRef.current += 1;
+    setTapFeedback({ type, id: tapFeedbackIdRef.current });
+    tapFeedbackTimerRef.current = setTimeout(() => setTapFeedback(null), 550);
   }, []);
 
   // ─── Seek ripple helper ──────────────────────────────────────────────────
-  const triggerRipple = useCallback((dir) => {
+  const triggerRipple = useCallback((dir, seconds = SEEK_STEP_S) => {
     setRipple(null);
     clearTimeout(rippleTimerRef.current);
     cancelAnimationFrame(rippleRafRef.current);
     rippleRafRef.current = requestAnimationFrame(() => {
-      setRipple(dir);
+      setRipple({ dir, seconds });
       rippleTimerRef.current = setTimeout(() => setRipple(null), 650);
     });
   }, []);
@@ -885,7 +1066,7 @@ export default function VideoViewer({ src: rawSrc, poster: rawPoster, mediaRef, 
      * what stops the close button disappearing behind an error card.
      */
     if (!canInteractRef.current) {
-      lastTapRef.current = { time: 0, x: 0, y: 0, zone: null };
+      lastTapRef.current = { time: 0, x: 0, y: 0, zone: null, chain: 0 };
       clearTimeout(clickTimerRef.current);
       clickTimerRef.current = null;
       clearTimeout(hideTimerRef.current);
@@ -893,31 +1074,41 @@ export default function VideoViewer({ src: rawSrc, poster: rawPoster, mediaRef, 
       return;
     }
 
+    /*
+     * A tap that continues a run of seeks on the same side seeks again, at
+     * once - the way double-tap seeking works in every phone video player.
+     * It used to be read as the first tap of a NEW double-tap, so the third
+     * tap of a quick "back, back, back" toggled the controls instead, and only
+     * every second tap after that seeked.
+     */
+    const continuesSeek =
+      prev.chain > 0 &&
+      (zone === 'left' || zone === 'right') &&
+      zone === prev.zone &&
+      now - prev.time < SEEK_CHAIN_MS;
+
     const isDoubleTap =
       now - prev.time < DOUBLE_TAP_MS &&
       Math.hypot(touch.clientX - prev.x, touch.clientY - prev.y) < 50;
 
-    if (isDoubleTap) {
+    if (continuesSeek || (isDoubleTap && (zone === 'left' || zone === 'right'))) {
       // Double tap confirmed — cancel pending single-tap action!
       clearTimeout(clickTimerRef.current);
       clickTimerRef.current = null;
-      lastTapRef.current = { time: 0, x: 0, y: 0, zone: null };
-
-      if (zone === 'left') {
-        // Left 30%: Seek backward 10s
-        seekBy(-10);
-        triggerRipple('left');
-      } else if (zone === 'right') {
-        // Right 30%: Seek forward 10s
-        seekBy(10);
-        triggerRipple('right');
-      } else {
-        // Center 40%: Double tap should NOT seek
-        showControls();
-      }
+      const chain = continuesSeek ? prev.chain + 1 : 1;
+      lastTapRef.current = { time: now, x: touch.clientX, y: touch.clientY, zone, chain };
+      // Left 30% seeks back, right 30% forward; the label counts the run.
+      seekBy(zone === 'left' ? -SEEK_STEP_S : SEEK_STEP_S);
+      triggerRipple(zone, chain * SEEK_STEP_S);
+    } else if (isDoubleTap) {
+      // Center 40%: Double tap should NOT seek
+      clearTimeout(clickTimerRef.current);
+      clickTimerRef.current = null;
+      lastTapRef.current = { time: 0, x: 0, y: 0, zone: null, chain: 0 };
+      showControls();
     } else {
       // First tap — record & schedule single tap
-      lastTapRef.current = { time: now, x: touch.clientX, y: touch.clientY, zone };
+      lastTapRef.current = { time: now, x: touch.clientX, y: touch.clientY, zone, chain: 0 };
       clearTimeout(clickTimerRef.current);
 
       clickTimerRef.current = setTimeout(() => {
@@ -985,17 +1176,24 @@ export default function VideoViewer({ src: rawSrc, poster: rawPoster, mediaRef, 
     clearTimeout(clickTimerRef.current);
     clickTimerRef.current = null;
 
+    // Same rule as a tap: nothing to play, nothing to seek.
+    if (!canInteractRef.current) return;
+
     const zone = getTapZone(e.clientX);
     if (zone === 'left') {
-      seekBy(-10);
+      seekBy(-SEEK_STEP_S);
       triggerRipple('left');
     } else if (zone === 'right') {
-      seekBy(10);
+      seekBy(SEEK_STEP_S);
       triggerRipple('right');
+    } else if (canFullscreen) {
+      // The desktop convention. The pending single click was cancelled above,
+      // so playback is not toggled on the way.
+      toggleFullscreen();
     } else {
       showControls();
     }
-  }, [getTapZone, seekBy, triggerRipple, showControls]);
+  }, [getTapZone, seekBy, triggerRipple, showControls, canFullscreen, toggleFullscreen]);
 
   // ─── Volume display helpers ───────────────────────────────────────────────
   const effectiveVolume = muted ? 0 : volume;
@@ -1081,7 +1279,10 @@ export default function VideoViewer({ src: rawSrc, poster: rawPoster, mediaRef, 
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
-      data-fullscreen={isFullscreen || undefined}
+      data-fullscreen={fullscreenOn || undefined}
+      // Playing with the controls tucked away: the pointer hides too, as in any
+      // desktop player, instead of sitting over the picture.
+      data-idle={(playing && !ctrlVisible) || undefined}
     >
       {/* ── Video element ── */}
       <video
@@ -1217,6 +1418,8 @@ export default function VideoViewer({ src: rawSrc, poster: rawPoster, mediaRef, 
                * that makes the browser load it again. No `v.load()`: a new
                * element or a new `src` already starts exactly one load.
                */
+              const position = videoRef.current?.currentTime || 0;
+              if (position > 0) resumeRef.current = { time: position };
               setError(false);
               refreshSrc();
             }}
@@ -1228,8 +1431,8 @@ export default function VideoViewer({ src: rawSrc, poster: rawPoster, mediaRef, 
       )}
 
       {/* ── Seek ripple (left 30% / right 30% double-tap) ──────────────────── */}
-      <SeekRipple direction="left"  visible={ripple === 'left'}  />
-      <SeekRipple direction="right" visible={ripple === 'right'} />
+      <SeekRipple direction="left"  visible={ripple?.dir === 'left'}  seconds={ripple?.seconds} />
+      <SeekRipple direction="right" visible={ripple?.dir === 'right'} seconds={ripple?.seconds} />
 
       {/*
         ── Center play/pause flash ────────────────────────────────────────
@@ -1240,8 +1443,8 @@ export default function VideoViewer({ src: rawSrc, poster: rawPoster, mediaRef, 
         play icon over an error.
       */}
       {tapFeedback && canInteract && (
-        <div key={tapFeedback + Date.now()} className={styles.tapFeedback} aria-hidden="true">
-          {tapFeedback === 'play' ? (
+        <div key={tapFeedback.id} className={styles.tapFeedback} aria-hidden="true">
+          {tapFeedback.type === 'play' ? (
             <svg viewBox="0 0 24 24" fill="currentColor" width="44" height="44">
               <path d="M8 5v14l11-7z" />
             </svg>
@@ -1393,17 +1596,19 @@ export default function VideoViewer({ src: rawSrc, poster: rawPoster, mediaRef, 
                   </div>
                 )}
               </div>
-              <button
-                className={styles.videoBtn}
-                onClick={(e) => { e.stopPropagation(); toggleFullscreen(); }}
-                aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-                title={isFullscreen ? 'Exit fullscreen (F)' : 'Fullscreen (F)'}
-              >
-                {isFullscreen
-                  ? <Minimize size={18} strokeWidth={1.75} />
-                  : <Maximize size={18} strokeWidth={1.75} />
-                }
-              </button>
+              {canFullscreen && (
+                <button
+                  className={styles.videoBtn}
+                  onClick={(e) => { e.stopPropagation(); toggleFullscreen(); }}
+                  aria-label={fullscreenOn ? 'Exit fullscreen' : 'Fullscreen'}
+                  title={fullscreenOn ? 'Exit fullscreen (F)' : 'Fullscreen (F)'}
+                >
+                  {fullscreenOn
+                    ? <Minimize size={18} strokeWidth={1.75} />
+                    : <Maximize size={18} strokeWidth={1.75} />
+                  }
+                </button>
+              )}
             </div>
           </div>
 

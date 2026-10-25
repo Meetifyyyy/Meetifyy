@@ -4,9 +4,10 @@ import LazyEmojiPicker, { preloadEmojiPicker } from '@shared/components/ui/LazyE
 import styles from './ChatInputAreaStyles.module.css';
 import { useVoiceRecorder } from '@features/messages/hooks/useVoiceRecorder';
 import { showToast } from '@shared/utils/toast';
-import { ALLOWED_MEDIA_ACCEPT } from '@shared/constants/mediaLimits';
+import { ALLOWED_MEDIA_ACCEPT, validateUploadFile } from '@shared/constants/mediaLimits';
 import ReplyPreviewContent from './ReplyPreviewContent';
 import LiveWaveform from './LiveWaveform';
+import VoiceMessagePlayer from './VoiceMessagePlayer';
 import { MAX_MESSAGE_TEXT_LENGTH, MESSAGE_LENGTH_WARN_AT } from '@shared/constants/messageLimits';
 import { useComposerDraft } from '@shared/hooks/useComposerDraft';
 
@@ -142,7 +143,12 @@ export default function ChatInputArea({
     sendRecording,
     formatDuration,
     levelsRef: voiceLevelsRef,
+    take: voiceTake,
+    maxSeconds: voiceMaxSeconds,
+    secondsLeft: voiceSecondsLeft,
   } = useVoiceRecorder({
+    // A recording not yet sent stays with this chat, whatever happens to it.
+    keepKey: draftScope,
     // A recording already in flight when the composer is disabled must not
     // land: the upload finishes asynchronously, well after the UI has changed.
     onSend: (audioUrl, mediaType, duration) => !disabled && sendMessageFn && sendMessageFn(conversation.id, '', replyingTo, [], audioUrl, 'audio', null, null, { duration }),
@@ -154,36 +160,30 @@ export default function ChatInputArea({
     fileInputRef.current?.click();
   };
 
-  const handleFileChange = (e) => {
+  const handleFileChange = async (e) => {
     const file = e.target.files?.[0];
+    // Reset now: picking the same file again after a refusal must fire again.
+    e.target.value = '';
     if (!file) return;
     // Covers a picker that was already open when the composer was disabled.
-    if (disabled) {
-      e.target.value = '';
+    if (disabled) return;
+
+    // Per file, against the Messages limits (15 MB video, 5 MB image), and
+    // by the file's own bytes as well as its name. Refused here, nothing is
+    // uploaded and no bubble appears.
+    const checked = await validateUploadFile(file, 'message');
+    if (!checked.ok) {
+      showToast(checked.error, 'error');
       return;
     }
 
-    const MAX_FILE_SIZE = 50 * 1024 * 1024;
-    if (file.size > MAX_FILE_SIZE) {
-      if (showToast) showToast('File too large (max 50MB)', 'error');
-      e.target.value = '';
-      return;
-    }
-
-    const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-    const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/webm', 'video/ogg'];
-    const ALLOWED_TYPES = [...ALLOWED_IMAGE_TYPES, ...ALLOWED_VIDEO_TYPES];
-    
-    if (!ALLOWED_TYPES.includes(file.type)) {
-      if (showToast) showToast('Unsupported file type', 'error');
-      e.target.value = '';
-      return;
-    }
-
-    const mediaType = file.type.startsWith('video/') ? 'video' : 'image';
     const localUrl = URL.createObjectURL(file);
-    const tempId = 'temp_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
 
+    /*
+     * No client id from here. This one was `temp_<time>_<Math.random>`, and it
+     * became the message's idempotency key on the server; the sender mints a
+     * CSPRNG one when none is passed (see useChatManager).
+     */
     if (sendMessageFn) {
       sendMessageFn(
         conversation.id,
@@ -191,15 +191,14 @@ export default function ChatInputArea({
         replyingTo,
         [],
         localUrl,
-        mediaType,
+        checked.kind,
         null,
         null,
-        { tempId, fileObj: file }
+        { fileObj: file }
       );
     }
 
     if (onCancelReply) onCancelReply();
-    e.target.value = '';
   };
 
   const handleSend = () => {
@@ -361,20 +360,51 @@ export default function ChatInputArea({
           );
         }
 
-        if (isRecording || isUploadingVoice) {
+        if (isRecording || isUploadingVoice || voiceTake) {
+          const limitLabel = formatDuration(voiceMaxSeconds).replace(/^0/, '');
+          // What the pill says: the countdown while recording, then why it stopped.
+          const voicePill = isRecording && voiceSecondsLeft !== null
+            ? `Stops at ${limitLabel} · ${voiceSecondsLeft}s left`
+            : !isRecording && voiceTake?.reason === 'limit'
+              ? `${limitLabel} limit reached. Send or delete it.`
+              : !isRecording && voiceTake?.reason === 'error'
+                ? 'Recording stopped. Send or delete it.'
+                : !isRecording && voiceTake?.reason === 'left'
+                  ? 'Unsent voice note'
+                  : null;
           return (
             <div className={styles.msgRecordingContainer}>
-              <div className={styles.msgRecordingLeft}>
-                <span className={styles.msgRecordingDot} />
-                <span className={styles.msgRecordingTime}>
-                  {isUploadingVoice ? 'Sending…' : formatDuration(recordingTime)}
-                </span>
-              </div>
-              <LiveWaveform
-                levelsRef={voiceLevelsRef}
-                active={isRecording}
-                className={styles.msgRecordingWaveform}
-              />
+              {voicePill && (
+                <div
+                  className={`${styles.msgRecordingPill} ${isRecording ? styles.msgRecordingPillWarn : ''}`}
+                  role="status"
+                  aria-live="polite"
+                >
+                  {voicePill}
+                </div>
+              )}
+              {isRecording || !voiceTake ? (
+                <>
+                  <div className={styles.msgRecordingLeft}>
+                    <span className={styles.msgRecordingDot} />
+                    <span className={styles.msgRecordingTime}>
+                      {isUploadingVoice ? 'Sending…' : formatDuration(recordingTime)}
+                    </span>
+                  </div>
+                  <LiveWaveform
+                    levelsRef={voiceLevelsRef}
+                    active={isRecording}
+                    className={styles.msgRecordingWaveform}
+                  />
+                </>
+              ) : (
+                // The stopped recording, playable before deciding.
+                <div className={styles.msgRecordingPreview}>
+                  {isUploadingVoice
+                    ? <span className={styles.msgRecordingTime}>Sending…</span>
+                    : <VoiceMessagePlayer src={voiceTake.url} duration={voiceTake.durationSec} isMe />}
+                </div>
+              )}
               <div className={styles.msgRecordingActions}>
                 <button 
                   type="button" 

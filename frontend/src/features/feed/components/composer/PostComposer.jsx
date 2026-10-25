@@ -14,7 +14,7 @@ import { normalizeBodyText } from '@shared/utils/bodyText';
 import { getPostLimitState, POST_WARN_AT_CHARS, POST_MAX_CHARS } from '@shared/utils/textLimit';
 import { useComposerDraft } from '@shared/hooks/useComposerDraft';
 import { clearDraft } from '@shared/lib/drafts';
-import { ALLOWED_IMAGE_ACCEPT } from '@shared/constants/mediaLimits';
+import { ALLOWED_IMAGE_ACCEPT, ALLOWED_VIDEO_ACCEPT, validateUploadFile } from '@shared/constants/mediaLimits';
 import { useExpandFlip } from './useExpandFlip';
 
 
@@ -359,28 +359,25 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit, draftScope = '
     inputRef.current?.click();
   };
 
-  const handleFileChange = (e, expectedType) => {
+  const handleFileChange = async (e, expectedType) => {
     const files = Array.from(e.target.files || []);
     // Reset now: the same file can be picked again after it is removed.
     e.target.value = '';
     if (!files.length) return;
 
-    const MAX_FILE_SIZE = 50 * 1024 * 1024;
+    // Each file on its own against the post limits (25 MB video, 5 MB image).
+    // A pick of several bad files says so once: it used to raise one toast per
+    // file, stacked on top of each other.
+    const checks = await Promise.all(files.map((file) => validateUploadFile(file, 'post', { expect: expectedType })));
     const valid = [];
-    for (const file of files) {
-      const isVideo = file.type.startsWith('video/');
-      const isImage = file.type.startsWith('image/');
-      if (file.size > MAX_FILE_SIZE) {
-        showToast('File size limit is 50MB', 'error');
-      } else if (expectedType === 'image' && !isImage) {
-        showToast('Please select an image file.', 'error');
-      } else if (expectedType === 'video' && !isVideo) {
-        showToast('Please select a video file.', 'error');
-      } else if (!isVideo && !isImage) {
-        showToast('Unsupported file type', 'error');
-      } else {
-        valid.push({ file, type: isVideo ? 'video' : 'image' });
-      }
+    let refusal = null;
+    checks.forEach((checked, i) => {
+      if (checked.ok) valid.push({ file: files[i], type: checked.kind });
+      else refusal ??= checked.error;
+    });
+    if (refusal) {
+      const refusedCount = files.length - valid.length;
+      showToast(refusedCount > 1 && valid.length > 0 ? `${refusal} (${refusedCount} skipped)` : refusal, 'error');
     }
     if (!valid.length) return;
 
@@ -689,7 +686,7 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit, draftScope = '
           <div className={styles.composerActions}>
             <div className={styles.composerActionsLeft}>
               <input ref={imageFileRef} type="file" accept={ALLOWED_IMAGE_ACCEPT} multiple onChange={(e) => handleFileChange(e, 'image')} hidden />
-              <input ref={videoFileRef} type="file" accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov" multiple onChange={(e) => handleFileChange(e, 'video')} hidden />
+              <input ref={videoFileRef} type="file" accept={ALLOWED_VIDEO_ACCEPT} multiple onChange={(e) => handleFileChange(e, 'video')} hidden />
               <button 
                 className={styles.composerIconBtn} 
                 title={isMediaFull ? `Maximum ${MAX_POST_MEDIA} photos and videos` : "Image"}

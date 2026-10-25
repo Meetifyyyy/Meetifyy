@@ -2,7 +2,8 @@ import { useEffect, useMemo, useCallback, useRef, useState } from 'react';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { messagesApi, dmApi, groupApi } from '@shared/api/apiClient';
 import { useGlobalSocketStore } from '@shared/stores/useGlobalSocketStore';
-import { processAndUploadImage, processAndUploadVideo, uploadFileDirect, getImageDimensions } from '@shared/utils/mediaPipeline';
+import { processAndUploadImage, processAndUploadVideo, uploadFileDirect, getImageDimensions, generateVideoPoster, isMediaRejection } from '@shared/utils/mediaPipeline';
+import { showToast } from '@shared/utils/toast';
 import { useAuth } from '@shared/context/AuthContext';
 import { useConversations } from '@shared/hooks/useMessages';
 import { appendMessageToCache, updateMessageInCache, updateConversationPreview, matchesConversationId, getConversationAliases, compareMessages, checkIsMe, withConversationUnreadCleared } from '../utils/cacheUtils';
@@ -99,18 +100,24 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
    * Declared as a hoisted function so the upload callbacks below can call it
    * without taking it as a dependency.
    */
-  const releaseLocalPreview = useCallback((convId, clientId, url) => {
-    if (!url) return;
+  const releaseLocalPreview = useCallback((convId, clientId, url, posterUrl = null) => {
+    if (!url && !posterUrl) return;
     try {
-      updateMessageInCache(queryClient, convId, clientId, (existing) => ({
-        payload: { ...(existing?.payload || {}), localPreviewUrl: null },
-      }));
+      updateMessageInCache(queryClient, convId, clientId, (existing) => {
+        const payload = { ...(existing?.payload || {}), localPreviewUrl: null, localPosterUrl: null };
+        // A video whose poster never reached storage kept the local frame as
+        // its thumbnail; it must not outlive the blob it points at.
+        if (posterUrl && payload.thumbnailUrl === posterUrl) payload.thumbnailUrl = null;
+        return { payload };
+      });
     } catch (_) { /* cache shape changed — revoke anyway */ }
     // Deliberately no IndexedDB write here. sanitizeMessageForStorage already
     // nulls any blob: localPreviewUrl on the way to disk, so IDB can never hold
     // one — and idbPatchMessage shallow-merges, so patching `payload` would
     // replace the whole object and drop mediaUrl, dimensions and duration with it.
-    try { URL.revokeObjectURL(url); } catch (_) { /* already revoked */ }
+    for (const blobUrl of [url, posterUrl]) {
+      if (blobUrl) { try { URL.revokeObjectURL(blobUrl); } catch (_) { /* already revoked */ } }
+    }
   }, [queryClient]);
   const { conversations = [] } = useConversations();
   const { currentUser: dataUser } = useAuth();
@@ -536,9 +543,41 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
     // fileObj — capture it so the bubble can paint instantly and we can revoke it
     // once the server asset has loaded (prevents the memory leak + flicker).
     const localPreviewUrl = fileObj && typeof mediaUrl === 'string' && mediaUrl.startsWith('blob:') ? mediaUrl : null;
-    // Pre-seed dims from a caller-provided value if any; refined async below.
-    const initialWidth = options?.width || null;
-    const initialHeight = options?.height || null;
+    const isVideoFile = Boolean(fileObj?.type?.startsWith('video/'));
+    // Pre-seed dims from a caller-provided value if any (a retry passes the
+    // ones it already found).
+    let initialWidth = options?.width || null;
+    let initialHeight = options?.height || null;
+    let initialDuration = options?.duration || null;
+
+    /*
+     * The bubble's shape, BEFORE the bubble exists.
+     *
+     * It used to be appended first and sized later, so every new video sat in
+     * a 16:9 box (and every photo in a square) until its real size arrived and
+     * the list jumped. The size is cheap to read - a video's metadata, a
+     * photo's header - so it is read first, with a short cap so a file the
+     * browser cannot open does not hold the bubble back. The video's poster
+     * keeps drawing from the same decode and is picked up below.
+     */
+    let earlyPoster = null;
+    if (fileObj && !(initialWidth && initialHeight)) {
+      const capped = (promise, ms) => Promise.race([promise, new Promise((r) => setTimeout(() => r(null), ms))]);
+      if (isVideoFile) {
+        let onDims;
+        const dims = new Promise((r) => { onDims = r; });
+        earlyPoster = generateVideoPoster(fileObj, { onMetadata: onDims }).catch(() => null);
+        earlyPoster.then((meta) => onDims(meta));
+        const found = await capped(dims, 1500);
+        initialWidth = found?.width || null;
+        initialHeight = found?.height || null;
+        initialDuration = found?.duration || initialDuration;
+      } else if (fileObj.type?.startsWith('image/')) {
+        const found = await capped(getImageDimensions(fileObj).catch(() => null), 1000);
+        initialWidth = found?.width || null;
+        initialHeight = found?.height || null;
+      }
+    }
 
     const tempMessage = {
       id: tempId,
@@ -552,12 +591,16 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
       payload: {
         text: payloadText,
         mediaUrl,
-        thumbnailUrl: fileObj ? localPreviewUrl : (options?.thumbnailUrl || null),
+        // A video's blob is not an image: its thumbnail is the poster frame,
+        // filled in below once it has been drawn.
+        thumbnailUrl: fileObj ? (isVideoFile ? null : localPreviewUrl) : (options?.thumbnailUrl || null),
         localPreviewUrl,
+        // Explicit, so a retry that rewrites this row drops the last attempt's.
+        localPosterUrl: null,
         mediaType,
         width: initialWidth,
         height: initialHeight,
-        duration: options?.duration || null,
+        duration: initialDuration,
         mentions,
         inviteData: explicitInviteData,
         clientId,
@@ -592,10 +635,51 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
       const file = fileObj;
       const abortController = typeof AbortController !== 'undefined' ? new AbortController() : null;
       // Remember everything needed to retry/cancel this upload by clientId.
-      pendingUploadsRef.current.set(clientId, {
-        file, mediaType, targetConvId, localPreviewUrl, abortController,
+      const pendingEntry = {
+        file, mediaType, targetConvId, localPreviewUrl, localPosterUrl: null, abortController,
         sendArgs: { convId: targetConvId, text: payloadText, replyTo, mentions, mediaUrl, mediaType, explicitInviteData },
-      });
+      };
+      pendingUploadsRef.current.set(clientId, pendingEntry);
+
+      /*
+       * A video's poster frame and size, BEFORE the clip uploads.
+       *
+       * They used to come out of the upload pipeline at the very end, so for
+       * the whole upload the bubble was a bare <video> pointed at the local
+       * file with no poster - black on Android and iOS, which do not paint a
+       * frame for preload="metadata" - in a 16:9 box that then jumped to the
+       * clip's real shape when the upload finished. Drawing the frame first
+       * (well under a second) gives the bubble its picture and its final size
+       * from the start, and the pipeline reuses it instead of decoding the clip
+       * a second time.
+       */
+      let videoMeta;
+      if (isVideoFile) {
+        videoMeta = await (earlyPoster ?? generateVideoPoster(file).catch(() => null));
+        if (videoMeta?.posterBlob && !abortController?.signal.aborted) {
+          try { pendingEntry.localPosterUrl = URL.createObjectURL(videoMeta.posterBlob); } catch (_) { /* no preview */ }
+        }
+        if (videoMeta) {
+          finalWidth = videoMeta.width || finalWidth;
+          finalHeight = videoMeta.height || finalHeight;
+          finalDuration = videoMeta.duration || finalDuration;
+          const posterUrl = pendingEntry.localPosterUrl;
+          updateMessageInCache(queryClient, targetConvId, clientId, (existing) => ({
+            payload: {
+              ...(existing?.payload || {}),
+              ...(posterUrl ? { thumbnailUrl: posterUrl, localPosterUrl: posterUrl } : {}),
+              width: finalWidth,
+              height: finalHeight,
+              duration: finalDuration,
+            },
+          }));
+        }
+      }
+      const localPosterUrl = pendingEntry.localPosterUrl;
+      // A retry re-sends with these, so its bubble keeps its shape at once.
+      pendingEntry.width = finalWidth;
+      pendingEntry.height = finalHeight;
+      pendingEntry.duration = finalDuration;
 
       // Refine image dimensions off the main thread and reserve layout space early.
       if (file.type?.startsWith('image/') && (!finalWidth || !finalHeight)) {
@@ -619,15 +703,18 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
         let uploadRes;
         if (file.type?.startsWith('image/')) {
           uploadRes = await processAndUploadImage(file, 'chat', {}, onProgress, abortController?.signal);
-        } else if (file.type?.startsWith('video/')) {
-          uploadRes = await processAndUploadVideo(file, 'chat', onProgress, abortController?.signal);
+        } else if (isVideoFile) {
+          uploadRes = await processAndUploadVideo(file, 'chat', onProgress, abortController?.signal, { meta: videoMeta });
         } else {
           uploadRes = await uploadFileDirect(file, 'chat', onProgress, abortController?.signal);
         }
 
         if (uploadRes?.publicUrl) {
           finalMediaUrl = uploadRes.publicUrl;
-          finalThumbnailUrl = uploadRes.thumbnailUrl || uploadRes.publicUrl;
+          // Never the clip itself for a video: every consumer of thumbnailUrl
+          // draws it with an <img>, and a stored video URL there was a broken
+          // poster on every device that later opened the chat.
+          finalThumbnailUrl = uploadRes.thumbnailUrl || (isVideoFile ? null : uploadRes.publicUrl);
           finalWidth = uploadRes.width || finalWidth;
           finalHeight = uploadRes.height || finalHeight;
           finalDuration = uploadRes.duration || finalDuration;
@@ -668,14 +755,39 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
         // while this timer still fired, leaving a revoked blob referenced in the
         // cache. MessageBubble falls back to payload.localPreviewUrl, so every
         // later re-render then requested a dead blob: URL.
-        if (localPreviewUrl) {
-          setTimeout(() => releaseLocalPreview(targetConvId, clientId, localPreviewUrl), 5000);
+        //
+        // The local poster frame goes with it, for the same reason: until the
+        // signed server poster has painted it is what the bubble shows.
+        if (localPreviewUrl || localPosterUrl) {
+          setTimeout(() => releaseLocalPreview(targetConvId, clientId, localPreviewUrl, localPosterUrl), 5000);
         }
       } catch (err) {
         // A deliberate cancel removes the message; a real failure keeps it retryable.
         if (err?.name === 'AbortError') {
           pendingUploadsRef.current.delete(clientId);
-          if (localPreviewUrl) releaseLocalPreview(targetConvId, clientId, localPreviewUrl);
+          releaseLocalPreview(targetConvId, clientId, localPreviewUrl, localPosterUrl);
+          return;
+        }
+        /*
+         * Refused for what the file is (too large, empty, wrong format): say so
+         * once and take the bubble away. Left as "failed" it offered a retry
+         * that could only fail the same way, forever.
+         */
+        if (isMediaRejection(err)) {
+          pendingUploadsRef.current.delete(clientId);
+          showToast(err.message || 'Upload failed', 'error');
+          queryClient.setQueryData(['messages', targetConvId], (old) => {
+            if (!old?.pages) return old;
+            return {
+              ...old,
+              pages: old.pages.map((page) => ({
+                ...page,
+                messages: (page.messages || []).filter((m) => m.clientId !== clientId && m.tempId !== clientId && m.id !== clientId),
+              })),
+            };
+          });
+          idbDeleteMessage(clientId).catch(() => {});
+          releaseLocalPreview(targetConvId, clientId, localPreviewUrl, localPosterUrl);
           return;
         }
         updateMessageInCache(queryClient, targetConvId, clientId, { status: 'failed', uploadStatus: 'failed' });
@@ -776,6 +888,9 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
     const a = entry.sendArgs || {};
     updateMessageInCache(queryClient, entry.targetConvId, clientId, { status: 'sending', uploadStatus: 'uploading', uploadProgress: 0 });
     const previousPreview = entry.localPreviewUrl;
+    // The new attempt draws its own poster frame; the old one is released once
+    // the bubble no longer points at it (the retry's first, synchronous step).
+    const previousPoster = entry.localPosterUrl;
     sendMessageOptimistically({
       conversationId: entry.targetConvId,
       text: a.text || '',
@@ -795,6 +910,9 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
       mediaType: entry.mediaType,
       inviteData: a.explicitInviteData,
       fileObj: entry.file,
+      width: entry.width,
+      height: entry.height,
+      duration: entry.duration,
       clientId,
       tempId: clientId,
     });
@@ -802,6 +920,9 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
     // otherwise stay allocated until the page closes, once per failed retry.
     if (previousPreview && previousPreview !== entry.localPreviewUrl) {
       try { URL.revokeObjectURL(previousPreview); } catch (_) { /* already revoked */ }
+    }
+    if (previousPoster) {
+      try { URL.revokeObjectURL(previousPoster); } catch (_) { /* already revoked */ }
     }
   }, [queryClient, sendMessageOptimistically]);
 
@@ -825,6 +946,7 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
     });
     idbDeleteMessage(clientId).catch(() => {});
     if (entry?.localPreviewUrl) { try { URL.revokeObjectURL(entry.localPreviewUrl); } catch (_) {} }
+    if (entry?.localPosterUrl) { try { URL.revokeObjectURL(entry.localPosterUrl); } catch (_) {} }
   }, [queryClient, activeChatId]);
 
   const conversationsRef = useRef(conversations);

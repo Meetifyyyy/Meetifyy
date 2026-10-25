@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { ImageOff, Play } from '@shared/components/icons';
 import { useSignedMediaSrc } from '@shared/hooks/useSignedMediaSrc';
 import styles from './MediaThumb.module.css';
@@ -57,9 +57,18 @@ function MediaThumbTile({
   ariaLabel,
 }) {
   const isVideo = type === 'video';
-  // A video's tile is its poster. Without one, the video itself is loaded far
-  // enough to paint a frame.
-  const useVideoElement = isVideo && !poster;
+  /*
+   * A video's tile is its poster. Without one - or once the poster has failed -
+   * the video itself is loaded far enough to paint a frame.
+   *
+   * The fallback matters because a poster is a separate, best-effort upload:
+   * older chat sends stored the clip's own URL as its "poster" when that upload
+   * failed, and a `_thumb` that never arrived 404s. Either way the clip is fine,
+   * and the tile used to give up on it and show "unavailable".
+   */
+  const [posterFailed, setPosterFailed] = useState(false);
+  const hasPoster = isVideo && Boolean(poster) && poster !== src && !posterFailed;
+  const useVideoElement = isVideo && !hasPoster;
   const source = useVideoElement ? src : (isVideo ? poster : src);
 
   const tileRef = useRef(null);
@@ -70,6 +79,15 @@ function MediaThumbTile({
   const [ready, setReady] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
   const [mountKey, setMountKey] = useState(0);
+
+  /** Drops a dead poster for the clip itself, with a fresh retry budget. */
+  const fallBackToVideo = useCallback(() => {
+    clearTimeout(retryTimerRef.current);
+    retriesRef.current = 0;
+    setReady(false);
+    setLoadFailed(false);
+    setPosterFailed(true);
+  }, []);
 
   useEffect(() => {
     if (near) return undefined;
@@ -92,9 +110,15 @@ function MediaThumbTile({
 
   const { src: resolved, failed: signFailed, refresh } = useSignedMediaSrc(near ? source : null);
 
+  // A poster the server will not sign is as dead as one that will not load.
+  useEffect(() => {
+    if (signFailed && hasPoster) fallBackToVideo();
+  }, [signFailed, hasPoster, fallBackToVideo]);
+
   const handleError = () => {
     if (retriesRef.current >= 1) {
-      setLoadFailed(true);
+      if (hasPoster && src) fallBackToVideo();
+      else setLoadFailed(true);
       return;
     }
     // A just-uploaded object can 404 for a moment, and a signature can lapse:

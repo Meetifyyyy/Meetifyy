@@ -8,6 +8,9 @@ const m = vi.hoisted(() => ({
   enqueue: vi.fn(),
   retry: vi.fn(async () => false),
   uploadImage: vi.fn(),
+  uploadVideo: vi.fn(),
+  poster: vi.fn(async () => null),
+  toast: vi.fn(),
   api: { sendMessage: vi.fn(), getHistory: vi.fn(async () => ({ messages: [] })) },
 }));
 
@@ -17,11 +20,14 @@ vi.mock('@shared/stores/useGlobalSocketStore', () => ({
 }));
 vi.mock('@shared/utils/mediaPipeline', () => ({
   processAndUploadImage: m.uploadImage,
-  processAndUploadVideo: vi.fn(),
+  processAndUploadVideo: m.uploadVideo,
   uploadFileDirect: vi.fn(),
   getImageDimensions: vi.fn(async () => null),
+  generateVideoPoster: m.poster,
+  isMediaRejection: (err) => err?.code === 'MEDIA_INVALID' || err?.status === 413,
 }));
 vi.mock('@shared/context/AuthContext', () => ({ useAuth: () => ({ currentUser: { id: 'u1' } }) }));
+vi.mock('@shared/utils/toast', () => ({ showToast: m.toast }));
 vi.mock('@shared/hooks/useMessages', () => ({
   useConversations: () => ({ conversations: [{ id: 'conv-pub', internalId: 'conv-int' }] }),
 }));
@@ -57,6 +63,9 @@ beforeEach(() => {
   m.enqueue.mockReset().mockResolvedValue({ persisted: true, settled: false });
   m.retry.mockReset().mockResolvedValue(false);
   m.uploadImage.mockReset();
+  m.uploadVideo.mockReset();
+  m.poster.mockReset().mockResolvedValue(null);
+  m.toast.mockReset();
   m.socket.emit.mockReset();
   m.socket.timeout.mockReset();
   m.api.sendMessage.mockReset();
@@ -121,6 +130,107 @@ describe('useChatManager send path', () => {
       });
     });
     expect(m.enqueue).not.toHaveBeenCalled();
+    expect(bubbles()[0]).toMatchObject({ status: 'failed', uploadStatus: 'failed' });
+  });
+});
+
+describe('sending a video', () => {
+  const clip = () => new File(['x'], 'clip.mp4', { type: 'video/mp4' });
+  let createObjectURL;
+  beforeEach(() => {
+    createObjectURL = vi.fn(() => 'blob:poster-frame');
+    URL.createObjectURL = createObjectURL;
+    URL.revokeObjectURL = vi.fn();
+  });
+
+  it('shows the poster frame and the real size before the clip has uploaded', async () => {
+    m.poster.mockResolvedValue({ posterBlob: new Blob(['p']), width: 720, height: 1280, duration: 9 });
+    let finish;
+    m.uploadVideo.mockImplementation(() => new Promise((r) => { finish = r; }));
+    const { hook, bubbles } = setup();
+    let sending;
+    act(() => {
+      sending = hook.result.current.sendMessageOptimistically({
+        conversationId: 'conv-pub', mediaUrl: 'blob:clip', mediaType: 'video', fileObj: clip(), clientId: 'v-1',
+      });
+    });
+    await waitFor(() => expect(m.uploadVideo).toHaveBeenCalled());
+    expect(bubbles()[0].payload).toMatchObject({
+      thumbnailUrl: 'blob:poster-frame', localPosterUrl: 'blob:poster-frame', width: 720, height: 1280, duration: 9,
+    });
+    // The pipeline is handed that same frame instead of decoding the clip again.
+    expect(m.uploadVideo.mock.calls[0][4]).toEqual({ meta: expect.objectContaining({ width: 720, height: 1280 }) });
+    await act(async () => {
+      finish({ publicUrl: '/api/media/chat/v.mp4', thumbnailUrl: '/api/media/chat/v_thumb.webp', width: 720, height: 1280, duration: 9 });
+      await sending;
+    });
+    expect(m.enqueue.mock.calls[0][0].payload).toMatchObject({
+      mediaUrl: '/api/media/chat/v.mp4', thumbnailUrl: '/api/media/chat/v_thumb.webp', width: 720, height: 1280, duration: 9,
+    });
+  });
+
+  it('creates the bubble at the clip\'s real shape, before its poster frame exists', async () => {
+    let drawPoster;
+    m.poster.mockImplementation((_file, { onMetadata } = {}) => {
+      onMetadata?.({ width: 1080, height: 1920, duration: 7 });
+      return new Promise((r) => { drawPoster = r; });
+    });
+    m.uploadVideo.mockImplementation(() => new Promise(() => {}));
+    const { qc, hook, bubbles } = setup();
+    const shapes = [];
+    qc.getQueryCache().subscribe(() => {
+      const first = qc.getQueryData(['messages', 'conv-pub'])?.pages?.[0]?.messages?.[0];
+      if (first) shapes.push([first.payload.width, first.payload.height]);
+    });
+    act(() => {
+      hook.result.current.sendMessageOptimistically({
+        conversationId: 'conv-pub', mediaUrl: 'blob:clip', mediaType: 'video', fileObj: clip(), clientId: 'v-shape',
+      });
+    });
+    await waitFor(() => expect(bubbles()).toHaveLength(1));
+    expect(bubbles()[0].payload).toMatchObject({ width: 1080, height: 1920, duration: 7, thumbnailUrl: null });
+    await act(async () => { drawPoster({ posterBlob: new Blob(['p']), width: 1080, height: 1920, duration: 7 }); });
+    await waitFor(() => expect(bubbles()[0].payload.thumbnailUrl).toBe('blob:poster-frame'));
+    // Never a moment without its size.
+    expect(shapes.every(([w, h]) => w === 1080 && h === 1920)).toBe(true);
+  });
+
+  it('never records the clip as its own thumbnail when the poster did not upload', async () => {
+    m.uploadVideo.mockResolvedValue({ publicUrl: '/api/media/chat/v.mp4', thumbnailUrl: null });
+    const { hook } = setup();
+    await act(async () => {
+      await hook.result.current.sendMessageOptimistically({
+        conversationId: 'conv-pub', mediaUrl: 'blob:clip', mediaType: 'video', fileObj: clip(), clientId: 'v-2',
+      });
+    });
+    const { payload } = m.enqueue.mock.calls[0][0];
+    expect(payload.mediaUrl).toBe('/api/media/chat/v.mp4');
+    expect(payload.thumbnailUrl).toBeUndefined();
+  });
+
+  it('says why once and removes the bubble when the file itself is refused', async () => {
+    m.uploadVideo.mockRejectedValue(Object.assign(new Error('Video must be 15 MB or less'), { status: 413 }));
+    const { hook, bubbles } = setup();
+    await act(async () => {
+      await hook.result.current.sendMessageOptimistically({
+        conversationId: 'conv-pub', mediaUrl: 'blob:clip', mediaType: 'video', fileObj: clip(), clientId: 'v-3',
+      });
+    });
+    expect(m.toast).toHaveBeenCalledTimes(1);
+    expect(m.toast).toHaveBeenCalledWith('Video must be 15 MB or less', 'error');
+    expect(bubbles()).toEqual([]);
+    expect(m.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('keeps a network failure retryable', async () => {
+    m.uploadVideo.mockRejectedValue(new Error('Network or CORS error during media upload'));
+    const { hook, bubbles } = setup();
+    await act(async () => {
+      await hook.result.current.sendMessageOptimistically({
+        conversationId: 'conv-pub', mediaUrl: 'blob:clip', mediaType: 'video', fileObj: clip(), clientId: 'v-4',
+      });
+    });
+    expect(m.toast).not.toHaveBeenCalled();
     expect(bubbles()[0]).toMatchObject({ status: 'failed', uploadStatus: 'failed' });
   });
 });

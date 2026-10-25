@@ -57,6 +57,8 @@ import { installNativeBackButton } from './nativeBackButton';
 import UpdateGate from './UpdateGate';
 import { createCapacitorSystemBars } from '../platform/capacitor/systemBars';
 import { createNativeThemeRevealDriver } from '../platform/capacitor/themeReveal';
+import { createNativeMediaFullscreenDriver } from '../platform/capacitor/mediaFullscreen';
+import { setMediaFullscreenDriver } from '@shared/lib/mediaFullscreen';
 import { setThemeTransitionDriver } from '@shared/theme/themeTransition';
 import { installSystemBars } from './installSystemBars';
 import { readPageEdgeColors } from './pageEdgeColors';
@@ -176,6 +178,11 @@ installSystemBars(systemBars, { readEdges: readPageEdgeColors });
 // The theme switch's reveal, drawn by the shell where it can be (see
 // platform/capacitor/themeReveal.js); the same circle as the website's.
 setThemeTransitionDriver(createNativeThemeRevealDriver());
+
+// The video player's fullscreen: bars hidden and the screen turned by the
+// shell (see platform/capacitor/mediaFullscreen.js), since the WebView's own
+// fullscreen is closed again by Capacitor the moment it opens.
+setMediaFullscreenDriver(createNativeMediaFullscreenDriver());
 
 // Before the app renders: AuthContext may call ready() on its first effect.
 // The release is pushed to native as it happens (see SystemUiPlugin.appReady).

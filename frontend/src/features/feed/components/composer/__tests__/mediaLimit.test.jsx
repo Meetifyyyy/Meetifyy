@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, fireEvent, cleanup } from '@testing-library/react';
+import { render, fireEvent, cleanup, act } from '@testing-library/react';
 
 afterEach(cleanup);
 
@@ -56,39 +56,47 @@ const { default: PostComposer, MAX_POST_MEDIA, mediaLimitNotice } = await import
 URL.createObjectURL = vi.fn(() => `blob:${Math.random()}`);
 URL.revokeObjectURL = vi.fn();
 
-const images = (n) => Array.from({ length: n }, (_, i) => new File(['x'], `p${i}.jpg`, { type: 'image/jpeg' }));
+// A real JPEG signature: the picker checks a file's bytes, not just its name.
+const JPEG_HEAD = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46, 0, 1, 1, 0, 0, 1]);
+const images = (n) => Array.from({ length: n }, (_, i) => new File([JPEG_HEAD], `p${i}.jpg`, { type: 'image/jpeg' }));
 const imageInput = (c) => c.querySelector('input[type="file"][multiple]:not([accept^="video"])');
-const pick = (c, files) => fireEvent.change(imageInput(c), { target: { files } });
+// The pick is checked asynchronously (it reads each file's first bytes).
+const pick = async (c, files) => {
+  await act(async () => {
+    fireEvent.change(imageInput(c), { target: { files } });
+    await new Promise((r) => setTimeout(r, 0));
+  });
+};
 const counter = (c) => c.querySelector('[aria-label$="photos and videos added"]')?.textContent;
 
 describe('post media limit', () => {
-  it('keeps the first six of a larger pick and says how many were left out', () => {
+  it('keeps the first six of a larger pick and says how many were left out', async () => {
     const { container, getByRole } = render(<PostComposer onSubmit={() => {}} />);
-    pick(container, images(8));
+    await pick(container, images(8));
     expect(counter(container)).toBe(`${MAX_POST_MEDIA}/${MAX_POST_MEDIA}`);
     expect(getByRole('alert').textContent).toMatch(/Only 6 of the 8 you selected were added/);
   });
 
-  it('does not open the picker when full, and explains why instead', () => {
+  it('does not open the picker when full, and explains why instead', async () => {
     const { container, getByRole } = render(<PostComposer onSubmit={() => {}} />);
-    pick(container, images(6));
+    await pick(container, images(6));
     const click = vi.spyOn(imageInput(container), 'click');
     fireEvent.click(container.querySelector('button[title^="Maximum"]'));
     expect(click).not.toHaveBeenCalled();
     expect(getByRole('alert').textContent).toMatch(/already added 6/);
   });
 
-  it('lets a second pick fill only the slots that are left', () => {
+  it('lets a second pick fill only the slots that are left', async () => {
     const { container, getByRole } = render(<PostComposer onSubmit={() => {}} />);
-    pick(container, images(4));
-    pick(container, images(4));
+    await pick(container, images(4));
+    await pick(container, images(4));
     expect(counter(container)).toBe('6/6');
     expect(getByRole('alert').textContent).toMatch(/Only 2 of the 4/);
   });
 
-  it('accepts a pick that fits without any warning', () => {
+  it('accepts a pick that fits without any warning', async () => {
     const { container, queryByRole } = render(<PostComposer onSubmit={() => {}} />);
-    pick(container, images(3));
+    await pick(container, images(3));
     expect(counter(container)).toBe('3/6');
     expect(queryByRole('alert')).toBeNull();
   });

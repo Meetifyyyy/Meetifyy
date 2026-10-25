@@ -109,3 +109,24 @@ describe('other quoted entities still resolve', () => {
     }
   });
 });
+
+describe('a quoted video', () => {
+  const video = (payload) => ({ id: 'm1', mediaType: 'video', payload: { mediaType: 'video', ...payload } });
+
+  it('shows its poster', () => {
+    const preview = resolveReplyPreview(video({ mediaUrl: '/api/media/chat/a.mp4', thumbnailUrl: '/api/media/chat/a_thumb.webp' }));
+    expect(preview.kind).toBe('video');
+    expect(preview.thumbnailKey).toBe('/api/media/chat/a_thumb.webp');
+  });
+
+  it('never uses the clip itself as an image', () => {
+    // No poster at all, and the older shape that stored the clip as its own thumbnail.
+    expect(resolveReplyPreview(video({ mediaUrl: '/api/media/chat/a.mp4' })).thumbnailKey).toBeNull();
+    expect(resolveReplyPreview(video({ mediaUrl: '/api/media/chat/a.mp4', thumbnailUrl: '/api/media/chat/a.mp4' })).thumbnailKey).toBeNull();
+  });
+
+  it('keeps the photo fallback for images', () => {
+    const photo = { id: 'm2', mediaType: 'image', payload: { mediaType: 'image', mediaUrl: '/api/media/chat/p.webp' } };
+    expect(resolveReplyPreview(photo).thumbnailKey).toBe('/api/media/chat/p.webp');
+  });
+});

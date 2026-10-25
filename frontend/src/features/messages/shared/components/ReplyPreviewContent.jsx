@@ -9,6 +9,7 @@ import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { useCommunities } from '@shared/hooks/useCommunities';
 import { useConversations } from '@shared/hooks/useMessages';
 import { resolveReplyPreview } from '../utils/replyPreview';
+import { useSignedMediaSrc } from '@shared/hooks/useSignedMediaSrc';
 
 /**
  * The body of a reply quote: optional thumbnail, optional type icon, and a line
@@ -59,9 +60,15 @@ export default function ReplyPreviewContent({
   const isPerson = preview.kind === 'profile';
   const isGroupLike = preview.kind === 'community' || preview.kind === 'group_invite';
 
-  // Only resolve a thumbnail through the media layer; an unusable key returns
-  // null there, in which case the icon alone carries the meaning.
-  const thumbSrc = preview.thumbnailKey ? getMediaUrl(preview.thumbnailKey) : null;
+  // Resolved through the signing hook like every other chat image. A plain
+  // `getMediaUrl` gave the unsigned `/api/media/chat/...` URL, which only works
+  // where a session cookie rides along - in the installed app every quoted
+  // photo was a 404. Until it resolves, and if it fails, the icon carries the
+  // meaning instead.
+  const thumbKey = preview.thumbnailKey ? getMediaUrl(preview.thumbnailKey) : '';
+  const { src: thumbSrc } = useSignedMediaSrc(thumbKey);
+  const [thumbFailedFor, setThumbFailedFor] = useState(null);
+  const showThumb = Boolean(thumbSrc) && thumbFailedFor !== thumbSrc;
 
   return (
     <div
@@ -78,17 +85,17 @@ export default function ReplyPreviewContent({
           isGroup={isGroupLike}
           className={thumbClassName}
         />
-      ) : thumbSrc ? (
+      ) : showThumb ? (
         <img
           src={thumbSrc}
           alt=""
           aria-hidden="true"
           className={thumbClassName}
           style={{ width: 34, height: 34, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }}
-          // A dead thumbnail must not leave a broken-image glyph in the quote;
-          // hiding it falls back to the icon + label, which still describes the
-          // message.
-          onError={(e) => { e.currentTarget.style.display = 'none'; }}
+          // A dead thumbnail must not leave a broken-image glyph in the quote,
+          // nor an empty gap: it falls back to the icon + label, which still
+          // describes the message. (Hiding the <img> used to leave neither.)
+          onError={() => setThumbFailedFor(thumbSrc)}
         />
       ) : Icon ? (
         <Icon size={iconSize} style={{ flexShrink: 0, opacity: 0.85 }} aria-hidden="true" />

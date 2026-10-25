@@ -651,6 +651,22 @@
   transform: translateZ(0);
 }
 
+/* A fullscreen video owns the screen: the viewer's close, counter, paging
+   and zoom controls step aside (the player keeps its own exit button). */
+.overlay[data-video-fullscreen] .topBar,
+.overlay[data-video-fullscreen] .counterBadge,
+.overlay[data-video-fullscreen] .navBtn,
+.overlay[data-video-fullscreen] .zoomControls {
+  opacity: 0 !important;
+  visibility: hidden;
+  pointer-events: none !important;
+}
+
+/* Playing with the controls hidden: so is the pointer. */
+.videoWrap[data-idle] {
+  cursor: none;
+}
+
 .videoWrap:fullscreen,
 .videoWrap:-webkit-full-screen {
   background: #000;
@@ -987,6 +1003,23 @@
   cursor: pointer;
   display: flex;
   align-items: center;
+  /* The drag is handled in script; the browser must not pan or zoom under it. */
+  touch-action: none;
+}
+
+/*
+ * A taller invisible target than the bar it draws. A thumb that landed a few
+ * pixels above or below the 18-24px track used to miss it and fall through to
+ * the stage, where it toggled the controls away instead of seeking. Same
+ * width, so the seek fraction (measured from the track) is unchanged.
+ */
+.videoProgressTrack::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -10px;
+  bottom: -10px;
 }
 
 .videoProgressBg {
@@ -1673,6 +1706,12 @@
   .seekRipple,
   .centerReplayBtn {
     animation: none !important;
+  }
+
+  /* Its resting state is invisible (the animation fades it in), so without
+     the animation it has to be shown outright or the seek gives no feedback. */
+  .seekRipple {
+    opacity: 1;
   }
 }
 

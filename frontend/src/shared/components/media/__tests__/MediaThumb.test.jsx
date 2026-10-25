@@ -91,6 +91,32 @@ describe('MediaThumb', () => {
     expect(container.querySelector('img')).not.toBeNull();
   });
 
+  it('falls back to a frame of the clip when its poster will not load', async () => {
+    getUrl.mockImplementation(async (v) => (v.includes('_thumb') ? 'https://r2.test/chat/v_thumb.webp?s' : 'https://r2.test/chat/v.mp4?s'));
+    const { container } = render(<MediaThumb src="chat/v.mp4" poster="chat/v_thumb.webp" type="video" />);
+    await flush();
+    const poster = container.querySelector('img');
+    expect(poster.getAttribute('src')).toContain('_thumb');
+    // The poster 404s, the delayed retry 404s too: the clip itself is used.
+    fireEvent.error(poster);
+    await flush(700);
+    await flush();
+    fireEvent.error(container.querySelector('img'));
+    await flush();
+    const video = container.querySelector('video');
+    expect(video).not.toBeNull();
+    expect(video.getAttribute('src')).toBe('https://r2.test/chat/v.mp4?s#t=0.1');
+    expect(screen.queryByTitle('This media is no longer available')).toBeNull();
+  });
+
+  it('treats a "poster" that is the clip itself as no poster at all', async () => {
+    getUrl.mockResolvedValue('https://r2.test/chat/v.mp4?s');
+    const { container } = render(<MediaThumb src="chat/v.mp4" poster="chat/v.mp4" type="video" />);
+    await flush();
+    expect(container.querySelector('img')).toBeNull();
+    expect(container.querySelector('video')).not.toBeNull();
+  });
+
   it('shows the unavailable tile, not an endless skeleton, when signing is declined', async () => {
     getUrl.mockResolvedValue(null);
     const { container } = render(<MediaThumb src="chat/a.jpg" />);

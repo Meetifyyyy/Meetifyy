@@ -44,6 +44,11 @@ function firstText(...candidates) {
   return '';
 }
 
+/** True for a URL or key naming a video file rather than an image. */
+function looksLikeVideoFile(value) {
+  return /\.(mp4|webm|ogv|mov|m4v)(?:[?#]|$)/i.test(value);
+}
+
 /**
  * Finds a shared entity on either shape: the server snapshot flattens it to
  * `shareType`/`shareTitle`, while a live message still holds the whole object.
@@ -180,10 +185,16 @@ export function resolveReplyPreview(msg) {
 
   const mediaKind = resolveMediaKind(msg);
   if (mediaKind) {
+    // A video's quote shows its poster or nothing: the clip itself cannot be
+    // drawn as an image, and older sends stored the clip URL as the "thumbnail"
+    // when the poster failed to upload.
+    const videoPoster = firstText(payload.thumbnailUrl, msg.thumbnailUrl);
     const thumbnailKey =
-      mediaKind === 'image' || mediaKind === 'video' || mediaKind === 'gif' || mediaKind === 'sticker'
-        ? firstText(payload.thumbnailUrl, msg.thumbnailUrl, payload.mediaUrl, msg.mediaUrl) || null
-        : null;
+      mediaKind === 'video'
+        ? (videoPoster && !looksLikeVideoFile(videoPoster) ? videoPoster : null)
+        : mediaKind === 'image' || mediaKind === 'gif' || mediaKind === 'sticker'
+          ? firstText(payload.thumbnailUrl, msg.thumbnailUrl, payload.mediaUrl, msg.mediaUrl) || null
+          : null;
     return {
       // A caption, when present, is more useful than a generic "Photo".
       kind: mediaKind,

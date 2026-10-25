@@ -201,6 +201,10 @@ function sanitizeMessageForStorage(msg) {
     if (typeof safeMsg.payload.localPreviewUrl === 'string' && safeMsg.payload.localPreviewUrl.startsWith('blob:')) {
       safeMsg.payload.localPreviewUrl = null;
     }
+    // The poster frame made on this device for a video still uploading.
+    if (typeof safeMsg.payload.localPosterUrl === 'string' && safeMsg.payload.localPosterUrl.startsWith('blob:')) {
+      safeMsg.payload.localPosterUrl = null;
+    }
   }
   if (Array.isArray(safeMsg.media)) {
     safeMsg.media = safeMsg.media.map((m) => {

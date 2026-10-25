@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { showToast } from '../utils/toast';
 import { useConversations } from './useMessages';
 import { processAndUploadImage, uploadFileDirect } from '../utils/mediaPipeline';
+import { checkUploadFile } from '../constants/mediaLimits';
 import { purgeConversationFromCaches, matchesConversationId, getConversationAliases, appendMessageToCache } from '../../features/messages/shared/utils/cacheUtils';
 import { invalidateConversationMedia } from '../../features/messages/shared/utils/conversationMediaCache';
 import { idbDeleteConversationMessages } from '../../features/messages/shared/utils/idbMessages';
@@ -147,6 +148,9 @@ export function useMessageActions() {
     try {
       if (options?.fileObj) {
         const file = options.fileObj;
+        // The same per-file Messages limits as the chat composer.
+        const checked = checkUploadFile(file, 'message');
+        if (!checked.ok) throw new Error(checked.error);
         if (file.type.startsWith('image/')) {
           const { publicUrl } = await processAndUploadImage(file, 'chat');
           payload.mediaUrl = publicUrl;

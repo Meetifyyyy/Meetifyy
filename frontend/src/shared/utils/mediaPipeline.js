@@ -15,8 +15,14 @@ const loadCompressor = () => {
     });
   return compressorPromise;
 };
-import { apiClient, deriveThumbnailKey, getBackendUrl, getAccessToken, getNativeSessionId } from '../api/apiClient';
-import { MAX_COVERED_IMAGE_SIZE_MB } from '../constants/mediaLimits';
+import { apiClient, deriveThumbnailKey, getBackendUrl, getAccessToken, getNativeSessionId, uploadsApi } from '../api/apiClient';
+import {
+  ALLOWED_VIDEO_TYPES,
+  MAX_COVERED_IMAGE_SIZE_MB,
+  MAX_MEDIA_UPLOAD_SIZE_MB,
+  checkUploadFile,
+  uploadContextForFolder,
+} from '../constants/mediaLimits';
 import { generateImagePlaceholder } from './imagePlaceholder';
 
 /**
@@ -117,23 +123,49 @@ export const generateImageThumbnail = async (file, options = {}) => {
 };
 
 /**
+ * A clip length in whole seconds, or null when it is not a real length.
+ *
+ * A MediaRecorder WebM reports `Infinity` until it has been played through,
+ * and `Math.round(Infinity) || null` is `Infinity`: it reached the presign
+ * request and the database's integer column. A clip shorter than half a second
+ * is still a clip, so it rounds up to 1 rather than down to "no duration".
+ */
+const wholeSeconds = (d) => (Number.isFinite(d) && d > 0 ? Math.max(1, Math.round(d)) : null);
+
+/**
  * Extracts a lightweight poster frame + intrinsic metadata from a video File
  * without downloading/decoding the whole clip. Seeks to ~1s (or midpoint for
  * short clips), draws one frame to a canvas, returns:
  *   { posterBlob, width, height, duration }  (duration in whole seconds)
  * Resolves null on failure so the caller can proceed with just the original.
+ *
+ * The frame is drawn at most `maxSize` px on its longest edge. It used to be
+ * drawn at the clip's full resolution, so a 4K phone video produced a
+ * multi-megabyte "thumbnail" that every chat bubble then downloaded. The
+ * reported width/height stay the clip's own: they size the bubble.
+ *
+ * `onMetadata({ width, height, duration })` is called as soon as the clip's
+ * metadata is read, before the frame is drawn.
  */
 export const generateVideoPoster = async (file, options = {}) => {
-  const { quality = 0.7, mimeType = 'image/webp' } = options;
+  const { quality = 0.75, mimeType = 'image/webp', maxSize = 720, timeoutMs = 4000, onMetadata = null } = options;
   if (!file || !file.type?.startsWith('video/')) return null;
 
   return new Promise((resolve) => {
     let settled = false;
     let objectUrl = null;
+    let timer = null;
     const video = document.createElement('video');
+    const metaOnly = () => ({
+      posterBlob: null,
+      width: video.videoWidth || null,
+      height: video.videoHeight || null,
+      duration: wholeSeconds(video.duration),
+    });
     const done = (result) => {
       if (settled) return;
       settled = true;
+      clearTimeout(timer);
       try { video.removeAttribute('src'); video.load(); } catch (_) {}
       if (objectUrl) { try { URL.revokeObjectURL(objectUrl); } catch (_) {} }
       resolve(result);
@@ -150,34 +182,33 @@ export const generateVideoPoster = async (file, options = {}) => {
         try {
           const vw = video.videoWidth;
           const vh = video.videoHeight;
-          if (!vw || !vh) return done({ posterBlob: null, width: null, height: null, duration: Math.round(video.duration) || null });
+          if (!vw || !vh) return done(metaOnly());
+          const scale = Math.min(1, maxSize / Math.max(vw, vh));
           const canvas = document.createElement('canvas');
-          canvas.width = vw;
-          canvas.height = vh;
-          canvas.getContext('2d').drawImage(video, 0, 0, vw, vh);
+          canvas.width = Math.max(1, Math.round(vw * scale));
+          canvas.height = Math.max(1, Math.round(vh * scale));
+          canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
           canvas.toBlob(
-            (blob) => done({
-              posterBlob: blob,
-              width: vw,
-              height: vh,
-              duration: Number.isFinite(video.duration) ? Math.round(video.duration) : null,
-            }),
+            (blob) => done({ ...metaOnly(), posterBlob: blob || null }),
             mimeType,
             quality,
           );
         } catch (_) {
-          done({ posterBlob: null, width: video.videoWidth || null, height: video.videoHeight || null, duration: Math.round(video.duration) || null });
+          done(metaOnly());
         }
       };
 
       video.onloadedmetadata = () => {
+        // The size is known here, long before a frame is drawn: callers that
+        // lay something out for the clip use it straight away.
+        try { onMetadata?.({ width: video.videoWidth || null, height: video.videoHeight || null, duration: wholeSeconds(video.duration) }); } catch (_) { /* caller's problem */ }
         const target = Number.isFinite(video.duration) ? Math.min(1, video.duration / 2) : 0;
         try { video.currentTime = target; } catch (_) { capture(); }
       };
       video.onseeked = capture;
       video.onerror = () => done(null);
       // Safety timeout — never hang the send on a stubborn codec.
-      setTimeout(() => done({ posterBlob: null, width: video.videoWidth || null, height: video.videoHeight || null, duration: Math.round(video.duration) || null }), 4000);
+      timer = setTimeout(() => done(metaOnly()), timeoutMs);
 
       video.src = objectUrl;
     } catch (_) {
@@ -185,6 +216,17 @@ export const generateVideoPoster = async (file, options = {}) => {
     }
   });
 };
+
+/**
+ * An upload refused for what the file is, not for how the upload went: too
+ * large, empty, or a format that is not stored. Callers show `message` and do
+ * not offer a retry, since retrying the same file can only fail again.
+ */
+export const MEDIA_INVALID = 'MEDIA_INVALID';
+const invalidMedia = (message) => Object.assign(new Error(message), { code: MEDIA_INVALID });
+
+/** True for a refusal no retry can fix: invalid media, or the server measuring it as too large. */
+export const isMediaRejection = (err) => err?.code === MEDIA_INVALID || err?.status === 413;
 
 /**
  * Validates a file before processing.
@@ -312,6 +354,7 @@ export const uploadFileDirect = async (file, folder = 'general', onProgress = nu
       'audio/wav': 'wav',
       'audio/webm': 'weba',
       'audio/ogg': 'oga',
+      'audio/mp4': 'm4a',
     };
     const fileName = file.name || 'upload';
     const ext = mimeToExt[file.type] || fileName.split('.').pop() || 'bin';
@@ -411,13 +454,23 @@ export const uploadFileDirect = async (file, folder = 'general', onProgress = nu
       try {
         await apiClient.post('/api/media/confirm', { key });
       } catch (confirmError) {
+        // 413: the stored object is over its limit and the server has already
+        // deleted it. Anything else is a confirmation that merely did not
+        // arrive, and the object is still usable.
+        if (confirmError?.status === 413) {
+          const tooLarge = new Error(confirmError.message || 'File is too large');
+          tooLarge.status = 413;
+          throw tooLarge;
+        }
         console.warn('Failed to confirm upload with backend, but file is in storage:', confirmError);
       }
 
       return { publicUrl, key, mediaId };
     } catch (directUploadError) {
-      // A deliberate cancel must not silently fall back to a pass-through upload.
-      if (directUploadError?.name === 'AbortError' || signal?.aborted) {
+      // A deliberate cancel must not silently fall back to a pass-through upload,
+      // and neither may a file the server measured and refused: the pass-through
+      // would only refuse it again, after uploading every byte a second time.
+      if (directUploadError?.name === 'AbortError' || signal?.aborted || directUploadError?.status === 413) {
         throw directUploadError;
       }
       console.warn('Direct presigned upload failed/blocked (e.g. CORS). Retrying with backend pass-through upload:', directUploadError);
@@ -488,9 +541,15 @@ export const processAndUploadImage = async (file, folder = 'general', compressOp
   // slice because it dominates wall-clock time on real connections.
   //   0-10  prepare/compress   10-88 original upload   88-98 thumbnail   100 done
   const report = makeProgressReporter(onProgress);
-  const isPostOrChat = folder === 'posts' || folder === 'chat';
-  const maxSizeMB = options.maxSizeMB || (isPostOrChat ? 50 : MAX_COVERED_IMAGE_SIZE_MB);
-  validateFile(file, { maxSizeMB });
+  // Messages and posts have their own per-file limits; the callers check them
+  // before calling, and this repeats it for any path that does not.
+  const context = uploadContextForFolder(folder);
+  if (context && !options.maxSizeMB) {
+    const checked = checkUploadFile(file, context, { expect: 'image' });
+    if (!checked.ok) throw invalidMedia(checked.error);
+  } else {
+    validateFile(file, { maxSizeMB: options.maxSizeMB || MAX_COVERED_IMAGE_SIZE_MB });
+  }
   report(2, 'preparing');
 
   // Two thumbnail strategies:
@@ -523,117 +582,158 @@ export const processAndUploadImage = async (file, folder = 'general', compressOp
 
   let thumbnailUrl = null;
   let thumbnailKey = null;
+  // What this run has put in storage so far, so a cancel part-way through
+  // takes it back out instead of leaving it there with nothing pointing at it.
+  const stored = [];
 
-  // Separate-thumb (chat): upload first so lists can render it ASAP.
-  if (withSeparateThumb && thumb?.blob) {
-    try {
-      const thumbFile = new File([thumb.blob], `thumb.webp`, { type: 'image/webp' });
-      const thumbRes = await uploadFileDirect(thumbFile, folder, null, signal);
-      thumbnailUrl = thumbRes?.publicUrl || null;
-      thumbnailKey = thumbRes?.key || null;
-    } catch (err) {
-      if (err?.name === 'AbortError') throw err;
-      // ignore — original still uploads
-    }
-  }
-
-  // Original upload occupies 10→88 (or 10→98 when no thumbnail follows).
-  const originalEnd = withDerivedThumb && thumb?.blob ? 88 : 98;
-  const originalRes = await uploadFileDirect(compressedFile, folder, (percent) => {
-    report(band(10, originalEnd, percent), 'uploading');
-  }, signal, null, { width: dims?.width, height: dims?.height, placeholder });
-
-  // Derived-thumb: upload to `<originalKey>_thumb.webp` so the UI can render it
-  // without the entity storing a second URL. Best-effort — render falls back to
-  // the original if it's missing.
-  if (withDerivedThumb && thumb?.blob && originalRes?.key) {
-    const variantKey = deriveThumbnailKey(originalRes.key);
-    if (variantKey) {
+  try {
+    // Separate-thumb (chat): upload first so lists can render it ASAP.
+    if (withSeparateThumb && thumb?.blob) {
       try {
         const thumbFile = new File([thumb.blob], `thumb.webp`, { type: 'image/webp' });
-        await uploadFileDirect(thumbFile, folder, (percent) => {
-          report(band(88, 98, percent), 'finishing');
-        }, signal, variantKey, { width: thumb?.width, height: thumb?.height });
-        thumbnailKey = variantKey;
-        thumbnailUrl = originalRes.publicUrl ? originalRes.publicUrl.replace(/\.([a-z0-9]+)$/i, '_thumb.webp') : null;
+        const thumbRes = await uploadFileDirect(thumbFile, folder, null, signal);
+        thumbnailUrl = thumbRes?.publicUrl || null;
+        thumbnailKey = thumbRes?.key || null;
+        if (thumbnailKey) stored.push(thumbnailKey);
       } catch (err) {
         if (err?.name === 'AbortError') throw err;
-        // ignore — render falls back to original
+        // ignore — original still uploads
       }
     }
-  }
-  report(100, 'done');
 
-  return {
-    ...originalRes,
-    thumbnailUrl: thumbnailUrl || originalRes?.publicUrl || null,
-    thumbnailKey,
-    width: dims?.width || null,
-    height: dims?.height || null,
-    aspectRatio: dims?.width && dims?.height ? Number((dims.width / dims.height).toFixed(4)) : null,
-    placeholder: placeholder || null,
-  };
+    // Original upload occupies 10→88 (or 10→98 when no thumbnail follows).
+    const originalEnd = withDerivedThumb && thumb?.blob ? 88 : 98;
+    const originalRes = await uploadFileDirect(compressedFile, folder, (percent) => {
+      report(band(10, originalEnd, percent), 'uploading');
+    }, signal, null, { width: dims?.width, height: dims?.height, placeholder });
+    if (originalRes?.key) stored.push(originalRes.key);
+
+    // Derived-thumb: upload to `<originalKey>_thumb.webp` so the UI can render it
+    // without the entity storing a second URL. Best-effort — render falls back to
+    // the original if it's missing.
+    if (withDerivedThumb && thumb?.blob && originalRes?.key) {
+      const variantKey = deriveThumbnailKey(originalRes.key);
+      if (variantKey) {
+        try {
+          const thumbFile = new File([thumb.blob], `thumb.webp`, { type: 'image/webp' });
+          await uploadFileDirect(thumbFile, folder, (percent) => {
+            report(band(88, 98, percent), 'finishing');
+          }, signal, variantKey, { width: thumb?.width, height: thumb?.height });
+          thumbnailKey = variantKey;
+          thumbnailUrl = originalRes.publicUrl ? originalRes.publicUrl.replace(/\.([a-z0-9]+)$/i, '_thumb.webp') : null;
+        } catch (err) {
+          if (err?.name === 'AbortError') throw err;
+          // ignore — render falls back to original
+        }
+      }
+    }
+    report(100, 'done');
+
+    return {
+      ...originalRes,
+      thumbnailUrl: thumbnailUrl || originalRes?.publicUrl || null,
+      thumbnailKey,
+      width: dims?.width || null,
+      height: dims?.height || null,
+      aspectRatio: dims?.width && dims?.height ? Number((dims.width / dims.height).toFixed(4)) : null,
+      placeholder: placeholder || null,
+    };
+  } catch (err) {
+    if (err?.name === 'AbortError') discardStored(stored);
+    throw err;
+  }
+};
+
+/**
+ * Removes objects a cancelled upload had already stored. Best-effort: the
+ * server only deletes what this account owns and nothing has attached yet, so
+ * a key that did get used somewhere is left alone.
+ */
+function discardStored(keys) {
+  for (const key of keys) {
+    uploadsApi?.discard?.(key)?.catch?.(() => {});
+  }
+}
+
+/** Stops a pipeline whose caller has cancelled, between its async steps. */
+const throwIfAborted = (signal) => {
+  if (signal?.aborted) throw new DOMException('Upload aborted', 'AbortError');
 };
 
 /**
  * Full video pipeline: extract poster + metadata client-side (no transcoding),
- * upload the small poster then the original clip. Returns:
+ * upload the clip, then its small poster as `<key>_thumb.webp`. Returns:
  *   { publicUrl, thumbnailUrl (poster), key, posterKey, width, height, duration, aspectRatio, mediaId }.
  * The original is NOT re-encoded (browser can't transcode cheaply); playback uses
  * range requests via preload="metadata" so the bubble shows instantly.
+ *
+ * `options.meta` is a poster the caller already made with generateVideoPoster
+ * (chat makes it first, to show it in the bubble while the clip uploads), so the
+ * clip is not decoded twice. `thumbnailUrl` is null when there is no poster:
+ * it is never the clip itself, which an <img> cannot draw.
  */
-export const processAndUploadVideo = async (file, folder = 'general', onProgress = null, signal = null) => {
+export const processAndUploadVideo = async (file, folder = 'general', onProgress = null, signal = null, options = {}) => {
   // Validate before any processing so unsupported/oversized clips fail fast with
   // a clear error instead of a broken upload.
-  const ALLOWED_VIDEO = ['video/mp4', 'video/webm', 'video/ogg'];
-  if (!file || !ALLOWED_VIDEO.includes(file.type)) {
-    throw new Error('Unsupported video format. Use MP4, WebM, or OGG.');
-  }
-  if (file.size / 1024 / 1024 > 50) {
-    throw new Error('Video is too large. Max size is 50MB.');
+  const context = uploadContextForFolder(folder);
+  if (context) {
+    const checked = checkUploadFile(file, context, { expect: 'video' });
+    if (!checked.ok) throw invalidMedia(checked.error);
+  } else if (!file || !ALLOWED_VIDEO_TYPES.includes(file.type)) {
+    throw invalidMedia('Use an MP4 or WebM video');
+  } else if (file.size > MAX_MEDIA_UPLOAD_SIZE_MB * 1024 * 1024) {
+    throw invalidMedia(`Video must be ${MAX_MEDIA_UPLOAD_SIZE_MB} MB or less`);
   }
   console.info('[mediaPipeline] video upload start', { name: file.name, type: file.type, size: file.size });
-  // Bands: 0-8 poster extraction, 8-14 poster upload, 14-99 clip upload, 100 done.
+  // Bands: 0-8 poster extraction, 8-90 clip upload, 90-99 poster upload, 100 done.
   const report = makeProgressReporter(onProgress);
   report(2, 'preparing');
-  const meta = await generateVideoPoster(file).catch(() => null);
+  const meta = options.meta !== undefined ? options.meta : await generateVideoPoster(file).catch(() => null);
+  throwIfAborted(signal);
   report(8, 'preparing');
 
-  const originalRes = await uploadFileDirect(file, folder, (percent) => {
-    report(band(8, 90, percent), 'uploading');
-  }, signal, null, { width: meta?.width, height: meta?.height, duration: meta?.duration });
+  const stored = [];
+  try {
+    const originalRes = await uploadFileDirect(file, folder, (percent) => {
+      report(band(8, 90, percent), 'uploading');
+    }, signal, null, { width: meta?.width, height: meta?.height, duration: meta?.duration });
+    if (originalRes?.key) stored.push(originalRes.key);
 
-  let thumbnailUrl = null;
-  let posterKey = null;
+    let thumbnailUrl = null;
+    let posterKey = null;
 
-  if (meta?.posterBlob && originalRes?.key) {
-    const variantKey = deriveThumbnailKey(originalRes.key);
-    if (variantKey) {
-      try {
-        const posterFile = new File([meta.posterBlob], 'poster.webp', { type: 'image/webp' });
-        await uploadFileDirect(posterFile, folder, (percent) => {
-          report(band(90, 99, percent), 'finishing');
-        }, signal, variantKey, { width: meta?.width, height: meta?.height });
-        thumbnailUrl = originalRes.publicUrl ? originalRes.publicUrl.replace(/\.([a-z0-9]+)$/i, '_thumb.webp') : null;
-        posterKey = variantKey;
-      } catch (err) {
-        if (err?.name === 'AbortError') throw err;
+    if (meta?.posterBlob && originalRes?.key) {
+      const variantKey = deriveThumbnailKey(originalRes.key);
+      if (variantKey) {
+        try {
+          const posterFile = new File([meta.posterBlob], 'poster.webp', { type: 'image/webp' });
+          await uploadFileDirect(posterFile, folder, (percent) => {
+            report(band(90, 99, percent), 'finishing');
+          }, signal, variantKey, { width: meta?.width, height: meta?.height });
+          thumbnailUrl = originalRes.publicUrl ? originalRes.publicUrl.replace(/\.([a-z0-9]+)$/i, '_thumb.webp') : null;
+          posterKey = variantKey;
+        } catch (err) {
+          if (err?.name === 'AbortError') throw err;
+        }
       }
     }
+
+    report(100, 'done');
+
+    console.info('[mediaPipeline] video upload done', { key: originalRes?.key, url: originalRes?.publicUrl });
+    return {
+      ...originalRes,
+      thumbnailUrl,
+      posterKey,
+      width: meta?.width || null,
+      height: meta?.height || null,
+      duration: meta?.duration || null,
+      aspectRatio: meta?.width && meta?.height ? Number((meta.width / meta.height).toFixed(4)) : null,
+    };
+  } catch (err) {
+    if (err?.name === 'AbortError') discardStored(stored);
+    throw err;
   }
-
-  report(100, 'done');
-
-  console.info('[mediaPipeline] video upload done', { key: originalRes?.key, url: originalRes?.publicUrl });
-  return {
-    ...originalRes,
-    thumbnailUrl,
-    posterKey,
-    width: meta?.width || null,
-    height: meta?.height || null,
-    duration: meta?.duration || null,
-    aspectRatio: meta?.width && meta?.height ? Number((meta.width / meta.height).toFixed(4)) : null,
-  };
 };
 
 /**

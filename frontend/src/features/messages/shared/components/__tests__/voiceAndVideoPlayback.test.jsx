@@ -16,7 +16,7 @@ vi.mock('@shared/utils/MediaCacheManager', () => ({
 }));
 
 import VoiceMessagePlayer from '../VoiceMessagePlayer';
-import { VideoPlayerWithOverlay } from '../MessageBubble';
+import { VideoPlayerWithOverlay, formatClipDuration } from '../MessageBubble';
 import { feedVideoRegistry } from '@shared/utils/feedVideoRegistry';
 import { PLAYBACK_PRIORITY } from '@shared/utils/playbackPriority';
 
@@ -159,5 +159,42 @@ describe('chat video tile (MV-004, MV-009, MV-025)', () => {
     fireEvent.error(container.querySelector('video'));
     expect(signed.refresh).toHaveBeenCalledTimes(1);
     expect(screen.getByText('Video unavailable')).toBeTruthy();
+  });
+});
+
+describe('chat video tile: frames, posters and length', () => {
+  const KEY = 'https://api.example/api/media/chat/clip.mp4';
+
+  it('asks for a real frame when there is no poster, instead of a black tile', () => {
+    const { container } = render(<VideoPlayerWithOverlay src={KEY} />);
+    expect(container.querySelector('video').getAttribute('src')).toBe('https://signed.example/a.webm#t=0.1');
+  });
+
+  it('keeps the same URL when a poster arrives later, so the element is not reloaded', () => {
+    const { container, rerender } = render(<VideoPlayerWithOverlay src={KEY} />);
+    const before = container.querySelector('video');
+    rerender(<VideoPlayerWithOverlay src={KEY} poster="https://api.example/api/media/chat/clip_thumb.webp" />);
+    const after = container.querySelector('video');
+    expect(after).toBe(before);
+    expect(after.getAttribute('src')).toBe('https://signed.example/a.webm#t=0.1');
+    expect(after.getAttribute('poster')).toBeTruthy();
+  });
+
+  it('shows the frame drawn on this device while the stored copy is still signing', () => {
+    signed.state = { src: '', failed: false, pending: true, attempt: 0 };
+    render(<VideoPlayerWithOverlay src={KEY} placeholder="blob:local-poster" width={720} height={1280} />);
+    const tile = screen.getByRole('status', { name: 'Loading video' });
+    expect(tile.style.backgroundImage).toContain('blob:local-poster');
+  });
+
+  it.each([
+    [59.6, '1:00'],
+    [0.4, '0:01'],
+    [61, '1:01'],
+    [600, '10:00'],
+    [0, null],
+    [Number.NaN, null],
+  ])('labels %s seconds as %s', (seconds, label) => {
+    expect(formatClipDuration(seconds)).toBe(label);
   });
 });

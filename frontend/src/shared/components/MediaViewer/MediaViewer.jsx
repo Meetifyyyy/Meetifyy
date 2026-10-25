@@ -112,6 +112,8 @@ function MediaViewerSession() {
   const snapbackTimerRef = useRef(null);
 
   const [visible, setVisible]               = useState(false);
+  // The current video is fullscreen: the viewer's own chrome steps aside.
+  const [videoFullscreen, setVideoFullscreen] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const moreMenu = useMenu();
   const closeMoreMenu = moreMenu.close;
@@ -415,6 +417,9 @@ function MediaViewerSession() {
   const onGestureStart = useCallback((clientX, clientY, target) => {
     // Skip if already zoomed into image
     if (target.closest('[data-zoomed="true"]')) return;
+    // No paging or swipe-to-dismiss under a fullscreen video: leaving
+    // fullscreen is the player's button (or Back), not a stray drag.
+    if (target.closest('[data-fullscreen]')) return;
     // Skip if on a video control element — video manages its own touch
     if (isVid && isVideoControl(target)) return;
 
@@ -877,6 +882,7 @@ function MediaViewerSession() {
       // Closing, the system bars read the page through the fading viewer, so
       // they take the page's colours as the fade starts rather than after it.
       data-bars-ignore={closing ? '' : undefined}
+      data-video-fullscreen={videoFullscreen && isVid ? '' : undefined}
       onClick={handleOverlayClick}
       tabIndex={-1}
       role="dialog"
@@ -978,6 +984,7 @@ function MediaViewerSession() {
                       poster={item.thumb}
                       mediaRef={isCurrent ? mediaElRef : null}
                       onControlsChange={isCurrent ? setControlsVisible : undefined}
+                      onFullscreenChange={isCurrent ? setVideoFullscreen : undefined}
                       onStageClick={moreMenu.close}
                       isCurrent={isCurrent && !closing}
                     />

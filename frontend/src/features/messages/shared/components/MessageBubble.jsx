@@ -287,7 +287,17 @@ function SignedChatImage({ src, fallbackSrc, alt, className, onClick, isStandalo
   );
 }
 
-export function VideoPlayerWithOverlay({ src, poster = null, duration = null, width = null, height = null, isInline = false, hasText = false, onOpenMediaModal, openExtra, openDisabled = false }) {
+/**
+ * "m:ss" for a clip length in seconds. Rounded once, as a whole, before it is
+ * split: rounding the seconds part on its own turned 59.6 into "0:60".
+ */
+export function formatClipDuration(duration) {
+  if (!Number.isFinite(duration) || duration <= 0) return null;
+  const total = Math.max(1, Math.round(duration));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+}
+
+export function VideoPlayerWithOverlay({ src, poster = null, placeholder = null, duration = null, width = null, height = null, isInline = false, hasText = false, onOpenMediaModal, openExtra, openDisabled = false }) {
   /*
    * Signed through the shared hook, exactly like the viewer and the image path.
    *
@@ -314,10 +324,30 @@ export function VideoPlayerWithOverlay({ src, poster = null, duration = null, wi
   }, [src]);
 
   const aspect = (width && height) ? (width / height) : (16 / 9);
-  const durationLabel = (Number.isFinite(duration) && duration > 0)
-    ? `${Math.floor(duration / 60)}:${String(Math.round(duration % 60)).padStart(2, '0')}`
-    : null;
+  const durationLabel = formatClipDuration(duration);
   const wrapperClass = `${styles.msgMediaWrapper} ${isInline ? styles.msgMediaWrapperInline : styles.msgMediaWrapperStandalone}`;
+  /*
+   * The frame this device drew for a video it is still sending (a blob: URL),
+   * painted UNDER the player. Once the upload finishes the tile switches to the
+   * server copy, which needs a signature and then its own poster download;
+   * without this the tile went blank for that whole round trip, between the
+   * local frame and the stored one.
+   */
+  const backdrop = placeholder ? { backgroundImage: `url("${placeholder}")`, backgroundSize: 'cover', backgroundPosition: 'center' } : null;
+  /*
+   * `#t=0.1` makes the browser seek a tenth of a second in and paint that
+   * frame. Android and iOS paint nothing for preload="metadata" on its own, so
+   * a posterless video - including every older message whose poster never
+   * uploaded - was a black tile. The fragment is never sent to the server, so a
+   * signed URL's signature is unaffected.
+   *
+   * Added whether or not there is a poster: a poster that arrives later (the
+   * frame drawn while sending) must not change the URL, which reloaded the
+   * element. With a poster and preload="none" the hint costs nothing.
+   */
+  const playableSrc = resolvedSrc && !resolvedSrc.includes('#')
+    ? `${resolvedSrc}#t=0.1`
+    : resolvedSrc;
 
   const handleVideoError = () => {
     /*
@@ -364,7 +394,7 @@ export function VideoPlayerWithOverlay({ src, poster = null, duration = null, wi
     return (
       <div
         className={wrapperClass}
-        style={{ '--aspect': aspect, backgroundColor: '#16181c' }}
+        style={{ '--aspect': aspect, backgroundColor: '#16181c', ...backdrop }}
         role="status"
         aria-busy="true"
         aria-label="Loading video"
@@ -375,11 +405,11 @@ export function VideoPlayerWithOverlay({ src, poster = null, duration = null, wi
   return (
     <div
       className={wrapperClass}
-      style={{ '--aspect': aspect, backgroundColor: '#16181c' }}
+      style={{ '--aspect': aspect, backgroundColor: '#16181c', ...backdrop }}
     >
       <video
         key={attempt}
-        src={resolvedSrc}
+        src={playableSrc}
         poster={resolvedPoster || undefined}
         playsInline
         muted
@@ -875,7 +905,14 @@ const MessageBubble = memo(function MessageBubble({
   // original is loaded only when the viewer opens (onClick -> mediaUrl).
   const rawThumbUrl = msg.payload?.thumbnailUrl || msg.payload?.localPreviewUrl || rawMediaUrl;
   const thumbUrl = rawThumbUrl ? getMediaUrl(rawThumbUrl) : mediaUrl;
-  const videoPoster = thumbUrl !== mediaUrl ? thumbUrl : null;
+  // A poster is an image. Older sends stored the clip's own URL here when the
+  // poster failed to upload, and an <img>/poster pointed at a video draws nothing.
+  const videoPoster = thumbUrl !== mediaUrl && !/\.(mp4|webm|ogv|mov|m4v)(?:[?#]|$)/i.test(thumbUrl || '') ? thumbUrl : null;
+  // The frame drawn on this device while its video uploads (blob:), shown under
+  // the player until the stored poster has painted.
+  const localPoster = typeof msg.payload?.localPosterUrl === 'string' && msg.payload.localPosterUrl.startsWith('blob:')
+    ? msg.payload.localPosterUrl
+    : null;
   const mediaWidth = msg.payload?.width || msg.width || null;
   const mediaHeight = msg.payload?.height || msg.height || null;
   const mediaDuration = msg.payload?.duration || msg.duration || null;
@@ -1004,7 +1041,7 @@ const MessageBubble = memo(function MessageBubble({
       <div className={styles.msgImageCardContainer}>
         <div className={`${styles.msgMainRow} ${isMe ? styles.msgMainRowMe : styles.msgMainRowThem}`}>
           <div className={styles.msgImageCard} style={{ overflow: 'hidden', borderRadius: '16px', width: 'fit-content', height: 'fit-content', position: 'relative' }}>
-            <VideoPlayerWithOverlay src={mediaUrl} poster={videoPoster} duration={mediaDuration} width={mediaWidth} height={mediaHeight} isInline={false} onOpenMediaModal={onOpenMediaModal} openExtra={buildOpenExtra(videoPoster)} openDisabled={isUploading || isUploadFailed} />
+            <VideoPlayerWithOverlay src={mediaUrl} poster={videoPoster} placeholder={localPoster} duration={mediaDuration} width={mediaWidth} height={mediaHeight} isInline={false} onOpenMediaModal={onOpenMediaModal} openExtra={buildOpenExtra(videoPoster)} openDisabled={isUploading || isUploadFailed} />
             {(isUploading || isUploadFailed) && (
               <MediaUploadOverlay
                 progress={uploadProgress}
@@ -1117,7 +1154,7 @@ const MessageBubble = memo(function MessageBubble({
           {mediaUrl && (
             isVideo ? (
               <div style={{ position: 'relative' }}>
-                <VideoPlayerWithOverlay src={mediaUrl} poster={videoPoster} duration={mediaDuration} width={mediaWidth} height={mediaHeight} isInline={true} hasText={hasText} onOpenMediaModal={onOpenMediaModal} openExtra={buildOpenExtra(videoPoster)} openDisabled={isUploading || isUploadFailed} />
+                <VideoPlayerWithOverlay src={mediaUrl} poster={videoPoster} placeholder={localPoster} duration={mediaDuration} width={mediaWidth} height={mediaHeight} isInline={true} hasText={hasText} onOpenMediaModal={onOpenMediaModal} openExtra={buildOpenExtra(videoPoster)} openDisabled={isUploading || isUploadFailed} />
                 {(isUploading || isUploadFailed) && (
                   <MediaUploadOverlay
                     progress={uploadProgress}

@@ -211,6 +211,10 @@ function resetClientStateForNewUser(queryClient) {
   import('@shared/utils/draftImageCache')
     .then(({ clearDraftImages }) => clearDraftImages())
     .catch(() => {});
+  // Voice notes recorded but not sent yet, held in memory per chat.
+  import('../../features/messages/hooks/useVoiceRecorder')
+    .then(({ clearKeptVoiceNotes }) => clearKeptVoiceNotes())
+    .catch(() => {});
   // And the outbox's in-memory state: which chats have a send pending. Its
   // stored entries went with the message cache above.
   import('../../features/messages/shared/utils/outboxClient')

@@ -6,7 +6,10 @@
 export const MAX_COVERED_IMAGE_SIZE_MB = 10;
 export const MAX_COVERED_IMAGE_SIZE_BYTES = 10 * 1024 * 1024; // 10,485,760 bytes
 
-/** Maximum allowed file size for general/post/chat media uploads: 50 MB */
+/**
+ * Ceiling for uploads with no limit of their own (voice notes, `general`).
+ * Messages and posts have tighter per-file limits: see UPLOAD_LIMITS.
+ */
 export const MAX_MEDIA_UPLOAD_SIZE_MB = 50;
 export const MAX_MEDIA_UPLOAD_SIZE_BYTES = 50 * 1024 * 1024;
 
@@ -16,8 +19,143 @@ export const COVERED_IMAGE_SIZE_ERROR_MESSAGE = 'File size limit is 10 MB';
 /** Image MIME types the upload pipeline accepts (validateFile). */
 export const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 
+/**
+ * Video MIME types the upload pipeline accepts. The server stores nothing
+ * else, so a picker that offers `.mov` still has to refuse it here rather than
+ * let it fail halfway through an upload.
+ */
+export const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/webm', 'video/ogg'];
+
+const MB = 1024 * 1024;
+
+/**
+ * Per-file limits for the two places people attach media. Each file is checked
+ * on its own: four 5 MB photos in one post are fine, one 6 MB photo is not.
+ *
+ * Mirrored by `backend/src/uploads/uploads.constants.ts`, which enforces the
+ * same numbers on every path that can put bytes into storage. This copy only
+ * exists so an oversized file is refused before any of it is uploaded.
+ */
+export const UPLOAD_LIMITS = Object.freeze({
+  message: Object.freeze({ video: 15 * MB, image: 5 * MB }),
+  post: Object.freeze({ video: 25 * MB, image: 5 * MB }),
+});
+
+/** One voice note, mirrored by VOICE_NOTE_MAX_BYTES on the server. */
+export const VOICE_NOTE_MAX_BYTES = 15 * MB;
+export const VOICE_NOTE_SIZE_MESSAGE = 'Voice note must be 15 MB or less';
+
+/** The longest a voice note may be recorded for. */
+export const VOICE_NOTE_MAX_MS = 5 * 60 * 1000;
+
+/** Which UPLOAD_LIMITS context a storage folder belongs to, or null. */
+export function uploadContextForFolder(folder) {
+  if (folder === 'chat' || folder === 'messages') return 'message';
+  if (folder === 'posts') return 'post';
+  return null;
+}
+
+/** "Video must be 15 MB or less". The same words the server answers with. */
+export function uploadSizeMessage(kind, maxBytes) {
+  const noun = kind === 'video' ? 'Video' : 'Image';
+  return `${noun} must be ${Math.round(maxBytes / MB)} MB or less`;
+}
+
+function kindOfType(type) {
+  if (typeof type !== 'string') return null;
+  if (type.startsWith('image/')) return 'image';
+  if (type.startsWith('video/')) return 'video';
+  return null;
+}
+
+/**
+ * The checks that need nothing but the File object: present, not empty, a type
+ * the pipeline stores, and within the limit for `context`.
+ *
+ * `expect` narrows a picker that is only for one kind ("image" or "video").
+ * Returns `{ ok: true, kind }` or `{ ok: false, error }`, where `error` is the
+ * short message to show the person.
+ */
+export function checkUploadFile(file, context, { expect } = {}) {
+  if (!file) return { ok: false, error: 'No file selected' };
+  const kind = kindOfType(file.type);
+  if (expect && kind !== expect) {
+    return { ok: false, error: expect === 'video' ? 'Choose a video' : 'Choose an image' };
+  }
+  if (kind === 'video' && !ALLOWED_VIDEO_TYPES.includes(file.type)) {
+    return { ok: false, error: 'Use an MP4 or WebM video' };
+  }
+  if (kind === 'image' && !ALLOWED_IMAGE_TYPES.includes(file.type)) {
+    return { ok: false, error: 'Unsupported image format' };
+  }
+  if (!kind) return { ok: false, error: 'Unsupported file type' };
+  if (!(file.size > 0)) return { ok: false, error: 'This file is empty' };
+  const limits = UPLOAD_LIMITS[context];
+  if (limits && file.size > limits[kind]) {
+    return { ok: false, error: uploadSizeMessage(kind, limits[kind]) };
+  }
+  return { ok: true, kind };
+}
+
+async function readHead(file, length) {
+  const head = file.slice(0, length);
+  if (typeof head.arrayBuffer === 'function') return new Uint8Array(await head.arrayBuffer());
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(new Uint8Array(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsArrayBuffer(head);
+  });
+}
+
+const ascii = (bytes, from, to) => String.fromCharCode(...bytes.slice(from, to));
+
+/**
+ * What the file's own first bytes say it is: 'image', 'video', or null.
+ *
+ * `file.type` comes from the name (or the gallery's guess), so a renamed file
+ * passes it. The signatures are the ones the pipeline's formats begin with.
+ */
+export function sniffMediaKind(bytes) {
+  if (!bytes || bytes.length < 12) return null;
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image';
+  if (bytes[0] === 0x89 && ascii(bytes, 1, 4) === 'PNG') return 'image';
+  if (ascii(bytes, 0, 4) === 'GIF8') return 'image';
+  if (ascii(bytes, 0, 4) === 'RIFF' && ascii(bytes, 8, 12) === 'WEBP') return 'image';
+  // ISO base media (MP4, and QuickTime written with an .mp4 name).
+  if (ascii(bytes, 4, 8) === 'ftyp') return 'video';
+  // EBML header: WebM / Matroska.
+  if (bytes[0] === 0x1a && bytes[1] === 0x45 && bytes[2] === 0xdf && bytes[3] === 0xa3) return 'video';
+  if (ascii(bytes, 0, 4) === 'OggS') return 'video';
+  return null;
+}
+
+/**
+ * `checkUploadFile`, then a look at the bytes. A file whose contents are not
+ * the kind its type claims is refused before upload. A file that cannot be
+ * read at all is left to the upload to report: refusing on a failed read
+ * would block real files on a browser without Blob reading.
+ */
+export async function validateUploadFile(file, context, options = {}) {
+  const result = checkUploadFile(file, context, options);
+  if (!result.ok) return result;
+  let bytes;
+  try {
+    bytes = await readHead(file, 16);
+  } catch {
+    return result;
+  }
+  if (sniffMediaKind(bytes) !== result.kind) return { ok: false, error: "Couldn't read this file" };
+  return result;
+}
+
 export const ALLOWED_IMAGE_ACCEPT = 'image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif';
-export const ALLOWED_MEDIA_ACCEPT = 'image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime,.jpg,.jpeg,.png,.webp,.gif,.mp4,.webm,.mov';
+/*
+ * No `.mov` / `video/quicktime`: neither the pipeline nor the server stores
+ * it, so offering it in the picker only led to a file refused after picking.
+ */
+export const ALLOWED_VIDEO_ACCEPT = 'video/mp4,video/webm,video/ogg,.mp4,.webm,.ogv';
+export const ALLOWED_MEDIA_ACCEPT = `${ALLOWED_IMAGE_ACCEPT},${ALLOWED_VIDEO_ACCEPT}`;
 
 /**
  * Storage folder prefixes classified as covered avatar, cover, banner, or thumbnail image types.

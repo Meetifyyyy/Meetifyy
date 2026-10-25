@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { uploadFileDirect } from '@shared/utils/mediaPipeline';
+import { uploadFileDirect, isMediaRejection } from '@shared/utils/mediaPipeline';
+import { VOICE_NOTE_MAX_BYTES, VOICE_NOTE_MAX_MS, VOICE_NOTE_SIZE_MESSAGE } from '@shared/constants/mediaLimits';
 
 /**
  * Voice-note recording built on the native MediaRecorder API, with a live
@@ -68,12 +69,49 @@ export const WAVEFORM_SAMPLES = 72;
 // waveform interpolates across to scroll continuously between samples.
 export const PUSH_INTERVAL_MS = 40;
 
-const MAX_RECORDING_MS = 5 * 60 * 1000;
+const MAX_RECORDING_MS = VOICE_NOTE_MAX_MS;
 
-export function useVoiceRecorder({ onSend, showToast, maxDurationMs = MAX_RECORDING_MS } = {}) {
+/** How long before the cap the composer starts counting down. */
+export const RECORDING_WARN_BEFORE_MS = 30 * 1000;
+
+/**
+ * Finished recordings waiting for the person to send or delete them, by the
+ * composer's `keepKey` (one per chat). Memory only, for this session.
+ *
+ * A recording used to be thrown away by everything except a successful send:
+ * reaching the length cap sent it unasked, a failed upload discarded it, a
+ * recorder error discarded it, and leaving the chat discarded it. Now only
+ * Delete does.
+ */
+const keptTakes = new Map();
+
+const revoke = (url) => {
+  if (url) { try { URL.revokeObjectURL(url); } catch (_) { /* already revoked */ } }
+};
+
+/** Drops every kept recording. Called at sign-out: they belong to that account. */
+export function clearKeptVoiceNotes() {
+  for (const take of keptTakes.values()) revoke(take.url);
+  keptTakes.clear();
+}
+
+/** A sendable recording from the chunks collected so far, or null when there are none. */
+function buildTake(chunks, recorderMime, durationSec, reason) {
+  if (!chunks?.length) return null;
+  const mimeType = recorderMime || chunks[0]?.type || 'audio/webm';
+  const blob = new Blob(chunks, { type: mimeType });
+  const file = new File([blob], `voicenote_${Date.now()}.${extForMime(mimeType)}`, { type: mimeType });
+  let url = null;
+  try { url = URL.createObjectURL(file); } catch (_) { /* no preview */ }
+  return { file, url, durationSec, reason };
+}
+
+export function useVoiceRecorder({ onSend, showToast, maxDurationMs = MAX_RECORDING_MS, keepKey = null } = {}) {
   const [isRecording, setIsRecording] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
+  // A stopped recording held for the person: { file, url, durationSec, reason }.
+  const [take, setTakeState] = useState(() => (keepKey && keptTakes.get(keepKey)) || null);
 
   const recorderRef = useRef(null);
   const streamRef = useRef(null);
@@ -91,16 +129,36 @@ export function useVoiceRecorder({ onSend, showToast, maxDurationMs = MAX_RECORD
   const levelRafRef = useRef(null);
 
   const uploadAbortRef = useRef(null);
-  // Set to sendRecording below; lets the max-duration cap stop the recording.
-  const stopAndSendRef = useRef(null);
   const cancelledRef = useRef(false);
   const mountedRef = useRef(true);
   const toastRef = useRef(showToast);
   toastRef.current = showToast;
+  const onSendRef = useRef(onSend);
+  onSendRef.current = onSend;
+  const takeRef = useRef(take);
+  const keepKeyRef = useRef(keepKey);
 
   const notify = useCallback((msg) => {
     if (toastRef.current) toastRef.current(msg);
   }, []);
+
+  /** Holds `next` as the pending recording, for this chat, in state and in the session store. */
+  const setTake = useCallback((next) => {
+    takeRef.current = next;
+    const key = keepKeyRef.current;
+    if (key) {
+      if (next) keptTakes.set(key, next);
+      else keptTakes.delete(key);
+    }
+    if (mountedRef.current) setTakeState(next);
+  }, []);
+
+  /** Forgets the pending recording and frees its preview. */
+  const discardTake = useCallback(() => {
+    const current = takeRef.current;
+    setTake(null);
+    revoke(current?.url);
+  }, [setTake]);
 
   const stopLevelLoop = useCallback(() => {
     if (levelRafRef.current) {
@@ -153,15 +211,72 @@ export function useVoiceRecorder({ onSend, showToast, maxDurationMs = MAX_RECORD
     chunksRef.current = [];
   }, [clearTimer, teardownAudioGraph, releaseStream]);
 
+  /** Seconds recorded so far, never past the cap. */
+  const elapsedSeconds = useCallback(() => {
+    const capSec = maxDurationMs > 0 ? Math.round(maxDurationMs / 1000) : Infinity;
+    return Math.min(capSec, Math.max(1, Math.round((Date.now() - startedAtRef.current) / 1000)));
+  }, [maxDurationMs]);
+
+  /**
+   * Ends a recording that is still running, synchronously, as a kept take
+   * built from what has been captured (the recorder flushes every 250 ms, so
+   * at most that much of the tail is missing). For the paths that cannot wait
+   * for `onstop`: leaving the chat, unmounting.
+   */
+  const keepRunningRecording = useCallback((reason) => {
+    const recorder = recorderRef.current;
+    if (!recorder || cancelledRef.current) return null;
+    return buildTake(chunksRef.current, recorder.mimeType, elapsedSeconds(), reason);
+  }, [elapsedSeconds]);
+
   useEffect(() => {
     mountedRef.current = true;
     return () => {
+      // A recording still running when the composer goes away is kept for this
+      // chat, not thrown away; so is one whose upload this unmount interrupts.
+      const running = keepRunningRecording('left');
+      const key = keepKeyRef.current;
+      if (running && key) keptTakes.set(key, running);
+      else revoke(running?.url);
       mountedRef.current = false;
       cancelledRef.current = true;
       uploadAbortRef.current?.abort();
       cleanup();
     };
-  }, [cleanup]);
+  }, [cleanup, keepRunningRecording]);
+
+  /*
+   * The composer is not remounted per chat, so a different `keepKey` means the
+   * person switched chats under it. Whatever they recorded stays with the chat
+   * it was recorded in, and the new chat shows its own (if any).
+   *
+   * Except a new conversation getting its real id on its first send: that is
+   * the same thread, and its recording moves with it.
+   */
+  useEffect(() => {
+    const previous = keepKeyRef.current;
+    if (previous === keepKey) return;
+    keepKeyRef.current = keepKey;
+    if (typeof previous === 'string' && previous.startsWith('chat:draft_') && keepKey) {
+      keptTakes.delete(previous);
+      if (takeRef.current) keptTakes.set(keepKey, takeRef.current);
+      return;
+    }
+    const running = keepRunningRecording('left');
+    cancelledRef.current = true;
+    uploadAbortRef.current?.abort();
+    uploadAbortRef.current = null;
+    cleanup();
+    const leaving = running || takeRef.current;
+    if (previous && leaving) keptTakes.set(previous, leaving);
+    else if (running) revoke(running.url);
+    const arriving = (keepKey && keptTakes.get(keepKey)) || null;
+    takeRef.current = arriving;
+    setTakeState(arriving);
+    setIsRecording(false);
+    setIsUploading(false);
+    setRecordingTime(arriving ? arriving.durationSec : 0);
+  }, [keepKey, keepRunningRecording, cleanup]);
 
   /** Samples the analyser once per frame into the ring buffer. */
   const startLevelLoop = useCallback(() => {
@@ -207,8 +322,92 @@ export function useVoiceRecorder({ onSend, showToast, maxDurationMs = MAX_RECORD
     levelRafRef.current = requestAnimationFrame(tick);
   }, []);
 
+  /**
+   * Uploads a kept recording and hands it to `onSend`. On any failure the
+   * recording stays, so Send tries again with the same file; only a success
+   * (or Delete) lets it go.
+   */
+  const uploadTake = useCallback(async (pending) => {
+    if (!pending || uploadAbortRef.current) return;
+    if (pending.file.size > VOICE_NOTE_MAX_BYTES) {
+      notify(VOICE_NOTE_SIZE_MESSAGE);
+      return;
+    }
+    const controller = new AbortController();
+    uploadAbortRef.current = controller;
+    cancelledRef.current = false;
+    if (mountedRef.current) setIsUploading(true);
+    try {
+      const uploadRes = await uploadFileDirect(
+        pending.file,
+        'voice',
+        null,
+        controller.signal,
+        null,
+        { duration: pending.durationSec },
+      );
+      const publicUrl = uploadRes?.publicUrl || uploadRes?.url;
+      if (controller.signal.aborted) return;
+      if (!publicUrl) throw new Error('Upload returned no URL');
+      if (takeRef.current === pending) discardTake();
+      onSendRef.current?.(publicUrl, 'audio', pending.durationSec);
+    } catch (err) {
+      if (err?.name === 'AbortError' || controller.signal.aborted) return;
+      console.error('Failed to upload voice note:', err);
+      notify(isMediaRejection(err) ? err.message : "Couldn't send voice note. Tap send to try again.");
+    } finally {
+      if (uploadAbortRef.current === controller) uploadAbortRef.current = null;
+      if (mountedRef.current) setIsUploading(false);
+    }
+  }, [notify, discardTake]);
+
+  /**
+   * Stops the running recording. `send` uploads it straight away; `keep`
+   * holds it for the person to play, send or delete.
+   */
+  const finishRecording = useCallback((mode, reason = null) => {
+    const recorder = recorderRef.current;
+    if (!recorder) return;
+    const durationSec = elapsedSeconds();
+    clearTimer();
+    // Stop the analyser immediately so the bars freeze the moment the user
+    // hits send, while the recorder finishes flushing its last chunk.
+    teardownAudioGraph();
+    setIsRecording(false);
+    setRecordingTime(durationSec);
+
+    const finalize = () => {
+      recorderRef.current = null;
+      releaseStream();
+      const chunks = chunksRef.current;
+      chunksRef.current = [];
+      if (cancelledRef.current) return;
+      const next = buildTake(chunks, recorder.mimeType, durationSec, reason);
+      if (!next) {
+        notify('Recording was too short.');
+        return;
+      }
+      setTake(next);
+      if (mode === 'send') uploadTake(next);
+    };
+
+    if (recorder.state === 'inactive') {
+      finalize();
+    } else {
+      recorder.onstop = finalize;
+      try {
+        recorder.stop();
+      } catch (err) {
+        console.error('Failed to stop recorder:', err);
+        finalize();
+      }
+    }
+  }, [elapsedSeconds, clearTimer, teardownAudioGraph, releaseStream, notify, setTake, uploadTake]);
+
   const startRecording = useCallback(async () => {
-    if (isRecording || isUploading) return;
+    // A kept recording is sent or deleted first: starting over must not
+    // silently replace it.
+    if (isRecording || isUploading || takeRef.current) return;
 
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
       notify('Voice recording is not supported in this browser.');
@@ -251,13 +450,19 @@ export function useVoiceRecorder({ onSend, showToast, maxDurationMs = MAX_RECORD
       };
       recorder.onerror = (event) => {
         console.error('MediaRecorder error:', event.error || event);
+        // What was captured before the failure is kept, not thrown away.
+        const salvaged = keepRunningRecording('error');
         cancelledRef.current = true;
         cleanup();
-        if (mountedRef.current) {
-          setIsRecording(false);
-          setRecordingTime(0);
+        if (mountedRef.current) setIsRecording(false);
+        if (salvaged) {
+          setTake(salvaged);
+          if (mountedRef.current) setRecordingTime(salvaged.durationSec);
+          notify('Recording stopped. What was recorded is kept.');
+        } else {
+          if (mountedRef.current) setRecordingTime(0);
+          notify('Recording stopped unexpectedly.');
         }
-        notify('Recording stopped unexpectedly.');
       };
 
       // Timeslice keeps chunks flowing so a crash/cancel never strands a single
@@ -295,12 +500,14 @@ export function useVoiceRecorder({ onSend, showToast, maxDurationMs = MAX_RECORD
       clearTimer();
       timerRef.current = setInterval(() => {
         const elapsed = Date.now() - startedAtRef.current;
-        setRecordingTime(Math.floor(elapsed / 1000));
+        setRecordingTime(Math.min(Math.floor(elapsed / 1000), Math.round(maxDurationMs / 1000)));
+        /*
+         * At the cap the recording STOPS and is kept. It used to be sent
+         * unasked; whether a five-minute note goes out is the person's call.
+         * The composer says why it stopped (`take.reason === 'limit'`).
+         */
         if (maxDurationMs > 0 && elapsed >= maxDurationMs) {
-          clearTimer();
-          notify('Maximum recording length reached.');
-          // Defer so the state update above commits before the stop path runs.
-          stopAndSendRef.current?.();
+          finishRecording('keep', 'limit');
         }
       }, 200);
     } catch (err) {
@@ -309,7 +516,7 @@ export function useVoiceRecorder({ onSend, showToast, maxDurationMs = MAX_RECORD
       setIsRecording(false);
       notify('Could not start recording.');
     }
-  }, [isRecording, isUploading, notify, cleanup, clearTimer, startLevelLoop, maxDurationMs]);
+  }, [isRecording, isUploading, notify, cleanup, clearTimer, startLevelLoop, maxDurationMs, finishRecording, keepRunningRecording, setTake]);
 
   /** Discards the recording (and any in-flight upload) without sending. */
   const deleteRecording = useCallback(() => {
@@ -317,90 +524,18 @@ export function useVoiceRecorder({ onSend, showToast, maxDurationMs = MAX_RECORD
     uploadAbortRef.current?.abort();
     uploadAbortRef.current = null;
     cleanup();
+    discardTake();
     setIsRecording(false);
     setIsUploading(false);
     setRecordingTime(0);
-  }, [cleanup]);
+  }, [cleanup, discardTake]);
 
+  /** Sends the running recording, or the kept one. */
   const sendRecording = useCallback(() => {
-    const recorder = recorderRef.current;
-    if (!recorder || isUploading) return;
-
-    const durationSec = Math.max(1, Math.round((Date.now() - startedAtRef.current) / 1000));
-
-    clearTimer();
-    // Stop the analyser immediately so the bars freeze the moment the user
-    // hits send, while the recorder finishes flushing its last chunk.
-    teardownAudioGraph();
-    setIsRecording(false);
-
-    const finalize = async () => {
-      recorderRef.current = null;
-      releaseStream();
-
-      const chunks = chunksRef.current;
-      chunksRef.current = [];
-
-      if (cancelledRef.current) return;
-      if (!chunks.length) {
-        notify('Recording was too short.');
-        if (mountedRef.current) setIsUploading(false);
-        return;
-      }
-
-      const mimeType = recorder.mimeType || chunks[0]?.type || 'audio/webm';
-      const audioBlob = new Blob(chunks, { type: mimeType });
-      const audioFile = new File(
-        [audioBlob],
-        `voicenote_${Date.now()}.${extForMime(mimeType)}`,
-        { type: mimeType },
-      );
-
-      const controller = new AbortController();
-      uploadAbortRef.current = controller;
-      if (mountedRef.current) setIsUploading(true);
-
-      try {
-        const uploadRes = await uploadFileDirect(
-          audioFile,
-          'voice',
-          null,
-          controller.signal,
-          null,
-          { duration: durationSec },
-        );
-        const publicUrl = uploadRes?.publicUrl || uploadRes?.url;
-        if (cancelledRef.current) return;
-
-        if (publicUrl) {
-          onSend?.(publicUrl, 'audio', durationSec);
-        } else {
-          throw new Error('Upload returned no URL');
-        }
-      } catch (err) {
-        if (err?.name === 'AbortError' || cancelledRef.current) return;
-        console.error('Failed to upload voice note:', err);
-        notify('Could not send voice note. Please try again.');
-      } finally {
-        uploadAbortRef.current = null;
-        if (mountedRef.current) setIsUploading(false);
-      }
-    };
-
-    if (recorder.state === 'inactive') {
-      finalize();
-    } else {
-      recorder.onstop = finalize;
-      try {
-        recorder.stop();
-      } catch (err) {
-        console.error('Failed to stop recorder:', err);
-        finalize();
-      }
-    }
-  }, [isUploading, clearTimer, teardownAudioGraph, releaseStream, notify, onSend]);
-
-  stopAndSendRef.current = sendRecording;
+    if (uploadAbortRef.current) return;
+    if (recorderRef.current) finishRecording('send');
+    else if (takeRef.current) uploadTake(takeRef.current);
+  }, [finishRecording, uploadTake]);
 
   const formatDuration = useCallback((secs) => {
     const safe = Math.max(0, Math.floor(Number(secs) || 0));
@@ -409,6 +544,7 @@ export function useVoiceRecorder({ onSend, showToast, maxDurationMs = MAX_RECORD
     return `${m}:${s}`;
   }, []);
 
+  const maxSeconds = Math.round(maxDurationMs / 1000);
   return {
     isRecording,
     isUploading,
@@ -419,5 +555,12 @@ export function useVoiceRecorder({ onSend, showToast, maxDurationMs = MAX_RECORD
     formatDuration,
     // Read by the live waveform canvas on each animation frame.
     levelsRef,
+    /** The stopped recording waiting to be sent or deleted, or null. */
+    take,
+    maxSeconds,
+    /** Seconds left before the cap, once the countdown should show; else null. */
+    secondsLeft: isRecording && maxDurationMs > 0 && recordingTime >= maxSeconds - RECORDING_WARN_BEFORE_MS / 1000
+      ? Math.max(0, maxSeconds - recordingTime)
+      : null,
   };
 }
