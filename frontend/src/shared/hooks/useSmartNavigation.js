@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useLocation, useNavigationType } from 'react-router-dom';
 import { overlayManager } from '@shared/services/OverlayManager';
 import { createBrowserHistoryMirror, isUsableIdx } from '@shared/lib/navigation/browserHistoryMirror';
+import { closePage } from '@shared/lib/navigation/pageTransition';
 
 /**
  * Back-navigation core.
@@ -253,7 +254,9 @@ export function useSmartNavigation() {
       //    allowed to shrink, so the two can never disagree.
       const plan = mirror.planBack({ idx: currentIdx(), fallbackRoute: fallbackPath });
       if (plan.go) {
-        navigate(plan.go);
+        // A page opened with the shared open motion closes with it; any other
+        // page steps back plainly (see shared/lib/navigation/pageTransition.js).
+        closePage(() => navigate(plan.go));
         return;
       }
 

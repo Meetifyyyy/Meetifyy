@@ -4,6 +4,7 @@ import { BellIcon as BellSolid } from '@heroicons/react/24/solid';
 import NavIcon from '@layout/NavIcon';
 import { useUnreadNotificationCount } from '../../../shared/hooks/useNotifications';
 import styles from './NotificationBell.module.css';
+import { usePageTransition } from '@shared/hooks/usePageTransition';
 
 export default function NotificationBell() {
   // The count alone. `useNotifications()` also mounts the infinite feed query,
@@ -13,10 +14,13 @@ export default function NotificationBell() {
   const unreadCount = useUnreadNotificationCount();
   const location = useLocation();
   const isActive = location.pathname.startsWith('/notifications');
+  // In the app the page slides in over this one (shared/lib/navigation/pageTransition.js).
+  const { openFromLink } = usePageTransition();
 
   return (
     <Link
       to="/notifications"
+      onClick={(e) => openFromLink(e, '/notifications')}
       className={`${styles.bellWrapper} ${isActive ? styles.active : ''}`}
       aria-label={unreadCount > 0 ? 'Notifications, new' : 'Notifications'}
     >

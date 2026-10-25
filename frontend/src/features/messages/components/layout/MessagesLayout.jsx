@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { usePageTransition } from '@shared/hooks/usePageTransition';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@shared/context/AuthContext';
 import { usersApi } from '@shared/api/apiClient';
@@ -43,6 +44,9 @@ const MESSAGES_BASE = '/messages';
 export default function MessagesLayout() {
   const { param1, param2 } = useParams();
   const navigate = useNavigate();
+  // In the app a chat slides in over the list and back out on Back
+  // (shared/lib/navigation/pageTransition.js).
+  const { open: openPage } = usePageTransition();
   const location = useLocation();
   const queryClient = useQueryClient();
   const goBack = useSmartBack();
@@ -173,7 +177,7 @@ export default function MessagesLayout() {
     // PUSH, not replace. Opening a conversation is a navigation the user can
     // back out of; replacing here is what made browser Back leave Messages
     // entirely instead of returning to the conversation list.
-    navigate(targetPath, { state: location.state });
+    openPage(targetPath, { state: location.state });
   };
 
   const [searchVal, setSearchVal] = useState('');

@@ -53,6 +53,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(SystemUiPlugin.class);
         registerPlugin(InstagramStoriesPlugin.class);
         registerPlugin(ThemeRevealPlugin.class);
+        registerPlugin(PageTransitionPlugin.class);
         registerPlugin(PushSupportPlugin.class);
         registerPlugin(MediaFullscreenPlugin.class);
 

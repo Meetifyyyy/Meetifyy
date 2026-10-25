@@ -60,6 +60,9 @@ import { createNativeThemeRevealDriver } from '../platform/capacitor/themeReveal
 import { createNativeMediaFullscreenDriver } from '../platform/capacitor/mediaFullscreen';
 import { setMediaFullscreenDriver } from '@shared/lib/mediaFullscreen';
 import { setThemeTransitionDriver } from '@shared/theme/themeTransition';
+import { createNativePageTransitionDriver } from '../platform/capacitor/pageTransition';
+import { closePage, setPageTransitionDriver } from '@shared/lib/navigation/pageTransition';
+import PageTransitionSignal from './PageTransitionSignal';
 import { installSystemBars } from './installSystemBars';
 import { readPageEdgeColors } from './pageEdgeColors';
 import { createCapacitorDeepLinks } from '../platform/capacitor/deepLinks';
@@ -156,7 +159,10 @@ if (typeof document !== 'undefined') {
  * Never unsubscribed, and that is correct: it lives exactly as long as the app
  * does, and there is no unmount to clean up after.
  */
-installNativeBackButton(createCapacitorBackButton());
+installNativeBackButton(createCapacitorBackButton(), {
+  // A page opened with the shared open motion closes with it (see below).
+  goBack: () => closePage(() => window.history.back()),
+});
 
 /**
  * The phone's system bars, continued from the page.
@@ -178,6 +184,12 @@ installSystemBars(systemBars, { readEdges: readPageEdgeColors });
 // The theme switch's reveal, drawn by the shell where it can be (see
 // platform/capacitor/themeReveal.js); the same circle as the website's.
 setThemeTransitionDriver(createNativeThemeRevealDriver());
+
+// Pages opened with `usePageTransition` open over the page beneath, by sliding
+// in or opening out of the centre (the page picks), and close the same way on
+// Back, drawn by the shell (see platform/capacitor/pageTransition.js).
+// Null where it cannot draw them, and pages then navigate plainly.
+setPageTransitionDriver(createNativePageTransitionDriver());
 
 // The video player's fullscreen: bars hidden and the screen turned by the
 // shell (see platform/capacitor/mediaFullscreen.js), since the WebView's own
@@ -209,7 +221,13 @@ const deepLinks = createCapacitorDeepLinks({
  */
 const push = createCapacitorPush();
 setPushService(push);
-const deepLinkNavigator = <DeepLinkNavigator deepLinks={deepLinks} push={push} />;
+// With the page transition's commit signal beside it: both need the router.
+const rootExtras = (
+  <>
+    <DeepLinkNavigator deepLinks={deepLinks} push={push} />
+    <PageTransitionSignal />
+  </>
+);
 
 function safeHost(url) {
   try {
@@ -296,7 +314,7 @@ createRoot(document.getElementById('root')).render(
                   behind it, making requests.
                 */}
                 <UpdateGate>
-                  <App homeElement={<AppOpenScreen />} rootExtras={deepLinkNavigator} />
+                  <App homeElement={<AppOpenScreen />} rootExtras={rootExtras} />
                 </UpdateGate>
                 <MediaViewerHost />
               </UsersMapProvider>

@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
+import { usePageTransition } from '@shared/hooks/usePageTransition';
 import { useProfile } from '@shared/hooks/useProfile';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
@@ -69,6 +70,9 @@ export default function Header({ variant = 'dashboard', wide = false }) {
     return () => document.removeEventListener('keydown', onKey);
   }, [drawerOpen]);
   const navigate = useNavigate();
+  // In the app, Settings and Search slide in over the current page
+  // (shared/lib/navigation/pageTransition.js); plain navigations on the website.
+  const { open: openPage } = usePageTransition();
   const location = useLocation();
   const activeTab = location.pathname.startsWith('/messages') ? 'messages' : '';
 
@@ -180,9 +184,9 @@ export default function Header({ variant = 'dashboard', wide = false }) {
   }, [navigate, username, location.pathname]);
 
   const openSettingsFromDrawer = useCallback(() => {
-    navigate('/settings');
-    setDrawerOpen(false);
-  }, [navigate]);
+    // The drawer closes with the navigation, under the incoming page.
+    openPage('/settings', {}, { onNavigate: () => setDrawerOpen(false) });
+  }, [openPage]);
 
   const [profileWanted, setProfileWanted] = useState(false);
   useEffect(() => {
@@ -397,7 +401,7 @@ export default function Header({ variant = 'dashboard', wide = false }) {
           <button
             type="button"
             className={styles.mobileSearchBtn}
-            onClick={() => navigate('/search', { state: { autoFocus: true } })}
+            onClick={() => openPage('/search', { state: { autoFocus: true } })}
             aria-label="Search"
           >
             <MagnifyingGlassIcon className={styles.headerIcon} strokeWidth={1.75} />

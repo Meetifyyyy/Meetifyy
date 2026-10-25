@@ -5,6 +5,7 @@ import { useMyCommunities } from '@shared/hooks/useCommunities';
 import { useAppIdle } from '@shared/hooks/useAppIdle';
 import CommunityAvatar from '@features/communities/components/directory/CommunityAvatar';
 import styles from './CommunitiesBox.module.css';
+import { usePageTransition } from '@shared/hooks/usePageTransition';
 
 /**
  * The collapsible "Communities" list in the desktop sidebar and the mobile
@@ -23,6 +24,8 @@ export default function CommunitiesBox({ onItemClick, className = '' }) {
   const appIdle = useAppIdle();
   const prime = () => setPrimed(true);
   const { myCommunities, isLoading } = useMyCommunities({ enabled: isOpen || primed || appIdle });
+  const { openFromLink } = usePageTransition();
+  const allCommunitiesPath = myCommunities.length > 0 ? '/communities' : '/communities?tab=explore';
   const toggle = () => setIsOpen((open) => !open);
 
   return (
@@ -59,9 +62,14 @@ export default function CommunitiesBox({ onItemClick, className = '' }) {
           )}
 
           <Link
-            to={myCommunities.length > 0 ? '/communities' : '/communities?tab=explore'}
+            to={allCommunitiesPath}
             className={styles.exploreMore}
-            onClick={onItemClick}
+            // In the app the page slides in over the drawer, which then closes
+            // out of sight underneath it; on the website a plain link.
+            onClick={(e) => {
+              openFromLink(e, allCommunitiesPath, undefined, { onNavigate: onItemClick });
+              if (!e.defaultPrevented) onItemClick?.(e);
+            }}
           >
             <Users size={18} className={styles.exploreIcon} aria-hidden="true" />
             <span>{myCommunities.length > 0 ? 'All communities' : 'Explore communities'}</span>
