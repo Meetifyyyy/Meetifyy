@@ -6,6 +6,7 @@ import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { useAuth } from '@shared/context/AuthContext';
 
 import Avatar from '@shared/components/avatar/Avatar';
+import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
 import Skeleton from '@shared/components/skeletons/Skeleton';
 import sharedStyles from '../components/skeletons/CampusShared.module.css';
 import pageStyles from './DirectoryPage.module.css';
@@ -191,8 +192,12 @@ const DirectoryCard = memo(function DirectoryCard({ user, courses, onSelect, isS
         thumbnail
       />
       <div className={`${styles.cardText} ${isSelf ? styles.cardTextSelf : ''}`}>
-        <h4 className={styles.cardName}>
-          {isSelf ? `${user.displayName} (You)` : user.displayName}
+        {/* The name gives way to the badge and "(You)", never the other way
+            round: a long name ends in an ellipsis, the rest stays whole. */}
+        <h4 className={styles.cardNameRow} title={user.displayName || undefined}>
+          <span className={styles.cardName}>{user.displayName}</span>
+          {isSelf && <span className={styles.cardNameYou}>(You)</span>}
+          <CollegeRepresentativeBadge isCampusRep={user.isCampusRep} user={user} size="sm" />
         </h4>
         <p className={styles.cardSubtitle}>
           {summary || 'Campus Member'}

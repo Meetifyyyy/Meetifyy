@@ -652,15 +652,15 @@ export class UsersService {
     const directoryWhere = where;
 
     // Exactly the columns a directory card paints: the avatar, the name it is
-    // labelled with, the username the card links to, and the three academic
-    // fields its subtitle is built from. `createdAt` is selected for the keyset
-    // cursor and stripped from the response below.
+    // labelled with (and the campus representative badge beside it), the
+    // username the card links to, and the three academic fields its subtitle
+    // is built from. `createdAt` is selected for the keyset cursor and
+    // stripped from the response below.
     //
     // What is deliberately absent used to be selected and shipped: `bio` (a
     // free-text column the card never renders, and the largest thing on the
     // row), `collegeId` (identical on every row by construction — the query is
-    // already scoped to one college), `isCampusRep` (no badge on this card),
-    // and `settings`, which is the other person's *privacy configuration*:
+    // already scoped to one college), and `settings`, which is the other person's *privacy configuration*:
     // `whoCanSeeOnline` and `showOnlineStatus` were being handed to every
     // viewer who opened the directory.
     const rows = await this.prisma.user.findMany({
@@ -671,6 +671,7 @@ export class UsersService {
         username: true,
         displayName: true,
         avatar: true,
+        isCampusRep: true,
         course: true,
         branch: true,
         passingYear: true,
@@ -715,6 +716,7 @@ export class UsersService {
             displayName: u.displayName,
             username: null,
             avatar: null,
+            isCampusRep: false,
             course: null,
             branch: null,
             passingYear: null,

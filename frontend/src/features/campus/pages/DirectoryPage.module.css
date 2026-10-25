@@ -359,7 +359,27 @@
   justify-content: center;
 }
 
+/* Name, "(You)" and the representative badge on one line. Only the name
+   shrinks: min-width 0 lets it ellipsize inside the flex row. */
+.cardNameRow {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+}
+
+.cardNameYou {
+  flex: none;
+  font-size: 1.05rem;
+  font-weight: 500;
+  color: var(--color-text-main);
+  white-space: nowrap;
+}
+
 .cardName {
+  min-width: 0;
   margin: 0;
   font-size: 1.05rem;
   font-weight: 500;
@@ -488,7 +508,12 @@
   text-align: center;
 }
 
-.directoryCard .cardName {
+.directoryCard .cardNameRow {
+  justify-content: center;
+}
+
+.directoryCard .cardName,
+.directoryCard .cardNameYou {
   font-size: 0.75rem;
   line-height: 1.2;
 }
