@@ -10,6 +10,7 @@
   --cf-line: var(--color-border);
   --cf-good: var(--color-success, #10b981);
   --cf-bad: var(--color-danger, #ef4444);
+  --cf-warn: var(--color-warning, #f59e0b);
 
   display: flex;
   flex-direction: column;
@@ -172,20 +173,21 @@
 .status[data-tone='bad'] .statusDot { opacity: 1; }
 .status[data-tone='busy'] .statusDot { animation: blink 0.9s ease-in-out infinite alternate; }
 
+/* Advice, not an error: the field keeps its own state colour. */
+.warn {
+  margin: 8px 4px 0;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--cf-warn) 12%, transparent);
+  color: var(--cf-ink);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
 /* ---- Suggestions ------------------------------------------------------------ */
 
 .suggest {
   margin-top: 14px;
-}
-
-.suggestLabel {
-  display: block;
-  margin-bottom: 8px;
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--cf-soft);
 }
 
 .chips {

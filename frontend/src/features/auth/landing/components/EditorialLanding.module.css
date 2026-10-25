@@ -170,7 +170,6 @@
 .sectionNo {
   font-size: 0.85rem;
   font-weight: 700;
-  font-variant-numeric: tabular-nums;
   color: var(--brand);
 }
 

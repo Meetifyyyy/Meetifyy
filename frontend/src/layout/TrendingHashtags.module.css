@@ -33,7 +33,6 @@
   font-weight: 600;
   color: var(--color-text-muted);
   text-align: right;
-  font-variant-numeric: tabular-nums;
 }
 
 .text {

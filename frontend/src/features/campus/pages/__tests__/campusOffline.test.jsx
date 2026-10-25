@@ -36,6 +36,7 @@ vi.mock('@shared/hooks/useCampusEvents', () => ({
   }),
   useDeleteCampusEvent: () => ({ mutateAsync: vi.fn() }),
 }));
+vi.mock('@shared/hooks/useConfessions', () => ({ usePrefetchConfessions: () => vi.fn() }));
 vi.mock('@shared/hooks/useCrew', () => ({
   useActivities: () => ({ activities: h.activities.value, isLoading: false }),
 }));

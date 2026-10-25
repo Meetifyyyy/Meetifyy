@@ -9,6 +9,7 @@ import {
   prettyFormatters,
   requestLogCause,
   requestUserId,
+  isAnonymousRoute,
 } from './log-format';
 
 /**
@@ -114,6 +115,23 @@ describe('request readers', () => {
   it('reads the user id from either request shape', () => {
     expect(requestUserId(express)).toBe('user-1');
     expect(requestUserId({ raw: express })).toBe('user-1');
+  });
+
+  it('never names the user on an anonymous confessions route', () => {
+    for (const url of [
+      '/api/confessions',
+      '/api/confessions/8d0f0c52-0000-4000-8000-000000000000',
+      '/api/confessions/handle-availability?handle=quiet.fox',
+    ]) {
+      const req = { url, originalUrl: url, user: { id: 'user-1' } };
+      expect(requestUserId(req)).toBeUndefined();
+      expect(requestUserId({ raw: req })).toBeUndefined();
+    }
+    // Only that prefix: a similarly named route is not anonymous.
+    expect(
+      requestUserId({ url: '/api/confessionsx', user: { id: 'user-1' } }),
+    ).toBe('user-1');
+    expect(isAnonymousRoute('/api/posts/1')).toBe(false);
   });
 
   it('reads the parked refusal cause from either request shape', () => {

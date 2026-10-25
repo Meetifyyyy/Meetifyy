@@ -952,7 +952,6 @@
   font-weight: var(--font-weight-semibold);
   color: var(--color-text-main);
   line-height: var(--leading-tight);
-  font-variant-numeric: tabular-nums;
 }
 
 .statLabel {

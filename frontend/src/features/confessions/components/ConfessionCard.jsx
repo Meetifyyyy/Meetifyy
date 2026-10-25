@@ -18,7 +18,7 @@ function sizeOf(text) {
  * sit quietly above, and the only control in view is Relate. Report and Delete
  * live in the overflow menu.
  */
-function ConfessionCard({ confession, onRelate, onReport, onDelete, index = 0 }) {
+function ConfessionCard({ confession, onRelate, onReport, onDelete, enter = false }) {
   const { id, handle, content, createdAt, relateCount = 0, relatedByMe = false, isMine = false } = confession;
   const menu = useMenu();
   const bodyRef = useRef(null);
@@ -39,16 +39,15 @@ function ConfessionCard({ confession, onRelate, onReport, onDelete, index = 0 })
 
   return (
     <article
-      className={styles.card}
-      style={{ '--enter-delay': `${Math.min(index, 6) * 50}ms` }}
+      className={enter ? `${styles.card} ${styles.cardEnter}` : styles.card}
       aria-label={`Confession by @${handle}`}
     >
       <header className={styles.cardHead}>
-        <HandleMark handle={handle} size={32} />
+        <HandleMark handle={handle} size={40} artSize={32} />
         <div className={styles.byline}>
-          <span className={styles.handle}>@{handle}</span>
-          {isMine && <span className={styles.youTag}>You</span>}
-          <span className={styles.dot} aria-hidden="true">·</span>
+          <span className={styles.bylineName}>
+            <span className={styles.handle}>@{handle}</span>
+          </span>
           <time className={styles.time} dateTime={createdAt}>{timeAgo(createdAt)}</time>
         </div>
         <button {...menu.triggerProps} className={styles.more} aria-label="More options">

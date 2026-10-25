@@ -39,8 +39,39 @@ export function fromRequest(
   return read(req) ?? read(isRecord(req) ? req.raw : undefined);
 }
 
-/** The authenticated user's id, from either request shape. */
+/**
+ * Routes whose whole point is that nobody can tell who made the request.
+ *
+ * A log line, error record or slow-request row naming the account beside
+ * `DELETE /api/confessions/<id>` (or a confession's body, or the handle being
+ * checked) is the account-to-handle link that the API itself never discloses,
+ * kept somewhere admins and log tooling can read it. For these routes the user
+ * id and request body are left out of every diagnostic record.
+ */
+const ANONYMOUS_ROUTE_PREFIXES = ['/api/confessions'];
+
+export function isAnonymousRoute(url: string | undefined): boolean {
+  if (!url) return false;
+  const path = url.split('?')[0];
+  return ANONYMOUS_ROUTE_PREFIXES.some(
+    (prefix) => path === prefix || path.startsWith(`${prefix}/`),
+  );
+}
+
+/** The request's own path and query, from either request shape. */
+function requestUrl(req: unknown): string | undefined {
+  return fromRequest(
+    req,
+    (r) => stringField(r, 'originalUrl') ?? stringField(r, 'url'),
+  );
+}
+
+/**
+ * The authenticated user's id, from either request shape — or nothing on an
+ * anonymous route (see isAnonymousRoute).
+ */
 export function requestUserId(req: unknown): string | undefined {
+  if (isAnonymousRoute(requestUrl(req))) return undefined;
   return fromRequest(req, (r) =>
     stringField(isRecord(r) ? r.user : undefined, 'id'),
   );

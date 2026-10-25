@@ -8,7 +8,12 @@ import {
 } from '@nestjs/common';
 import { Response, Request } from 'express';
 import * as Sentry from '@sentry/nestjs';
-import { httpLine, LOG_CAUSE } from '../logging/log-format';
+import {
+  httpLine,
+  isAnonymousRoute,
+  LOG_CAUSE,
+  requestUserId,
+} from '../logging/log-format';
 import type { ErrorLogRecorder } from '../../observability/error-log.recorder';
 import { requestIdOf } from '../rate-limit/rate-limit.response';
 import { isRecord } from '../utils/type-guards.util';
@@ -134,8 +139,13 @@ export class HttpExceptionFilter implements ExceptionFilter {
         ? exception.getResponse()
         : 'Internal server error';
 
+    // On an anonymous route the account and the body (a confession, a handle)
+    // stay out of every record below: see isAnonymousRoute.
+    const anonymous = isAnonymousRoute(request.originalUrl || request.url);
+    const userId = requestUserId(request);
+
     let bodySnippet = '';
-    const body: unknown = request.body;
+    const body: unknown = anonymous ? undefined : request.body;
     // A text body counts as non-empty too, as it did via Object.keys.
     const hasBody =
       (typeof body === 'object' &&
@@ -162,7 +172,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
           method: request.method,
           url: request.url,
           status,
-          userId: request.user?.id,
+          userId,
           reqId: requestIdOf(request),
           extra: bodySnippet,
           cause,
@@ -235,7 +245,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
           if (requestId) scope.setTag('request_id', requestId);
           const feature = route.split('/').filter(Boolean)[1];
           if (feature) scope.setTag('feature', feature);
-          if (request.user?.id) scope.setUser({ id: request.user.id });
+          if (userId) scope.setUser({ id: userId });
           scope.setContext('request', {
             method: request.method,
             route,
@@ -259,10 +269,12 @@ export class HttpExceptionFilter implements ExceptionFilter {
         name: exception instanceof Error ? exception.name : null,
         stack: appStack(exception, 8) || null,
         requestId: requestIdOf(request) ?? null,
-        userId: request.user?.id ?? null,
+        userId: userId ?? null,
         adminId: request.admin?.id ?? null,
-        ip: clientIp(request),
-        userAgent: headerValue(request, 'user-agent'),
+        // An IP or device string beside a confessions URL identifies the
+        // author as surely as the account id would.
+        ip: anonymous ? null : clientIp(request),
+        userAgent: anonymous ? null : headerValue(request, 'user-agent'),
       });
     } catch {
       // Recording must never turn a handled error into an unhandled one.

@@ -537,7 +537,7 @@
   height: 4px;
   margin: 0 auto 18px;
   border-radius: 999px;
-  background: var(--color-border);
+  background: var(--sheet-handle-color, #94A3B8);
 }
 
 .modalHeader {

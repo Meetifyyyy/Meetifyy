@@ -72,6 +72,13 @@ const PROFILE_REQUIRED = {
   message: 'Choose a confession handle first.',
 };
 
+/**
+ * First key of the two-key advisory lock that serialises one profile's
+ * posting; the second is a hash of the profile id. Distinct from the
+ * single-key locks used elsewhere (admin-legal), which live in another space.
+ */
+const CONFESSION_LOCK_NAMESPACE = 0x0c0f;
+
 /** Reports a moderator has not ruled on yet. */
 const OPEN_REPORT_STATUSES: ReportStatus[] = [
   ReportStatus.PENDING,
@@ -297,31 +304,41 @@ export class ConfessionsService {
       throw new BadRequestException({
         statusCode: 400,
         code: 'content_invalid',
-        message: 'Confessions are 10 to 1000 characters.',
+        message: 'Confessions are 15 to 1000 characters.',
       });
     }
     const profileId = await this.requireProfileId(userId);
     const contentHash = confessionHash(content);
 
-    const duplicate = await this.prisma.confession.findFirst({
-      where: {
-        profileId,
-        contentHash,
-        createdAt: { gte: new Date(Date.now() - DUPLICATE_WINDOW_MS) },
-      },
-      select: { id: true },
-    });
-    if (duplicate) {
-      throw new ConflictException({
-        statusCode: 409,
-        code: 'duplicate_confession',
-        message: 'You already posted this confession.',
+    // The duplicate check and the insert are one step per profile. Checked
+    // and inserted separately, a double tap (or a retry racing its original)
+    // passed the check twice and posted the same confession twice. The lock
+    // is the transaction's, so it is released however the transaction ends.
+    //
+    // This, not an Idempotency-Key, is what makes posting safe to retry: the
+    // idempotency cache would keep the caller's account id beside the
+    // confession it created, which is exactly the link anonymity forbids.
+    const row = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${CONFESSION_LOCK_NAMESPACE}::int4, hashtext(${profileId}))`;
+      const duplicate = await tx.confession.findFirst({
+        where: {
+          profileId,
+          contentHash,
+          createdAt: { gte: new Date(Date.now() - DUPLICATE_WINDOW_MS) },
+        },
+        select: { id: true },
       });
-    }
-
-    const row = await this.prisma.confession.create({
-      data: { collegeId, profileId, content, contentHash },
-      select: CONFESSION_SELECT,
+      if (duplicate) {
+        throw new ConflictException({
+          statusCode: 409,
+          code: 'duplicate_confession',
+          message: 'You already posted this confession.',
+        });
+      }
+      return tx.confession.create({
+        data: { collegeId, profileId, content, contentHash },
+        select: CONFESSION_SELECT,
+      });
     });
     return { confession: this.toDto(row, profileId, false) };
   }

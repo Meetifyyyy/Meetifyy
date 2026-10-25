@@ -1,10 +1,11 @@
-import { useState, useMemo, useLayoutEffect, useCallback, lazy, Suspense, memo } from 'react';
+import { useState, useMemo, useEffect, useLayoutEffect, useCallback, lazy, Suspense, memo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
 import { useCampusAffiliation } from '@shared/hooks/useCampusAffiliation';
 import { useCampusUsers } from '@shared/hooks/useProfile';
 import { useCampusCommunities } from '@shared/hooks/useCommunities';
 import { useCampusEvents, useDeleteCampusEvent } from '@shared/hooks/useCampusEvents';
+import { usePrefetchConfessions } from '@shared/hooks/useConfessions';
 import { showToast } from '@shared/utils/toast';
 import { useSystemBars } from '@shared/hooks/useSystemBars';
 import Avatar from '@shared/components/avatar/Avatar';
@@ -249,6 +250,23 @@ export default function CampusPage() {
   const isChangingCollege = campus.isActive && searchParams.get('verify') === 'change';
   const finishCollegeChange = useCallback(() => navigate('/campus', { replace: true }), [navigate]);
 
+  // Confessions opens from here. Knowing in advance whether the caller has a
+  // name there (one small request, none once it is cached) lets the page open
+  // on the right screen; the press on its tab also starts the first page of
+  // the feed, so the tap lands on confessions rather than placeholders.
+  const prefetchConfessions = usePrefetchConfessions();
+  useEffect(() => {
+    if (!isVerified) return undefined;
+    const warm = () => prefetchConfessions();
+    if (typeof window.requestIdleCallback === 'function') {
+      const id = window.requestIdleCallback(warm, { timeout: 3000 });
+      return () => window.cancelIdleCallback(id);
+    }
+    const t = setTimeout(warm, 1500);
+    return () => clearTimeout(t);
+  }, [isVerified, prefetchConfessions]);
+  const warmConfessionsFeed = useCallback(() => prefetchConfessions({ feed: true }), [prefetchConfessions]);
+
   // The red banner runs up under the status bar (`.headerBanner` starts at the top
   // and pads its content clear of the inset, see CampusShared.module.css), so the strip is clear and
   // the clock sits on the banner. The pick-a-college flow has no banner.
@@ -448,7 +466,12 @@ export default function CampusPage() {
         <div className={styles.stickyNav}>
           {/* First: the row scrolls sideways on a phone, and the newest
               surface would otherwise start off-screen. */}
-          <button className={styles.navTab} onClick={() => navigate('/campus/confessions')}>
+          <button
+            className={styles.navTab}
+            onPointerDown={warmConfessionsFeed}
+            onFocus={warmConfessionsFeed}
+            onClick={() => navigate('/campus/confessions')}
+          >
             <span className={styles.tabEmoji}>🤫</span>
             <span>Confessions</span>
           </button>

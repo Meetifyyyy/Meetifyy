@@ -21,7 +21,6 @@
   --cf-line: var(--color-border);
   --cf-line-soft: var(--color-border-light, var(--color-border));
   --cf-card-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px -16px rgba(15, 23, 42, 0.18);
-  --cf-gutter: clamp(12px, 4vw, 20px);
 
   gap: 0 !important;
   padding: 0 !important;
@@ -46,80 +45,91 @@
   text-align: center;
 }
 
-.spinner {
-  width: 28px;
-  height: 28px;
-  border: 3px solid var(--cf-line);
-  border-top-color: var(--cf-brand);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
 /* ---- Home layout ------------------------------------------------------------ */
 
 .home {
+  /* Held to the same width as the other Campus sections' pages
+     (CampusShared.module.css, .hubContainer), so the header banner lines up
+     with theirs when moving between them. */
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  box-sizing: border-box;
   min-height: calc(100dvh - var(--root-inset-top, 0px) - var(--bottom-nav-clearance, 0px));
   padding-bottom: calc(var(--bottom-nav-clearance, 0px) + 24px);
   color: var(--cf-ink);
 }
 
-.topBar {
-  position: sticky;
-  top: var(--root-inset-top, 0px);
-  z-index: 5;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px var(--cf-gutter);
-  /* Solid, not a backdrop blur: a blur re-samples everything under the bar on
-     every scrolled frame, which the Android WebView pays for in dropped
-     frames on exactly the screen people scroll the most. */
-  background: var(--color-surface-screen, var(--cf-surface));
-  border-bottom: 1px solid var(--cf-line-soft);
-}
-
-.iconBtn {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 38px;
-  height: 38px;
-  padding: 0;
-  border: 1px solid var(--cf-line);
-  border-radius: 12px;
-  background: var(--cf-surface);
-  color: var(--cf-ink);
-  cursor: pointer;
-}
-
-.topTitle {
-  flex: 1;
-  font-size: 1.0625rem;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-}
-
+/* The name you post as, on the banner's right: a soft glass pill on the red,
+   with the avatar tucked into its left end, coloured exactly as on the
+   cards. */
 .meChip {
+  /* The mark sits with the same 2px of glass above, below and to its left,
+     so it reads as set into the pill's rounded end (its size, 26px, is the
+     phone pill's 32px less the 1px border and that inset on each side). */
+  --chip-h: 34px;
+  --chip-inset: 2px;
+
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  max-width: 48%;
-  height: 32px;
-  padding: 0 12px 0 5px;
-  overflow: hidden;
+  gap: 7px;
+  max-width: 52vw;
+  height: var(--chip-h);
+  padding: 0 12px 0 var(--chip-inset);
+  box-sizing: border-box;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--cf-brand) 10%, transparent);
-  color: var(--cf-brand);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.09));
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 2px 10px -4px rgba(0, 0, 0, 0.35);
+  color: #fff;
   font-size: 0.8125rem;
   font-weight: 700;
+  letter-spacing: -0.005em;
   white-space: nowrap;
-  text-overflow: ellipsis;
 }
 
+/* The same colours as on the cards; only a lift off the red is added. */
+.meChip .mark {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  transition: color 0.2s ease, background-color 0.2s ease;
+}
+
+/* Until the name arrives: an empty mark and a placeholder bar, no "?". */
+.meChip[aria-busy='true'] .mark {
+  --mark-bg: rgba(255, 255, 255, 0.32);
+  color: transparent;
+  box-shadow: none;
+}
+
+.meChipName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  animation: fade 240ms ease-out both;
+}
+
+.meChipPending {
+  width: 72px;
+  height: 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.28);
+}
+
+@media (max-width: 768px) {
+  .meChip {
+    --chip-h: 32px;
+  }
+}
+
+/* On a phone the cards sit 8px in from the screen edges, with their text a
+   further 1rem in and 16px corners: the home feed's post cards, measured on
+   the device. */
 .layout {
   display: block;
-  padding: 0 var(--cf-gutter);
+  padding: 0 0.5rem;
 }
 
 .aside {
@@ -133,44 +143,13 @@
   min-width: 0;
 }
 
-.mobileTitle {
-  display: flex;
-  flex-direction: column;
-  margin: 10px 0 6px;
-  font-size: clamp(2.75rem, 15vw, 3.5rem);
-  font-weight: 850;
-  line-height: 0.95;
-  letter-spacing: -0.055em;
-}
-
-.mobileCampus {
-  margin-top: 8px;
-  font-size: 0.8125rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--cf-brand);
-}
-
-.asideStop {
-  color: var(--cf-accent);
-}
-
 @media (min-width: 769px) {
   .home {
     padding-bottom: 48px;
   }
 
-  .topBar {
-    top: 0;
-    padding: 14px 32px;
-    background: transparent;
-    border-bottom-color: transparent;
-  }
-
-  .topTitle,
-  .meChip,
-  .mobileTitle {
+  /* The left column already says who you are. */
+  .meChip {
     display: none;
   }
 
@@ -183,10 +162,14 @@
     padding: 8px 32px 0;
   }
 
+  /* Two cards stacked beside the feed, their top level with its first item,
+     staying in view while the feed scrolls. */
   .aside {
     position: sticky;
-    top: 24px;
-    display: block;
+    top: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
   }
 
   .feedCol {
@@ -196,38 +179,31 @@
 
 /* ---- Aside (desktop) ---------------------------------------------------- */
 
-.asideEyebrow {
-  margin: 0 0 12px;
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--cf-brand);
+/* The side panel's cards: the feed's own card surface, border and corners. */
+.asideCard {
+  padding: 16px;
+  border: 1px solid var(--cf-line-soft);
+  border-radius: var(--radius-lg, 16px);
+  background: var(--cf-surface);
+  box-shadow: var(--cf-card-shadow);
 }
 
-.asideTitle {
+.asideHeading {
   margin: 0;
-  font-size: clamp(3.5rem, 6vw, 5rem);
-  font-weight: 850;
-  line-height: 0.9;
-  letter-spacing: -0.06em;
-}
-
-.asideLede {
-  margin: 16px 0 28px;
-  font-size: 1.0625rem;
-  line-height: 1.5;
-  color: var(--cf-soft);
+  font-size: 0.9375rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--cf-ink);
 }
 
 .identity {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 14px;
-  border: 1px solid var(--cf-line-soft);
-  border-radius: 18px;
-  background: var(--cf-surface);
+}
+
+.identityText {
+  min-width: 0;
 }
 
 .identityLabel {
@@ -239,42 +215,80 @@
 
 .identityName {
   display: block;
-  font-size: 1.0625rem;
-  font-weight: 800;
+  font-size: 0.9375rem;
+  font-weight: 700;
   letter-spacing: -0.01em;
   overflow-wrap: anywhere;
 }
 
-.guidelines {
-  margin: 24px 0 0;
-  padding: 0;
-  list-style: none;
-  counter-reset: rule;
+.rulesHead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 14px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--cf-line-soft);
 }
 
-.guidelines li {
-  position: relative;
-  padding: 12px 0 12px 36px;
-  border-top: 1px solid var(--cf-line-soft);
-  font-size: 0.875rem;
-  line-height: 1.5;
-  color: var(--cf-soft);
-  counter-increment: rule;
-}
-
-.guidelines li::before {
-  content: counter(rule, decimal-leading-zero);
-  position: absolute;
-  left: 0;
-  top: 13px;
-  font-size: 0.75rem;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
+.rulesBadge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--cf-brand) 12%, transparent);
   color: var(--cf-brand);
 }
 
-.guidelines strong {
+.rulesLede {
+  margin: 2px 0 0;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--cf-soft);
+}
+
+.rules {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rule {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.ruleIcon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--cf-ink) 6%, transparent);
   color: var(--cf-ink);
+}
+
+.ruleTitle {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--cf-ink);
+}
+
+.ruleText {
+  margin: 2px 0 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--cf-soft);
 }
 
 /* ---- Name marks ------------------------------------------------------------- */
@@ -292,19 +306,38 @@
   border-radius: 50%;
   background: var(--mark-bg);
   color: var(--mark-ink);
-  font-size: calc(var(--mark-size, 36px) * 0.44);
-  font-weight: 800;
-  line-height: 1;
+  overflow: hidden;
 }
 
-.mark[data-tint='1'] { --mark-bg: #ffe6df; --mark-ink: #c2412a; }
-.mark[data-tint='2'] { --mark-bg: #daf3ee; --mark-ink: #0f766e; }
-.mark[data-tint='3'] { --mark-bg: #fbefd2; --mark-ink: #a16207; }
+/* Dark theme: the avatar's own background, dimmed into the dark surface so a
+   pastel circle does not glare; the body keeps its colour. */
+:global([data-theme='dark']) .mark {
+  background: color-mix(in srgb, var(--mark-bg) 28%, var(--color-bg-white, #1f1f1f));
+}
 
-:global([data-theme='dark']) .mark { --mark-bg: rgba(121, 101, 251, 0.2); --mark-ink: #b9adff; }
-:global([data-theme='dark']) .mark[data-tint='1'] { --mark-bg: rgba(255, 122, 95, 0.18); --mark-ink: #ffab98; }
-:global([data-theme='dark']) .mark[data-tint='2'] { --mark-bg: rgba(45, 212, 191, 0.16); --mark-ink: #7ee0d1; }
-:global([data-theme='dark']) .mark[data-tint='3'] { --mark-bg: rgba(251, 191, 36, 0.16); --mark-ink: #f5cf72; }
+/* The pixel ghost, in crisp squares: body in the ink colour, eyes white with
+   dark pupils in every theme (they are the ghost's, not the theme's). The
+   viewBox keeps a margin so it sits clear of the round edge. */
+.markArt {
+  flex: none;
+  width: var(--mark-art, 100%);
+  height: var(--mark-art, 100%);
+  fill: currentColor;
+}
+
+.markEyes {
+  fill: #fff;
+}
+
+.markPupils {
+  fill: #1e1b4b;
+}
+
+/* The header pill's empty "loading" mark shows no ghost at all. */
+.meChip[aria-busy='true'] .markEyes,
+.meChip[aria-busy='true'] .markPupils {
+  fill: transparent;
+}
 
 /* ---- Composer trigger ----------------------------------------------------- */
 
@@ -313,24 +346,22 @@
   align-items: center;
   gap: 12px;
   width: 100%;
-  padding: 14px 14px 14px 16px;
+  padding: 12px 0.75rem;
   border: 1px solid var(--cf-line-soft);
-  border-radius: 22px;
+  border-radius: var(--radius-lg, 16px);
   background: var(--cf-surface);
   box-shadow: var(--cf-card-shadow);
   color: var(--cf-ink);
   font: inherit;
   text-align: left;
   cursor: text;
-  transition: border-color 0.18s ease, transform 0.12s ease;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.trigger:hover {
-  border-color: color-mix(in srgb, var(--cf-brand) 45%, var(--cf-line));
-}
-
-.trigger:active {
-  transform: scale(0.99);
+/* No press effect: the bar opens the composer, which is feedback enough. */
+.trigger:focus-visible {
+  outline: 2px solid var(--cf-brand);
+  outline-offset: 2px;
 }
 
 .triggerText {
@@ -343,18 +374,9 @@
 
 .triggerPrompt {
   font-size: 1.0625rem;
-  font-weight: 650;
+  font-weight: 500;
   letter-spacing: -0.01em;
   color: var(--cf-soft);
-}
-
-.triggerMeta {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--cf-faint);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .triggerPen {
@@ -384,67 +406,61 @@
 
 .card {
   position: relative;
-  padding: 16px 16px 10px 18px;
+  padding: 14px 0.75rem 6px;
   border: 1px solid var(--cf-line-soft);
-  border-radius: 22px;
+  border-radius: var(--radius-lg, 16px);
   background: var(--cf-surface);
   box-shadow: var(--cf-card-shadow);
-  animation: rise 460ms cubic-bezier(0.2, 0.85, 0.2, 1) var(--enter-delay, 0ms) both;
 }
 
-/* An oversized opening quote, barely there: the one editorial flourish. */
-.card::before {
-  content: '\201C';
-  position: absolute;
-  top: -6px;
-  right: 16px;
-  font-family: Georgia, 'Times New Roman', serif;
-  font-size: 5.5rem;
-  line-height: 1;
-  color: var(--cf-brand);
-  opacity: 0.09;
-  pointer-events: none;
+/* Only a confession that arrives while the page is open (one just posted, or
+   new at the top after a refresh) rises in. What the page opens with is drawn
+   in place: replaying a staggered entrance on every visit held the list in
+   motion for most of a second each time Campus switched to it. */
+.cardEnter {
+  animation: rise 320ms cubic-bezier(0.2, 0.85, 0.2, 1) both;
 }
 
 .cardHead {
   display: flex;
   align-items: center;
   gap: 10px;
+  /* A bare <header> picks up page-header padding from the global styles. */
+  padding: 0;
 }
 
+/* Name over time, both left-aligned beside the mark. */
 .byline {
   flex: 1;
   min-width: 0;
   display: flex;
-  align-items: baseline;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.bylineName {
+  display: flex;
+  align-items: center;
   gap: 6px;
-  font-size: 0.875rem;
+  min-width: 0;
 }
 
 .handle {
   overflow: hidden;
-  font-weight: 750;
+  /* Name, time and text match the home feed's posts (Post.module.css). */
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.25;
   letter-spacing: -0.01em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.youTag {
-  flex: none;
-  padding: 1px 7px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--cf-brand) 12%, transparent);
-  color: var(--cf-brand);
-  font-size: 0.6875rem;
-  font-weight: 750;
-}
-
-.dot,
 .time {
-  flex: none;
   color: var(--cf-faint);
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
   font-weight: 500;
+  line-height: 1.3;
 }
 
 .more {
@@ -454,14 +470,14 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   margin-right: -6px;
   padding: 0;
   border: none;
   border-radius: 50%;
   background: transparent;
-  color: var(--cf-faint);
+  color: var(--cf-soft);
   cursor: pointer;
 }
 
@@ -477,28 +493,19 @@
   color: var(--cf-ink);
 }
 
-.body[data-size='xl'] {
-  font-size: clamp(1.3rem, 5.4vw, 1.6rem);
-  font-weight: 750;
-  line-height: 1.22;
-  letter-spacing: -0.03em;
+.body[data-size] {
+  font-size: 1rem;
+  font-weight: 450;
+  line-height: 1.6;
+  letter-spacing: normal;
 }
 
-.body[data-size='lg'] {
-  font-size: 1.1875rem;
-  font-weight: 600;
-  line-height: 1.4;
-  letter-spacing: -0.015em;
-}
-
+/* Long confessions are cut at eight lines, with "Read more". */
 .body[data-size='md'] {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 8;
   overflow: hidden;
-  font-size: 1rem;
-  font-weight: 450;
-  line-height: 1.6;
 }
 
 .body.bodyOpen {
@@ -519,19 +526,22 @@
   cursor: pointer;
 }
 
+/* A hairline sets the action row apart from the words. */
 .cardFoot {
   display: flex;
   align-items: center;
   margin-top: 12px;
+  padding-top: 4px;
+  border-top: 1px solid var(--cf-line-soft);
 }
 
 .relate {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  height: 36px;
-  margin-left: -6px;
-  padding: 0 14px 0 10px;
+  gap: 6px;
+  height: 34px;
+  margin-left: -10px;
+  padding: 0 12px 0 10px;
   border: none;
   border-radius: 999px;
   background: transparent;
@@ -548,8 +558,8 @@
 }
 
 .relateGlyph {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   overflow: visible;
 }
 
@@ -577,6 +587,7 @@
 .relateOn .relateGlyph circle:last-child { transform: translateX(-1.5px); }
 
 .relateCount {
+  /* Digits keep one width, so 9 → 10 does not nudge the button. */
   font-variant-numeric: tabular-nums;
 }
 
@@ -588,7 +599,7 @@
   align-items: center;
   padding: 40px 20px 32px;
   border: 1.5px dashed var(--cf-line);
-  border-radius: 22px;
+  border-radius: var(--radius-lg, 16px);
   text-align: center;
 }
 
@@ -644,13 +655,6 @@
   margin-top: 4px;
 }
 
-.endNote {
-  margin: 12px 0 0;
-  text-align: center;
-  font-size: 0.8125rem;
-  color: var(--cf-faint);
-}
-
 .sentinel {
   height: 1px;
 }
@@ -659,9 +663,9 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 18px;
+  padding: 14px 1rem;
   border: 1px solid var(--cf-line-soft);
-  border-radius: 22px;
+  border-radius: var(--radius-lg, 16px);
   background: var(--cf-surface);
 }
 
@@ -723,11 +727,23 @@
   display: flex;
   flex-direction: column;
   width: 100%;
-  height: calc(100dvh - var(--status-bar-inset, 0px) - var(--kb-inset, 0px) - 10px);
+  /* Never resized for the keyboard: shrinking it while it stands on the
+     bottom of the screen dropped its top and left the counter behind the
+     keyboard. The footer rises instead (`.sheetFoot`). */
+  height: calc(100dvh - var(--status-bar-inset, 0px) - 10px);
   border-radius: 24px 24px 0 0;
   background: var(--color-surface-screen, var(--cf-surface));
   color: var(--cf-ink);
-  animation: sheetUp 380ms cubic-bezier(0.2, 0.85, 0.2, 1) both;
+  overflow: hidden;
+  animation: sheetUp 340ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.sheetRoot[data-closing] .scrim {
+  animation: fadeOut 220ms ease-in both;
+}
+
+.sheetRoot[data-closing] .sheet {
+  animation: sheetDown 220ms cubic-bezier(0.4, 0, 1, 1) both;
 }
 
 :global([data-theme='dark']) .sheet {
@@ -740,64 +756,140 @@
   }
 
   .sheet {
-    width: min(620px, calc(100vw - 48px));
-    height: min(560px, calc(100dvh - 96px));
+    width: min(600px, calc(100vw - 48px));
+    height: min(460px, calc(100dvh - 96px));
     border: 1px solid var(--cf-line);
     border-radius: 24px;
     background: var(--cf-surface);
     box-shadow: 0 30px 80px -30px rgba(0, 0, 0, 0.45);
     animation-name: popIn;
   }
+
+  .sheetRoot[data-closing] .sheet {
+    animation-name: popOut;
+  }
 }
 
+/* Cancel, title, Post: the title centred on the sheet whatever the two
+   buttons' widths, and no rule under it — the writing area runs up to it. */
 .sheetHead {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--cf-line);
+  min-height: 68px;
+  padding: 12px 16px 8px;
+}
+
+.sheetHead > :last-child {
+  justify-self: end;
 }
 
 .sheetTitle {
   margin: 0;
-  font-size: 1rem;
+  font-size: 1.125rem;
   font-weight: 800;
   letter-spacing: -0.01em;
 }
 
-.sheetCancel {
-  min-width: 64px;
-  height: 36px;
+/* Two round icon buttons of one size: a quiet close, a filled send. */
+.sheetClose,
+.sheetPost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
   padding: 0;
   border: none;
-  background: none;
-  color: var(--cf-soft);
-  font: inherit;
-  font-size: 0.9375rem;
-  font-weight: 600;
-  text-align: left;
+  border-radius: 50%;
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.sheetClose {
+  background: color-mix(in srgb, var(--cf-ink) 7%, transparent);
+  color: var(--cf-ink);
 }
 
 .sheetPost {
-  min-width: 64px;
-  height: 36px;
-  padding: 0 18px;
-  border: none;
-  border-radius: 999px;
+  justify-self: end;
   background: var(--cf-brand);
   color: #fff;
-  font: inherit;
-  font-size: 0.9375rem;
-  font-weight: 700;
-  cursor: pointer;
-  transition: opacity 0.2s ease;
+  transition: opacity 0.2s ease, background-color 0.2s ease;
 }
 
+/* Nothing to send yet: the same button, greyed, so the header never shifts.
+   Too short is still tappable, to show why (`.postTip`). */
+.sheetPost[data-short],
 .sheetPost:disabled {
-  opacity: 0.4;
+  background: color-mix(in srgb, var(--cf-ink) 10%, transparent);
+  color: var(--cf-faint);
   cursor: not-allowed;
+}
+
+.sheetPost[data-short] {
+  cursor: pointer;
+}
+
+.sheetPostWrap {
+  position: relative;
+  justify-self: end;
+  display: inline-flex;
+}
+
+/* A tip hanging from the send button, its arrow pointing up at it. */
+.postTip {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 2;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--cf-ink);
+  color: var(--color-bg-white, #fff);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.3;
+  white-space: nowrap;
+  box-shadow: 0 8px 24px -10px rgba(0, 0, 0, 0.4);
+  transform-origin: calc(100% - 21px) -6px;
+  animation: tipIn 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.postTip::before {
+  content: '';
+  position: absolute;
+  top: -5px;
+  right: 16px;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: inherit;
+  transform: rotate(45deg);
+}
+
+.sheetPost[aria-busy='true'] {
+  background: var(--cf-brand);
+  color: #fff;
+  cursor: progress;
+}
+
+/* In place of the send icon while the confession is being posted. */
+.postSpinner {
+  width: 18px;
+  height: 18px;
+  box-sizing: border-box;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: postSpin 0.7s linear infinite;
+}
+
+.sheetClose:focus-visible,
+.sheetPost:focus-visible {
+  outline: 2px solid var(--cf-brand);
+  outline-offset: 2px;
 }
 
 .sheetBody {
@@ -805,36 +897,27 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  padding: 16px 20px 0;
-}
-
-.as {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.8125rem;
-  color: var(--cf-soft);
-}
-
-.as strong {
-  color: var(--cf-ink);
+  padding: 8px 20px 0;
+  /* The writing area ends above the keyboard, so the last line typed is never
+     under it. */
+  padding-bottom: var(--kb-inset, 0px);
 }
 
 .area {
   flex: 1;
   min-height: 120px;
-  margin-top: 14px;
-  padding: 0;
+  margin: 0;
+  padding: 8px 0;
   border: none;
   outline: none;
   resize: none;
   background: transparent;
   color: var(--cf-ink);
   font: inherit;
-  font-size: 1.25rem;
-  font-weight: 500;
-  line-height: 1.5;
-  letter-spacing: -0.01em;
+  font-size: 1.125rem;
+  font-weight: 450;
+  line-height: 1.55;
+  letter-spacing: -0.005em;
 }
 
 .area::placeholder {
@@ -848,26 +931,24 @@
   color: var(--color-danger, #ef4444);
 }
 
+/* Just the counter, at the writing's end. With the keyboard up it rides on
+   the keyboard's top edge, moved by a transform on the keyboard's own
+   duration and curve (useKeyboardInset), so the two slide together. The
+   rise is the keyboard (--kb-inset counts the navigation bar) less the
+   navigation-bar padding this row already has, which ends up behind it. */
 .sheetFoot {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 12px 20px calc(14px + env(safe-area-inset-bottom, 0px) + var(--navigation-bar-inset, 0px));
-  border-top: 1px solid var(--cf-line);
+  justify-content: flex-end;
+  padding: 10px 20px calc(14px + env(safe-area-inset-bottom, 0px) + var(--navigation-bar-inset, 0px));
+  transform: translate3d(0, calc(-1 * max(0px, calc(var(--kb-inset, 0px) - env(safe-area-inset-bottom, 0px) - var(--navigation-bar-inset, 0px)))), 0);
+  transition: transform var(--kb-duration, 0ms) var(--kb-easing, ease-out) var(--kb-delay, 0ms);
 }
 
 @media (min-width: 769px) {
   .sheetFoot {
     padding-bottom: 14px;
   }
-}
-
-.rules {
-  flex: 1;
-  margin: 0;
-  font-size: 0.75rem;
-  line-height: 1.45;
-  color: var(--cf-faint);
 }
 
 .counter {
@@ -914,14 +995,25 @@
 }
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes sheetUp { from { transform: translate3d(0, 100%, 0); } to { transform: none; } }
+@keyframes sheetDown { from { transform: none; } to { transform: translate3d(0, 100%, 0); } }
+@keyframes postSpin { to { transform: rotate(360deg); } }
+@keyframes tipIn {
+  from { opacity: 0; transform: translate3d(0, -4px, 0) scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+@keyframes popOut {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translate3d(0, 12px, 0) scale(0.98); }
+}
 @keyframes popIn {
-  from { opacity: 0; transform: translate3d(0, 18px, 0) scale(0.97); }
+  from { opacity: 0; transform: translate3d(0, 12px, 0) scale(0.98); }
   to { opacity: 1; transform: none; }
 }
 @keyframes breathe { from { opacity: 1; } to { opacity: 0.45; } }
-@keyframes spin { to { transform: rotate(360deg); } }
 
 @media (prefers-reduced-motion: reduce) {
-  .card, .scrim, .sheet, .skMark, .skBar { animation: none; }
+  .cardEnter, .scrim, .sheet, .skMark, .skBar, .meChipName { animation: none; }
+  .sheetRoot[data-closing] .scrim, .sheetRoot[data-closing] .sheet, .postTip { animation: none; }
   .relateGlyph circle { transition: none; }
 }

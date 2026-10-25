@@ -3,7 +3,7 @@ import { countChars } from '../common/validation/text-length.util';
 
 export const HANDLE_MIN = 3;
 export const HANDLE_MAX = 20;
-export const CONFESSION_MIN_CHARS = 10;
+export const CONFESSION_MIN_CHARS = 15;
 export const CONFESSION_MAX_CHARS = 1000;
 /** Distinct reporters after which a confession is hidden pending review. */
 export const CONFESSION_AUTO_HIDE_REPORTERS = 5;

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
-import { useCampusAffiliation } from '@shared/hooks/useCampusAffiliation';
 import { useAuth } from '@shared/context/AuthContext';
 import {
   useConfessionProfile,
@@ -9,7 +9,7 @@ import {
   useRelateConfession,
 } from '@shared/hooks/useConfessions';
 import { showToast } from '@shared/utils/toast';
-import { ArrowLeft } from '@shared/components/icons';
+import { ArrowLeft, EyeOff, Flag, Heart, ShieldCheck } from '@shared/components/icons';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import LazyReportModal from '@shared/components/modals/ReportModal/LazyReportModal';
 import CampusAffiliationGate from '@features/campus/components/affiliation/CampusAffiliationGate';
@@ -18,6 +18,7 @@ import HandleSetup from '../components/HandleSetup';
 import ConfessionCard from '../components/ConfessionCard';
 import ConfessionComposer, { ComposerTrigger } from '../components/ConfessionComposer';
 import HandleMark from '../components/HandleMark';
+import sharedStyles from '@features/campus/components/skeletons/CampusShared.module.css';
 import styles from '../components/Confessions.module.css';
 
 /**
@@ -47,6 +48,13 @@ function writeDeckSeen(userId) {
   }
 }
 
+/** The ground rules in the desktop side panel. */
+const RULES = [
+  { icon: EyeOff, title: 'Keep it anonymous', text: 'No names, handles or details that point to a person, yours included.' },
+  { icon: Heart, title: 'Be kind', text: 'Honest is fine; cruel isn’t.' },
+  { icon: Flag, title: 'Report, don’t retaliate', text: 'Moderators review every reported confession.' },
+];
+
 export default function ConfessionsPage() {
   return (
     <main className={`centre centre-wide ${styles.page}`}>
@@ -60,7 +68,7 @@ export default function ConfessionsPage() {
 function ConfessionsFlow() {
   const { currentUser } = useAuth();
   const userId = currentUser?.id;
-  const { profile, hint, isError, refetch } = useConfessionProfile();
+  const { profile, hint, confirmedNone, isError, refetch } = useConfessionProfile();
   const [step, setStep] = useState(() => (readDeckSeen(userId) ? 'handle' : 'deck'));
 
   const finishDeck = useCallback(() => {
@@ -68,29 +76,32 @@ function ConfessionsFlow() {
     setStep('handle');
   }, [userId]);
 
-  // The first screen is drawn at once, never behind a spinner. Until the
-  // server answers, the device's last answer for this account decides it (an
-  // account with a name opens on the feed, its name filled in when it lands);
-  // with no answer on the device, the onboarding it would most likely get. A
-  // server answer that disagrees replaces it in place.
-  const hasProfile = profile !== undefined ? Boolean(profile) : hint === true;
-
-  if (profile === undefined && isError && hint !== false) {
-    return (
-      <div className={styles.fullState}>
-        <p className={styles.stateTitle}>Couldn’t open Confessions.</p>
-        <button type="button" className={styles.stateButton} onClick={() => refetch()}>Try again</button>
-      </div>
-    );
+  // The feed opens at once for anyone known to have a name: from the cache,
+  // or from this device's last answer for the account (the name fills in when
+  // the server's lands). The onboarding is shown only on the server's word,
+  // given during this visit, that there is no name yet. Until then the page
+  // shows its own frame with the feed's placeholders, never the deck: someone
+  // who has finished it must not see it flash past on a new device, after
+  // clearing storage, or after choosing a name somewhere else.
+  if (profile || (profile === undefined && hint === true)) {
+    return <ConfessionsHome handle={profile?.handle ?? null} />;
   }
 
-  if (hasProfile) return <ConfessionsHome handle={profile?.handle ?? null} />;
+  if (!confirmedNone) {
+    if (isError) {
+      return (
+        <div className={styles.fullState}>
+          <p className={styles.stateTitle}>Couldn’t open Confessions.</p>
+          <button type="button" className={styles.stateButton} onClick={() => refetch()}>Try again</button>
+        </div>
+      );
+    }
+    return <ConfessionsShell />;
+  }
+
   if (step === 'deck') return <ConfessionsDeck onDone={finishDeck} />;
   return (
     <HandleSetup
-      // Creating needs the server's answer first: until it lands, an account
-      // that already has a name (a new device) must not be offered another.
-      ready={profile !== undefined}
       onBack={() => setStep('deck')}
       onCreated={(created) => {
         if (!created) refetch();
@@ -99,10 +110,67 @@ function ConfessionsFlow() {
   );
 }
 
-function ConfessionsHome({ handle }) {
+/**
+ * The Campus page header every Campus section uses (Events, Directory,
+ * Communities): back to Campus, the section's name, and its own action on the
+ * right, here the name you post as.
+ */
+function ConfessionsHeader({ handle, busy = false }) {
   const goBack = useSmartBack();
-  const { affiliation } = useCampusAffiliation();
-  const collegeName = affiliation?.collegeName || affiliation?.college?.name || 'Your campus';
+  return (
+    <div className={`${sharedStyles.headerBanner} ${sharedStyles.compactHeader}`}>
+      <header className={sharedStyles.header}>
+        <div className={sharedStyles.headerLeftGroup}>
+          <button
+            type="button"
+            className={sharedStyles.headerSquareBtn}
+            onClick={() => goBack('/campus')}
+            title="Back to Campus"
+            aria-label="Back to Campus"
+          >
+            <ArrowLeft size={20} />
+          </button>
+          <h1 className={sharedStyles.collegeTitle} style={{ margin: 0 }}>Confessions</h1>
+        </div>
+        {!busy && (
+          <div className={sharedStyles.headerActions}>
+            <span
+              className={styles.meChip}
+              aria-busy={handle ? undefined : 'true'}
+              aria-label={handle ? `Posting as @${handle}` : 'Loading your name'}
+            >
+              <HandleMark handle={handle} size={26} artSize={24} />
+              {handle
+                ? <span className={styles.meChipName} aria-hidden="true">@{handle}</span>
+                : <span className={styles.meChipPending} aria-hidden="true" />}
+            </span>
+          </div>
+        )}
+      </header>
+    </div>
+  );
+}
+
+/** The page's frame while it is still finding out whether you have a name. */
+function ConfessionsShell() {
+  return (
+    <div className={styles.home} aria-busy="true">
+      <ConfessionsHeader busy />
+      <div className={styles.layout}>
+        <aside className={styles.aside} aria-hidden="true" />
+        <section className={styles.feedCol} aria-label="Loading confessions">
+          <div className={styles.list}>
+            <CardSkeleton />
+            <CardSkeleton short />
+            <CardSkeleton />
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function ConfessionsHome({ handle }) {
   const feed = useConfessionsFeed();
   const relate = useRelateConfession();
   const remove = useDeleteConfession();
@@ -111,7 +179,9 @@ function ConfessionsHome({ handle }) {
   const [reportTarget, setReportTarget] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
 
-  const openComposer = useCallback(() => setComposerOpen(true), []);
+  // Mounted inside the tap, so the composer can focus its field while the
+  // gesture still counts and the keyboard comes up with it (see the composer).
+  const openComposer = useCallback(() => flushSync(() => setComposerOpen(true)), []);
   const closeComposer = useCallback(() => setComposerOpen(false), []);
 
   // One relate request per confession at a time. A quick double tap would
@@ -156,46 +226,42 @@ function ConfessionsHome({ handle }) {
 
   return (
     <div className={styles.home}>
-      <header className={styles.topBar}>
-        <button type="button" className={styles.iconBtn} onClick={() => goBack('/campus')} aria-label="Back">
-          <ArrowLeft size={20} />
-        </button>
-        <span className={styles.topTitle}>Confessions</span>
-        <span className={styles.meChip} aria-busy={handle ? undefined : 'true'}>
-          <HandleMark handle={handle} size={22} />
-          {handle ? `@${handle}` : '\u00a0'}
-        </span>
-      </header>
+      <ConfessionsHeader handle={handle} />
 
       <div className={styles.layout}>
-        <aside className={styles.aside}>
-          <p className={styles.asideEyebrow}>{collegeName}</p>
-          <h1 className={styles.asideTitle}>
-            Confess<span className={styles.asideStop}>.</span>
-          </h1>
-          <p className={styles.asideLede}>
-            What your campus is really thinking. No names, only voices.
-          </p>
-          <div className={styles.identity}>
-            <HandleMark handle={handle} size={44} />
-            <div>
-              <span className={styles.identityLabel}>You are</span>
-              <span className={styles.identityName}>{handle ? `@${handle}` : '\u00a0'}</span>
+        <aside className={styles.aside} aria-label="About Confessions">
+          <div className={styles.asideCard}>
+            <div className={styles.identity}>
+              <HandleMark handle={handle} size={44} artSize={36} />
+              <div className={styles.identityText}>
+                <span className={styles.identityLabel}>Posting as</span>
+                <span className={styles.identityName}>{handle ? `@${handle}` : '\u00a0'}</span>
+              </div>
             </div>
           </div>
-          <ol className={styles.guidelines}>
-            <li><strong>Keep it anonymous.</strong> Yours and everyone else’s: no names, handles or details that point to a person.</li>
-            <li><strong>Be kind.</strong> Honest is fine; cruel isn’t.</li>
-            <li><strong>Report, don’t reply in anger.</strong> Reported confessions are reviewed by moderators.</li>
-          </ol>
+          <section className={styles.asideCard} aria-labelledby="confession-rules">
+            <div className={styles.rulesHead}>
+              <span className={styles.rulesBadge} aria-hidden="true"><ShieldCheck size={18} /></span>
+              <div>
+                <h2 id="confession-rules" className={styles.asideHeading}>Ground rules</h2>
+                <p className={styles.rulesLede}>Keep Confessions safe for everyone.</p>
+              </div>
+            </div>
+            <ul className={styles.rules}>
+              {RULES.map(({ icon: Icon, title, text }) => (
+                <li key={title} className={styles.rule}>
+                  <span className={styles.ruleIcon} aria-hidden="true"><Icon size={16} /></span>
+                  <div>
+                    <p className={styles.ruleTitle}>{title}</p>
+                    <p className={styles.ruleText}>{text}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
         </aside>
 
         <section className={styles.feedCol} aria-label="Confessions">
-          <h1 className={styles.mobileTitle}>
-            <span>Confess<span className={styles.asideStop}>.</span></span>
-            <span className={styles.mobileCampus}>{collegeName}</span>
-          </h1>
-
           <ComposerTrigger handle={handle} onOpen={openComposer} />
 
           <FeedBody
@@ -213,13 +279,10 @@ function ConfessionsHome({ handle }) {
               Load more
             </button>
           )}
-          {!feed.hasNextPage && feed.confessions.length > 8 && (
-            <p className={styles.endNote}>You’ve reached the beginning.</p>
-          )}
         </section>
       </div>
 
-      <ConfessionComposer open={composerOpen} handle={handle} onClose={closeComposer} />
+      <ConfessionComposer open={composerOpen} onClose={closeComposer} />
 
       <LazyReportModal
         isOpen={Boolean(reportTarget)}
@@ -245,6 +308,14 @@ function ConfessionsHome({ handle }) {
 }
 
 function FeedBody({ feed, onRelate, onReport, onDelete, onCompose }) {
+  // The confessions the page first drew. Anything new at the top after that
+  // gets the entrance; see `.cardEnter`.
+  const [firstIds, setFirstIds] = useState(null);
+  const ready = feed.confessions.length > 0;
+  useEffect(() => {
+    if (ready && firstIds === null) setFirstIds(new Set(feed.confessions.map((c) => c.id)));
+  }, [ready, firstIds, feed.confessions]);
+
   if (feed.isLoading) {
     return (
       <div className={styles.list} aria-busy="true" aria-label="Loading confessions">
@@ -289,7 +360,7 @@ function FeedBody({ feed, onRelate, onReport, onDelete, onCompose }) {
         <ConfessionCard
           key={c.id}
           confession={c}
-          index={i}
+          enter={i === 0 && firstIds !== null && !firstIds.has(c.id)}
           onRelate={onRelate}
           onReport={onReport}
           onDelete={onDelete}

@@ -319,6 +319,24 @@ session.
 Note that `isolation.guard.ts` protects the *server*; it cannot see an MCP call,
 which reaches the database directly.
 
+## Supabase Data API (PostgREST)
+
+Nothing in this app uses the Data API: the backend reads and writes through
+Prisma, and clients only talk to the backend. Supabase still serves every table
+in `public` over REST to anyone holding the anon key, which ships in every
+browser bundle. Until migration 30 (`lock_down_data_api`) that meant every
+row, `User` and the `ConfessionProfile` account-to-handle mapping included,
+could be read **and written** by anyone.
+
+Migration 30 enables RLS (no policies) on every table, revokes `anon` and
+`authenticated` from tables and sequences, and stops new tables inheriting
+those grants. Prisma connects as the tables' owner, which RLS does not apply to.
+
+To check a project, with its anon key: `GET /rest/v1/User?select=id&limit=0`
+with `Prefer: count=exact`. A `content-range` of `*/0` (or a permission error)
+is correct; any other count means the tables are exposed. Never add a policy
+or grant for `anon`/`authenticated` without a reason written here.
+
 ## Error monitoring (Sentry)
 
 Web, Android and API report to separate Sentry projects, tagged by

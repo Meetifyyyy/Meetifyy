@@ -431,7 +431,7 @@ function CommentItemImpl({ postId, comment, threadId, replyTo = null, isReply })
             <div className={styles.identity}>
               <button type="button" onClick={handleProfileClick} className={`hover-underline ${styles.nameButton}`}>
                 <span className={styles.username}>{author.displayName || author.username}</span>
-                <CollegeRepresentativeBadge isCampusRep={author.isCampusRep} collegeName={authorCollegeName} user={author} size="sm" />
+                <CollegeRepresentativeBadge isCampusRep={author.isCampusRep} collegeName={authorCollegeName} user={author} size="md" className={styles.repBadge} />
                 {authorCollege && (
                   <img
                     src={getProcessedAvatarUrl(authorCollege.avatar)}
@@ -442,7 +442,7 @@ function CommentItemImpl({ postId, comment, threadId, replyTo = null, isReply })
                   />
                 )}
               </button>
-              <span className={styles.handle}>@{author.username}</span>
+              <span className={styles.handle}><span className={styles.at}>@</span>{author.username}</span>
               <span className={styles.timeDot} aria-hidden="true">·</span>
               <span className={styles.time}>{comment.createdAt ? timeAgo(comment.createdAt) : comment.time}</span>
             </div>

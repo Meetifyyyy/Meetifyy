@@ -31,14 +31,19 @@ import { useEffect, useRef } from 'react';
  *
  * This is an extra way out, never the only one: the sheet's buttons, the
  * backdrop, Escape and Back keep working exactly as before.
+ *
+ * `onDragStart` (optional) runs once, the moment a touch is recognised as a
+ * drag of the sheet — e.g. to put the keyboard away as the sheet starts moving.
  */
-export function useSheetDrag(onClose, { enabled = true, media = '(max-width: 768px)' } = {}) {
+export function useSheetDrag(onClose, { enabled = true, media = '(max-width: 768px)', onDragStart } = {}) {
   const sheetRef = useRef(null);
   const onCloseRef = useRef(onClose);
+  const onDragStartRef = useRef(onDragStart);
 
   useEffect(() => {
     onCloseRef.current = onClose;
-  }, [onClose]);
+    onDragStartRef.current = onDragStart;
+  }, [onClose, onDragStart]);
 
   useEffect(() => {
     const sheet = sheetRef.current;
@@ -135,6 +140,7 @@ export function useSheetDrag(onClose, { enabled = true, media = '(max-width: 768
         sheet.style.animation = 'none';
         sheet.style.willChange = 'transform';
         setTransition(0);
+        onDragStartRef.current?.();
       }
       e.preventDefault();
 

@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -25,7 +25,11 @@ const api = vi.hoisted(() => ({
 
 vi.mock('@shared/api/apiClient', () => ({ confessionsApi: api }));
 vi.mock('@shared/context/AuthContext', () => ({
-  useAuth: () => ({ isLoggedIn: true, currentUser: { id: 'me', username: 'me' }, refreshCurrentUser: vi.fn() }),
+  useAuth: () => ({
+    isLoggedIn: true,
+    currentUser: { id: 'me', username: 'me', displayName: 'Priya Sharma', email: 'priya.sharma@gla.ac.in' },
+    refreshCurrentUser: vi.fn(),
+  }),
 }));
 vi.mock('@shared/hooks/useCampusAffiliation', () => ({
   useHasCampusAccess: () => true,
@@ -46,8 +50,9 @@ const C = (over = {}) => ({
   createdAt: new Date().toISOString(), relateCount: 3, relatedByMe: false, isMine: false, ...over,
 });
 
-const renderPage = () => {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+const newClient = () => new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+
+const renderPage = (qc = newClient()) => {
   return render(
     <QueryClientProvider client={qc}>
       <MemoryRouter><ConfessionsPage /></MemoryRouter>
@@ -188,15 +193,18 @@ describe('the feed', () => {
     fireEvent.click(screen.getByRole('button', { name: /Write a confession/ }));
     const area = await screen.findByLabelText('Your confession');
     const post = screen.getByRole('button', { name: 'Post' });
-    fireEvent.change(area, { target: { value: 'short' } });
-    expect(post.disabled).toBe(true);
+    fireEvent.change(area, { target: { value: 'fourteen chars' } });
+    // Too short: tapping send explains instead of posting.
+    fireEvent.click(post);
+    expect(await screen.findByText('Write at least 15 characters')).toBeTruthy();
+    expect(api.create).not.toHaveBeenCalled();
     fireEvent.change(area, { target: { value: '  A brand new confession here.  ' } });
     fireEvent.click(post);
     await waitFor(() => expect(api.create).toHaveBeenCalledWith('A brand new confession here.'));
     await waitFor(() => expect(screen.queryByLabelText('Your confession')).toBeNull());
     const cards = screen.getAllByRole('article');
     expect(within(cards[0]).getByText('A brand new confession here.')).toBeTruthy();
-    expect(within(cards[0]).getByText('You')).toBeTruthy();
+    expect(within(cards[0]).queryByText('You')).toBeNull();
   });
 
   it('relates at once and rolls back if the server refuses', async () => {
@@ -254,12 +262,14 @@ describe('the feed', () => {
 });
 
 describe('opening without waiting for the server', () => {
-  it('draws the deck at once for someone the device has never seen', () => {
+  it('never draws the deck before the server has answered', () => {
     api.getMe.mockReturnValue(new Promise(() => {}));
     renderPage();
-    // Synchronously, in the first render: no spinner first.
-    expect(screen.getByText('01')).toBeTruthy();
-    expect(screen.queryByLabelText('Loading')).toBeNull();
+    // The page's own frame and the feed's placeholders, in the first render.
+    expect(screen.getByRole('heading', { name: 'Confessions' })).toBeTruthy();
+    expect(screen.getByLabelText('Loading confessions')).toBeTruthy();
+    expect(screen.queryByText('01')).toBeNull();
+    expect(screen.queryByLabelText('Anonymous name')).toBeNull();
   });
 
   it('opens on the feed at once for an account the device knows has a name', async () => {
@@ -280,10 +290,133 @@ describe('opening without waiting for the server', () => {
     expect(JSON.stringify({ ...window.localStorage })).not.toContain('lunar.koi');
   });
 
-  it('switches the deck to the feed in place when the server says there is a name', async () => {
+  it('a returning account on a new device goes to the feed without the deck ever showing', async () => {
+    api.getMe.mockResolvedValue({ profile: { handle: 'lunar.koi' } });
+    const { container } = renderPage();
+    const seen = [];
+    const watch = new MutationObserver(() => { if (container.textContent.includes('Say it, no name.')) seen.push('deck'); });
+    watch.observe(container, { childList: true, subtree: true, characterData: true });
+    expect((await screen.findAllByText('@lunar.koi')).length).toBeGreaterThan(0);
+    watch.disconnect();
+    expect(seen).toEqual([]);
+    expect(screen.queryByText('01')).toBeNull();
+  });
+
+  it('a device that last saw no name still asks before showing the deck', async () => {
+    window.localStorage.setItem('meetifyy:confessions:has-profile:me', '0');
     api.getMe.mockResolvedValue({ profile: { handle: 'lunar.koi' } });
     renderPage();
-    expect(screen.getByText('01')).toBeTruthy();
+    expect(screen.queryByText('01')).toBeNull();
     expect((await screen.findAllByText('@lunar.koi')).length).toBeGreaterThan(0);
+  });
+
+  it('re-asks an old cached "no name" instead of trusting it (named elsewhere since)', async () => {
+    const qc = newClient();
+    qc.setQueryData(['confessions', 'me'], { profile: null }, { updatedAt: Date.now() - 5 * 60_000 });
+    api.getMe.mockResolvedValue({ profile: { handle: 'lunar.koi' } });
+    renderPage(qc);
+    expect(screen.queryByText('01')).toBeNull();
+    expect((await screen.findAllByText('@lunar.koi')).length).toBeGreaterThan(0);
+    expect(api.getMe).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens on the deck at once from a fresh "no name" fetched on the way in', () => {
+    const qc = newClient();
+    qc.setQueryData(['confessions', 'me'], { profile: null });
+    api.getMe.mockReturnValue(new Promise(() => {}));
+    renderPage(qc);
+    expect(screen.getByText('01')).toBeTruthy();
+    expect(api.getMe).not.toHaveBeenCalled();
+  });
+
+  it('keeps the name screen through a background refetch of an aged "no name"', async () => {
+    window.localStorage.setItem('meetifyy:confessions:deck-seen:me', '1');
+    const qc = newClient();
+    qc.setQueryData(['confessions', 'me'], { profile: null });
+    renderPage(qc);
+    const field = screen.getByLabelText('Anonymous name');
+    fireEvent.change(field, { target: { value: 'half.typed' } });
+    // What a window-focus refetch does once the answer has aged.
+    api.getMe.mockReturnValue(new Promise(() => {}));
+    act(() => { qc.invalidateQueries({ queryKey: ['confessions', 'me'] }); });
+    await waitFor(() => expect(api.getMe).toHaveBeenCalledTimes(1));
+    expect(screen.getByLabelText('Anonymous name')).toBe(field);
+    expect(field.value).toBe('half.typed');
+    expect(screen.queryByLabelText('Loading confessions')).toBeNull();
+  });
+
+  it('never asks again for a profile it already has', async () => {
+    const qc = newClient();
+    qc.setQueryData(['confessions', 'me'], { profile: { handle: 'lunar.koi' } }, { updatedAt: Date.now() - 60 * 60_000 });
+    renderPage(qc);
+    expect((await screen.findAllByText('@lunar.koi')).length).toBeGreaterThan(0);
+    expect(api.getMe).not.toHaveBeenCalled();
+  });
+});
+
+describe('privacy warning on the name', () => {
+  beforeEach(() => {
+    window.localStorage.setItem('meetifyy:confessions:deck-seen:me', '1');
+    api.getMe.mockResolvedValue({ profile: null });
+    api.checkHandle.mockResolvedValue({ handle: 'x', available: true, reason: null });
+  });
+
+  const WARNING = /looks like part of your name or email/;
+
+  it('warns, without blocking, when the name contains part of the real name', async () => {
+    renderPage();
+    await screen.findByLabelText('Anonymous name');
+    typeHandle('priya.writes');
+    const warning = await screen.findByText(WARNING);
+    // It never repeats the email or the name it matched.
+    expect(warning.textContent).not.toMatch(/priya|sharma|gla\.ac\.in/i);
+    await screen.findByText('It’s yours if you want it.');
+    expect(screen.getByRole('button', { name: 'Slip in unseen' }).disabled).toBe(false);
+  });
+
+  it('says nothing for an unrelated name', async () => {
+    renderPage();
+    await screen.findByLabelText('Anonymous name');
+    typeHandle('midnight.moth');
+    await screen.findByText('It’s yours if you want it.');
+    expect(screen.queryByText(WARNING)).toBeNull();
+  });
+});
+
+describe('closing while a post is sending', () => {
+  it('a post that lands after the sheet closed does not shut the next one', async () => {
+    api.getMe.mockResolvedValue({ profile: { handle: 'midnight.moth' } });
+    let land;
+    api.create.mockImplementation(() => new Promise((r) => { land = r; }));
+    renderPage();
+    await screen.findByText('@lunar.koi');
+    fireEvent.click(screen.getByRole('button', { name: /Write a confession/ }));
+    fireEvent.change(await screen.findByLabelText('Your confession'), { target: { value: 'Sent, then closed before it landed.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Post' }));
+    // Closed while it is still sending.
+    fireEvent.click(screen.getAllByRole('button', { name: 'Close' }).find((b) => b.textContent === ''));
+    await waitFor(() => expect(screen.queryByLabelText('Your confession')).toBeNull());
+    await act(async () => { land({ confession: C({ id: 'late', content: 'Sent, then closed before it landed.', isMine: true }) }); });
+    // Opened again after the post landed: it stays open.
+    fireEvent.click(screen.getByRole('button', { name: /Write a confession/ }));
+    const area = await screen.findByLabelText('Your confession');
+    await new Promise((r) => setTimeout(r, 400));
+    expect(screen.getByLabelText('Your confession')).toBe(area);
+    expect(area.closest('[data-closing]')).toBeNull();
+  });
+});
+
+describe('posting twice', () => {
+  it('treats "already posted" as posted: the sheet closes and the feed refreshes', async () => {
+    api.getMe.mockResolvedValue({ profile: { handle: 'midnight.moth' } });
+    api.create.mockRejectedValue(Object.assign(new Error('dup'), { status: 409, code: 'duplicate_confession' }));
+    renderPage();
+    await screen.findByText('@lunar.koi');
+    fireEvent.click(screen.getByRole('button', { name: /Write a confession/ }));
+    fireEvent.change(await screen.findByLabelText('Your confession'), { target: { value: 'The retry of a post that went through.' } });
+    const listCalls = api.list.mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: 'Post' }));
+    await waitFor(() => expect(screen.queryByLabelText('Your confession')).toBeNull());
+    await waitFor(() => expect(api.list.mock.calls.length).toBeGreaterThan(listCalls));
   });
 });

@@ -368,7 +368,6 @@
 .convTime {
   font-size: 0.72rem;
   color: var(--color-text-light);
-  font-variant-numeric: tabular-nums;
 }
 
 .convTimeUnread {

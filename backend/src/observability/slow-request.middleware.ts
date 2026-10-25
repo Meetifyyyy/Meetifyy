@@ -5,6 +5,7 @@ import { config } from '../config';
 import { SlowRequestRecorder } from './slow-request.recorder';
 import { clientIp as resolveClientIp } from '../common/rate-limit/client-ip.util';
 import { stringField } from '../common/utils/type-guards.util';
+import { isAnonymousRoute, requestUserId } from '../common/logging/log-format';
 import type { GuardRequest } from '../common/types/authenticated-request';
 
 /**
@@ -45,6 +46,7 @@ export class SlowRequestMiddleware implements NestMiddleware<
       );
       if (durationMs < thresholdMs) return;
 
+      const anonymous = isAnonymousRoute(path);
       this.recorder.record({
         route: resolveRoute(req),
         path: path.split('?')[0],
@@ -52,11 +54,14 @@ export class SlowRequestMiddleware implements NestMiddleware<
         statusCode: res.statusCode,
         durationMs,
         requestId: headerValue(req, 'x-request-id'),
-        // Set by whichever guard authenticated this request, if any.
-        userId: req.user?.id ?? null,
+        // Set by whichever guard authenticated this request, if any; never
+        // for an anonymous route (see isAnonymousRoute).
+        userId: requestUserId(req) ?? null,
         adminId: req.admin?.id ?? null,
-        ip: clientIp(req),
-        userAgent: headerValue(req, 'user-agent'),
+        // Nor the IP or device string: beside a confessions URL either one
+        // identifies the author as surely as the account id would.
+        ip: anonymous ? null : clientIp(req),
+        userAgent: anonymous ? null : headerValue(req, 'user-agent'),
         bytesOut: parseBytes(res.getHeader('content-length')),
       });
     });

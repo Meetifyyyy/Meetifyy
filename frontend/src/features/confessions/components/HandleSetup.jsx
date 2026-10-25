@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useCreateConfessionProfile, useHandleAvailability } from '@shared/hooks/useConfessions';
-import { HANDLE_MAX, handleProblem, suggestHandles, validateHandle } from '@shared/lib/confessionHandle';
+import { HANDLE_MAX, handleProblem, looksIdentifying, suggestHandles, validateHandle } from '@shared/lib/confessionHandle';
+import { useAuth } from '@shared/context/AuthContext';
+import { useCampusAffiliation } from '@shared/hooks/useCampusAffiliation';
 import { showToast } from '@shared/utils/toast';
 import styles from './HandleSetup.module.css';
 
@@ -12,8 +14,12 @@ import styles from './HandleSetup.module.css';
  * in the gap, or one the server refuses for a reason only it can know (the
  * person's own username), comes back as an error and is shown in the same
  * place as the live feedback.
+ *
+ * A name that looks like part of the person's real name, username or email
+ * gets a warning under the field. It is advice, not a rule: the name can still
+ * be chosen, and the warning never repeats what it matched.
  */
-export default function HandleSetup({ onCreated, onBack, ready = true }) {
+export default function HandleSetup({ onCreated, onBack }) {
   const [handle, setHandle] = useState('');
   const [submitError, setSubmitError] = useState(null);
   const [suggestions, setSuggestions] = useState(() => suggestHandles(3));
@@ -21,7 +27,16 @@ export default function HandleSetup({ onCreated, onBack, ready = true }) {
   const create = useCreateConfessionProfile();
   const inputRef = useRef(null);
   const statusId = useId();
+  const warnId = useId();
   const noteId = useId();
+
+  const { currentUser } = useAuth();
+  const { affiliation } = useCampusAffiliation();
+  const identity = useMemo(() => ({
+    names: [currentUser?.displayName, currentUser?.username],
+    emails: [currentUser?.email, currentUser?.collegeEmail, affiliation?.email],
+  }), [currentUser?.displayName, currentUser?.username, currentUser?.email, currentUser?.collegeEmail, affiliation?.email]);
+  const traceable = useMemo(() => looksIdentifying(handle, identity), [handle, identity]);
 
   useEffect(() => {
     // A beat after mounting, so the keyboard does not open over the deck's
@@ -36,11 +51,11 @@ export default function HandleSetup({ onCreated, onBack, ready = true }) {
     setSubmitError(null);
   }, []);
 
-  const canSubmit = ready && availability.state === 'available' && !create.isPending;
+  const canSubmit = availability.state === 'available' && !create.isPending;
 
   const onSubmit = useCallback(async (e) => {
     e.preventDefault();
-    if (!ready || !validateHandle(handle).ok || create.isPending) return;
+    if (!validateHandle(handle).ok || create.isPending) return;
     setSubmitError(null);
     try {
       const data = await create.mutateAsync(handle.trim());
@@ -53,7 +68,7 @@ export default function HandleSetup({ onCreated, onBack, ready = true }) {
       else if (code === 'rate_limited') setSubmitError(err.message || 'Too many tries. Wait a moment.');
       else if (err?.name !== 'OfflineError') showToast(err?.message || 'Couldn’t save your name. Try again.', 'error');
     }
-  }, [ready, handle, create, onCreated]);
+  }, [handle, create, onCreated]);
 
   const status = submitError
     ? { tone: 'bad', text: submitError }
@@ -86,7 +101,7 @@ export default function HandleSetup({ onCreated, onBack, ready = true }) {
             onChange={onChange}
             placeholder="your.secret.name"
             aria-label="Anonymous name"
-            aria-describedby={`${statusId} ${noteId}`}
+            aria-describedby={`${statusId} ${traceable ? `${warnId} ` : ''}${noteId}`}
             aria-invalid={status.tone === 'bad' ? 'true' : undefined}
             autoComplete="off"
             autoCapitalize="none"
@@ -103,6 +118,12 @@ export default function HandleSetup({ onCreated, onBack, ready = true }) {
           <span className={styles.statusDot} aria-hidden="true" />
           {status.text}
         </p>
+
+        {traceable && status.tone !== 'bad' && (
+          <p id={warnId} className={styles.warn}>
+            This looks like part of your name or email. Something less traceable keeps you anonymous.
+          </p>
+        )}
 
         <div className={styles.suggest} role="group" aria-label="Suggested names">
           <div className={styles.chips}>

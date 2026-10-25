@@ -132,6 +132,13 @@
   line-height: 1.25;
 }
 
+/* The campus-rep badge, at the post header's size. Centred on the name's
+   line with no nudge: the badge's own 1px lift (for cap-height headings)
+   left it sitting high beside 15px text. */
+.nameButton .repBadge {
+  translate: none;
+}
+
 /* The name keeps its room; only the handle truncates first. */
 .identity > .nameButton { flex: 0 1 auto; }
 
@@ -151,8 +158,11 @@
 
 .username {
   font-family: var(--font-family-display);
+  /* Name and text sizes are the post's own (Post.module.css), so a comment
+     reads at the same size as the post above it; handle and time match the
+     name. */
   font-weight: 600;
-  font-size: 0.88rem;
+  font-size: 0.9375rem;
   line-height: 1.25;
   color: var(--color-text-main);
   white-space: nowrap;
@@ -168,12 +178,31 @@
   flex: 0 100 auto;
   min-width: 0;
   /* Same size as the name beside it. */
-  font-size: 0.88rem;
+  font-size: 0.9375rem;
   line-height: 1.25;
   color: var(--color-text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Handle, dot and time sit a touch above the name's baseline: in the lighter
+   weight beside the bold name they read as low otherwise. Relative, so the
+   line itself does not move. */
+.handle,
+.timeDot,
+.time {
+  position: relative;
+  top: -0.06em;
+}
+
+/* Inter draws "@" hanging below the line. It is lifted to sit centred on
+   capital height (0.13em in all, with the handle's own lift above), where
+   Inter's case-sensitive "@" would be; the bundled font subset leaves that
+   feature out. */
+.at {
+  position: relative;
+  top: -0.07em;
 }
 
 .collegeIcon {
@@ -190,8 +219,7 @@
   flex-shrink: 0;
   color: var(--color-text-muted);
   opacity: 0.6;
-  /* Same size as the name beside it. */
-  font-size: 0.88rem;
+  font-size: 0.9375rem;
   line-height: 1.25;
 }
 
@@ -199,9 +227,7 @@
   font-family: var(--font-family-sans);
   font-weight: 400;
   flex-shrink: 0;
-  /* Same size as the name beside it. */
-  font-size: 0.88rem;
-  font-variant-numeric: tabular-nums;
+  font-size: 0.9375rem;
   line-height: 1.25;
   color: var(--color-text-muted);
   white-space: nowrap;
@@ -245,8 +271,9 @@
 .text {
   margin-top: 3px;
   color: var(--color-text-main);
-  font-size: 0.92rem;
-  line-height: 1.5;
+  font-size: 1rem;
+  font-weight: 450;
+  line-height: 1.6;
   overflow-wrap: anywhere;
   word-break: break-word;
 }

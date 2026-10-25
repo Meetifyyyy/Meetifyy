@@ -43,6 +43,10 @@ jest.mock('@sentry/nestjs', () => ({
 
 // Imported after the mock is registered.
 import { HttpExceptionFilter } from './http-exception.filter';
+import type {
+  ErrorLogRecord,
+  ErrorLogRecorder,
+} from '../../observability/error-log.recorder';
 
 interface ErrorBody {
   statusCode: number;
@@ -59,7 +63,7 @@ describe('HttpExceptionFilter → Sentry', () => {
   });
   afterEach(() => jest.restoreAllMocks());
 
-  const run = (exception: unknown) => {
+  const run = (exception: unknown, url = '/api/messages/abc?token=secret') => {
     const json = jest.fn<void, [ErrorBody]>();
     const status = jest.fn(() => ({ json }));
     const host = stub<ArgumentsHost>({
@@ -67,8 +71,8 @@ describe('HttpExceptionFilter → Sentry', () => {
         getResponse: () => ({ status, json, headersSent: false }),
         getRequest: () => ({
           method: 'POST',
-          url: '/api/messages/abc?token=secret',
-          originalUrl: '/api/messages/abc?token=secret',
+          url,
+          originalUrl: url,
           baseUrl: '/api/messages',
           route: { path: '/:id' },
           body: { text: 'a private message', password: 'hunter2' },
@@ -116,5 +120,53 @@ describe('HttpExceptionFilter → Sentry', () => {
   it('does not report expected 4xx outcomes', () => {
     run(new BadRequestException('nope'));
     expect(captured).toHaveLength(0);
+  });
+
+  it('names nobody on an anonymous confessions route, in Sentry or the log', () => {
+    const logged = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+    run(new Error('db exploded'), '/api/confessions/abc');
+    expect(captured).toHaveLength(1);
+    expect(captured[0].scope.user).toBeUndefined();
+    // The log line carries neither the account nor the confession's text.
+    const line = JSON.stringify(logged.mock.calls);
+    expect(line).not.toMatch(/user-1|private message/);
+  });
+
+  it('keeps account, IP and device out of the error-log row for confessions', () => {
+    const record = jest.fn<void, [ErrorLogRecord]>();
+    const recorded = new HttpExceptionFilter(
+      stub<ErrorLogRecorder>({ record }),
+    );
+    const json = jest.fn<void, [ErrorBody]>();
+    const host = stub<ArgumentsHost>({
+      switchToHttp: () => ({
+        getResponse: () => ({
+          status: jest.fn(() => ({ json })),
+          json,
+          headersSent: false,
+        }),
+        getRequest: () => ({
+          method: 'DELETE',
+          url: '/api/confessions/abc',
+          originalUrl: '/api/confessions/abc',
+          route: { path: '/:id' },
+          headers: {
+            'user-agent': 'Pixel 8',
+            'x-forwarded-for': '203.0.113.9',
+          },
+          ip: '203.0.113.9',
+          user: { id: 'user-1' },
+        }),
+      }),
+    });
+    recorded.catch(new Error('db exploded'), host);
+    expect(record).toHaveBeenCalledTimes(1);
+    expect(record.mock.calls[0][0]).toMatchObject({
+      userId: null,
+      ip: null,
+      userAgent: null,
+    });
   });
 });

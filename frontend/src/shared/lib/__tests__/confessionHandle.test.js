@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateHandle, suggestHandles, HANDLE_MAX } from '../confessionHandle';
+import { validateHandle, suggestHandles, looksIdentifying, HANDLE_MAX } from '../confessionHandle';
 
 describe('validateHandle', () => {
   it.each([
@@ -36,5 +36,48 @@ describe('suggestHandles', () => {
       expect(new Set(names).size).toBe(3);
       names.forEach((n) => expect(validateHandle(n).ok).toBe(true));
     }
+  });
+});
+
+describe('looksIdentifying', () => {
+  const priya = {
+    names: ['Priya Sharma', 'priya_s21'],
+    emails: ['priya.sharma2004@iitd.ac.in', '21bcs045@college.edu'],
+  };
+
+  it.each([
+    ['PriyaWrites', 'first name, any case'],
+    ['the.sharma', 'surname'],
+    ['priyasharma', 'joined full name'],
+    ['moth2004', 'digits from the email'],
+    ['owl_045x', 'roll number digits'],
+  ])('flags %j (%s)', (handle) => {
+    expect(looksIdentifying(handle, priya)).toBe(true);
+  });
+
+  it.each([
+    ['quiet.fox42', 'unrelated, short digits'],
+    ['midnight_owl', 'unrelated'],
+    ['iitd.ghost', 'college domain is not the person'],
+    ['student.moth', 'a generic email piece'],
+  ])('leaves %j alone (%s)', (handle) => {
+    expect(looksIdentifying(handle, priya)).toBe(false);
+  });
+
+  it('matches three-letter names only as a whole piece', () => {
+    const sam = { names: ['Sam Li'], emails: [] };
+    expect(looksIdentifying('sam.owl', sam)).toBe(true);
+    expect(looksIdentifying('samosa.lover', sam)).toBe(false);
+    // Two letters is too short to mean anything.
+    expect(looksIdentifying('li.lantern', sam)).toBe(false);
+  });
+
+  it('ignores accents', () => {
+    expect(looksIdentifying('zoe.writes', { names: ['Zoë Hart'] })).toBe(true);
+  });
+
+  it('is quiet with no identity to compare', () => {
+    expect(looksIdentifying('priya', undefined)).toBe(false);
+    expect(looksIdentifying('priya', { names: [null, ''], emails: [undefined] })).toBe(false);
   });
 });

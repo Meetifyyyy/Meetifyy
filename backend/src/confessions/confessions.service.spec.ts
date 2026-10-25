@@ -79,10 +79,21 @@ function build() {
   );
   const relateCreateMany = jest.fn(() => Promise.resolve({ count: 1 }));
   const relateDeleteMany = jest.fn(() => Promise.resolve({ count: 1 }));
+  const calls: string[] = [];
+  const executeRaw = jest.fn((sql: TemplateStringsArray) => {
+    calls.push(sql.join('?'));
+    return Promise.resolve(1);
+  });
+  confessionFindFirst.mockImplementation(() => {
+    calls.push('findFirst');
+    return Promise.resolve(null);
+  });
 
   const tx = {
+    $executeRaw: executeRaw,
     confession: {
       findFirst: confessionFindFirst,
+      create: confessionCreate,
       update: confessionUpdate,
       findUniqueOrThrow: confessionFindUniqueOrThrow,
     },
@@ -120,6 +131,8 @@ function build() {
     relateFindMany,
     relateCreateMany,
     relateDeleteMany,
+    executeRaw,
+    calls,
   };
 }
 
@@ -267,6 +280,18 @@ describe('ConfessionsService — create', () => {
     ).resolves.toMatchObject({ code: 'content_invalid' });
   });
 
+  it('needs at least 15 characters', async () => {
+    const t = build();
+    t.profileFindUnique.mockResolvedValue({ id: 'p1' });
+    t.confessionCreate.mockResolvedValue(row('n1', 'p1'));
+    await expect(
+      codeOf(t.service.create('u1', 'c1', 'fourteen chars')),
+    ).resolves.toMatchObject({ code: 'content_invalid' });
+    await expect(
+      t.service.create('u1', 'c1', 'fifteen chars!!'),
+    ).resolves.toHaveProperty('confession');
+  });
+
   it('rejects the same content from the same profile within 24h', async () => {
     const t = build();
     t.profileFindUnique.mockResolvedValue({ id: 'p1' });
@@ -304,6 +329,17 @@ describe('ConfessionsService — create', () => {
       }),
     );
     expect(confession.isMine).toBe(true);
+  });
+
+  it('takes the per-profile lock before checking for a duplicate', async () => {
+    const t = build();
+    t.profileFindUnique.mockResolvedValue({ id: 'p1' });
+    t.confessionCreate.mockResolvedValue(row('n1', 'p1'));
+    await t.service.create('u1', 'c1', 'a confession posted twice at once');
+    // Check-then-insert outside a lock let a double tap post twice.
+    expect(t.calls[0]).toContain('pg_advisory_xact_lock');
+    expect(t.calls[1]).toBe('findFirst');
+    expect(t.executeRaw.mock.calls[0]).toContain('p1');
   });
 });
 

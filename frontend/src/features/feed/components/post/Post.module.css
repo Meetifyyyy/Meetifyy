@@ -47,17 +47,17 @@
 .postName {
   font-family: var(--font-family-display);
   font-weight: 600;
-  font-size: 0.88rem;
+  font-size: 0.9375rem;
   color: var(--color-text-main);
   text-align: left !important;
 }
 
 .postTime {
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   /* The line under the author's name reads as one subtitle: handle, dot and
      time share the app's subtitle colour and weight. */
   color: var(--color-text-muted);
-  font-weight: 400;
+  font-weight: 500;
   margin-top: 1px;
   text-align: left !important;
 }
@@ -94,13 +94,23 @@
 }
 
 .postBody {
-  composes: type-body from global;
-  font-size: 0.92rem;
+  /* Not `composes: type-body`: that global class loads after this file and,
+     equally specific, won — every post was drawn at its 14px / 400 whatever
+     was set here. Its family and tracking are kept; size and weight are the
+     post's own: one for every post, whatever its length. */
+  font-family: var(--font-family-sans);
+  letter-spacing: var(--tracking-normal);
+  text-transform: none;
+  color: var(--color-text-main);
+  font-size: 1rem;
+  font-weight: 450;
+  line-height: 1.6;
   margin-bottom: 0.5rem;
   margin-left: 0;
   margin-right: 0;
   text-align: left !important;
 }
+
 
 .postMedia {
   width: 100%;
@@ -266,8 +276,9 @@
 .postActionCount {
   font-size: 0.85rem;
   font-weight: 600;
-  font-variant-numeric: tabular-nums;
   flex-shrink: 0;
+  /* Digits keep one width, so 9 → 10 does not nudge the row. */
+  font-variant-numeric: tabular-nums;
 }
 
 @keyframes likePop {

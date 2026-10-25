@@ -10,7 +10,7 @@
  * The client never sends or caches a real identity alongside a confession.
  */
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { confessionsApi } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
 import { useHasCampusAccess, useCampusDeniedHandler } from './useCampusAffiliation';
@@ -57,9 +57,29 @@ function writeHasProfileHint(userId, has) {
 }
 
 /**
- * The caller's anonymous profile: `undefined` while loading, `null` if none yet.
+ * How long an answer from `GET /confessions/me` stands. A profile is created
+ * once and never renamed, so "has one" never goes stale. "Has none" stands
+ * only briefly: it stops being true the moment a name is chosen on another
+ * device, and the onboarding must never be shown to someone who already
+ * finished it. Brief, rather than none, so the answer Campus fetched on the
+ * way in is the one the page opens with instead of being asked for again.
+ */
+const NO_PROFILE_FRESH_MS = 30_000;
+const profileStaleTime = (query) => (query.state.data?.profile ? Infinity : NO_PROFILE_FRESH_MS);
+
+const fetchMe = () => confessionsApi.getMe();
+const fetchFeedPage = ({ pageParam }) => confessionsApi.list({ cursor: pageParam });
+const feedNextPage = (last) => last?.nextCursor ?? undefined;
+const FEED_STALE_TIME = 30_000;
+
+/**
+ * The caller's anonymous profile: `undefined` until known, `null` if none yet.
+ *
  * `hint` is the device's last-known answer (see readHasProfileHint), for
- * choosing the first screen before the server has replied.
+ * opening on the feed before the server has replied. `confirmedNone` is true
+ * only on a fresh "no profile" from the server (fetched for this visit, or in
+ * the last few seconds): an older cached "none" is not enough to show the
+ * onboarding, because the name may have been chosen elsewhere since.
  */
 export function useConfessionProfile() {
   const { isLoggedIn, currentUser } = useAuth();
@@ -69,25 +89,60 @@ export function useConfessionProfile() {
   const query = useQuery({
     queryKey: CONFESSION_KEYS.me,
     queryFn: () =>
-      confessionsApi.getMe().catch((err) => {
+      fetchMe().catch((err) => {
         onDenied(err);
         throw err;
       }),
     enabled: Boolean(isLoggedIn) && hasAccess,
-    staleTime: 5 * 60_000,
+    staleTime: profileStaleTime,
   });
   const profile = query.data ? query.data.profile ?? null : undefined;
   useEffect(() => {
     if (profile !== undefined) writeHasProfileHint(userId, Boolean(profile));
   }, [profile, userId]);
-  const [hint] = useState(() => readHasProfileHint(userId));
+  // Per account, and read again if the account arrives after the first render.
+  const hint = useMemo(() => readHasProfileHint(userId), [userId]);
+  // Once confirmed, it stays confirmed for this visit: a background refetch
+  // (the window regaining focus once the answer has aged) must not swap the
+  // name screen for the loading frame under someone's fingers and lose what
+  // they typed. A refetch that finds a profile still wins, via `profile`.
+  const freshNone = profile === null && (query.isFetchedAfterMount || !query.isStale);
+  const [noneSeen, setNoneSeen] = useState(false);
+  if (freshNone && !noneSeen) setNoneSeen(true);
   return {
     profile,
     hint,
-    isLoading: query.isLoading,
+    confirmedNone: profile === null && (freshNone || noneSeen),
     isError: query.isError,
     refetch: query.refetch,
   };
+}
+
+/**
+ * Warms what the Confessions page opens with, so the tap from Campus lands on
+ * a finished screen. `profile` asks who the caller is there (one request, and
+ * none at all once a profile is cached); `feed` also loads the first page,
+ * which is worth it only on the way in. Both share the hooks' cache keys and
+ * freshness rules, so nothing is fetched twice.
+ */
+export function usePrefetchConfessions() {
+  const queryClient = useQueryClient();
+  const { currentUser } = useAuth();
+  const userId = currentUser?.id;
+  return useCallback(({ feed = false } = {}) => {
+    queryClient.prefetchQuery({ queryKey: CONFESSION_KEYS.me, queryFn: fetchMe, staleTime: profileStaleTime });
+    const cached = queryClient.getQueryData(CONFESSION_KEYS.me);
+    const hasProfile = cached ? Boolean(cached.profile) : readHasProfileHint(userId) === true;
+    if (feed && hasProfile) {
+      queryClient.prefetchInfiniteQuery({
+        queryKey: CONFESSION_KEYS.feed,
+        queryFn: fetchFeedPage,
+        initialPageParam: undefined,
+        getNextPageParam: feedNextPage,
+        staleTime: FEED_STALE_TIME,
+      });
+    }
+  }, [queryClient, userId]);
 }
 
 /**
@@ -158,15 +213,15 @@ export function useConfessionsFeed({ enabled = true } = {}) {
   const onDenied = useCampusDeniedHandler();
   const query = useInfiniteQuery({
     queryKey: CONFESSION_KEYS.feed,
-    queryFn: ({ pageParam }) =>
-      confessionsApi.list({ cursor: pageParam }).catch((err) => {
+    queryFn: (ctx) =>
+      fetchFeedPage(ctx).catch((err) => {
         onDenied(err);
         throw err;
       }),
     enabled: Boolean(isLoggedIn) && hasAccess && enabled,
     initialPageParam: undefined,
-    getNextPageParam: (last) => last?.nextCursor ?? undefined,
-    staleTime: 30_000,
+    getNextPageParam: feedNextPage,
+    staleTime: FEED_STALE_TIME,
   });
 
   const confessions = useMemo(() => {

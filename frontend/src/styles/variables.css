@@ -81,6 +81,8 @@
   --color-border: #E2E8F0;
   --color-border-light: #F1F5F9;
   --color-border-dark: #CBD5E1;
+  /* Bottom-sheet grab handle: a step stronger than the borders so it reads. */
+  --sheet-handle-color: #94A3B8;
 
   --bg-gradient-center: #ffffff;
   --bg-gradient-mid: #f0f5fc;
@@ -205,6 +207,7 @@
   --color-border: #404040;
   --color-border-light: #333333;
   --color-border-dark: #4D4D4D;
+  --sheet-handle-color: #737373;
 
   --bg-gradient-center: #1E1E1E;
   --bg-gradient-mid: #121212;
