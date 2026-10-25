@@ -259,7 +259,9 @@
 .resultsList {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  /* The only spacing between results, whatever their type: 8px. Wrappers and
+     the cards inside them carry no vertical margin of their own (below). */
+  gap: 8px;
   padding: 0.5rem;
 }
 
@@ -267,7 +269,7 @@
   font-size: 0.8rem;
   font-weight: 500;
   color: var(--color-text-muted);
-  padding: 0.5rem 0.35rem 0.25rem;
+  padding: 0.5rem 0.35rem 0;
 }
 
 /* ─── Result Card ─────────────────────────────────────────────────────────── */
@@ -545,6 +547,14 @@
     overflow: hidden;
   }
 
+  /* The page itself is the screen surface (black in dark mode); the result
+     cards keep --color-bg-white and stand on it. */
+  .searchShell,
+  .header,
+  .body {
+    background: var(--color-surface-screen, var(--color-bg-white));
+  }
+
   .header {
     padding: 0.5rem 0.75rem;
     padding-top: max(0.5rem, env(safe-area-inset-top));
@@ -611,8 +621,15 @@
   }
 }
 
-.crewCardWrapper {
-  margin-bottom: 8px;
+.crewCardWrapper,
+.postWrapper {
+  margin: 0;
+}
+
+/* Post's own card has a 4px margin-bottom for the home feed; here the list gap
+   alone spaces results. Two classes so this wins whatever the load order. */
+.resultsList .postWrapper > * {
+  margin-bottom: 0;
 }
 
 .crewCardWrapper > div {

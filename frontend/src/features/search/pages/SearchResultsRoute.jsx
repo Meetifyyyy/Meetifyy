@@ -504,7 +504,7 @@ export default function SearchResultsRoute() {
                 }
                 if (kind === 'post') {
                   return (
-                    <div key={id} style={{ marginBottom: '8px' }}>
+                    <div key={id} className={styles.postWrapper}>
                       <Post postData={data} onClick={handlePostClick} onCommentClick={handleCommentClick} />
                     </div>
                   );
