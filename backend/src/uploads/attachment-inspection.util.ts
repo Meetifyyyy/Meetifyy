@@ -41,6 +41,45 @@ export function sniffMimeType(buffer: Buffer): string | null {
   return null;
 }
 
+/** True when the bytes begin like one of the video containers uploads use. */
+function hasVideoSignature(buffer: Buffer): boolean {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 12) return false;
+  // ISO base media: MP4, and QuickTime written under an .mp4 name.
+  if (buffer.subarray(4, 8).toString('ascii') === 'ftyp') return true;
+  // EBML header: WebM / Matroska.
+  if (
+    buffer[0] === 0x1a &&
+    buffer[1] === 0x45 &&
+    buffer[2] === 0xdf &&
+    buffer[3] === 0xa3
+  ) {
+    return true;
+  }
+  return buffer.subarray(0, 4).toString('ascii') === 'OggS';
+}
+
+/**
+ * Whether an upload's bytes are the KIND its declared type names: an image
+ * that is an image, a video that is a video.
+ *
+ * Kinds rather than exact types on purpose. A client re-encodes photos, and a
+ * label that lags its bytes (a PNG named `.jpg`) still renders everywhere; a
+ * non-media file labelled as one does not, and is what this refuses. Audio has
+ * no check here: voice notes come from the recorder in containers that share no
+ * single signature.
+ */
+export function contentMatchesDeclaredKind(
+  buffer: Buffer,
+  mimetype: string,
+): boolean {
+  const type = (mimetype || '').toLowerCase();
+  if (type.startsWith('image/')) {
+    return sniffMimeType(buffer)?.startsWith('image/') ?? false;
+  }
+  if (type.startsWith('video/')) return hasVideoSignature(buffer);
+  return true;
+}
+
 /**
  * Reduces an uploaded file's name to something safe to store in JSON and show
  * in the admin UI. The name is display-only - the stored object key is

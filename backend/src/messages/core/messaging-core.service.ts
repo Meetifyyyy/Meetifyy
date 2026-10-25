@@ -2,11 +2,14 @@ import { retryOnClientIdConflict, withClientSendLock } from './send-lock';
 import type { RedisService } from '../../redis/redis.service';
 import {
   Injectable,
+  Inject,
+  Optional,
   NotFoundException,
   ForbiddenException,
   BadRequestException,
   Logger,
 } from '@nestjs/common';
+import { StorageService } from '../../uploads/uploads.service';
 import { inviteString, withInviteExpiry } from './invite-data';
 import {
   arrayOrEmpty,
@@ -83,6 +86,16 @@ export class MessagingCoreService {
     // protection disappear silently instead of failing at boot.
     protected rateLimit: RateLimitService,
   ) {}
+
+  /**
+   * Measures attachments that did not come through a conversation upload (see
+   * StorageService.assertMessageAttachmentWithinLimits). Property-injected so
+   * the DM, group and socket services that extend this class all get it
+   * without each re-declaring a constructor parameter; UploadsModule is global.
+   */
+  @Optional()
+  @Inject(StorageService)
+  protected readonly attachmentStorage?: StorageService;
 
   /**
    * Verification gate for a conversation that already exists.
@@ -322,6 +335,13 @@ export class MessagingCoreService {
     // The DM and group-chat services inherit this method, so the limit has to
     // be here as well as in MessagesService. See message-limits.ts.
     assertMessageTextWithinLimit(payload?.text);
+    // Same for the attachment size: a key from outside a conversation folder
+    // was never measured against the Messages limits.
+    if (payload?.mediaUrl) {
+      await this.attachmentStorage?.assertMessageAttachmentWithinLimits(
+        payload.mediaUrl,
+      );
+    }
 
     const realConvId = await this.resolveConversationId(
       conversationId,

@@ -13,8 +13,10 @@ import {
   UploadedFile,
   BadRequestException,
   ForbiddenException,
+  PayloadTooLargeException,
 } from '@nestjs/common';
 import { StorageService } from './uploads.service';
+import { isAllowedUploadType } from './mime-extension';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { RateLimit } from '../common/rate-limit/rate-limit.decorator';
 import { RateLimitPolicyGuard } from '../common/rate-limit/rate-limit-policy.guard';
@@ -24,11 +26,6 @@ import type { Response, Request } from 'express';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
-import {
-  MAX_COVERED_IMAGE_SIZE_BYTES,
-  COVERED_IMAGE_SIZE_ERROR_MESSAGE,
-  isCoveredImageFolder,
-} from './uploads.constants';
 import type { AuthenticatedRequest } from '../common/types/authenticated-request';
 import { stringField } from '../common/utils/type-guards.util';
 import { bundledDefaultAssetPath } from './default-assets.service';
@@ -171,11 +168,7 @@ export class UploadsController {
     FileInterceptor('file', {
       limits: { fileSize: 50 * 1024 * 1024 },
       fileFilter: (_req, file, callback) => {
-        const allowed =
-          /^(image\/(jpeg|png|webp|gif)|video\/(mp4|webm|ogg)|audio\/(mpeg|wav|webm|ogg))$/i.test(
-            file.mimetype,
-          );
-        callback(null, allowed);
+        callback(null, isAllowedUploadType(file.mimetype));
       },
     }),
   )
@@ -261,16 +254,13 @@ export class UploadsController {
     const filePath = path.resolve(resolvedUploadsDir, key);
     if (!filePath.startsWith(`${resolvedUploadsDir}${path.sep}`))
       throw new BadRequestException('Invalid storage path');
-    const folder = key.split('/')[0] || 'general';
-    const isCovered = isCoveredImageFolder(folder);
-    const maxUploadBytes = isCovered
-      ? MAX_COVERED_IMAGE_SIZE_BYTES
-      : 50 * 1024 * 1024;
+    // The same per-folder, per-kind limit as the presign that issued this key
+    // (the row it registered carries the declared type).
+    const { maxBytes: maxUploadBytes, message: tooLargeMessage } =
+      await this.storageService.uploadLimitForKey(key);
     const declaredLength = Number(req.headers['content-length'] || 0);
     if (declaredLength > maxUploadBytes)
-      throw new BadRequestException(
-        isCovered ? COVERED_IMAGE_SIZE_ERROR_MESSAGE : 'File is too large',
-      );
+      throw new PayloadTooLargeException(tooLargeMessage);
     const folderPath = path.dirname(filePath);
 
     if (!fs.existsSync(folderPath)) {
@@ -287,12 +277,7 @@ export class UploadsController {
         req.unpipe(writeStream);
         writeStream.destroy();
         req.destroy();
-        if (!res.headersSent)
-          res.status(413).json({
-            error: isCovered
-              ? COVERED_IMAGE_SIZE_ERROR_MESSAGE
-              : 'File is too large',
-          });
+        if (!res.headersSent) res.status(413).json({ error: tooLargeMessage });
       }
     });
     req.pipe(writeStream);

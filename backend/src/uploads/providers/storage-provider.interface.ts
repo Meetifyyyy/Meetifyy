@@ -15,6 +15,8 @@ export interface StorageProvider {
    * @param contentType  MIME type of the file
    * @param folder  Folder prefix, e.g. "avatars", "general"
    * @param expiresIn  TTL in seconds (default 900)
+   * @param contentLength  Exact size of the body, in bytes. When given it is
+   *   part of the signature, so storage refuses a PUT of any other size.
    */
   createSignedUploadUrl(
     filename: string,
@@ -22,6 +24,7 @@ export interface StorageProvider {
     folder?: string,
     expiresIn?: number,
     explicitKey?: string,
+    contentLength?: number,
   ): Promise<{
     uploadUrl: string;
     publicUrl: string;

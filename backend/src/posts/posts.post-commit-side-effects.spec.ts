@@ -7,7 +7,11 @@ import type { BlocksService } from '../users/blocks.service';
 import type { DomainEventService } from '../events/domain-event.service';
 import type { RedisService } from '../redis/redis.service';
 import type { MentionsService } from '../mentions/mentions.service';
-import type { StorageService } from '../uploads/uploads.service';
+import type {
+  StorageService,
+  StoredObjectCheck,
+} from '../uploads/uploads.service';
+import { PayloadTooLargeException } from '@nestjs/common';
 import type { ContentDeletionAuthorizer } from './content-deletion.authorizer';
 
 /**
@@ -20,7 +24,7 @@ import type { ContentDeletionAuthorizer } from './content-deletion.authorizer';
  * stores and replays.
  */
 describe('PostsService — post-commit side effects never fail the write', () => {
-  const build = () => {
+  const build = (storedCheck: StoredObjectCheck = { state: 'ok' }) => {
     /**
      * What the interactive transaction hands its callback. Distinct from
      * `prisma`, whose writes throw: anything createPost writes outside the
@@ -160,7 +164,10 @@ describe('PostsService — post-commit side effects never fail the write', () =>
       stub<DomainEventService>({ emit }),
       stub<RedisService>(),
       stub<MentionsService>({ sanitize: () => Promise.resolve([]) }),
-      stub<StorageService>({ exists: () => Promise.resolve(true) }),
+      stub<StorageService>({
+        checkStoredObject: (): Promise<StoredObjectCheck> =>
+          Promise.resolve(storedCheck),
+      }),
       stub<ContentDeletionAuthorizer>(),
     );
     return {
@@ -244,6 +251,26 @@ describe('PostsService — post-commit side effects never fail the write', () =>
       ['m-b', 1, '/api/media/posts/b.jpg'],
     ]);
     expect(h.isCommitted()).toBe(true);
+  });
+
+  it('createPost refuses media storage measures over the post limit, before writing', async () => {
+    const h = build({
+      state: 'too_large',
+      message: 'Video must be 25 MB or less',
+    });
+    await expect(
+      h.service.createPost(
+        'u1',
+        'clip',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        ['/api/media/posts/a.jpg', '/api/media/posts/b.jpg'],
+      ),
+    ).rejects.toBeInstanceOf(PayloadTooLargeException);
+    expect(h.tx.$executeRaw).not.toHaveBeenCalled();
+    expect(h.isCommitted()).toBe(false);
   });
 
   it('createPost rolls back when a media row was claimed by someone else', async () => {

@@ -3,6 +3,7 @@ import type { ConfigService } from '@nestjs/config';
 import type { Media } from '@prisma/client';
 import { StorageService } from './uploads.service';
 import { stub } from '../common/testing/stub';
+import { WEBP_BYTES } from './testing/media-bytes';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { StorageProvider } from './providers/storage-provider.interface';
 
@@ -84,9 +85,9 @@ describe('thumbnail variant keys', () => {
     );
 
   const file = stub<Express.Multer.File>({
-    buffer: Buffer.from('x'),
+    buffer: WEBP_BYTES,
     mimetype: 'image/webp',
-    size: 1,
+    size: WEBP_BYTES.length,
   });
 
   it('lets the owner of the original presign its thumbnail', async () => {

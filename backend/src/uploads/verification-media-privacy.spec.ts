@@ -1,6 +1,7 @@
 import type { ConfigService } from '@nestjs/config';
 import { StorageService } from './uploads.service';
 import { stub } from '../common/testing/stub';
+import { MP4_BYTES } from './testing/media-bytes';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { StorageProvider } from './providers/storage-provider.interface';
 
@@ -165,15 +166,30 @@ describe('verification upload content validation', () => {
   });
 
   it('leaves the ordinary upload paths alone', async () => {
-    // Post and chat uploads accept video and audio, whose signatures this
-    // checker does not carry — sniffing them here would break them.
+    // Post and chat uploads accept video and audio, which the image-only
+    // verification check must not be applied to.
     const result = await service.uploadFile(
       'u1',
-      file('video/mp4', notAnImage),
+      file('video/mp4', MP4_BYTES),
       'posts',
     );
     expect(uploaded).toHaveLength(1);
     expect(result.media.visibility).toBe('public');
+  });
+
+  it('refuses a post or chat upload whose bytes are not the kind it claims', async () => {
+    await expect(
+      service.uploadFile('u1', file('video/mp4', notAnImage), 'posts'),
+    ).rejects.toThrow(/do not match its type/);
+    await expect(
+      service.uploadFile('u1', file('image/png', MP4_BYTES), 'chat'),
+    ).rejects.toThrow(/do not match its type/);
+    expect(uploaded).toHaveLength(0);
+  });
+
+  it('does not sniff voice notes, whose containers share no signature', async () => {
+    await service.uploadFile('u1', file('audio/webm', notAnImage), 'voice');
+    expect(uploaded).toHaveLength(1);
   });
 
   it('refuses a presigned direct upload into the verification folder', async () => {

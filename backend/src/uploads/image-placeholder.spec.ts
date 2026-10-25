@@ -10,6 +10,7 @@ import type { StorageProvider } from './providers/storage-provider.interface';
 import { StorageService } from './uploads.service';
 import { withMediaUrl } from '../posts/post-view';
 import { stub } from '../common/testing/stub';
+import { MP4_BYTES, WEBP_BYTES } from './testing/media-bytes';
 import type { PrismaService } from '../prisma/prisma.service';
 
 /** A minimal but real-looking WebP: RIFF header, WEBP, then filler bytes. */
@@ -293,7 +294,7 @@ describe('StorageService.getPresignedUrl placeholder', () => {
       stub<Express.Multer.File>({
         mimetype,
         size: 1000,
-        buffer: Buffer.from('x'),
+        buffer: mimetype.startsWith('video/') ? MP4_BYTES : WEBP_BYTES,
         originalname: 'a',
       });
     await service.uploadFile(

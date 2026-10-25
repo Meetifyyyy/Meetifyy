@@ -106,6 +106,7 @@ export class CloudflareR2Provider implements StorageProvider {
     folder = 'general',
     expiresIn = 900,
     explicitKey?: string,
+    contentLength?: number,
   ): Promise<{
     uploadUrl: string;
     publicUrl: string;
@@ -141,14 +142,26 @@ export class CloudflareR2Provider implements StorageProvider {
       // already sends exactly the contentType it declared, and replaying it
       // would make XHR.setRequestHeader combine it into "type, type".
       ContentType: contentType,
+      /*
+       * The size the server checked against this upload's limit. Signed too,
+       * so the declared size is the size: a direct upload never passes through
+       * the API, and without this a client could declare 1 MB and PUT 1 GB.
+       * The browser sets Content-Length from the body itself (it cannot be
+       * scripted), so an honest client always matches.
+       */
+      ...(contentLength && contentLength > 0
+        ? { ContentLength: contentLength }
+        : {}),
     });
+    const signed = ['content-type'];
+    if (contentLength && contentLength > 0) signed.push('content-length');
     const uploadUrl = await getSignedUrl(this.s3, command, {
       expiresIn,
       // The presigner leaves content-type OUT of the signature by default, so
       // without this the ContentType above is decoration and a client could
       // still store `text/html` on an image key. Listing it makes storage
       // reject any PUT that does not carry exactly this value.
-      signableHeaders: new Set(['content-type']),
+      signableHeaders: new Set(signed),
     });
     const filePublicUrl = this.getPublicUrl(key);
 

@@ -433,6 +433,13 @@ export class MessagesService
   ) {
     const realConvId = await this.resolveConversationId(conversationId);
 
+    // The attachment check MessagingCoreService runs, for the socket path.
+    if (payload?.mediaUrl) {
+      await this.attachmentStorage?.assertMessageAttachmentWithinLimits(
+        payload.mediaUrl,
+      );
+    }
+
     // The socket path (`message:send`) lands here, and it carries almost all
     // real traffic — so the limit has to be here as well as in
     // MessagingCoreService. Shared budget, so the REST aliases and the socket

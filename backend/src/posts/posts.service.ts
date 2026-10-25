@@ -5,6 +5,7 @@ import {
   BadRequestException,
   Logger,
   Optional,
+  PayloadTooLargeException,
 } from '@nestjs/common';
 import { activeAffiliationCollegeIdSql } from '../common/campus/campus-affiliation.sql';
 import {
@@ -529,7 +530,13 @@ export class PostsService {
       }
       const mediaList = await this.prisma.media.findMany({
         where: { objectKey: { in: objectKeys } },
-        select: { id: true, ownerId: true, postId: true, objectKey: true },
+        select: {
+          id: true,
+          ownerId: true,
+          postId: true,
+          objectKey: true,
+          mimeType: true,
+        },
       });
 
       if (mediaList.length !== objectKeys.length) {
@@ -552,17 +559,32 @@ export class PostsService {
         }
       }
 
-      const existenceChecks = await Promise.all(
-        objectKeys.map((k) => this.storageService.exists(k)),
+      // There, and within the post limits (25 MB a video, 5 MB an image),
+      // measured from storage: the one HEAD per item this always made now
+      // reads the size as well as the existence.
+      const storedChecks = await Promise.all(
+        objectKeys.map((k) =>
+          this.storageService.checkStoredObject(
+            k,
+            mediaList.find((m) => m.objectKey === k)?.mimeType,
+          ),
+        ),
       );
 
-      if (existenceChecks.some((exists) => !exists)) {
+      if (storedChecks.some((c) => c.state === 'missing')) {
         this.logger.warn(
           `createPost: one or more media objects missing from storage (author=${authorId})`,
         );
         throw new BadRequestException(
           'One or more image uploads did not finish. Please re-select the image and try again.',
         );
+      }
+      const oversized = storedChecks.find((c) => c.state === 'too_large');
+      if (oversized?.state === 'too_large') {
+        this.logger.warn(
+          `createPost: refused over-limit media (author=${authorId})`,
+        );
+        throw new PayloadTooLargeException(oversized.message);
       }
 
       mediaIdsToConnect = objectKeys.map((key) => {

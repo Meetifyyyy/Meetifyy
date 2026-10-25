@@ -3,6 +3,7 @@ import {
   Inject,
   Logger,
   BadRequestException,
+  PayloadTooLargeException,
 } from '@nestjs/common';
 import type { StorageProvider } from './providers/storage-provider.interface';
 import { randomBytes } from 'node:crypto';
@@ -10,15 +11,24 @@ import sharp from 'sharp';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
 import { config } from '../config';
-import { extensionForMime } from './mime-extension';
+import {
+  baseMimeType,
+  extensionForMime,
+  isAllowedUploadType,
+} from './mime-extension';
 import { parseImagePlaceholder } from './image-placeholder.util';
 import { SUPPORT_ATTACHMENT_LIMITS } from '../support/support.constants';
-import { sanitizeFilename, sniffMimeType } from './attachment-inspection.util';
+import {
+  contentMatchesDeclaredKind,
+  sanitizeFilename,
+  sniffMimeType,
+} from './attachment-inspection.util';
 import {
   MAX_COVERED_IMAGE_SIZE_BYTES,
-  MAX_MEDIA_UPLOAD_SIZE_BYTES,
   COVERED_IMAGE_SIZE_ERROR_MESSAGE,
   isCoveredImageFolder,
+  uploadLimitFor,
+  type UploadLimit,
 } from './uploads.constants';
 
 /** Upper bound for a college logo upload. */
@@ -42,6 +52,12 @@ const VARIANT_BASE_EXTENSIONS = [
   'ogv',
   'mov',
 ];
+
+/** What `checkStoredObject` found for one key. */
+export type StoredObjectCheck =
+  | { state: 'ok' }
+  | { state: 'missing' }
+  | { state: 'too_large'; message: string };
 
 /** Which live capture a verification object holds; part of its storage key. */
 export type VerificationCaptureKind = 'selfie' | 'id';
@@ -69,6 +85,19 @@ export class StorageService {
     return (
       typeof key === 'string' && /^[a-zA-Z0-9_-]+\/[a-zA-Z0-9._-]+$/.test(key)
     );
+  }
+
+  /**
+   * The upload limit for a key a presign already registered, from the type
+   * that presign recorded. Used by the local-disk upload endpoint, which
+   * receives only the key.
+   */
+  async uploadLimitForKey(key: string): Promise<UploadLimit> {
+    const media = await this.prisma.media.findUnique({
+      where: { objectKey: key },
+      select: { mimeType: true },
+    });
+    return uploadLimitFor(key.split('/')[0] || 'general', media?.mimeType);
   }
 
   async userOwnsMediaKey(key: string, userId: string): Promise<boolean> {
@@ -103,6 +132,26 @@ export class StorageService {
       file.size > MAX_COVERED_IMAGE_SIZE_BYTES
     ) {
       throw new BadRequestException(COVERED_IMAGE_SIZE_ERROR_MESSAGE);
+    }
+    // The per-file limit for this folder and kind (15 MB for a message video,
+    // 25 MB for a post video, 5 MB for an image in either), checked before a
+    // byte is stored. Multer's own ceiling is only the outer bound.
+    if (!file.size) throw new BadRequestException('This file is empty');
+    const limit = uploadLimitFor(safeFolder, file.mimetype);
+    if (file.size > limit.maxBytes) {
+      throw new PayloadTooLargeException(limit.message);
+    }
+    // Message and post media are checked against their own bytes too: the
+    // multipart type is whatever the caller wrote, and it decides how every
+    // client will try to render the object.
+    if (
+      (safeFolder === 'posts' ||
+        this.isConversationScopedKey(`${safeFolder}/x`)) &&
+      !contentMatchesDeclaredKind(file.buffer, file.mimetype)
+    ) {
+      throw new BadRequestException(
+        "That file's contents do not match its type.",
+      );
     }
     // Identity documents get their bytes checked, not just their label.
     //
@@ -280,22 +329,31 @@ export class StorageService {
     }
     if (typeof contentType !== 'string' || !this.isAllowedMimeType(contentType))
       throw new BadRequestException('Unsupported content type');
+    /*
+     * Checked and recorded as its essence (`audio/webm`), but signed exactly as
+     * declared (`audio/webm;codecs=opus`): the client sends that same header on
+     * its PUT, and a signature over anything else is refused by storage. Every
+     * Chrome voice note used to fail here and go round through the pass-through.
+     */
+    const baseType = baseMimeType(contentType);
     const requestedFileSize = Number(fileSize || 0);
-    const maxAllowedSize = isCoveredImageFolder(safeFolder)
-      ? MAX_COVERED_IMAGE_SIZE_BYTES
-      : MAX_MEDIA_UPLOAD_SIZE_BYTES;
-    if (
-      !Number.isFinite(requestedFileSize) ||
-      requestedFileSize < 0 ||
-      requestedFileSize > maxAllowedSize
-    ) {
-      if (
-        isCoveredImageFolder(safeFolder) &&
-        requestedFileSize > MAX_COVERED_IMAGE_SIZE_BYTES
-      ) {
-        throw new BadRequestException(COVERED_IMAGE_SIZE_ERROR_MESSAGE);
-      }
+    if (!Number.isFinite(requestedFileSize) || requestedFileSize < 0) {
       throw new BadRequestException('Invalid file size');
+    }
+    // Every client sends the real size; a missing or zero one is either an
+    // empty file or a request trying to upload without a bound.
+    if (requestedFileSize === 0) {
+      throw new BadRequestException('This file is empty');
+    }
+    const limit = uploadLimitFor(safeFolder, baseType);
+    if (requestedFileSize > limit.maxBytes) {
+      // Covered images keep the 400 their editors already handle.
+      if (isCoveredImageFolder(safeFolder)) {
+        throw new BadRequestException(limit.message);
+      }
+      // 413, not 400: the client stops here instead of falling back to the
+      // pass-through upload, which would send every byte to be refused again.
+      throw new PayloadTooLargeException(limit.message);
     }
 
     // A variant key lets the client upload a derived thumbnail sharing the
@@ -306,6 +364,8 @@ export class StorageService {
       ? await this.resolveVariantKey(userId, variantKey, safeFolder)
       : undefined;
 
+    // The size just checked becomes part of the signature, so it is also the
+    // only size storage will accept for this URL.
     const { uploadUrl, key, headers } =
       await this.storageProvider.createSignedUploadUrl(
         filename,
@@ -313,6 +373,7 @@ export class StorageService {
         safeFolder,
         undefined,
         explicitKey,
+        requestedFileSize,
       );
 
     const mediaData = {
@@ -321,12 +382,12 @@ export class StorageService {
       provider: this.providerName,
       bucket: this.bucketName,
       storageKey: key, // Legacy fallback
-      type: contentType.startsWith('video')
+      type: baseType.startsWith('video')
         ? 'VIDEO'
-        : contentType.startsWith('audio')
+        : baseType.startsWith('audio')
           ? 'AUDIO'
           : 'IMAGE', // Legacy fallback
-      mimeType: contentType,
+      mimeType: baseType,
       fileSize: requestedFileSize,
       width: width ? Math.round(Number(width)) : undefined,
       height: height ? Math.round(Number(height)) : undefined,
@@ -335,7 +396,7 @@ export class StorageService {
       // input is dropped rather than rejected: it is cosmetic, and an old
       // client sends none at all.
       placeholder:
-        !explicitKey && contentType.startsWith('image/')
+        !explicitKey && baseType.startsWith('image/')
           ? ((await parseImagePlaceholder(placeholder)) ?? undefined)
           : undefined,
       visibility: this.visibilityForFolder(safeFolder),
@@ -355,6 +416,85 @@ export class StorageService {
     const publicUrl = `/api/media/${key}`;
 
     return { uploadUrl, publicUrl, key, headers, mediaId: media.id, media };
+  }
+
+  /**
+   * Whether an uploaded object is in storage and within its upload limit,
+   * measured from storage itself. The row's `fileSize` is the client's own
+   * declaration until a confirm corrects it, so it cannot be the check.
+   *
+   * `declaredType` (the row's mimeType) is the fallback for a store that does
+   * not report a content type, so the right per-kind limit still applies.
+   */
+  async checkStoredObject(
+    key: string,
+    declaredType?: string | null,
+  ): Promise<StoredObjectCheck> {
+    if (!this.isSafeStorageKey(key)) return { state: 'missing' };
+    const metadata = await this.storageProvider
+      .getMetadata(key)
+      .catch(() => null);
+    if (!metadata) return { state: 'missing' };
+    const limit = uploadLimitFor(
+      key.split('/')[0] || 'general',
+      metadata.contentType || declaredType || undefined,
+    );
+    if (metadata.contentLength && metadata.contentLength > limit.maxBytes) {
+      return { state: 'too_large', message: limit.message };
+    }
+    return { state: 'ok' };
+  }
+
+  /**
+   * The storage key a message's `mediaUrl` names, in any of the forms a client
+   * sends (`/api/media/<key>`, an absolute API URL, a bare key, or the public
+   * storage host), or null when it names nothing this server stores.
+   */
+  storedKeyFromUrl(value: unknown): string | null {
+    if (typeof value !== 'string' || !value) return null;
+    const path = value.split(/[?#]/)[0];
+    const viaApi = /\/api\/media\/([a-zA-Z0-9_-]+\/[a-zA-Z0-9._-]+)$/.exec(
+      path,
+    );
+    if (viaApi) return viaApi[1];
+    if (this.isSafeStorageKey(path)) return path;
+    const base = config.storage.publicUrl?.replace(/\/+$/, '');
+    if (base && path.startsWith(`${base}/`)) {
+      const key = path.slice(base.length + 1);
+      return this.isSafeStorageKey(key) ? key : null;
+    }
+    return null;
+  }
+
+  /**
+   * Refuses a message attachment over the Messages limits (15 MB a video, 5 MB
+   * an image, 15 MB a voice note).
+   *
+   * Everything uploaded into a conversation folder was measured on the way in,
+   * so those keys pass untouched - which is what keeps forwarding working,
+   * including attachments sent before these limits existed. Only a stored key
+   * from ANOTHER folder needs a look: a modified client naming a post's 25 MB
+   * video (or a `general` upload) as a chat attachment. That one is measured
+   * from storage. A URL naming nothing stored here is not ours to measure.
+   */
+  async assertMessageAttachmentWithinLimits(mediaUrl: unknown): Promise<void> {
+    const key = this.storedKeyFromUrl(mediaUrl);
+    if (!key || this.isConversationScopedKey(key)) return;
+    const [metadata, media] = await Promise.all([
+      this.storageProvider.getMetadata(key).catch(() => null),
+      this.prisma.media.findUnique({
+        where: { objectKey: key },
+        select: { mimeType: true },
+      }),
+    ]);
+    if (!metadata?.contentLength) return;
+    const limit = uploadLimitFor(
+      'chat',
+      metadata.contentType || media?.mimeType || undefined,
+    );
+    if (metadata.contentLength > limit.maxBytes) {
+      throw new PayloadTooLargeException(limit.message);
+    }
   }
 
   async exists(key: string): Promise<boolean> {
@@ -468,9 +608,19 @@ export class StorageService {
      */
     const baseKey = key.replace(/_thumb\.[A-Za-z0-9]+$/i, '.');
 
+    /*
+     * Or named as the message's own thumbnail. A chat PHOTO's thumbnail is a
+     * separate upload with a key of its own, recorded only in
+     * `payload.thumbnailUrl` - so matching `mediaUrl` alone refused every
+     * recipient the small thumbnail, and every chat photo in every list fell
+     * back to downloading the full image.
+     */
     const participating = await this.prisma.message.findFirst({
       where: {
-        payload: { path: ['mediaUrl'], string_contains: baseKey },
+        OR: [
+          { payload: { path: ['mediaUrl'], string_contains: baseKey } },
+          { payload: { path: ['thumbnailUrl'], string_contains: key } },
+        ],
         // A deleted or unsent message no longer grants access to its media.
         deletedAt: null,
         state: { not: 'UNSENT' },
@@ -732,41 +882,56 @@ export class StorageService {
       });
     }
 
-    // Best-effort existence verification for diagnostics only. R2 is eventually
-    // consistent, so a transient miss right after PUT is normal — we log it but
-    // never delete the row here (that would regress the working image path).
-    this.storageProvider
-      .exists(key)
-      .then((present) => {
-        if (!present) {
-          this.logger.warn(
-            `confirmUpload: object not yet visible in storage (key=${key}, owner=${userId})`,
-          );
-        } else {
-          this.logger.log(
-            `confirmUpload: verified object present (key=${key})`,
-          );
-        }
-      })
-      .catch(() => {});
-
-    // Non-blocking background metadata synchronization
-    this.storageProvider
+    /*
+     * What storage actually holds, read once (it also answers "is it there").
+     *
+     * Awaited rather than fire-and-forget, because it is the one point where
+     * the server sees the real size of a direct upload, and an object over its
+     * limit is refused here: deleted, row and all, with a 413 the client
+     * reports. The signed Content-Length already makes such an object
+     * impossible through the presigned URL; this is the check that does not
+     * depend on storage honouring that.
+     *
+     * A miss is still only logged. R2 can lag a fresh PUT, and deleting the row
+     * on a transient miss would regress the working upload path.
+     */
+    const metadata = await this.storageProvider
       .getMetadata(key)
-      .then((metadata) => {
-        if (metadata && (metadata.contentLength || metadata.contentType)) {
-          this.prisma.media
-            .update({
-              where: { id: media.id },
-              data: {
-                fileSize: metadata.contentLength || media.fileSize,
-                mimeType: metadata.contentType || media.mimeType,
-              },
-            })
-            .catch(() => {});
-        }
-      })
-      .catch(() => {});
+      .catch(() => null);
+    if (!metadata) {
+      this.logger.warn(
+        `confirmUpload: object not yet visible in storage (key=${key}, owner=${userId})`,
+      );
+      return media;
+    }
+
+    const limit = uploadLimitFor(
+      key.split('/')[0] || 'general',
+      metadata.contentType || media.mimeType,
+    );
+    if (metadata.contentLength && metadata.contentLength > limit.maxBytes) {
+      this.logger.warn(
+        `confirmUpload: refused over-limit object key=${key} owner=${userId} size=${metadata.contentLength} limit=${limit.maxBytes}`,
+      );
+      await this.storageProvider.delete(key).catch(() => false);
+      await this.prisma.media.deleteMany({
+        where: { objectKey: key, ownerId: userId, postId: null },
+      });
+      throw new PayloadTooLargeException(limit.message);
+    }
+
+    if (metadata.contentLength || metadata.contentType) {
+      // The row keeps the declared values until this lands; nothing waits on it.
+      this.prisma.media
+        .update({
+          where: { id: media.id },
+          data: {
+            fileSize: metadata.contentLength || media.fileSize,
+            mimeType: metadata.contentType || media.mimeType,
+          },
+        })
+        .catch(() => {});
+    }
 
     return media;
   }
@@ -970,9 +1135,7 @@ export class StorageService {
   }
 
   private isAllowedMimeType(contentType: string): boolean {
-    return /^(image\/(jpeg|png|webp|gif)|video\/(mp4|webm|ogg)|audio\/(mpeg|wav|webm|ogg))$/i.test(
-      contentType,
-    );
+    return isAllowedUploadType(contentType);
   }
 
   private extensionForMime(contentType: string): string {
@@ -1004,6 +1167,30 @@ export class StorageService {
     });
     if (!media || media.ownerId !== userId || media.postId) {
       return { discarded: false };
+    }
+    /*
+     * A chat attachment has no `postId` to say it is in use: it is attached by
+     * a message payload naming it. The client discards what a cancelled upload
+     * left behind, and a cancel can race the send, so a key any message names
+     * (or whose original it names, for a `_thumb`) is kept.
+     */
+    if (this.isConversationScopedKey(key)) {
+      const named = await this.prisma.message.findFirst({
+        where: {
+          OR: [
+            {
+              payload: {
+                path: ['mediaUrl'],
+                string_contains: key.replace(/_thumb\.[A-Za-z0-9]+$/i, '.'),
+              },
+            },
+            // A photo's separate thumbnail is named only here.
+            { payload: { path: ['thumbnailUrl'], string_contains: key } },
+          ],
+        },
+        select: { id: true },
+      });
+      if (named) return { discarded: false };
     }
     await this.storageProvider.delete(key).catch(() => {});
     await this.prisma.media.deleteMany({

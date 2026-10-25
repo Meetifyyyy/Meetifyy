@@ -22,7 +22,8 @@ describe('conversation media privacy', () => {
   /** The participation lookup, as far as these tests read it. */
   type MessageLookup = {
     where: {
-      payload: { path: string[]; string_contains: string };
+      /** [0]: the attachment itself (`mediaUrl`); [1]: a photo's own thumbnail. */
+      OR: Array<{ payload: { path: string[]; string_contains: string } }>;
       attachmentMediaId?: unknown;
       deletedAt?: null;
       state?: { not: string };
@@ -101,11 +102,32 @@ describe('conversation media privacy', () => {
     await service.canViewConversationMedia(KEY, 'recipient');
 
     const where = prisma.message.findFirst.mock.calls[0][0].where;
-    expect(where.payload).toEqual({
+    expect(where.OR[0].payload).toEqual({
       path: ['mediaUrl'],
       string_contains: KEY,
     });
     expect(where.attachmentMediaId).toBeUndefined();
+  });
+
+  /*
+   * A chat photo's thumbnail is a separate upload, named only in the
+   * message's `thumbnailUrl`. Matching `mediaUrl` alone refused it to every
+   * recipient, so every chat photo loaded at full size in the list.
+   */
+  it("also matches a key named as the message's thumbnail", async () => {
+    prisma.media.findUnique.mockResolvedValue({ id: 't1', ownerId: 'sender' });
+    prisma.message.findFirst.mockResolvedValue({ id: 'msg1' });
+    await expect(
+      service.canViewConversationMedia(
+        'chat/0123456789abcdef.webp',
+        'recipient',
+      ),
+    ).resolves.toBe(true);
+    const where = prisma.message.findFirst.mock.calls[0][0].where;
+    expect(where.OR[1].payload).toEqual({
+      path: ['thumbnailUrl'],
+      string_contains: 'chat/0123456789abcdef.webp',
+    });
   });
 
   /**
@@ -126,7 +148,7 @@ describe('conversation media privacy', () => {
     // The trailing dot keeps the match from running past the id into a
     // different key.
     const where = prisma.message.findFirst.mock.calls[0][0].where;
-    expect(where.payload.string_contains).toBe(
+    expect(where.OR[0].payload.string_contains).toBe(
       'chat/deadbeefdeadbeefdeadbeefdeadbeef.',
     );
   });
@@ -148,7 +170,7 @@ describe('conversation media privacy', () => {
     await service.canViewConversationMedia(thumb, 'recipient');
 
     const { string_contains: needle } =
-      prisma.message.findFirst.mock.calls[0][0].where.payload;
+      prisma.message.findFirst.mock.calls[0][0].where.OR[0].payload;
 
     // The message payload references the .mp4; the needle has to match it.
     expect('chat/deadbeefdeadbeefdeadbeefdeadbeef.mp4').toContain(needle);
@@ -177,7 +199,7 @@ describe('conversation media privacy', () => {
         'recipient',
       );
       const where = prisma.message.findFirst.mock.calls[0][0].where;
-      expect(where.payload.string_contains).toBe(
+      expect(where.OR[0].payload.string_contains).toBe(
         'chat/deadbeefdeadbeefdeadbeefdeadbeef.',
       );
     },
