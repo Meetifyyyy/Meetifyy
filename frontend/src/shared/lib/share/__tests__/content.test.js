@@ -109,4 +109,12 @@ describe('toChatInvite', () => {
     expect(invite.type).toBe('activityShare');
     expect(invite.activity).toMatchObject({ id: 'a', title: 'Run', time: '6pm', location: 'Park' });
   });
+
+  it('carries nothing of a confession but its id, and gives it no public link', () => {
+    const confession = { id: 'cf1', handle: 'quiet.fern', content: 'the secret', isMine: true };
+    const content = normalizeShareContent(SHARE_KIND.CONFESSION, confession);
+    expect(content).toEqual({ kind: 'confession', id: 'cf1', url: null });
+    expect(toChatInvite(content, confession)).toEqual({ type: 'confessionShare', confessionId: 'cf1' });
+    expect(normalizeShareContent(SHARE_KIND.CONFESSION, { handle: 'x' })).toBeNull();
+  });
 });

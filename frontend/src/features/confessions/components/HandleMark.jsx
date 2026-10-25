@@ -2,143 +2,23 @@ import { memo } from 'react';
 import styles from './Confessions.module.css';
 
 /**
- * The avatar an anonymous name wears: a small pixel creature, its colour and
- * its background each picked from the name. "Random" in the sense that the
- * three choices are independent hashes of the handle, so every name keeps the
- * same avatar on every device without anything being stored, and nothing about
- * it comes from the account behind the name.
- *
- * Sprites, one character per cell:
- *   #  body (the ink colour)   W  white (eyes, spots)   P  dark (pupils, mouth)
+ * The avatar an anonymous name wears: the name's first letter on a coloured
+ * circle. The colour is a hash of the handle, so every name keeps the same
+ * avatar on every device without anything being stored, and nothing about it
+ * comes from the account behind the name.
  */
-const SPRITES = {
-  ghost: [
-    '....####....',
-    '..########..',
-    '.##########.',
-    '.#WWW##WWW#.',
-    '##WPP##WPP##',
-    '##WPP##WPP##',
-    '##WWW##WWW##',
-    '############',
-    '############',
-    '############',
-    '##.##..##.##',
-    '#...#..#...#',
-  ],
-  invader: [
-    '..#......#..',
-    '...#....#...',
-    '..########..',
-    '.##WW##WW##.',
-    '.##WP##WP##.',
-    '############',
-    '#.########.#',
-    '#.#......#.#',
-    '...##..##...',
-  ],
-  cat: [
-    '.#........#.',
-    '.##......##.',
-    '.###....###.',
-    '.##########.',
-    '############',
-    '##WW####WW##',
-    '##WP####WP##',
-    '############',
-    '#####PP#####',
-    '.##########.',
-    '..########..',
-  ],
-  robot: [
-    '.....##.....',
-    '.....##.....',
-    '.##########.',
-    '.#WW####WW#.',
-    '.#WP####WP#.',
-    '.##########.',
-    '.###PPPP###.',
-    '.##########.',
-    '...##..##...',
-    '..###..###..',
-  ],
-  frog: [
-    '.###....###.',
-    '#WWW#..#WWW#',
-    '#WPP####WPP#',
-    '############',
-    '############',
-    '##P######P##',
-    '###PPPPPP###',
-    '.##########.',
-    '..########..',
-    '.###....###.',
-  ],
-  mushroom: [
-    '...######...',
-    '.##WW###W##.',
-    '####WW######',
-    '#WW#####WW##',
-    '############',
-    '...WWWWWW...',
-    '...WPWWPW...',
-    '...WWWWWW...',
-    '....WWWW....',
-  ],
-  octopus: [
-    '...######...',
-    '..########..',
-    '.##########.',
-    '.#WW####WW#.',
-    '.#WP####WP#.',
-    '.##########.',
-    '.##########.',
-    '#.#.#..#.#.#',
-    '#.#.#..#.#.#',
-  ],
-  bunny: [
-    '..##....##..',
-    '..##....##..',
-    '..##....##..',
-    '.##########.',
-    '############',
-    '##WW####WW##',
-    '##WP####WP##',
-    '#####PP#####',
-    '############',
-    '.##########.',
-  ],
-};
-
-/** Hue families, each as [background, body]: a pastel and a strong shade. */
-const HUES = [
-  ['#ece9ff', '#5b45f0'], // violet
-  ['#ffe6df', '#e0522f'], // coral
-  ['#daf3ee', '#0f9488'], // teal
-  ['#fdf0cc', '#c98a04'], // amber
-  ['#fde4f1', '#d6337f'], // pink
-  ['#dfeeff', '#2563eb'], // blue
-  ['#e4f6dc', '#4d9a26'], // green
-  ['#efe6ff', '#9333ea'], // purple
-  ['#ffe4e6', '#e11d48'], // red
-  ['#e0f6fd', '#0891b2'], // cyan
+const COLOURS = [
+  '#5b45f0', // violet
+  '#e0522f', // coral
+  '#0f9488', // teal
+  '#c27c00', // amber
+  '#d6337f', // pink
+  '#2563eb', // blue
+  '#3f8a1d', // green
+  '#9333ea', // purple
+  '#e11d48', // red
+  '#0891b2', // cyan
 ];
-
-function pathFor(rows, cell) {
-  return rows.flatMap((row, y) =>
-    [...row].map((c, x) => (c === cell ? `M${x} ${y}h1v1h-1z` : '')),
-  ).join('');
-}
-
-/** Each sprite drawn once: its three layers and a square viewBox centring it. */
-const ART = Object.fromEntries(Object.entries(SPRITES).map(([name, rows]) => {
-  const w = Math.max(...rows.map((r) => r.length));
-  const h = rows.length;
-  const side = Math.max(w, h) + 6;
-  const viewBox = `${(w - side) / 2} ${(h - side) / 2} ${side} ${side}`;
-  return [name, { viewBox, body: pathFor(rows, '#'), white: pathFor(rows, 'W'), dark: pathFor(rows, 'P') }];
-}));
-const NAMES = Object.keys(ART);
 
 /** FNV-1a: a stable, well-mixed number for a string. */
 function hashOf(text) {
@@ -150,40 +30,29 @@ function hashOf(text) {
   return h >>> 0;
 }
 
-/** The avatar a handle gets: creature, body colour and background. */
+/** The avatar a handle gets: its initial and background colour. */
 export function avatarFor(handle) {
   const key = String(handle).toLowerCase();
-  const art = ART[NAMES[hashOf(`shape:${key}`) % NAMES.length]];
-  const bgHue = hashOf(`bg:${key}`) % HUES.length;
-  // The body never takes the background's own hue, so it always stands out.
-  const inkHue = (bgHue + 1 + (hashOf(`ink:${key}`) % (HUES.length - 1))) % HUES.length;
-  return { art, bg: HUES[bgHue][0], ink: HUES[inkHue][1] };
+  const letter = key.replace(/^[^a-z0-9]+/, '').charAt(0).toUpperCase();
+  return { letter: letter || '?', bg: COLOURS[hashOf(`bg:${key}`) % COLOURS.length] };
 }
 
 /**
- * `size` is the circle; `artSize` (defaults to `size`) is the circle the
- * creature is drawn for, so a larger circle can keep it at a smaller one's
- * size. With no `handle` (still loading) it is an empty circle.
+ * `size` is the circle's diameter in px. With no `handle` (still loading) it
+ * is an empty circle.
  */
-function HandleMark({ handle, size = 36, artSize = size }) {
+function HandleMark({ handle, size = 36 }) {
   const avatar = handle ? avatarFor(handle) : null;
   return (
     <span
       className={styles.mark}
       style={{
         '--mark-size': `${size}px`,
-        '--mark-art': `${artSize}px`,
-        ...(avatar ? { '--mark-bg': avatar.bg, '--mark-ink': avatar.ink } : {}),
+        ...(avatar ? { '--mark-bg': avatar.bg } : {}),
       }}
       aria-hidden="true"
     >
-      {avatar && (
-        <svg className={styles.markArt} viewBox={avatar.art.viewBox} shapeRendering="crispEdges">
-          <path d={avatar.art.body} />
-          <path className={styles.markEyes} d={avatar.art.white} />
-          <path className={styles.markPupils} d={avatar.art.dark} />
-        </svg>
-      )}
+      {avatar?.letter}
     </span>
   );
 }

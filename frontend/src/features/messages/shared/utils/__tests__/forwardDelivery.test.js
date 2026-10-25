@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { forwardClientId, newForwardOperationId } from '../forwardDelivery';
+import { forwardClientId, forwardedInviteData, newForwardOperationId } from '../forwardDelivery';
 
 describe('forward operation ids', () => {
   it('come from a secure source, never Math.random, and fail loudly without one', () => {
@@ -28,3 +28,19 @@ describe('forward operation ids', () => {
     expect(forwardClientId('op', 'x'.repeat(500)).length).toBeLessThanOrEqual(128);
   });
 });
+
+describe('forwardedInviteData', () => {
+  it('carries a shared item on, on either message shape', () => {
+    const confession = { type: 'confessionShare', confessionId: 'cf1' };
+    expect(forwardedInviteData({ inviteData: confession })).toBe(confession);
+    const post = { type: 'postShare', post: { id: 'p1' } };
+    expect(forwardedInviteData({ payload: { inviteData: post } })).toBe(post);
+  });
+
+  it('never passes on a group invite, and nothing for a plain message', () => {
+    expect(forwardedInviteData({ inviteData: { type: 'group_invite', groupId: 'g1' } })).toBeNull();
+    expect(forwardedInviteData({ inviteData: { groupId: 'g1', groupName: 'Chess' } })).toBeNull();
+    expect(forwardedInviteData({ text: 'hi' })).toBeNull();
+  });
+});
+

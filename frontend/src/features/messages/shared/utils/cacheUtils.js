@@ -4,6 +4,7 @@ import {
   messageCarriesGalleryMedia,
   removeConversationMedia,
 } from './conversationMediaCache';
+import { inviteSummary } from './inviteSummary';
 
 /**
  * A system message is the conversation narrating itself — "@gyu changed group
@@ -399,8 +400,7 @@ export function updateConversationPreview(queryClient, conversationId, previewTe
       const prevMsgObj = list[idx].lastMessage || {};
       
       if (!textVal && (previewText?.inviteData || prevMsgObj?.inviteData)) {
-        const inv = previewText?.inviteData || prevMsgObj?.inviteData;
-        textVal = inv?.groupName ? `Group invite: ${inv.groupName}` : 'Group invite';
+        textVal = inviteSummary(previewText?.inviteData || prevMsgObj?.inviteData);
       } else if (!textVal && (previewText?.mediaType || prevMsgObj?.mediaType)) {
         const mt = previewText?.mediaType || prevMsgObj?.mediaType;
         textVal = mt === 'image' ? 'Photo' : mt === 'video' ? 'Video' : 'Audio';

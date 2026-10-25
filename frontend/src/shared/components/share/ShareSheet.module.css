@@ -290,6 +290,15 @@
   font-size: 0.9rem;
 }
 
+/* In place of the app row for something that only goes to chats. */
+.note {
+  margin: 6px 0 4px;
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
 /* Footer: the share row, or Send once someone is picked */
 .footer {
   flex-shrink: 0;

@@ -4,11 +4,11 @@
      phone    one column, edge to edge with a gutter; a sticky top bar; the
               big "Confess." title scrolls away with the feed
      desktop  a sticky left column (campus, who you are, three ground rules)
-              beside a feed column held to a reading width (≤ 620px), so
+              beside a feed column held to a reading width (≤ 720px), so
               cards never stretch across a wide window
 
    Colour: the brand violet and one warm accent, on the theme's own surfaces.
-   The four quiet tints on name marks are the only other colour.
+   The colours of the name marks are the only other colour.
    ========================================================================= */
 
 .page {
@@ -53,7 +53,9 @@
      with theirs when moving between them. */
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  /* Header, composer and every card sit 8px apart on every screen: this gap
+     (header to column), no top padding on .layout, and .feedCol's gap. */
+  gap: 8px;
   width: 100%;
   max-width: 1200px;
   margin: 0 auto;
@@ -139,7 +141,7 @@
 .feedCol {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
   min-width: 0;
 }
 
@@ -148,6 +150,23 @@
     padding-bottom: 48px;
   }
 
+  /* One centred column at reading width until there is room for the side
+     column as well. The app's own navigation already takes the left of the
+     window, so a side column from 769px squeezed the feed to almost nothing
+     (23px wide at 800, 230px at 1024). */
+  /* `.home` is a flex column, so the width is set outright: with only a
+     max-width and auto margins the column shrank to its content. */
+  .layout {
+    width: 100%;
+    max-width: calc(720px + 48px);
+    margin: 0 auto;
+    padding: 0 24px;
+    box-sizing: border-box;
+  }
+
+}
+
+@media (min-width: 1200px) {
   /* The left column already says who you are. */
   .meChip {
     display: none;
@@ -155,11 +174,12 @@
 
   .layout {
     display: grid;
-    grid-template-columns: minmax(240px, 320px) minmax(0, 620px);
+    grid-template-columns: minmax(240px, 320px) minmax(0, 720px);
     justify-content: center;
     align-items: start;
-    gap: clamp(32px, 5vw, 72px);
-    padding: 8px 32px 0;
+    gap: 20px;
+    max-width: none;
+    padding: 0 32px;
   }
 
   /* Two cards stacked beside the feed, their top level with its first item,
@@ -170,10 +190,6 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
-  }
-
-  .feedCol {
-    gap: 14px;
   }
 }
 
@@ -294,8 +310,7 @@
 /* ---- Name marks ------------------------------------------------------------- */
 
 .mark {
-  --mark-bg: #ece9ff;
-  --mark-ink: #4b3bd6;
+  --mark-bg: #5b45f0;
 
   flex: none;
   display: inline-flex;
@@ -305,38 +320,14 @@
   height: var(--mark-size, 36px);
   border-radius: 50%;
   background: var(--mark-bg);
-  color: var(--mark-ink);
+  color: #fff;
+  font-family: var(--font-family-display, inherit);
+  /* The letter scales with the circle. */
+  font-size: calc(var(--mark-size, 36px) * 0.44);
+  font-weight: 700;
+  line-height: 1;
   overflow: hidden;
-}
-
-/* Dark theme: the avatar's own background, dimmed into the dark surface so a
-   pastel circle does not glare; the body keeps its colour. */
-:global([data-theme='dark']) .mark {
-  background: color-mix(in srgb, var(--mark-bg) 28%, var(--color-bg-white, #1f1f1f));
-}
-
-/* The pixel ghost, in crisp squares: body in the ink colour, eyes white with
-   dark pupils in every theme (they are the ghost's, not the theme's). The
-   viewBox keeps a margin so it sits clear of the round edge. */
-.markArt {
-  flex: none;
-  width: var(--mark-art, 100%);
-  height: var(--mark-art, 100%);
-  fill: currentColor;
-}
-
-.markEyes {
-  fill: #fff;
-}
-
-.markPupils {
-  fill: #1e1b4b;
-}
-
-/* The header pill's empty "loading" mark shows no ghost at all. */
-.meChip[aria-busy='true'] .markEyes,
-.meChip[aria-busy='true'] .markPupils {
-  fill: transparent;
+  user-select: none;
 }
 
 /* ---- Composer trigger ----------------------------------------------------- */
@@ -530,17 +521,19 @@
 .cardFoot {
   display: flex;
   align-items: center;
+  gap: 4px;
   margin-top: 12px;
   padding-top: 4px;
   border-top: 1px solid var(--cf-line-soft);
 }
 
-.relate {
+.share {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   height: 34px;
-  margin-left: -10px;
+  margin-left: auto;
+  margin-right: -10px;
   padding: 0 12px 0 10px;
   border: none;
   border-radius: 999px;
@@ -550,48 +543,79 @@
   font-size: 0.8125rem;
   font-weight: 700;
   cursor: pointer;
-  transition: background-color 0.18s ease, color 0.18s ease;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.18s ease, color 0.18s ease, transform 0.12s ease;
 }
 
-.relate:hover {
+.share:hover {
   background: color-mix(in srgb, var(--cf-brand) 8%, transparent);
+  color: var(--cf-ink);
 }
 
-.relateGlyph {
-  width: 18px;
-  height: 18px;
-  overflow: visible;
+.share:active {
+  transform: scale(0.96);
 }
 
-.relateGlyph circle {
+.share:focus-visible {
+  outline: 2px solid var(--cf-brand);
+  outline-offset: 2px;
+}
+
+.shareGlyph {
+  width: 17px;
+  height: 17px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.8;
-  transition: fill-opacity 0.2s ease, transform 0.3s cubic-bezier(0.3, 1.6, 0.4, 1);
-  transform-box: fill-box;
-  transform-origin: center;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
-.relateOn {
-  background: color-mix(in srgb, var(--cf-brand) 12%, transparent);
-  color: var(--cf-brand);
-}
-
-.relateOn .relateGlyph circle {
-  fill: currentColor;
-  fill-opacity: 0.3;
-}
-
-/* The two circles pull together when you relate. */
-.relateOn .relateGlyph circle:first-child { transform: translateX(1.5px); }
-.relateOn .relateGlyph circle:last-child { transform: translateX(-1.5px); }
-
-.relateCount {
-  /* Digits keep one width, so 9 → 10 does not nudge the button. */
-  font-variant-numeric: tabular-nums;
+/* The confession a link opened: ringed in the brand colour, once. */
+.cardHighlight {
+  border-color: color-mix(in srgb, var(--cf-brand) 45%, var(--cf-line-soft));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--cf-brand) 14%, transparent), var(--cf-card-shadow);
 }
 
 /* ---- Feed states ------------------------------------------------------------ */
+
+/* A link to a confession this viewer cannot see (gone, or another campus). */
+.focusMissing {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 16px 0.875rem;
+  border: 1px solid var(--cf-line-soft);
+  border-radius: var(--radius-lg, 16px);
+  background: var(--cf-surface);
+}
+
+.focusMissingTitle {
+  margin: 0;
+  color: var(--cf-ink);
+  font-size: 0.9375rem;
+  font-weight: 700;
+}
+
+.focusMissing .stateText {
+  margin: 0;
+  text-align: left;
+}
+
+.focusMissingLink {
+  margin-top: 6px;
+  padding: 4px 0;
+  border: none;
+  background: none;
+  color: var(--cf-brand);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+}
+
 
 .emptyState {
   display: flex;
@@ -1015,5 +1039,5 @@
 @media (prefers-reduced-motion: reduce) {
   .cardEnter, .scrim, .sheet, .skMark, .skBar, .meChipName { animation: none; }
   .sheetRoot[data-closing] .scrim, .sheetRoot[data-closing] .sheet, .postTip { animation: none; }
-  .relateGlyph circle { transition: none; }
+  .share { transition: none; }
 }

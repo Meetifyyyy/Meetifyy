@@ -24,7 +24,7 @@ function lengthOf(text) {
 export function ComposerTrigger({ handle, onOpen }) {
   return (
     <button type="button" className={styles.trigger} onClick={onOpen}>
-      <HandleMark handle={handle} size={44} artSize={36} />
+      <HandleMark handle={handle} size={44} />
       <span className={styles.triggerText}>
         <span className={styles.triggerPrompt}>Write a confession…</span>
       </span>

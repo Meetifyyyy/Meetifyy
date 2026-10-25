@@ -151,7 +151,8 @@ export default function ShareSheet({ isOpen, onClose, kind, entity, author, forw
   // App only: while the sheet is open, load the story panel's code and start
   // its fonts and downloads, so tapping Story shows a finished card quickly.
   useEffect(() => {
-    if (!isOpen || !loadStoryPanel || !content) return;
+    // Only what has a public link has a Story card (a confession has neither).
+    if (!isOpen || !loadStoryPanel || !content?.url) return;
     loadStoryPanel()
       .then((m) => m.warmStory?.(content))
       .catch(() => {});
@@ -326,6 +327,8 @@ export default function ShareSheet({ isOpen, onClose, kind, entity, author, forw
                           ? 'Send'
                           : `Send to ${selected.length}`}
                 </button>
+              ) : kind === SHARE_KIND.CONFESSION && !forward ? (
+                <p className={styles.note}>Only students on your campus can open a confession.</p>
               ) : (
                 !forward && payload?.url && <ShareTargets payload={payload} leadingTargets={storyTargets} />
               )}

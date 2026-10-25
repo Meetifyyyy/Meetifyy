@@ -1,0 +1,276 @@
+/* ============================================================================
+   Confession reactions — the React button, the picker it opens and the
+   summary of what everybody chose. Sits in the card's action row and uses the
+   page's --cf-* tokens (Confessions.module.css), so it follows the theme.
+   ========================================================================= */
+
+.root {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  margin-left: -10px;
+}
+
+/* ---- The button --------------------------------------------------------- */
+
+.trigger {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px 0 10px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--cf-soft);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.18s ease, color 0.18s ease, transform 0.12s ease;
+}
+
+/* A 44px target on phones without making the pill itself any bigger. */
+.trigger::before {
+  content: '';
+  position: absolute;
+  inset: -5px -2px;
+}
+
+.trigger:hover {
+  background: color-mix(in srgb, var(--cf-brand) 8%, transparent);
+}
+
+.trigger:active {
+  transform: scale(0.96);
+}
+
+.trigger:focus-visible,
+.option:focus-visible {
+  outline: 2px solid var(--cf-brand);
+  outline-offset: 2px;
+}
+
+.glyph {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---- What everybody chose ----------------------------------------------- */
+
+.summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 34px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--cf-soft);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  overflow: hidden;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.18s ease;
+}
+
+/* First in the row (the React button is gone once there are reactions):
+   the emoji line up with the card's text. */
+.summary:first-child {
+  margin-left: 2px;
+}
+
+.summary:hover {
+  background: color-mix(in srgb, var(--cf-ink) 6%, transparent);
+}
+
+.summary:focus-visible {
+  outline: 2px solid var(--cf-brand);
+  outline-offset: 2px;
+}
+
+/* Side by side, each emoji whole: no overlap. Each sits in a fixed-width
+   slot so it can shrink away in place (data-leaving) or grow in at the end
+   (data-entering) without the others jumping: only width, opacity and a
+   transform change. */
+.stack {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.9375rem;
+  line-height: 1;
+}
+
+.stackItem {
+  display: inline-block;
+  width: 1.25em;
+  margin-right: 2px;
+  overflow: hidden;
+  text-align: center;
+  transition:
+    width 200ms ease,
+    margin-right 200ms ease,
+    opacity 200ms ease,
+    transform 200ms ease;
+}
+
+/* `backwards`, not `both`: a fill that held the end state would outrank the
+   leaving styles below, so an emoji that had just arrived could not ease out
+   again and simply vanished. */
+.stackItem[data-entering] {
+  animation: emojiIn 220ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
+.stackItem[data-leaving] {
+  width: 0;
+  margin-right: 0;
+  opacity: 0;
+  transform: scale(0.4);
+}
+
+/* Going between "React" and the summary, either way. `backwards` for the
+   same reason: a held opacity would stop the summary fading out. */
+.fadeIn {
+  animation: fadeIn 180ms ease-out backwards;
+}
+
+.summary[data-leaving] {
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+
+.count {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- The picker ---------------------------------------------------------- */
+
+.picker {
+  position: absolute;
+  z-index: 20;
+  bottom: calc(100% + 8px);
+  left: 0;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 2px;
+  /* Five reactions with their labels on any phone, never wider than the
+     screen less its gutters. */
+  width: min(320px, calc(100vw - 32px));
+  padding: 6px;
+  border: 1px solid var(--cf-line-soft);
+  border-radius: 20px;
+  background: var(--cf-surface, #fff);
+  box-shadow: 0 12px 32px -8px rgba(15, 23, 42, 0.28), 0 2px 6px rgba(15, 23, 42, 0.08);
+  transform-origin: 24px 100%;
+  animation: open 200ms cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+}
+
+.pickerBelow {
+  top: calc(100% + 8px);
+  bottom: auto;
+  transform-origin: 24px 0;
+}
+
+/* On dark the card and the elevated surface are the same colour and a shadow
+   barely shows, so the picker is lifted by its own lighter surface and edge. */
+:global([data-theme='dark']) .picker {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: color-mix(in srgb, #ffffff 8%, var(--cf-surface, #202020));
+  box-shadow: 0 14px 36px -6px rgba(0, 0, 0, 0.75);
+}
+
+.option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: 60px;
+  padding: 6px 2px 5px;
+  border: none;
+  border-radius: 14px;
+  background: transparent;
+  color: var(--cf-soft);
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.15s ease, color 0.15s ease;
+  animation: rise 240ms cubic-bezier(0.2, 0.9, 0.3, 1.3) both;
+  animation-delay: calc(var(--i, 0) * 22ms);
+}
+
+.option:hover,
+.option:focus-visible {
+  background: color-mix(in srgb, var(--cf-ink) 6%, transparent);
+  color: var(--cf-ink);
+}
+
+.optionEmoji {
+  font-size: 1.625rem;
+  line-height: 1;
+  transition: transform 0.18s cubic-bezier(0.3, 1.6, 0.4, 1);
+}
+
+.option:hover .optionEmoji,
+.option:focus-visible .optionEmoji {
+  transform: translateY(-2px) scale(1.14);
+}
+
+.option:active .optionEmoji {
+  transform: scale(0.92);
+}
+
+.optionLabel {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- Motion -------------------------------------------------------------- */
+
+@keyframes open {
+  from { opacity: 0; transform: translate3d(0, 6px, 0) scale(0.9); }
+  to { opacity: 1; transform: none; }
+}
+.pickerBelow { animation-name: openDown; }
+@keyframes openDown {
+  from { opacity: 0; transform: translate3d(0, -6px, 0) scale(0.9); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes emojiIn {
+  from { width: 0; margin-right: 0; opacity: 0; transform: scale(0.4); }
+  to { width: 1.25em; margin-right: 2px; opacity: 1; transform: none; }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes rise {
+  from { opacity: 0; transform: translate3d(0, 6px, 0) scale(0.8); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .picker, .option, .fadeIn, .stackItem[data-entering] { animation: none; }
+  .stackItem, .summary[data-leaving] { transition: none; }
+  .trigger, .option, .optionEmoji { transition: none; }
+}
+

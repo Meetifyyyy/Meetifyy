@@ -32,3 +32,17 @@ export function newForwardOperationId() {
 export function forwardClientId(operationId, recipientId) {
   return `fwd_${operationId}_${recipientId}`.slice(0, MAX_CLIENT_ID_LENGTH);
 }
+
+/** The shared things a forward carries on: everything but a group invite. */
+const FORWARDABLE_SHARES = new Set(['postShare', 'profileShare', 'communityShare', 'activityShare', 'confessionShare']);
+
+/**
+ * What a forwarded message re-sends as its attachment. A share is nothing but
+ * its `inviteData` (its text is empty), so a forward that left it out sent an
+ * empty message. A group invite is not passed on: it grants entry to a chat
+ * and was meant for the people it was sent to.
+ */
+export function forwardedInviteData(msg) {
+  const invite = msg?.inviteData || msg?.payload?.inviteData;
+  return invite && typeof invite === 'object' && FORWARDABLE_SHARES.has(invite.type) ? invite : null;
+}

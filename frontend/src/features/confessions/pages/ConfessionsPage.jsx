@@ -1,13 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { useAuth } from '@shared/context/AuthContext';
 import {
+  useConfession,
   useConfessionProfile,
+  useConfessionReactions,
   useConfessionsFeed,
+  useConfessionsLive,
   useDeleteConfession,
-  useRelateConfession,
 } from '@shared/hooks/useConfessions';
+import { SHARE_KIND } from '@shared/lib/share/content';
 import { showToast } from '@shared/utils/toast';
 import { ArrowLeft, EyeOff, Flag, Heart, ShieldCheck } from '@shared/components/icons';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
@@ -20,6 +24,8 @@ import ConfessionComposer, { ComposerTrigger } from '../components/ConfessionCom
 import HandleMark from '../components/HandleMark';
 import sharedStyles from '@features/campus/components/skeletons/CampusShared.module.css';
 import styles from '../components/Confessions.module.css';
+
+const ShareSheet = lazy(() => import('@shared/components/share/ShareSheet'));
 
 /**
  * Remembered per browser once the deck has been seen, so somebody who read it
@@ -139,7 +145,7 @@ function ConfessionsHeader({ handle, busy = false }) {
               aria-busy={handle ? undefined : 'true'}
               aria-label={handle ? `Posting as @${handle}` : 'Loading your name'}
             >
-              <HandleMark handle={handle} size={26} artSize={24} />
+              <HandleMark handle={handle} size={26} />
               {handle
                 ? <span className={styles.meChipName} aria-hidden="true">@{handle}</span>
                 : <span className={styles.meChipPending} aria-hidden="true" />}
@@ -171,33 +177,41 @@ function ConfessionsShell() {
 }
 
 function ConfessionsHome({ handle }) {
+  // `/campus/confessions/:id`: one confession opened from a link (a card
+  // shared in a chat), shown first and marked, with the feed below it.
+  const { id: focusId } = useParams();
+  const navigate = useNavigate();
   const feed = useConfessionsFeed();
-  const relate = useRelateConfession();
+  // Reaction totals live while the page is open; one catch-up request when
+  // it is reopened, instead of downloading every loaded page again.
+  useConfessionsLive();
+  const react = useConfessionReactions();
   const remove = useDeleteConfession();
 
   const [composerOpen, setComposerOpen] = useState(false);
   const [reportTarget, setReportTarget] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [shareTarget, setShareTarget] = useState(null);
 
   // Mounted inside the tap, so the composer can focus its field while the
   // gesture still counts and the keyboard comes up with it (see the composer).
   const openComposer = useCallback(() => flushSync(() => setComposerOpen(true)), []);
   const closeComposer = useCallback(() => setComposerOpen(false), []);
 
-  // One relate request per confession at a time. A quick double tap would
-  // otherwise send POST and DELETE together, and whichever answer arrived
-  // last would decide what the button shows — not what the server did last.
-  const relatingRef = useRef(new Set());
-  const onRelate = useCallback((id, next) => {
-    if (relatingRef.current.has(id)) return;
-    relatingRef.current.add(id);
-    relate.mutate({ id, relate: next }, {
+  // The hook orders the requests per confession (see useConfessionReactions);
+  // this only says what went wrong. Offline was already said by the guard.
+  const onReact = useCallback((id, next) => {
+    react(id, next, {
       onError: (err) => {
-        if (err?.name !== 'OfflineError') showToast(err?.message || 'Couldn’t update that. Try again.', 'error');
+        if (err?.name === 'OfflineError') return;
+        showToast(
+          err?.status === 404 ? 'That confession is no longer available.' : (err?.message || 'Couldn’t update that. Try again.'),
+          'error',
+        );
       },
-      onSettled: () => relatingRef.current.delete(id),
     });
-  }, [relate]);
+  }, [react]);
+  const closeShare = useCallback(() => setShareTarget(null), []);
 
   const confirmDelete = useCallback(async () => {
     const target = deleteTarget;
@@ -206,10 +220,11 @@ function ConfessionsHome({ handle }) {
     try {
       await remove.mutateAsync(target.id);
       showToast('Confession deleted', 'success');
+      if (target.id === focusId) navigate('/campus/confessions', { replace: true });
     } catch (err) {
       if (err?.name !== 'OfflineError') showToast(err?.message || 'Couldn’t delete it. Try again.', 'error');
     }
-  }, [deleteTarget, remove]);
+  }, [deleteTarget, remove, focusId, navigate]);
 
   // Next page when the end of the list scrolls into view.
   const sentinelRef = useRef(null);
@@ -232,7 +247,7 @@ function ConfessionsHome({ handle }) {
         <aside className={styles.aside} aria-label="About Confessions">
           <div className={styles.asideCard}>
             <div className={styles.identity}>
-              <HandleMark handle={handle} size={44} artSize={36} />
+              <HandleMark handle={handle} size={44} />
               <div className={styles.identityText}>
                 <span className={styles.identityLabel}>Posting as</span>
                 <span className={styles.identityName}>{handle ? `@${handle}` : '\u00a0'}</span>
@@ -262,11 +277,23 @@ function ConfessionsHome({ handle }) {
         </aside>
 
         <section className={styles.feedCol} aria-label="Confessions">
+          {focusId && (
+            <FocusedConfession
+              id={focusId}
+              onReact={onReact}
+              onShare={setShareTarget}
+              onReport={setReportTarget}
+              onDelete={setDeleteTarget}
+            />
+          )}
+
           <ComposerTrigger handle={handle} onOpen={openComposer} />
 
           <FeedBody
             feed={feed}
-            onRelate={onRelate}
+            skipId={focusId}
+            onReact={onReact}
+            onShare={setShareTarget}
             onReport={setReportTarget}
             onDelete={setDeleteTarget}
             onCompose={openComposer}
@@ -294,6 +321,12 @@ function ConfessionsHome({ handle }) {
         reportedFrom="confessions"
       />
 
+      {shareTarget && (
+        <Suspense fallback={null}>
+          <ShareSheet isOpen onClose={closeShare} kind={SHARE_KIND.CONFESSION} entity={shareTarget} />
+        </Suspense>
+      )}
+
       <ConfirmModal
         visible={Boolean(deleteTarget)}
         title="Delete this confession?"
@@ -307,7 +340,47 @@ function ConfessionsHome({ handle }) {
   );
 }
 
-function FeedBody({ feed, onRelate, onReport, onDelete, onCompose }) {
+/**
+ * The confession a link points at, above the feed. Asked of the server by id,
+ * so a deleted, hidden, removed or other-campus one is simply unavailable:
+ * the link reveals nothing about it.
+ */
+function FocusedConfession({ id, onReact, onShare, onReport, onDelete }) {
+  const { confession, isLoading, isGone, refetch } = useConfession(id);
+
+  if (isLoading) return <CardSkeleton />;
+  if (confession) {
+    return (
+      <ConfessionCard
+        confession={confession}
+        highlight
+        onReact={onReact}
+        onShare={onShare}
+        onReport={onReport}
+        onDelete={onDelete}
+      />
+    );
+  }
+  return (
+    <div className={styles.focusMissing} role="status">
+      <p className={styles.focusMissingTitle}>
+        {isGone ? 'This confession isn’t available' : 'This confession didn’t load'}
+      </p>
+      <p className={styles.stateText}>
+        {isGone
+          ? 'It may have been deleted or taken down, or it’s from another campus.'
+          : 'Check your connection and try again.'}
+      </p>
+      {isGone ? (
+        <Link to="/campus/confessions" replace className={styles.focusMissingLink}>See all confessions</Link>
+      ) : (
+        <button type="button" className={styles.focusMissingLink} onClick={() => refetch()}>Try again</button>
+      )}
+    </div>
+  );
+}
+
+function FeedBody({ feed, skipId, onReact, onShare, onReport, onDelete, onCompose }) {
   // The confessions the page first drew. Anything new at the top after that
   // gets the entrance; see `.cardEnter`.
   const [firstIds, setFirstIds] = useState(null);
@@ -356,16 +429,17 @@ function FeedBody({ feed, onRelate, onReport, onDelete, onCompose }) {
 
   return (
     <div className={styles.list}>
-      {feed.confessions.map((c, i) => (
+      {feed.confessions.map((c, i) => (c.id === skipId ? null : (
         <ConfessionCard
           key={c.id}
           confession={c}
           enter={i === 0 && firstIds !== null && !firstIds.has(c.id)}
-          onRelate={onRelate}
+          onReact={onReact}
+          onShare={onShare}
           onReport={onReport}
           onDelete={onDelete}
         />
-      ))}
+      )))}
     </div>
   );
 }

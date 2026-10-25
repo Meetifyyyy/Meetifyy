@@ -1,0 +1,211 @@
+/* The reaction totals for one confession. A centred dialog on larger screens
+   and a bottom sheet on phones, like ConfirmModal. */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: rgba(0, 0, 0, 0.55);
+  animation: fade 200ms ease-out both;
+}
+
+.sheet {
+  width: 400px;
+  max-width: 100%;
+  padding: 18px 18px 20px;
+  border-radius: var(--radius-lg, 16px);
+  box-sizing: border-box;
+  background: var(--color-bg-white, #ffffff);
+  color: var(--color-text-main, #18181b);
+  box-shadow: var(--shadow-lg, 0 10px 25px -5px rgba(0, 0, 0, 0.3));
+  /* Ease-out, no overshoot: a spring lifted the sheet past its place and
+     showed an empty strip below it. */
+  animation: rise 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* On the way out: the backdrop fades, the card sinks (both 200ms, see
+   LEAVE_MS), and nothing can be tapped meanwhile. */
+.leaving {
+  pointer-events: none;
+  animation: fadeOut 200ms ease-in both;
+}
+
+.leaving .sheet {
+  animation: sink 200ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+[data-theme='dark'] .sheet {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.title {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.total {
+  color: var(--color-text-muted, #64748b);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  margin: -4px -6px -4px auto;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--color-text-muted, #64748b);
+  cursor: pointer;
+}
+
+.close:hover {
+  background: color-mix(in srgb, var(--color-text-main, #18181b) 7%, transparent);
+  color: var(--color-text-main, #18181b);
+}
+
+.close:focus-visible {
+  outline: 2px solid var(--color-brand-primary, #5c47fa);
+  outline-offset: 2px;
+}
+
+/* Five equal tiles, most first, left to right. */
+.row {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cell {
+  min-width: 0;
+}
+
+/* Each tile is a button: tapping one makes it your reaction. */
+.item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+  padding: 12px 2px 10px;
+  border: none;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--color-text-main, #18181b) 5%, transparent);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.15s ease, transform 0.12s ease;
+}
+
+.item:hover {
+  background: color-mix(in srgb, var(--color-text-main, #18181b) 9%, transparent);
+}
+
+.item:active {
+  transform: scale(0.96);
+}
+
+.item:focus-visible {
+  outline: 2px solid var(--color-brand-primary, #5c47fa);
+  outline-offset: 2px;
+}
+
+/* Nobody chose it yet: quieter, but still a tap away. */
+.item[data-empty] .emoji,
+.item[data-empty] .count {
+  opacity: 0.45;
+}
+
+.emoji {
+  font-size: 1.75rem;
+  line-height: 1;
+}
+
+.count {
+  font-size: 1rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.label {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--color-text-muted, #64748b);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Phones: a bottom sheet, dragged down to dismiss (useSheetDrag). */
+@media (max-width: 768px) {
+  .overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .sheet {
+    width: 100%;
+    padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px) + var(--navigation-bar-inset, 0px));
+    border-radius: 24px 24px 0 0;
+    animation-name: sheetUp;
+  }
+
+  .leaving .sheet {
+    animation-name: sheetDown;
+  }
+}
+
+@keyframes fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes rise {
+  from { opacity: 0; transform: translate3d(0, 10px, 0) scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes sheetUp {
+  from { transform: translate3d(0, 100%, 0); }
+  to { transform: none; }
+}
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes sink {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translate3d(0, 10px, 0) scale(0.97); }
+}
+@keyframes sheetDown {
+  from { transform: none; }
+  to { transform: translate3d(0, 100%, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .overlay, .sheet, .leaving, .leaving .sheet { animation: none; }
+  .item { transition: none; }
+}

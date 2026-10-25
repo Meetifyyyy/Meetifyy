@@ -14,6 +14,7 @@ import { SharedCommunityPreview } from '../previews/SharedCommunityPreview';
 import ReplyPreviewContent from './ReplyPreviewContent';
 import { PostReplyPreview, isPostReply } from './reply';
 import { SharedActivityPreview } from '../previews/SharedActivityPreview';
+import { SharedConfessionPreview } from '../previews/SharedConfessionPreview';
 import VoiceMessagePlayer from './VoiceMessagePlayer';
 import styles from './ChatMessageList.module.css';
 import { useJoinCommunity } from '@features/communities/hooks/useJoinCommunity';
@@ -983,6 +984,20 @@ const MessageBubble = memo(function MessageBubble({
       <div className={styles.msgImageCardContainer}>
         <div className={`${styles.msgMainRow} ${isMe ? styles.msgMainRowMe : styles.msgMainRowThem}`}>
           <SharedProfilePreview profile={prof} isMe={isMe} />
+          <MessageHoverActions msg={msg} isMe={isMe} onReplyTo={replyHandler} onContextMenu={onContextMenu} />
+        </div>
+        <div className={`${styles.msgImageFooter} ${isMe ? styles.msgImageFooterMe : styles.msgImageFooterThem}`}>
+          {timeText}
+        </div>
+      </div>
+    );
+  } else if (inviteData && inviteData.type === 'confessionShare') {
+    // Shared confession: the message holds only its id; the card asks for the
+    // confession itself, as this reader (see SharedConfessionPreview).
+    innerContent = (
+      <div className={styles.msgImageCardContainer}>
+        <div className={`${styles.msgMainRow} ${isMe ? styles.msgMainRowMe : styles.msgMainRowThem}`}>
+          <SharedConfessionPreview confessionId={inviteData.confessionId} />
           <MessageHoverActions msg={msg} isMe={isMe} onReplyTo={replyHandler} onContextMenu={onContextMenu} />
         </div>
         <div className={`${styles.msgImageFooter} ${isMe ? styles.msgImageFooterMe : styles.msgImageFooterThem}`}>

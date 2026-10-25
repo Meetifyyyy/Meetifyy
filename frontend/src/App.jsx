@@ -555,6 +555,7 @@ export default function App({ homeElement, rootExtras = null }) {
             { path: '/campus/events',              element: withBoundary(<CampusEventsPage />, null), handle: { wide: true } },
             { path: '/campus/events/:id',          element: withBoundary(<CampusEventDetailPage />, null), handle: { wide: true } },
             { path: '/campus/confessions',         element: withBoundary(<ConfessionsPage />, null), handle: { wide: true } },
+            { path: '/campus/confessions/:id',     element: withBoundary(<ConfessionsPage />, null), handle: { wide: true } },
             { path: '/crew',                       element: withBoundary(<FindYourCrewPage />, <CrewSkeleton />), handle: { wide: true } },
             { path: '/crew/search',                element: withBoundary(<CrewSearchRoute />, null) },
             { path: '/crew/create',                element: withBoundary(<CreateActivityPage />, null), handle: { wide: true } },

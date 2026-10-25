@@ -1,0 +1,214 @@
+/* SharedConfessionPreview — a confession shared into a chat.
+   Same surface, radius, width and type as the shared-post card
+   (SharedPostPreview.module.css), so the two read as one family. */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  min-width: 260px;
+  max-width: 330px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  box-sizing: border-box;
+  background: #f2f2f5;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  color: var(--color-text-main, #18181b);
+  text-align: left;
+}
+
+[data-theme='dark'] .card {
+  background: #24252a;
+  border-color: rgba(255, 255, 255, 0.08);
+  color: #f4f4f5;
+}
+
+.clickable {
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.clickable:hover {
+  opacity: 0.94;
+}
+
+.clickable:focus-visible {
+  outline: 2px solid var(--color-brand-primary, #5c47fa);
+  outline-offset: 2px;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.byline {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.handle {
+  overflow: hidden;
+  font-family: var(--font-family-display, inherit);
+  font-size: 0.88rem;
+  font-weight: 600;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta {
+  margin-top: 1px;
+  overflow: hidden;
+  color: var(--color-text-muted, #64748b);
+  font-size: 0.74rem;
+  font-weight: 500;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-theme='dark'] .meta {
+  color: #94a3b8;
+}
+
+/* The words, cut at five lines; the whole confession is one tap away. */
+.text {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+}
+
+.foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-text-muted, #64748b);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+[data-theme='dark'] .foot {
+  color: #94a3b8;
+}
+
+/* Side by side, each emoji whole: no overlap. */
+.stack {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 0.8125rem;
+  line-height: 1;
+}
+
+.stackItem {
+  display: inline-block;
+}
+
+.count {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Unavailable, or failed to load: the same quiet dashed box the shared post
+   uses, and no larger than it, so the bubble does not jump when it resolves. */
+.notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 220px;
+  max-width: 330px;
+  padding: 12px 14px;
+  border: 1px dashed rgba(0, 0, 0, 0.15);
+  border-radius: 12px;
+  box-sizing: border-box;
+  color: var(--color-text-main, #18181b);
+  font-size: 0.84rem;
+}
+
+.notice > span,
+.notice > svg {
+  opacity: 0.75;
+}
+
+[data-theme='dark'] .notice {
+  border-color: rgba(255, 255, 255, 0.15);
+  color: #f4f4f5;
+}
+
+.retry {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.06);
+  color: inherit;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+[data-theme='dark'] .retry {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* Loading: the card's own outline, so nothing shifts when it fills in. */
+.skMark {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.07);
+}
+
+.skLines {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.skBar {
+  display: block;
+  height: 11px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.07);
+  animation: breathe 1.1s ease-in-out infinite alternate;
+}
+
+[data-theme='dark'] .skMark,
+[data-theme='dark'] .skBar {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@keyframes breathe {
+  from { opacity: 1; }
+  to { opacity: 0.5; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skBar { animation: none; }
+}

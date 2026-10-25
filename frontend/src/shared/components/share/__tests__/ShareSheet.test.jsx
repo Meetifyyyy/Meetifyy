@@ -92,4 +92,21 @@ describe('<ShareSheet>', () => {
     await waitFor(() => expect(sendMock).toHaveBeenCalledTimes(1));
     expect(sendMock.mock.calls[0][0]).toBe('c2');
   });
+
+  it('sends a confession as its id only, to chats only', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <ShareSheet isOpen onClose={vi.fn()} kind="confession" entity={{ id: 'cf1', handle: 'quiet.fern', content: 'the secret' }} />
+      </QueryClientProvider>,
+    );
+    // No app row or link: a confession is readable on its campus only.
+    expect(screen.queryByTestId('share-row')).toBeNull();
+    expect(screen.getByText('Only students on your campus can open a confession.')).toBeTruthy();
+    fireEvent.click(await screen.findByRole('option', { name: /Asha/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(sendMock).toHaveBeenCalledTimes(1));
+    expect(sendMock).toHaveBeenCalledWith('c1', { text: '', inviteData: { type: 'confessionShare', confessionId: 'cf1' } });
+  });
 });
+

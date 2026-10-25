@@ -130,3 +130,19 @@ describe('a quoted video', () => {
     expect(resolveReplyPreview(photo).thumbnailKey).toBe('/api/media/chat/p.webp');
   });
 });
+
+describe('resolveReplyPreview — shared confession', () => {
+  it('reads the composer shape (the full message) by id only', () => {
+    const preview = resolveReplyPreview({
+      text: '',
+      inviteData: { type: 'confessionShare', confessionId: 'cf1' },
+    });
+    expect(preview).toMatchObject({ kind: 'confession', entityId: 'cf1', text: 'Shared confession', isUnavailable: false });
+  });
+
+  it('reads the server snapshot the same way', () => {
+    const preview = resolveReplyPreview({ id: 'm1', text: '', shareType: 'confession', shareId: 'cf1', shareTitle: null });
+    expect(preview).toMatchObject({ kind: 'confession', entityId: 'cf1', text: 'Shared confession' });
+  });
+});
+

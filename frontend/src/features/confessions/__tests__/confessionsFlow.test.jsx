@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 /**
@@ -18,8 +18,9 @@ const api = vi.hoisted(() => ({
   createProfile: vi.fn(),
   list: vi.fn(),
   create: vi.fn(),
-  relate: vi.fn(),
-  unrelate: vi.fn(),
+  get: vi.fn(),
+  react: vi.fn(),
+  unreact: vi.fn(),
   remove: vi.fn(),
 }));
 
@@ -39,16 +40,28 @@ vi.mock('@shared/hooks/useCampusAffiliation', () => ({
 vi.mock('@features/campus/components/affiliation/CampusAffiliationGate', () => ({ default: ({ children }) => children }));
 vi.mock('@shared/hooks/useSmartBack', () => ({ useSmartBack: () => vi.fn() }));
 vi.mock('@shared/utils/toast', () => ({ showToast: vi.fn() }));
+vi.mock('@shared/components/share/ShareSheet', () => ({
+  default: ({ isOpen, kind, entity }) => (isOpen ? <div data-testid="share">{kind}:{entity?.id}</div> : null),
+}));
 vi.mock('@shared/components/modals/ReportModal/LazyReportModal', () => ({
   default: ({ isOpen, targetType, targetId }) => (isOpen ? <div data-testid="report">{targetType}:{targetId}</div> : null),
 }));
 
 const { default: ConfessionsPage } = await import('../pages/ConfessionsPage');
 
+const counts = (over = {}) => ({ love: 0, funny: 0, sad: 0, surprised: 0, relatable: 0, ...over });
 const C = (over = {}) => ({
   id: 'c1', handle: 'lunar.koi', content: 'I still haven’t found the third floor.',
-  createdAt: new Date().toISOString(), relateCount: 3, relatedByMe: false, isMine: false, ...over,
+  createdAt: new Date().toISOString(), isMine: false,
+  reactions: counts({ love: 2, funny: 1 }), reactionCount: 3, myReaction: null, relateCount: 3, relatedByMe: false,
+  ...over,
 });
+/** What the server answers a reaction request with. */
+const S = (myReaction, over = {}) => {
+  const reactions = counts(over);
+  const total = Object.values(reactions).reduce((a, b) => a + b, 0);
+  return { reactions, reactionCount: total, myReaction, relateCount: total, relatedByMe: myReaction !== null };
+};
 
 const newClient = () => new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
 
@@ -207,33 +220,224 @@ describe('the feed', () => {
     expect(within(cards[0]).queryByText('You')).toBeNull();
   });
 
-  it('relates at once and rolls back if the server refuses', async () => {
-    let refuse;
-    api.relate.mockImplementationOnce(() => new Promise((_, reject) => { refuse = reject; }));
+  /** A card nobody has reacted to yet: the only one with a React button. */
+  const fresh = (over = {}) => C({ reactions: counts(), reactionCount: 0, relateCount: 0, ...over });
+  const cardOf = async (handle = '@lunar.koi') => (await screen.findByText(handle)).closest('article');
+  const summaryOf = (card) => within(card).getByRole('button', { name: /See all reactions/ });
+  /** Your reaction, as the summary tells a screen reader; never shown apart. */
+  const yours = (card) => /You reacted (\w+)/.exec(summaryOf(card).getAttribute('aria-label'))?.[1] ?? null;
+
+  /**
+   * Reacts the way the card offers: the picker when nobody has reacted yet,
+   * the counts modal once anybody has.
+   */
+  const tapReaction = async (card, label) => {
+    const react = within(card).queryByRole('button', { name: 'React' });
+    if (react) {
+      fireEvent.click(react);
+      fireEvent.click(within(within(card).getByRole('radiogroup')).getByRole('radio', { name: label }));
+      return;
+    }
+    fireEvent.click(summaryOf(card));
+    const dialog = await screen.findByRole('dialog', { name: 'Reactions' });
+    fireEvent.click(within(dialog).getByRole('button', { name: new RegExp(`^${label},`) }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  };
+
+  it('offers a React button and the five, labelled, only while nobody has reacted', async () => {
+    api.list.mockResolvedValue({ confessions: [fresh()], nextCursor: null });
     renderPage();
-    const card = (await screen.findByText('@lunar.koi')).closest('article');
-    fireEvent.click(within(card).getByRole('button', { name: /Relate/ }));
-    // Shown before the server has answered.
-    expect(await within(card).findByText('Related')).toBeTruthy();
-    expect(within(card).getByText('4')).toBeTruthy();
-    refuse(Object.assign(new Error('nope'), { status: 500 }));
-    await waitFor(() => expect(within(card).getByText('Relate')).toBeTruthy());
-    expect(within(card).getByText('3')).toBeTruthy();
+    const card = await cardOf();
+    const react = within(card).getByRole('button', { name: 'React' });
+    expect(react.textContent).toBe('React');
+    expect(within(card).queryByRole('button', { name: /See all reactions/ })).toBeNull();
+    fireEvent.click(react);
+    const picker = within(card).getByRole('radiogroup', { name: 'Choose a reaction' });
+    expect(within(picker).getAllByRole('radio').map((r) => r.textContent)).toEqual([
+      '❤️Love', '😂Funny', '😢Sad', '😮Surprised', '🤝Relatable',
+    ]);
+    fireEvent.keyDown(picker, { key: 'Escape' });
+    expect(within(card).queryByRole('radiogroup')).toBeNull();
   });
 
-  it('sends one request for a double tap on Relate', async () => {
-    let finish;
-    api.relate.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+  it('once there are reactions, shows only what everybody chose, never yours apart', async () => {
+    api.list.mockResolvedValue({ confessions: [C({ myReaction: 'love', relatedByMe: true })], nextCursor: null });
+    renderPage();
+    const card = await cardOf();
+    expect(within(card).queryByRole('button', { name: 'React' })).toBeNull();
+    expect(within(card).queryByRole('radiogroup')).toBeNull();
+    // The summary is the whole control: each kind present and the total.
+    expect(summaryOf(card).textContent).toBe('❤️😂3');
+    expect(yours(card)).toBe('Love');
+  });
+
+  it('lists every kind present, all five once all are there', async () => {
+    api.list.mockResolvedValue({
+      confessions: [C({ reactions: counts({ love: 1, funny: 4, sad: 2, surprised: 1, relatable: 3 }), reactionCount: 11 })],
+      nextCursor: null,
+    });
+    renderPage();
+    expect(summaryOf(await cardOf()).textContent).toBe('😂🤝😢❤️😮11');
+  });
+
+  it('opens every kind’s count, most first, from the summary', async () => {
+    api.list.mockResolvedValue({
+      confessions: [C({ reactions: counts({ love: 2, funny: 5, sad: 1 }), reactionCount: 8 })],
+      nextCursor: null,
+    });
+    renderPage();
+    fireEvent.click(summaryOf(await cardOf()));
+    const dialog = await screen.findByRole('dialog', { name: 'Reactions' });
+    expect(within(dialog).getByRole('heading', { name: 'Reactions' }).nextSibling.textContent).toBe('8 reactions');
+    // Left to right, highest first; equal counts keep the picker's order.
+    expect(within(dialog).getAllByRole('listitem').map((li) => li.textContent)).toEqual([
+      '😂5Funny', '❤️2Love', '😢1Sad', '😮0Surprised', '🤝0Relatable',
+    ]);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('reacts, changes and takes back from the counts modal', async () => {
+    api.list.mockResolvedValue({
+      confessions: [C({ reactions: counts({ love: 2, funny: 5 }), reactionCount: 7 })],
+      nextCursor: null,
+    });
+    api.react.mockImplementation((_id, r) => Promise.resolve(S(r, { love: 2, funny: 5, [r]: (r === 'love' ? 3 : r === 'funny' ? 6 : 1) })));
+    api.unreact.mockResolvedValue(S(null, { love: 2, funny: 5 }));
+    renderPage();
+    const card = await cardOf();
+    // A kind nobody has chosen yet can still be chosen there.
+    await tapReaction(card, 'Sad');
+    await waitFor(() => expect(yours(card)).toBe('Sad'));
+    await waitFor(() => expect(api.react).toHaveBeenCalledWith('c1', 'sad'));
+    await waitFor(() => expect(within(card).getByTitle('8 reactions: 5 Funny, 2 Love, 1 Sad')).toBeTruthy());
+
+    // Another kind changes it: one count moves, the total stays.
+    await tapReaction(card, 'Love');
+    expect(await within(card).findByTitle('8 reactions: 5 Funny, 3 Love')).toBeTruthy();
+    await waitFor(() => expect(api.react).toHaveBeenLastCalledWith('c1', 'love'));
+
+    // Your own again takes it back.
+    fireEvent.click(summaryOf(card));
+    const dialog = await screen.findByRole('dialog', { name: 'Reactions' });
+    const love = within(dialog).getByRole('button', { name: /^Love, 3/ });
+    expect(love.getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(love);
+    await waitFor(() => expect(api.unreact).toHaveBeenCalledWith('c1'));
+    await waitFor(() => expect(yours(card)).toBeNull());
+    expect(within(card).getByTitle('7 reactions: 5 Funny, 2 Love')).toBeTruthy();
+  });
+
+  it('taking back the only reaction fades the summary out as it was, then shows React', async () => {
+    api.list.mockResolvedValue({
+      confessions: [C({ reactions: counts({ funny: 1 }), reactionCount: 1, relateCount: 1, myReaction: 'funny', relatedByMe: true })],
+      nextCursor: null,
+    });
+    api.unreact.mockResolvedValue(S(null));
+    renderPage();
+    const card = await cardOf();
+    fireEvent.click(summaryOf(card));
+    const dialog = await screen.findByRole('dialog', { name: 'Reactions' });
+    fireEvent.click(within(dialog).getByRole('button', { name: /^Funny, 1/ }));
+    // The modal closes first; then the summary leaves showing 1, never 0.
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    const leaving = summaryOf(card);
+    expect(leaving.hasAttribute('data-leaving')).toBe(true);
+    expect(leaving.textContent).toBe('😂1');
+    expect(await within(card).findByRole('button', { name: 'React' })).toBeTruthy();
+    await waitFor(() => expect(api.unreact).toHaveBeenCalledWith('c1'));
+  });
+
+  it('shows the anonymous name’s first letter as its avatar', async () => {
+    renderPage();
+    const card = await cardOf();
+    expect(within(card).getByText('L')).toBeTruthy();
+    expect(card.querySelector('svg[shape-rendering]')).toBeNull();
+  });
+
+  it('a first reaction shows at once and rolls back if the server refuses', async () => {
+    api.list.mockResolvedValue({ confessions: [fresh()], nextCursor: null });
+    let refuse;
+    api.react.mockImplementationOnce(() => new Promise((_, reject) => { refuse = reject; }));
+    renderPage();
+    const card = await cardOf();
+    await tapReaction(card, /Sad/);
+    // Before the server has answered: the button gives way to the summary.
+    expect(within(card).queryByRole('radiogroup')).toBeNull();
+    expect(await within(card).findByTitle('1 reaction: 1 Sad')).toBeTruthy();
+    expect(yours(card)).toBe('Sad');
+    expect(within(card).queryByRole('button', { name: 'React' })).toBeNull();
+    await waitFor(() => expect(api.react).toHaveBeenCalledWith('c1', 'sad'));
+    await act(async () => refuse(Object.assign(new Error('nope'), { status: 500 })));
+    expect(await within(card).findByRole('button', { name: 'React' })).toBeTruthy();
+    expect(within(card).queryByRole('button', { name: /See all reactions/ })).toBeNull();
+  });
+
+  it('sends each choice made in turn, ending on the last', async () => {
+    api.react.mockImplementation((_id, r) => Promise.resolve(S(r, { love: 2, funny: 1, [r]: r === 'love' ? 3 : 1 })));
+    renderPage();
+    const card = await cardOf();
+    await tapReaction(card, 'Sad');
+    await waitFor(() => expect(yours(card)).toBe('Sad'));
+    await tapReaction(card, 'Love');
+    await waitFor(() => expect(yours(card)).toBe('Love'));
+    await waitFor(() => expect(api.react).toHaveBeenLastCalledWith('c1', 'love'));
+    await waitFor(() => expect(within(card).getByTitle('4 reactions: 3 Love, 1 Funny')).toBeTruthy());
+    expect(api.unreact).not.toHaveBeenCalled();
+  });
+
+  it('holds taps made while a request is in flight and sends only the last', async () => {
+    const finish = [];
+    api.react.mockImplementation((_id, r) => new Promise((resolve) => { finish.push(() => resolve(S(r, { love: 2, funny: 1, [r]: r === 'love' ? 3 : 1 }))); }));
+    renderPage();
+    const card = await cardOf();
+    await tapReaction(card, 'Sad');
+    await waitFor(() => expect(api.react).toHaveBeenCalledTimes(1));
+    await tapReaction(card, 'Surprised');
+    await waitFor(() => expect(yours(card)).toBe('Surprised'));
+    await tapReaction(card, 'Love');
+    await waitFor(() => expect(yours(card)).toBe('Love'));
+    expect(api.react).toHaveBeenCalledTimes(1);
+    await act(async () => finish[0]());
+    // The first answer does not flash back to Sad: the next is already due.
+    expect(yours(card)).toBe('Love');
+    await waitFor(() => expect(api.react).toHaveBeenCalledTimes(2));
+    expect(api.react.mock.calls.map((c) => c[1])).toEqual(['sad', 'love']);
+    await act(async () => finish[1]());
+    await waitFor(() => expect(within(card).getByTitle('4 reactions: 3 Love, 1 Funny')).toBeTruthy());
+  });
+
+  it('keeps the reaction when a feed refetch from before it lands afterwards', async () => {
+    const qc = newClient();
+    let finishReact;
+    api.react.mockImplementation(() => new Promise((resolve) => { finishReact = () => resolve(S('sad', { love: 2, funny: 1, sad: 1 })); }));
+    renderPage(qc);
+    const card = await cardOf();
+    await tapReaction(card, 'Sad');
+    await waitFor(() => expect(api.react).toHaveBeenCalledTimes(1));
+    // A refetch starts now, and its (older) answer lands after the reaction.
+    let finishList;
+    api.list.mockImplementation(() => new Promise((resolve) => { finishList = () => resolve({ confessions: [C()], nextCursor: null }); }));
+    act(() => { void qc.refetchQueries({ queryKey: ['confessions', 'feed'] }); });
+    await waitFor(() => expect(finishList).toBeTypeOf('function'));
+    await act(async () => finishReact());
+    await act(async () => finishList());
+    await waitFor(() => expect(yours(card)).toBe('Sad'));
+    expect(within(card).getByTitle('4 reactions: 2 Love, 1 Funny, 1 Sad')).toBeTruthy();
+  });
+
+  it('drops a confession that has gone when reacting to it', async () => {
+    api.react.mockRejectedValue(Object.assign(new Error('gone'), { status: 404 }));
+    renderPage();
+    await tapReaction(await cardOf(), 'Love');
+    await waitFor(() => expect(screen.queryByText('@lunar.koi')).toBeNull());
+  });
+
+  it('opens the share sheet for a confession', async () => {
     renderPage();
     const card = (await screen.findByText('@lunar.koi')).closest('article');
-    const button = within(card).getByRole('button', { name: /Relate/ });
-    fireEvent.click(button);
-    fireEvent.click(button);
-    await within(card).findByText('Related');
-    expect(api.relate).toHaveBeenCalledTimes(1);
-    expect(api.unrelate).not.toHaveBeenCalled();
-    finish({ relateCount: 4, relatedByMe: true });
-    await waitFor(() => expect(within(card).getByText('4')).toBeTruthy());
+    fireEvent.click(within(card).getByRole('button', { name: 'Share confession' }));
+    expect((await screen.findByTestId('share')).textContent).toBe('confession:c1');
   });
 
   it('reports someone else’s confession as a CONFESSION', async () => {
@@ -418,5 +622,41 @@ describe('posting twice', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Post' }));
     await waitFor(() => expect(screen.queryByLabelText('Your confession')).toBeNull());
     await waitFor(() => expect(api.list.mock.calls.length).toBeGreaterThan(listCalls));
+  });
+});
+
+describe('a link to one confession', () => {
+  const renderAt = (path) => render(
+    <QueryClientProvider client={newClient()}>
+      <MemoryRouter initialEntries={[path]}>
+        <Routes>
+          <Route path="/campus/confessions" element={<ConfessionsPage />} />
+          <Route path="/campus/confessions/:id" element={<ConfessionsPage />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+
+  beforeEach(() => {
+    api.getMe.mockResolvedValue({ profile: { handle: 'midnight.moth', createdAt: '2026-01-01T00:00:00Z' } });
+  });
+
+  it('shows the confession first, once, above the feed', async () => {
+    api.get.mockResolvedValue({ confession: C({ id: 'c9', handle: 'quiet.fern', content: 'The one from the chat link.' }) });
+    api.list.mockResolvedValue({ confessions: [C(), C({ id: 'c9', handle: 'quiet.fern', content: 'The one from the chat link.' })], nextCursor: null });
+    renderAt('/campus/confessions/c9');
+    await screen.findByText('@lunar.koi');
+    expect(api.get).toHaveBeenCalledWith('c9', expect.anything());
+    const cards = screen.getAllByRole('article');
+    expect(cards).toHaveLength(2);
+    expect(within(cards[0]).getByText('@quiet.fern')).toBeTruthy();
+  });
+
+  it('says only that it is unavailable when the server will not serve it', async () => {
+    api.get.mockRejectedValue(Object.assign(new Error('Confession not found.'), { status: 404 }));
+    renderAt('/campus/confessions/c404');
+    expect(await screen.findByText('This confession isn’t available')).toBeTruthy();
+    expect(api.get).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('link', { name: 'See all confessions' })).toBeTruthy();
   });
 });

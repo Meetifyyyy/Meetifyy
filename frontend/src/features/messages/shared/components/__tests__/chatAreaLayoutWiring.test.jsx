@@ -81,7 +81,21 @@ describe('ChatAreaLayout wiring', () => {
     );
     await waitFor(() => expect(h.forward).not.toBeNull());
     await h.forward.forward.send('a', 'fwd_op_a');
-    expect(h.send.mock.calls[0][1]).toEqual({ text: 'hi', mediaUrl: '/api/media/chat/a.png', mediaType: 'image' });
+    expect(h.send.mock.calls[0][1]).toEqual({ text: 'hi', mediaUrl: '/api/media/chat/a.png', mediaType: 'image', inviteData: null });
     expect(h.send.mock.calls[0][8]).toEqual({ tempId: 'fwd_op_a' });
+  });
+
+  it('forwards a shared item with what it shares, not as an empty message', async () => {
+    const invite = { type: 'confessionShare', confessionId: 'cf1' };
+    render(
+      <ChatAreaLayout
+        {...base}
+        forwardingMsg={{ text: '', inviteData: invite }}
+        setForwardingMsg={() => {}}
+      />,
+    );
+    await waitFor(() => expect(h.forward).not.toBeNull());
+    await h.forward.forward.send('a', 'fwd_op_a');
+    expect(h.send.mock.calls[0][1]).toEqual({ text: '', mediaUrl: null, mediaType: null, inviteData: invite });
   });
 });

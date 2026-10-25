@@ -1,8 +1,9 @@
-import { memo, useCallback, useLayoutEffect, useRef, useState } from 'react';
+import { memo, useLayoutEffect, useRef, useState } from 'react';
 import Menu, { MenuItem, useMenu } from '@shared/components/ui/Menu';
 import { Flag, MoreHorizontal, Trash2 } from '@shared/components/icons';
 import { timeAgo } from '@shared/utils/time';
 import HandleMark from './HandleMark';
+import ConfessionReactions from './ConfessionReactions';
 import styles from './Confessions.module.css';
 
 /** Short confessions are set as display type; long ones as reading text. */
@@ -15,11 +16,13 @@ function sizeOf(text) {
 
 /**
  * One confession. Typography first: the words are the card, the name and time
- * sit quietly above, and the only control in view is Relate. Report and Delete
- * live in the overflow menu.
+ * sit quietly above, and the action row below holds React and Share. Report
+ * and Delete live in the overflow menu.
+ *
+ * `highlight` marks the one a link opened (from a chat, say).
  */
-function ConfessionCard({ confession, onRelate, onReport, onDelete, enter = false }) {
-  const { id, handle, content, createdAt, relateCount = 0, relatedByMe = false, isMine = false } = confession;
+function ConfessionCard({ confession, onReact, onShare, onReport, onDelete, enter = false, highlight = false }) {
+  const { handle, content, createdAt, isMine = false } = confession;
   const menu = useMenu();
   const bodyRef = useRef(null);
   const [expanded, setExpanded] = useState(false);
@@ -35,15 +38,12 @@ function ConfessionCard({ confession, onRelate, onReport, onDelete, enter = fals
     setClamped(el.scrollHeight > el.clientHeight + 2);
   }, [content, expanded, size]);
 
-  const relate = useCallback(() => onRelate?.(id, !relatedByMe), [id, relatedByMe, onRelate]);
+  const cardClass = [styles.card, enter && styles.cardEnter, highlight && styles.cardHighlight].filter(Boolean).join(' ');
 
   return (
-    <article
-      className={enter ? `${styles.card} ${styles.cardEnter}` : styles.card}
-      aria-label={`Confession by @${handle}`}
-    >
+    <article className={cardClass} aria-label={`Confession by @${handle}`}>
       <header className={styles.cardHead}>
-        <HandleMark handle={handle} size={40} artSize={32} />
+        <HandleMark handle={handle} size={40} />
         <div className={styles.byline}>
           <span className={styles.bylineName}>
             <span className={styles.handle}>@{handle}</span>
@@ -80,28 +80,29 @@ function ConfessionCard({ confession, onRelate, onReport, onDelete, enter = fals
       )}
 
       <footer className={styles.cardFoot}>
-        <button
-          type="button"
-          className={`${styles.relate} ${relatedByMe ? styles.relateOn : ''}`}
-          onClick={relate}
-          aria-pressed={relatedByMe}
-          aria-label={`${relatedByMe ? 'Remove relate' : 'Relate'}${relateCount ? `, ${relateCount}` : ''}`}
-        >
-          <RelateGlyph />
-          <span>{relatedByMe ? 'Related' : 'Relate'}</span>
-          {relateCount > 0 && <span className={styles.relateCount}>{relateCount}</span>}
-        </button>
+        <ConfessionReactions confession={confession} onReact={onReact} />
+        {onShare && (
+          <button
+            type="button"
+            className={styles.share}
+            onClick={() => onShare(confession)}
+            aria-label="Share confession"
+          >
+            <ShareGlyph />
+            <span>Share</span>
+          </button>
+        )}
       </footer>
     </article>
   );
 }
 
-/** Two circles overlapping: "me too", drawn rather than borrowed from an icon set. */
-function RelateGlyph() {
+/** A paper plane: "send to someone", as the share action in chats. */
+function ShareGlyph() {
   return (
-    <svg className={styles.relateGlyph} viewBox="0 0 24 24" aria-hidden="true">
-      <circle cx="9" cy="12" r="6" />
-      <circle cx="15" cy="12" r="6" />
+    <svg className={styles.shareGlyph} viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M21.5 3.5 10.6 13.4" />
+      <path d="M21.5 3.5 14.8 20.6l-4.2-7.2-7.1-4.1z" />
     </svg>
   );
 }

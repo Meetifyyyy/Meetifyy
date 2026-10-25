@@ -312,6 +312,7 @@ export const APP_ROUTE_PATTERNS = [
   '/campus/events',
   '/campus/events/:id',
   '/campus/confessions',
+  '/campus/confessions/:id',
   '/crew',
   '/crew/create',
   '/crew/:id',

@@ -6,22 +6,15 @@ describe('avatarFor', () => {
     expect(avatarFor('Lunar.Koi')).toEqual(avatarFor('lunar.koi'));
   });
 
-  it('never draws the body in the background colour family', () => {
-    for (let i = 0; i < 300; i += 1) {
-      const { bg, ink } = avatarFor(`name${i}`);
-      expect(bg).not.toBe(ink);
-    }
+  it('shows the name’s first letter, capitalised', () => {
+    expect(avatarFor('quiet.fern').letter).toBe('Q');
+    expect(avatarFor('Velvet_moth').letter).toBe('V');
+    expect(avatarFor('').letter).toBe('?');
   });
 
-  it('spreads names across every creature and many colours', () => {
-    const shapes = new Set();
-    const pairs = new Set();
-    for (let i = 0; i < 400; i += 1) {
-      const a = avatarFor(`quiet.fox${i}`);
-      shapes.add(a.art.viewBox + a.art.body.length);
-      pairs.add(`${a.bg}/${a.ink}`);
-    }
-    expect(shapes.size).toBe(8);
-    expect(pairs.size).toBeGreaterThan(40);
+  it('spreads names across every colour', () => {
+    const colours = new Set();
+    for (let i = 0; i < 400; i += 1) colours.add(avatarFor(`quiet.fox${i}`).bg);
+    expect(colours.size).toBe(10);
   });
 });

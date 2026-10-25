@@ -687,8 +687,10 @@ export function createEndpoints({
       return apiClient.get(`/api/confessions?${params.toString()}`);
     },
     create: (content) => apiClient.post('/api/confessions', { content }),
-    relate: (id) => apiClient.post(`/api/confessions/${encodeURIComponent(id)}/relate`),
-    unrelate: (id) => apiClient.delete(`/api/confessions/${encodeURIComponent(id)}/relate`),
+    get: (id, { signal } = {}) => apiClient.get(`/api/confessions/${encodeURIComponent(id)}`, { signal }),
+    react: (id, reaction) => apiClient.put(`/api/confessions/${encodeURIComponent(id)}/reaction`, { reaction }),
+    unreact: (id) => apiClient.delete(`/api/confessions/${encodeURIComponent(id)}/reaction`),
+    sync: ({ after, ids }) => apiClient.post('/api/confessions/sync', { ...(after ? { after } : {}), ids }),
     remove: (id) => apiClient.delete(`/api/confessions/${encodeURIComponent(id)}`),
   };
 

@@ -31,6 +31,7 @@ export const SHARE_KIND = {
   PROFILE: 'profile',
   COMMUNITY: 'community',
   ACTIVITY: 'activity',
+  CONFESSION: 'confession',
 };
 
 /** The noun each kind is called in the interface. */
@@ -39,6 +40,7 @@ export const SHARE_KIND_LABEL = {
   profile: 'Profile',
   community: 'Community',
   activity: 'Activity',
+  confession: 'Confession',
 };
 
 const str = (value) => (typeof value === 'string' ? value.trim() : '');
@@ -287,6 +289,19 @@ function activityContent(activity) {
   };
 }
 
+// ── Confessions ──────────────────────────────────────────────────────────
+
+/**
+ * A confession is shared into chats and nowhere else. It has no public link
+ * (only signed-in students on its own campus may read it), so there is no
+ * `url`, no app row and no Story card, and nothing about it but its id goes
+ * into the message: each reader's app asks for the confession itself, under
+ * that reader's access, so a deleted or other-campus one shows as unavailable.
+ */
+function confessionContent(confession) {
+  return { kind: SHARE_KIND.CONFESSION, id: str(confession?.id), url: null };
+}
+
 /**
  * The one entry point: `(kind, entity, extra)` → `ShareContent`.
  *
@@ -310,6 +325,9 @@ export function normalizeShareContent(kind, entity, extra = {}) {
     case SHARE_KIND.ACTIVITY:
       content = activityContent(entity);
       break;
+    case SHARE_KIND.CONFESSION:
+      content = confessionContent(entity);
+      return content.id ? content : null;
     default:
       return null;
   }
@@ -376,6 +394,9 @@ export function toChatInvite(content, entity) {
           membersCount: content.memberCount,
         },
       };
+    case SHARE_KIND.CONFESSION:
+      // The server stores exactly this and drops anything added to it.
+      return { type: 'confessionShare', confessionId: content.id };
     case SHARE_KIND.ACTIVITY:
       return {
         type: 'activityShare',

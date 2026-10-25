@@ -8,6 +8,8 @@ import Avatar from '@shared/components/avatar/Avatar';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { useCommunities } from '@shared/hooks/useCommunities';
 import { useConversations } from '@shared/hooks/useMessages';
+import { useConfession } from '@shared/hooks/useConfessions';
+import HandleMark from '@features/confessions/components/HandleMark';
 import { resolveReplyPreview } from '../utils/replyPreview';
 import { useSignedMediaSrc } from '@shared/hooks/useSignedMediaSrc';
 
@@ -31,6 +33,7 @@ const ICONS = {
   profile: User,
   community: Users,
   post: MessageSquare,
+  confession: MessageSquare,
   activity: Calendar,
   event: Calendar,
   group_invite: Users,
@@ -51,6 +54,66 @@ export default function ReplyPreviewContent({
   iconSize = 15,
 }) {
   const preview = resolveReplyPreview(message);
+  if (preview.kind === 'confession') {
+    return (
+      <ConfessionQuote
+        id={preview.entityId}
+        fallback={preview.text}
+        className={className}
+        textClassName={textClassName}
+        thumbClassName={thumbClassName}
+        iconSize={iconSize}
+      />
+    );
+  }
+  return (
+    <PreviewBody
+      preview={preview}
+      className={className}
+      textClassName={textClassName}
+      thumbClassName={thumbClassName}
+      iconSize={iconSize}
+    />
+  );
+}
+
+/**
+ * A quoted shared confession: its handle's mark and "@handle: the words",
+ * looked up as this reader — the quote, like the card, holds only the id. While
+ * that loads it reads "Shared confession"; if the confession has gone, or is
+ * not this reader's to see, "Confession unavailable" and nothing else.
+ */
+function ConfessionQuote({ id, fallback, className, textClassName, thumbClassName, iconSize }) {
+  const { confession, isGone } = useConfession(id);
+  if (!confession) {
+    const preview = {
+      kind: isGone ? 'unavailable' : 'confession',
+      text: isGone ? 'Confession unavailable' : fallback,
+      icon: isGone ? 'alert' : 'confession',
+      thumbnailKey: null,
+      isUnavailable: isGone,
+    };
+    return <PreviewBody preview={preview} className={className} textClassName={textClassName} thumbClassName={thumbClassName} iconSize={iconSize} />;
+  }
+  const words = String(confession.content || '').replace(/\s+/g, ' ').trim();
+  return (
+    <div className={className} style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+      <span className={thumbClassName} style={{ display: 'inline-flex', flexShrink: 0 }}>
+        <HandleMark handle={confession.handle} size={26} />
+      </span>
+      <span
+        className={textClassName}
+        style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.35 }}
+      >
+        <strong style={{ fontWeight: 600 }}>@{confession.handle}</strong>
+        {words ? `: ${words}` : ''}
+      </span>
+    </div>
+  );
+}
+
+/** Draws a resolved preview: thumbnail, entity avatar or icon, and its line. */
+function PreviewBody({ preview, className, textClassName, thumbClassName, iconSize }) {
   const Icon = preview.icon ? ICONS[preview.icon] : null;
 
   // People and communities use the app's own avatar shapes rather than a generic

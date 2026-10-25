@@ -10,6 +10,7 @@ import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import NotFoundState from '@shared/components/ui/NotFoundState';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { chatMediaItem } from '../utils/chatMediaItem';
+import { forwardedInviteData } from '../utils/forwardDelivery';
 import { KEYBOARD_OVERLAYS_PAGE } from '@shared/utils/keyboardOverlay';
 import styles from './ChatAreaLayout.module.css';
 
@@ -286,6 +287,7 @@ export default function ChatAreaLayout({
                   text: forwardingMsg.text || forwardingMsg.payload?.text || '',
                   mediaUrl: forwardingMsg.mediaUrl || forwardingMsg.payload?.mediaUrl || null,
                   mediaType: forwardingMsg.mediaType || forwardingMsg.payload?.mediaType || null,
+                  inviteData: forwardedInviteData(forwardingMsg),
                 },
                 undefined, undefined, undefined, undefined, undefined, undefined,
                 { tempId: clientId },

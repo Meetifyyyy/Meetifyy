@@ -85,6 +85,11 @@ function resolveShare(msg) {
       };
     }
   }
+  // A shared confession is its id alone; the quote looks the confession up
+  // (as this reader) to say whose it is, so nothing is taken from the message.
+  if (invite.type === 'confessionShare') {
+    return { type: 'confession', id: firstText(invite.confessionId) || null, title: '', avatar: null, color: null };
+  }
   if (typeof invite.type === 'string' && invite.type) {
     const type = invite.type === 'group_invite' ? 'group_invite' : invite.type;
     return {
@@ -128,6 +133,7 @@ const KIND_LABEL = {
   post: 'Shared post',
   activity: 'Shared activity',
   event: 'Shared event',
+  confession: 'Shared confession',
   group_invite: 'Group invite',
   link: 'Link',
   unavailable: 'Message unavailable',
