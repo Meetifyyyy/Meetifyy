@@ -213,7 +213,6 @@ meetifyy-security-remediation-report.md
 docs/*
 !docs/techstack.md
 !docs/project-structure.md
-!docs/azure-setup.md
 !docs/operations.md
 !docs/rate-limiting.md
 !docs/testing-log.md

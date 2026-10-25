@@ -22,7 +22,6 @@ Four documents, kept current:
 |---|---|
 | [docs/techstack.md](docs/techstack.md) | You want the full dependency picture |
 | [docs/project-structure.md](docs/project-structure.md) | You need to know how local, dev and prod differ |
-| [docs/azure-setup.md](docs/azure-setup.md) | You're provisioning, deploying, or moving Azure accounts |
 | [docs/operations.md](docs/operations.md) | **Before changing anything in production** |
 | [docs/rate-limiting.md](docs/rate-limiting.md) | You're adding a limit, tuning one, or a 429 is firing where it shouldn't |
 
@@ -109,7 +108,7 @@ Vercel before the build runs, and changing one requires a redeploy. Nothing in a
 
 Dev and prod live in **separate Azure subscriptions on separate Microsoft
 accounts** — not for tidiness, but because a subscription may hold only one
-Container Apps environment. See [docs/azure-setup.md](docs/azure-setup.md).
+Container Apps environment.
 
 ### Contribution flow
 
