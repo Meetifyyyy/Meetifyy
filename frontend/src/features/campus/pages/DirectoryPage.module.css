@@ -197,6 +197,7 @@
 }
 
 .directoryCard {
+  -webkit-tap-highlight-color: transparent;
   display: flex;
   flex-direction: row;
   align-items: center;
@@ -366,17 +367,29 @@
   flex: none;
 }
 
-/* Ringed in the card colour so it reads as sitting on the avatar's edge. Two
-   classes, to outrank the badge's own size and nudge. */
-.directoryCard .avatarBadge {
+/* On the avatar's lower-right edge, with no ring of its own. */
+.avatarBadgeSlot {
   position: absolute;
-  right: 1px;
-  bottom: 3px;
+  right: -1px;
+  bottom: 1px;
+  display: inline-flex;
+  line-height: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Two classes, to outrank the badge's own size and nudge. */
+.directoryCard .avatarBadge {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
   margin: 0;
   translate: none;
-  border-radius: 50%;
-  background: var(--color-bg-white);
-  box-shadow: 0 0 0 2px var(--color-bg-white);
+}
+
+/* Pressing the badge is not pressing the card: no shrink, no highlight. */
+.directoryCard:has(.avatarBadgeSlot:active) {
+  transform: none !important;
 }
 
 /* Name and "(You)" on one line. Only the name shrinks: min-width 0 lets it

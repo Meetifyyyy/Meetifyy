@@ -174,6 +174,9 @@ const CustomClassYearSelect = ({ value, onChange, years }) => {
  * on every page appended by the infinite scroll; without this, each of those
  * re-rendered every row already on screen. Requires a stable `onSelect`.
  */
+/** A tap on the representative badge is the badge's, not the card's. */
+const stopCardClick = (e) => e.stopPropagation();
+
 const DirectoryCard = memo(function DirectoryCard({ user, courses, onSelect, isSelf = false }) {
   const summary = useMemo(
     () => formatAcademic(courses, user.course, user.branch, user.passingYear ?? user.currentYear, { branch: false }),
@@ -194,12 +197,18 @@ const DirectoryCard = memo(function DirectoryCard({ user, courses, onSelect, isS
           /* 88px on screen against a 512px original — ask for the 160px variant. */
           thumbnail
         />
-        <CollegeRepresentativeBadge
-          isCampusRep={user.isCampusRep}
-          user={user}
-          size="lg"
-          className={styles.avatarBadge}
-        />
+        {user.isCampusRep && (
+          // Its own tap: it opens the badge's explanation, never the profile
+          // behind it (the badge stops the click only on touch screens).
+          <span className={styles.avatarBadgeSlot} onClick={stopCardClick}>
+            <CollegeRepresentativeBadge
+              isCampusRep
+              user={user}
+              size="lg"
+              className={styles.avatarBadge}
+            />
+          </span>
+        )}
       </span>
       <div className={`${styles.cardText} ${isSelf ? styles.cardTextSelf : ''}`}>
         {/* The name gives way to "(You)", never the other way round: a long
