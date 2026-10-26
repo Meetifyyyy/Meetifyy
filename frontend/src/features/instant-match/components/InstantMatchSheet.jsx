@@ -398,7 +398,7 @@ export default function InstantMatchSheet() {
             </footer>
           )}
 
-          {browsing && !showingMatched && !showingEnded && (
+          {browsing && !roster.loading && !showingMatched && !showingEnded && (
             <footer className="im-sheet-foot">
               <div className="im-sheet-actions">
                 <button
