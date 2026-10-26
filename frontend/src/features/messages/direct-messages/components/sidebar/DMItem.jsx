@@ -3,7 +3,7 @@ import { timeAgo } from '@shared/utils/time';
 import { Pin, NotificationOff } from '@shared/components/icons';
 import styles from '../../../shared/components/sidebar/ConversationList.module.css';
 
-export default function DMItem({ conv, activeChatId, onSelect, onContextMenu }) {
+export default function DMItem({ conv, activeChatId, onSelect, onContextMenu, onPrefetch }) {
   const isActive = Boolean(activeChatId) && (
     String(conv.id) === String(activeChatId) ||
     (Boolean(conv.publicId) && String(conv.publicId) === String(activeChatId))
@@ -29,6 +29,9 @@ export default function DMItem({ conv, activeChatId, onSelect, onContextMenu }) 
     <div
       className={`${styles.convItem}${isActive ? ` ${styles.convItemActive}` : ''}`}
       onClick={() => onSelect(conv.id, conv)}
+      // The press, before the tap completes: its history starts loading while
+      // the chat is still on its way in (see shared/utils/prefetchHistory).
+      onPointerDown={() => onPrefetch?.(conv)}
       onContextMenu={(e) => onContextMenu?.(e, conv.id)}
     >
       <div className={styles.convAvatar}>

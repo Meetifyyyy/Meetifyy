@@ -5,7 +5,7 @@ import { useAuth } from '@shared/context/AuthContext';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
 import styles from '../../../shared/components/sidebar/ConversationList.module.css';
 
-export default function GroupItem({ conv, activeChatId, onSelect, onContextMenu }) {
+export default function GroupItem({ conv, activeChatId, onSelect, onContextMenu, onPrefetch }) {
   const { currentUser } = useAuth();
   // useUsersMap() always returns an object, so the `= {}` default is no longer needed.
   const users = useUsersMap();
@@ -61,6 +61,9 @@ export default function GroupItem({ conv, activeChatId, onSelect, onContextMenu 
     <div
       className={`${styles.convItem}${isActive ? ` ${styles.convItemActive}` : ''}`}
       onClick={() => onSelect(conv.id, conv)}
+      // The press, before the tap completes: its history starts loading while
+      // the chat is still on its way in (see shared/utils/prefetchHistory).
+      onPointerDown={() => onPrefetch?.(conv)}
       onContextMenu={(e) => onContextMenu?.(e, conv.id)}
     >
       <div className={styles.convAvatar}>

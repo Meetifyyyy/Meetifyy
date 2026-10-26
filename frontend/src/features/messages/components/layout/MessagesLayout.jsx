@@ -3,13 +3,15 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { usePageTransition } from '@shared/hooks/usePageTransition';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@shared/context/AuthContext';
-import { usersApi } from '@shared/api/apiClient';
+import { usersApi, messagesApi } from '@shared/api/apiClient';
+import { IS_MOBILE_BUILD } from '@config';
 import { useConversations } from '@shared/hooks/useMessages';
 import { useMessageActions, dmBlockStateKey } from '@shared/hooks/useMessageActions';
 import { useGroupActions } from '@shared/hooks/useGroupActions';
 import { useChatManager } from '../../shared/hooks/useChatManager';
 import { matchesConversationId } from '../../shared/utils/cacheUtils';
 import { buildDraftConversation, draftUserIdFromConversationId } from '../../shared/utils/draftConversation';
+import { prefetchChatHistory, routeIdOf } from '../../shared/utils/prefetchHistory';
 import { generateConversationUrl, correctConversationUrl, parseConversationRoute } from '@shared/utils/conversationUrl';
 import { showToast } from '@shared/utils/toast';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
@@ -40,6 +42,8 @@ import sidebarStyles from '../../shared/components/sidebar/ConversationList.modu
 // the router redirects it here — so old links keep working without the module
 // having to carry two parallel URL shapes around.
 const MESSAGES_BASE = '/messages';
+// How many conversations at the top of the list have their history fetched ahead (app only).
+const HISTORY_PREFETCH_COUNT = 3;
 
 export default function MessagesLayout() {
   const { param1, param2 } = useParams();
@@ -179,6 +183,32 @@ export default function MessagesLayout() {
     // entirely instead of returning to the conversation list.
     openPage(targetPath, { state: location.state });
   };
+
+  /**
+   * A chat's first page, fetched before it is opened (see
+   * shared/utils/prefetchHistory): on the press that opens it, and, in the
+   * app, for the conversations at the top of the list once it is idle. Those
+   * are the ones a returning user opens, and a first open then slides in the
+   * messages themselves instead of a skeleton they replace a moment later.
+   * Not on Save-Data, not offline, and not while a chat is open.
+   */
+  const prefetchChat = useCallback(
+    (conv) => prefetchChatHistory(queryClient, routeIdOf(conv), messagesApi),
+    [queryClient],
+  );
+  useEffect(() => {
+    if (!IS_MOBILE_BUILD || !online || isConversationsLoading || activeChatId) return undefined;
+    if (typeof navigator !== 'undefined' && navigator.connection?.saveData) return undefined;
+    const top = conversations.slice(0, HISTORY_PREFETCH_COUNT);
+    if (top.length === 0) return undefined;
+    const run = () => top.forEach((conv) => prefetchChat(conv));
+    if (typeof window.requestIdleCallback === 'function') {
+      const id = window.requestIdleCallback(run, { timeout: 2000 });
+      return () => window.cancelIdleCallback(id);
+    }
+    const timer = setTimeout(run, 500);
+    return () => clearTimeout(timer);
+  }, [online, isConversationsLoading, activeChatId, conversations, prefetchChat]);
 
   const [searchVal, setSearchVal] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -460,6 +490,7 @@ export default function MessagesLayout() {
                       conv={conv}
                       activeChatId={activeChatId}
                       onSelect={handleSelectChat}
+                      onPrefetch={prefetchChat}
                       onContextMenu={handleContextMenu}
                     />
                   );
@@ -470,6 +501,7 @@ export default function MessagesLayout() {
                     conv={conv}
                     activeChatId={activeChatId}
                     onSelect={handleSelectChat}
+                    onPrefetch={prefetchChat}
                     onContextMenu={handleContextMenu}
                   />
                 );
