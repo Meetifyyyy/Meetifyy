@@ -48,6 +48,8 @@ const shallowEqual = (a, b) => {
  * identity (query results are structurally shared), and the few this hook
  * builds itself are compared field by field.
  */
+const asList = (value) => (Array.isArray(value) ? value : []);
+
 const sameUsers = (prev, next) => {
   const keys = Object.keys(next);
   if (keys.length !== Object.keys(prev).length) return false;
@@ -102,9 +104,12 @@ function useBuildUsersMap() {
    */
   const built = useMemo(() => {
     const map = {};
-    (rawUsers || []).forEach(u => { if (u?.id) map[u.id] = u; });
-    (rawCampusUsers || []).forEach(u => { if (u?.id) map[u.id] = u; });
-    (processedConversations || []).forEach(c => {
+    // Lists only. This provider wraps the whole app, so one response of an
+    // unexpected shape (an object, an error body) took every screen down with
+    // "(rawCampusUsers || []).forEach is not a function" (MEETIFYY-ANDROID-9).
+    asList(rawUsers).forEach(u => { if (u?.id) map[u.id] = u; });
+    asList(rawCampusUsers).forEach(u => { if (u?.id) map[u.id] = u; });
+    asList(processedConversations).forEach(c => {
       if (c.targetUser?.id) map[c.targetUser.id] = c.targetUser;
       if (c.otherUser?.id) map[c.otherUser.id] = c.otherUser;
       if (Array.isArray(c.participants)) {

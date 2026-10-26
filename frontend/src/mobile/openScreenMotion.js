@@ -356,7 +356,16 @@ export function useSlidePager({ count, reduceMotion, onTarget, autoAdvanceMs = 0
       g.startX = e.clientX;
       g.startPos = pos.current;
       if (rootRef.current) rootRef.current.dataset.drag = 'true';
-      vp.setPointerCapture?.(e.pointerId);
+      // Capture can be refused: the pointer may already be gone (the browser
+      // took the gesture for a scroll and cancelled it, or the event is
+      // synthetic), and Chromium then throws NotFoundError
+      // (MEETIFYY-ANDROID-8). The drag works without it; pointercancel and
+      // pointerup still end it.
+      try {
+        vp.setPointerCapture?.(e.pointerId);
+      } catch {
+        // Not capturing: nothing else depends on it.
+      }
     }
     g.samples.push({ x: e.clientX, t: e.timeStamp });
     if (g.samples.length > 12) g.samples.shift();
