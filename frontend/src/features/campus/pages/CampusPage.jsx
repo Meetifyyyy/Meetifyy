@@ -14,6 +14,7 @@ import Avatar from '@shared/components/avatar/Avatar';
 import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
 import sharedStyles from '../components/skeletons/CampusShared.module.css';
 import pageStyles from './CampusPage.module.css';
+import { useWhiteSurface } from '@shared/hooks/useWhiteSurface';
 const styles = { ...sharedStyles, ...pageStyles };
 import CampusEventSection from '@features/campus-events/components/CampusEventSection';
 import eventStyles from '@features/campus-events/components/CampusEvents.module.css';
@@ -427,6 +428,8 @@ export default function CampusPage() {
   // The verification flow (pick a college, confirm its email) owns the whole
   // content area, so the hub's own bottom padding gives way to it.
   const showJoinFlow = isChangingCollege || (!campus.isActive && !campus.isLoading);
+  // Unverified (join flow): white behind the page on a phone in light theme.
+  useWhiteSurface(showJoinFlow);
 
   return (
     <main className={`centre centre-wide ${styles.hubContainer} ${showJoinFlow ? styles.hubJoin : ''}`}>

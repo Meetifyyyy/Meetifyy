@@ -8,6 +8,7 @@ import ExploreCommunities from '../components/directory/ExploreCommunities';
 import RightPanel from '@layout/RightPanel';
 import CommunitiesAside from '../components/directory/CommunitiesAside';
 import styles from './CommunitiesRoute.module.css';
+import { useWhiteSurface } from '@shared/hooks/useWhiteSurface';
 
 const CreateCommunityModal = lazy(() => import('../components/modals/CreateCommunityModal'));
 
@@ -30,6 +31,8 @@ export default function CommunitiesRoute() {
   const { currentUser } = useAuth();
   const [params, setParams] = useSearchParams();
   const [showCreate, setShowCreate] = useState(false);
+  // Light theme on a phone: white behind the page, not the blue gradient.
+  useWhiteSurface();
 
   const tab = params.get('tab') === 'explore' ? 'explore' : 'yours';
 

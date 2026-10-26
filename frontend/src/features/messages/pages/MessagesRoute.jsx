@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect } from 'react';
+import { useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import MessagesLayout from '../components/layout/MessagesLayout';
@@ -6,6 +6,7 @@ import MessagesLayout from '../components/layout/MessagesLayout';
 import PullToRefresh from '@shared/components/PullToRefresh';
 import VerificationGate from '@shared/components/VerificationGate/VerificationGate';
 import { KEYBOARD_OVERLAYS_PAGE } from '@shared/utils/keyboardOverlay';
+import { useWhiteSurface } from '@shared/hooks/useWhiteSurface';
 
 export default function MessagesRoute() {
   // The keyboard geometry this layout depends on (`--kb-inset`, used by
@@ -20,11 +21,7 @@ export default function MessagesRoute() {
   // blue at the edges) showed through the status bar and navigation bar
   // whenever a chat's own surface was not what the bars read, e.g. while the
   // media viewer is dragged away. See `data-white-surface` in global.css.
-  useLayoutEffect(() => {
-    const root = document.documentElement;
-    root.setAttribute('data-white-surface', '');
-    return () => root.removeAttribute('data-white-surface');
-  }, []);
+  useWhiteSurface();
 
   const queryClient = useQueryClient();
 

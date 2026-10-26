@@ -325,7 +325,7 @@ export function installSystemBars(systemBars, { readEdges } = {}) {
       'data-navigation-bar',
       'data-navigation-bar-icons',
       'data-collapsing-header',
-      // Messages' white page gradient (global.css).
+      // White page gradient on Messages, Communities, Search, unverified Campus (global.css).
       'data-white-surface',
       // The header and the bottom navigation slide away on scroll; the page
       // behind them is what the strips continue once they have.

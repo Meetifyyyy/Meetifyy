@@ -164,10 +164,11 @@ html {
   /* overflow-y: hidden removed — window is the scroll container for the feed virtualizer */
 }
 
-/* Messages on a phone (light theme): the page gradient is plain white, so the
+/* Messages, Communities, Search and the unverified Campus page on a phone
+   (light theme): the page gradient is plain white, so the
    document, the status bar and the navigation bar - which read it - are white
    too instead of the gradient's blue edge. Larger screens keep the gradient.
-   Set by MessagesRoute. */
+   Set by useWhiteSurface. */
 @media (max-width: 768px) {
   html[data-theme='light'][data-white-surface] {
     --bg-gradient-center: #ffffff;
