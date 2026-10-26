@@ -1,8 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Status bar icon for push notifications. Android draws only the alpha
-    channel of a small icon, so this is a single flat white shape (a bell);
-    a coloured or full-bleed icon renders as a white square.
+    Status bar and notification icon for push notifications: the Meetifyy
+    mark (the M with the Y inside it), as a flat white silhouette.
+
+    Android draws only the alpha channel of a notification's small icon and
+    tints it itself (white in the status bar, the brand blue from
+    notificationAccent in the shade), so this is one shape with no colour
+    and no background. A coloured or full-bleed icon renders as a white
+    square, and the launcher icon cannot be used for the same reason.
+
+    The name is a contract: the server's FCM payload names this drawable
+    (backend/src/push/providers/fcm.provider.ts, android.notification.icon)
+    and the manifest makes it the default for any notification that names
+    none. Every app state uses it: the FCM SDK builds background and killed
+    notifications from the payload, and the push plugin builds foreground
+    ones (when enabled) from the same payload.
+
+    Traced from res/drawable-nodpi/meetifyy_splash_logo.webp and fitted to
+    20dp inside the 24dp box (the platform's 2dp small icon margin).
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
@@ -11,5 +26,5 @@
     android:viewportHeight="24">
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M12,22c1.1,0 2,-0.9 2,-2h-4c0,1.1 0.9,2 2,2zM18,16v-5c0,-3.07 -1.64,-5.64 -4.5,-6.32V4c0,-0.83 -0.67,-1.5 -1.5,-1.5s-1.5,0.67 -1.5,1.5v0.68C7.63,5.36 6,7.92 6,11v5l-2,2v1h16v-1l-2,-2z" />
+        android:pathData="M2.42,3.02 L2.89,2.99 L3.29,3.16 L12.02,8.49 L20.75,3.15 L21.07,2.99 L21.22,2.98 L21.54,2.99 L21.74,3.1 L21.95,3.34 L22,3.73 L22,18.76 L21.96,19.07 L20.12,20.9 L19.94,20.8 L18.27,19.07 L18.21,18.84 L18.22,11.28 L18.16,11.16 L15.3,14.51 L15.05,14.82 L14.82,15.3 L14.66,16 L14.66,20.88 L14.62,21.02 L12.57,18.99 L12.31,18.6 L12.31,15.3 L12.39,14.9 L12.54,14.59 L12.86,14.19 L17.21,9.83 L17.76,9.45 L19.34,8.63 L19.34,8.57 L17.13,8.56 L16.66,8.65 L16.27,8.82 L15.8,9.14 L12.02,12.61 L8.4,9.3 L7.85,8.89 L7.38,8.66 L6.91,8.57 L4.7,8.56 L4.63,8.61 L6.2,9.46 L6.75,9.84 L10.95,14.04 L11.49,14.67 L11.65,15.06 L11.71,15.45 L11.71,18.52 L11.66,18.76 L11.48,18.99 L9.5,20.96 L9.42,21.02 L9.36,20.96 L9.34,16.55 L9.3,15.77 L9.21,15.37 L8.81,14.67 L5.88,11.22 L5.8,11.18 L5.77,18.99 L5.65,19.19 L4.07,20.8 L3.92,20.9 L3.77,20.8 L2.19,19.23 L2,18.91 L2,3.57 L2.11,3.28Z" />
 </vector>

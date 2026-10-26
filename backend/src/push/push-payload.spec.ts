@@ -192,6 +192,9 @@ describe('push payloads', () => {
     );
     expect(fcm.android?.notification?.visibility).toBe('private');
     expect(fcm.android?.notification?.channelId).toBe('messages');
+    // The Meetifyy mark, tinted brand blue, never the launcher icon.
+    expect(fcm.android?.notification?.icon).toBe('ic_stat_notify');
+    expect(fcm.android?.notification?.color).toBe('#2563EB');
     expect(JSON.stringify(fcm)).not.toContain('conv-1');
   });
 

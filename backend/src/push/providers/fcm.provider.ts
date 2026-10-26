@@ -6,6 +6,9 @@ import { CATEGORY_CHANNEL, PushMessage, SendOutcome } from '../push.types';
 
 const APP_NAME = 'meetifyy-push';
 
+/** The app's notificationAccent (res/values/colors.xml), #rrggbb as FCM expects. */
+export const NOTIFICATION_COLOR = '#2563EB';
+
 /** The `code` of a FirebaseMessagingError, without its `messaging/` prefix. */
 function fcmCode(err: unknown): string {
   if (!err || typeof err !== 'object' || !('code' in err)) return '';
@@ -59,7 +62,12 @@ export function fcmMessage(token: string, message: PushMessage): Message {
       notification: {
         channelId: CATEGORY_CHANNEL[message.category],
         tag: message.collapseKey,
+        // The Meetifyy mark (res/drawable/ic_stat_notify.xml in the app) and
+        // the brand blue it is tinted with in the shade. The manifest names
+        // both as defaults too; sending them here keeps every build and OEM
+        // shade on the same icon and colour.
         icon: 'ic_stat_notify',
+        color: NOTIFICATION_COLOR,
         // Hidden on a secure lock screen unless the user allows contents;
         // Android then shows the app name and "Contents hidden".
         visibility: 'private',

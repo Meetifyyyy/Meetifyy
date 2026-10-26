@@ -204,7 +204,15 @@ them, and no existing route or socket event changed shape.
   routed by `DeepLinkNavigator` once the router mounts (through the normal
   route guards; a signed-out tap returns there after sign-in).
 - Channels (a permanent contract, never rename): `messages` (high),
-  `social`, `activity`, `community`. Small icon `ic_stat_notify`.
+  `social`, `activity`, `community`.
+- Icon: `res/drawable/ic_stat_notify.xml`, the Meetifyy mark (the M with the Y
+  inside) as a flat white silhouette, traced from the splash logo (it was a
+  generic bell until 2026-10-26). Android draws only a small icon's alpha, so
+  it cannot be the full-colour logo; it is tinted brand blue in the shade by
+  `color` (#2563EB). The FCM payload names both (`android.notification.icon`
+  and `.color`, `fcm.provider.ts`) and the manifest makes them the defaults,
+  so background, killed and (if ever enabled) foreground notifications all
+  use it. The name is a contract with every installed build: never rename it.
 - `POST_NOTIFICATIONS` declared; asked only from Settings or the opt-in card.
   After two denials Android stops showing the dialog; Settings then shows
   "Turned off for Meetifyy in your phone settings" with **Open settings**
