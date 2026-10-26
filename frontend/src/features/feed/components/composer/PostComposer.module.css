@@ -59,7 +59,15 @@
   min-width: 0;
 }
 
+/* What you type, and the placeholder (the editor's ::before inherits these), in
+   the post card's body text (.postBody in Post.module.css), so a post reads the
+   same before and after it is sent. The placeholder keeps its muted colour. */
 .composerInput [class*="editor"] {
+  font-family: var(--font-family-sans);
+  letter-spacing: var(--tracking-normal);
+  font-size: 1rem;
+  font-weight: 450;
+  line-height: 1.6;
   max-height: 120px !important;
   overflow-y: auto !important;
 }
