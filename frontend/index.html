@@ -401,8 +401,35 @@
         });
       }
 
-      fetch('/version.json', { cache: 'no-store', credentials: 'omit' })
-        .then(function (r) { return r.ok ? r.json() : null; })
+      /*
+       * `redirect: 'manual'`: the development site sits behind Cloudflare
+       * Access, and a page restored from cache after its Access session has
+       * expired gets this request redirected to the Access login on another
+       * origin. Followed, that was a CSP report, a CORS failure and
+       * ERR_FAILED in the console on every such load; and the app went on
+       * running with every later asset request (a lazy route chunk) failing
+       * the same way. Not followed, it arrives here as an opaque redirect,
+       * and the page is reloaded once, so the browser goes through the login
+       * at the top level and comes back. Production is not behind Access and
+       * never redirects this file.
+       */
+      fetch('/version.json', { cache: 'no-store', credentials: 'omit', redirect: 'manual' })
+        .then(function (r) {
+          if (r.type === 'opaqueredirect') {
+            var EDGE_KEY = 'meetifyy_edge_auth_reload';
+            var reloaded = null;
+            try { reloaded = sessionStorage.getItem(EDGE_KEY); } catch (e) {}
+            if (!reloaded && !settled) {
+              try { sessionStorage.setItem(EDGE_KEY, '1'); } catch (e) {}
+              settled = true;
+              clearTimeout(timer);
+              window.location.reload();
+            }
+            return null;
+          }
+          try { sessionStorage.removeItem('meetifyy_edge_auth_reload'); } catch (e) {}
+          return r.ok ? r.json() : null;
+        })
         .then(function (data) {
           var latest = data && data.version;
           if (settled) return;

@@ -125,3 +125,19 @@ describe('buildSentryOptions — local dev servers', () => {
     expect(options).not.toBeNull();
   });
 });
+
+describe('buildSentryOptions — the same-origin tunnel', () => {
+  it('sends through the site’s own origin on the deployed hosts', () => {
+    expect(build().options.tunnel).toBe('/api/app-events');
+    expect(build({
+      environment: 'development', isProduction: false, hostname: 'dev.meetifyy.app', isNonProductionHost: true,
+    }).options.tunnel).toBe('/api/app-events');
+  });
+
+  it('reports directly everywhere the rewrite does not exist', () => {
+    expect(build({
+      environment: 'development', isProduction: false, hostname: 'meetifyy-git-x.vercel.app', isNonProductionHost: true,
+    }).options.tunnel).toBeUndefined();
+    expect(build({ platform: 'android', hostname: '' }).options.tunnel).toBeUndefined();
+  });
+});

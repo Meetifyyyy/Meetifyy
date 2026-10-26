@@ -22,6 +22,22 @@ import { scrubBreadcrumb, scrubEvent, featureFromPath } from './sentryScrub';
 const PRODUCTION_WEB_HOSTS = new Set(['meetifyy.app', 'www.meetifyy.app']);
 
 /**
+ * The website sends its events to its own origin, and the host's Vercel rewrite
+ * forwards them to that environment's Sentry project (`/api/app-events` in both
+ * vercel.json files: dev.meetifyy.app to the development org, meetifyy.app and
+ * www to production's).
+ *
+ * Ad and tracker blockers block `*.ingest.sentry.io` outright: on a browser
+ * with one, every error, session and trace failed with ERR_BLOCKED_BY_CLIENT
+ * and never arrived, and the console filled with the failures (seen on
+ * dev.meetifyy.app, 2026-10-26). A same-origin path is not on those lists.
+ * Only these hosts have the rewrite: previews and local servers report
+ * directly, as before.
+ */
+const TUNNEL_PATH = '/api/app-events';
+const TUNNEL_HOSTS = new Set(['dev.meetifyy.app', 'meetifyy.app', 'www.meetifyy.app']);
+
+/**
  * Noise that says nothing about the code: the browser itself, extensions, and
  * a device going offline mid-request (already shown to the user as such).
  */
@@ -84,8 +100,10 @@ export function buildSentryOptions({
     }
   }
 
+  const host = (hostname || '').toLowerCase();
   const options = {
     dsn: sentry.dsn,
+    tunnel: platform === 'web' && TUNNEL_HOSTS.has(host) ? TUNNEL_PATH : undefined,
     environment,
     release: release || undefined,
     sendDefaultPii: false,
