@@ -189,7 +189,7 @@ const DirectoryCard = memo(function DirectoryCard({ user, courses, onSelect, isS
     <div className={styles.directoryCard} onClick={handleClick}>
       {/* The representative badge sits on the avatar's lower-right edge,
           where a status mark usually goes, not in the name line. */}
-      <span className={styles.avatarWrap}>
+      <span className={user.isCampusRep ? `${styles.avatarWrap} ${styles.avatarWrapRep}` : styles.avatarWrap}>
         <Avatar
           src={user.avatar}
           name={user.displayName || user.username}

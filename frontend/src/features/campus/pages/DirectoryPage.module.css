@@ -377,6 +377,16 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+/* A representative's avatar has a notch cut out round the badge: a 2.5px
+   gap where the avatar is transparent, so whatever is behind it (the card,
+   in either theme, or its hover state) shows through. The centre is the
+   badge's: 28px, 1px past the right edge and 1px up from the bottom of the
+   88px avatar, so 13px in from the right and 15px up from the bottom. */
+.avatarWrapRep > :first-child {
+  -webkit-mask: radial-gradient(circle 16.5px at calc(100% - 13px) calc(100% - 15px), transparent 99%, #000 100%);
+  mask: radial-gradient(circle 16.5px at calc(100% - 13px) calc(100% - 15px), transparent 99%, #000 100%);
+}
+
 /* Two classes, to outrank the badge's own size and nudge. */
 .directoryCard .avatarBadge {
   width: 28px;
