@@ -118,14 +118,14 @@
   object-fit: cover;
 }
 
-/* A representative's avatar has a notch cut round the badge: a 2.5px gap
+/* A representative's avatar has a notch cut round the badge: a 1.25px gap
    where the avatar is transparent, so the row behind it shows through in
    either theme and on hover. Centred on the badge: 20px, 3px past the right
    edge and 1px past the bottom of the 46px avatar, so 7px in from the right
    and 9px up from the bottom. */
 .avatarWrapRep > .userAvatar {
-  -webkit-mask: radial-gradient(circle 12.5px at calc(100% - 7px) calc(100% - 9px), transparent 99%, #000 100%);
-  mask: radial-gradient(circle 12.5px at calc(100% - 7px) calc(100% - 9px), transparent 99%, #000 100%);
+  -webkit-mask: radial-gradient(circle 11.25px at calc(100% - 7px) calc(100% - 9px), transparent 99%, #000 100%);
+  mask: radial-gradient(circle 11.25px at calc(100% - 7px) calc(100% - 9px), transparent 99%, #000 100%);
 }
 
 .repBadgeSlot {
