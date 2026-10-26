@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { UserX, Ban, Flag, ShieldPlus, ShieldMinus } from '@shared/components/icons';
@@ -340,6 +340,20 @@ function MemberActionMenu({
   );
 }
 
+/** Longest exit animation in the stylesheet (the phone sheet's slide down). */
+const EXIT_MS = 240;
+
+function prefersReducedMotion() {
+  try {
+    return window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true;
+  } catch {
+    return false;
+  }
+}
+
+/** Lower-cased and trimmed, so "  Diya" finds "diya". */
+const normalise = (value) => String(value || '').trim().toLowerCase();
+
 export default function CommunityMembersModal({
   members: initialMembers, title, onClose, communityId, isAdmin, isOwner: viewerIsOwner, ownerId,
 }) {
@@ -347,9 +361,58 @@ export default function CommunityMembersModal({
   const users = useUsersMap();
   const { currentUser } = useAuth();
   const [members, setMembers] = useState(initialMembers || []);
+  const [query, setQuery] = useState('');
+
+  // Every way out (the X, a tap on the backdrop, Back, Escape) goes through
+  // here: the exit animation plays, then the parent unmounts the dialog. A
+  // second request while it plays is ignored, so a double tap or a Back press
+  // mid-animation cannot close it twice.
+  const [closing, setClosing] = useState(false);
+  const closingRef = useRef(false);
+  const closeTimerRef = useRef(0);
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
+  useEffect(() => () => clearTimeout(closeTimerRef.current), []);
+
+  const requestClose = useCallback(() => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    if (prefersReducedMotion()) {
+      onCloseRef.current?.();
+      return;
+    }
+    setClosing(true);
+    closeTimerRef.current = window.setTimeout(() => onCloseRef.current?.(), EXIT_MS);
+  }, []);
 
   // Back dismisses this dialog rather than navigating the page behind it.
-  useOverlayBack(true, onClose);
+  useOverlayBack(true, requestClose);
+
+  const modalRef = useRef(null);
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.key !== 'Escape') return;
+      // Not while focus is in something opened on top of this dialog (the
+      // report or block dialog): Escape belongs to that one.
+      const active = document.activeElement;
+      if (active && active !== document.body && modalRef.current && !modalRef.current.contains(active)) return;
+      requestClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [requestClose]);
+
+  // A backdrop tap closes only when the press also STARTED on the backdrop:
+  // a text selection or scroll that began in the sheet and ended outside it
+  // is not a tap on the empty area.
+  const pressStartedOnBackdropRef = useRef(false);
+  const handleBackdropPointerDown = (e) => {
+    pressStartedOnBackdropRef.current = e.target === e.currentTarget;
+  };
+  const handleBackdropClick = (e) => {
+    if (e.target !== e.currentTarget || !pressStartedOnBackdropRef.current) return;
+    requestClose();
+  };
   // Background stays put while this dialog is open. Counted, so a
   // dialog opened on top of another cannot unlock the page when it closes.
   useScrollLock(true);
@@ -361,6 +424,28 @@ export default function CommunityMembersModal({
   const sortedMembers = useMemo(() => {
     return sortGroupMembers(members, { ownerId, users });
   }, [members, ownerId, users]);
+
+  // Each member with the cached user it matches, resolved once so the search
+  // and the rows read the same username.
+  const rows = useMemo(() => {
+    const all = Object.values(users || {});
+    return sortedMembers.map((member) => {
+      const matchedUser =
+        (member.id && all.find(u => u.id === member.id)) ||
+        (member.username && all.find(u => u.username === member.username)) ||
+        all.find(u => u.displayName === member.name);
+      return { member, matchedUser, username: member.username || matchedUser?.username };
+    });
+  }, [sortedMembers, users]);
+
+  // Name, @username or branch, anywhere in the text. A leading "@" is
+  // ignored, so "@diya" and "diya" find the same person.
+  const needle = normalise(query).replace(/^@/, '');
+  const visibleRows = useMemo(() => {
+    if (!needle) return rows;
+    return rows.filter(({ member, username }) =>
+      [member.name, username, member.branch].some((field) => normalise(field).includes(needle)));
+  }, [rows, needle]);
 
   // By username when the row has one: a display name is not unique, so
   // matching on it could open someone else's profile, and a member missing
@@ -396,11 +481,15 @@ export default function CommunityMembersModal({
   };
 
   return createPortal(
-    <div className={styles.overlay} onClick={onClose}>
-      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+    <div
+      className={closing ? `${styles.overlay} ${styles.closing}` : styles.overlay}
+      onPointerDown={handleBackdropPointerDown}
+      onClick={handleBackdropClick}
+    >
+      <div ref={modalRef} className={styles.modal} role="dialog" aria-modal="true" aria-label={title || 'Members'}>
         <div className={styles.header}>
           <h3 className={styles.title}>{title || 'Members'}</h3>
-          <button onClick={onClose} className={styles.closeBtn}>
+          <button type="button" onClick={requestClose} className={styles.closeBtn} aria-label="Close">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
@@ -408,19 +497,52 @@ export default function CommunityMembersModal({
           </button>
         </div>
 
+        <div className={styles.searchWrap}>
+          <svg className={styles.searchIcon} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" />
+            <line x1="20" y1="20" x2="16.65" y2="16.65" />
+          </svg>
+          <input
+            type="search"
+            className={styles.searchInput}
+            placeholder="Search members"
+            aria-label="Search members"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              // Escape clears a search first; with nothing typed it closes.
+              if (e.key === 'Escape' && query) {
+                e.stopPropagation();
+                setQuery('');
+              }
+            }}
+            autoComplete="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            enterKeyHint="search"
+          />
+          {query && (
+            <button type="button" className={styles.searchClear} onClick={() => setQuery('')} aria-label="Clear search">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          )}
+        </div>
+
         <div className={styles.body}>
-          {!sortedMembers || sortedMembers.length === 0 ? (
+          {rows.length === 0 ? (
             <div className={styles.empty}>
               No members found.
             </div>
+          ) : visibleRows.length === 0 ? (
+            <div className={styles.empty}>
+              <p className={styles.emptyTitle}>No matches</p>
+              <p className={styles.emptyText}>No member matches “{query.trim()}”.</p>
+            </div>
           ) : (
-            sortedMembers.map((member, i) => {
-
-              const matchedUser =
-                (member.id && Object.values(users).find(u => u.id === member.id)) ||
-                (member.username && Object.values(users).find(u => u.username === member.username)) ||
-                Object.values(users).find(u => u.displayName === member.name);
-              const username = member.username || matchedUser?.username;
+            visibleRows.map(({ member, matchedUser, username }, i) => {
               const isSelf = currentUser?.id === member.id || currentUser?.username === username;
 
               const roleUpper = String(member.role || '').toUpperCase();
@@ -429,7 +551,7 @@ export default function CommunityMembersModal({
               const isRep = Boolean(matchedUser?.isCampusRep || member?.isCampusRep);
 
               return (
-                <div key={i} className={styles.userItem}>
+                <div key={member.id ?? `${member.username || member.name}-${i}`} className={styles.userItem}>
                   {/* Avatar and name both open the profile. The
                       representative badge sits on the avatar's edge, in a
                       notch cut out of it as in the campus directory, and is
