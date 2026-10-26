@@ -137,7 +137,7 @@
    shadow: the white ring alone separates it from the photo. */
 .onlineDot {
   --dot-ring: max(2px, calc(var(--size) * 0.045));
-  --dot: calc(clamp(9px, calc(var(--size) * 0.24), 18px) + 2 * var(--dot-ring));
+  --dot: calc(clamp(8px, calc(var(--size) * 0.21), 16px) + 2 * var(--dot-ring));
   position: absolute;
   right: calc(var(--size) * 0.1464 - var(--dot) / 2);
   bottom: calc(var(--size) * 0.1464 - var(--dot) / 2);
