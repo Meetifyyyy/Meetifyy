@@ -362,11 +362,14 @@ export default function CommunityMembersModal({
     return sortGroupMembers(members, { ownerId, users });
   }, [members, ownerId, users]);
 
-  const handleNameClick = (e, memberName) => {
+  // By username when the row has one: a display name is not unique, so
+  // matching on it could open someone else's profile, and a member missing
+  // from the cached users opened nothing.
+  const openProfile = (e, username, memberName) => {
     e.stopPropagation();
-    const matchedUser = Object.values(users).find(u => u.displayName === memberName);
-    if (matchedUser) {
-      navigate(`/profile/${matchedUser.username}`);
+    const target = username || Object.values(users).find(u => u.displayName === memberName)?.username;
+    if (target) {
+      navigate(`/profile/${target}`);
       onClose();
     }
   };
@@ -423,41 +426,56 @@ export default function CommunityMembersModal({
               const roleUpper = String(member.role || '').toUpperCase();
               const isOwner = member.admin || roleUpper === 'OWNER' || roleUpper === 'CREATOR' || (ownerId && String(member.id) === String(ownerId));
               const isMod = roleUpper === 'MODERATOR';
+              const isRep = Boolean(matchedUser?.isCampusRep || member?.isCampusRep);
 
               return (
                 <div key={i} className={styles.userItem}>
-                  <div className={styles.userAvatar}>
-                    {isImageUrl(member.avatar || matchedUser?.avatar) ? (
-                      <img src={getProcessedAvatarUrl(member.avatar || matchedUser?.avatar)} alt="avatar" className={styles.avatarImg} onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.svg'; }} />
-                    ) : (
-                      <DefaultAvatar style={{ width: '100%', height: '100%' }} />
-                    )}
-                  </div>
-                  <div className={styles.userInfo}>
-                    <div className={styles.userNameRow}>
-                      <span className={styles.userName} onClick={(e) => handleNameClick(e, member.name)}>
-                        {member.name}
+                  {/* Avatar and name both open the profile. The
+                      representative badge sits on the avatar's edge, in a
+                      notch cut out of it as in the campus directory, and is
+                      its own control beside them, not inside them. */}
+                  <span className={isRep ? `${styles.avatarWrap} ${styles.avatarWrapRep}` : styles.avatarWrap}>
+                    <button
+                      type="button"
+                      className={styles.userAvatar}
+                      onClick={(e) => openProfile(e, username, member.name)}
+                      tabIndex={-1}
+                      aria-hidden="true"
+                    >
+                      {isImageUrl(member.avatar || matchedUser?.avatar) ? (
+                        <img src={getProcessedAvatarUrl(member.avatar || matchedUser?.avatar)} alt="" className={styles.avatarImg} onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.svg'; }} />
+                      ) : (
+                        <DefaultAvatar style={{ width: '100%', height: '100%' }} />
+                      )}
+                    </button>
+                    {isRep && (
+                      <span className={styles.repBadgeSlot}>
+                        <CollegeRepresentativeBadge isCampusRep user={matchedUser || member} size="md" className={styles.repBadge} />
                       </span>
-                      <CollegeRepresentativeBadge isCampusRep={matchedUser?.isCampusRep || member?.isCampusRep} user={matchedUser || member} size="sm" />
+                    )}
+                  </span>
+                  <button
+                    type="button"
+                    className={styles.userInfo}
+                    onClick={(e) => openProfile(e, username, member.name)}
+                  >
+                    <span className={styles.userNameRow}>
+                      <span className={styles.userName}>{member.name}</span>
                       {isOwner ? (
-                        <span className={styles.userBadge} style={{ background: 'rgba(236, 72, 153, 0.1)', color: '#EC4899' }}>
-                          Owner
-                        </span>
+                        <span className={`${styles.userBadge} ${styles.badgeOwner}`}>Owner</span>
                       ) : isMod ? (
-                        <span className={styles.userBadge} style={{ background: 'rgba(59, 130, 246, 0.1)', color: '#3B82F6' }}>
-                          Moderator
-                        </span>
+                        <span className={`${styles.userBadge} ${styles.badgeMod}`}>Moderator</span>
                       ) : null}
-                    </div>
+                    </span>
                     {username && (
-                      <div className={styles.userUsername}>@{username}</div>
+                      <span className={styles.userUsername}>@{username}</span>
                     )}
                     {(member.branch || member.year) && (
-                      <div className={styles.userRole}>
+                      <span className={styles.userRole}>
                         {[member.branch, member.year].filter(Boolean).join(' • ')}
-                      </div>
+                      </span>
                     )}
-                  </div>
+                  </button>
                   <MemberActionMenu
                     member={member}
                     communityId={communityId}
