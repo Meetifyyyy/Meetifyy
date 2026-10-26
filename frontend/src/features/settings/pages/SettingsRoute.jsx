@@ -16,6 +16,7 @@ import { apiClient } from '@shared/api/apiClient';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
 import { useSettingsBack } from './useSettingsBack';
+import { usePageTransition } from '@shared/hooks/usePageTransition';
 import { validateDOB } from '@shared/utils/dateValidation';
 import { validatePasswordChange } from '@features/auth/shared/passwordRules';
 import { INTERESTS_BY_CATEGORY } from '@shared/constants/interestsData';
@@ -460,6 +461,7 @@ export default function SettingsRoute() {
   const { openPreferences: openCookiePreferences } = useCookieConsent();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const { open: openPage } = usePageTransition();
   const { panel: panelParam } = useParams();
   const isLargeScreen = useIsLargeScreen();
 
@@ -479,7 +481,14 @@ export default function SettingsRoute() {
   // somewhere to go that is not the root.
   const openCategory = activeCategory || (activePanel ? PANEL_PARENT[activePanel] : null) || null;
 
-  const openPanel = (next) => navigate(`/settings/${next}`);
+  // On a phone each level is its own screen, so it slides in over the one it
+  // was opened from and back out on Back, exactly as Settings itself, a chat
+  // and a profile do (shared/lib/navigation/pageTransition.js); it used to
+  // swap in place with no motion. The split view keeps both levels on screen,
+  // so there it stays a plain navigation.
+  const openPanel = (next) => (isLargeScreen
+    ? navigate(`/settings/${next}`)
+    : openPage(`/settings/${next}`));
 
   // Back and close. See useSettingsBack for why a phone pops history instead
   // of navigating up the tree — navigating up is what used to loop.

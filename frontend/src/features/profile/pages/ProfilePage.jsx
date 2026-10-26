@@ -148,6 +148,28 @@ export default function ProfilePage() {
   }, [goBack, targetUsername]);
 
   const profileMenu = useMenu();
+  /**
+   * Settings, from the menu. The menu closes WITH the navigation, under the
+   * picture the page transition takes of this screen, as the drawer's
+   * Settings entry already does (layout/Header.jsx).
+   *
+   * Closing it on the tap, as every other item does, raced the native
+   * screenshot: recorded on the I2208, the WebView painted the profile without
+   * its menu for a frame, then the screenshot (taken a moment earlier, menu
+   * and all) went up over it and slid away with the menu still drawn — the
+   * menu vanished, came back and left again. Now nothing changes on screen
+   * until the picture is up, and the menu goes with the profile it belongs to.
+   */
+  const openSettings = useCallback(() => {
+    openPage('/settings', {}, { onNavigate: profileMenu.close });
+  }, [openPage, profileMenu.close]);
+  // The menu is the way into Settings from here, so its code is fetched as
+  // the menu opens: a first visit then slides in the page itself rather than
+  // its loading skeleton, which was swapped for the page mid-slide.
+  useEffect(() => {
+    if (!profileMenu.open) return;
+    import('@features/settings/pages/SettingsRoute').catch(() => {});
+  }, [profileMenu.open]);
   const profileAction = useProfileActionNeeded();
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [showCoverEditor, setShowCoverEditor] = useState(false);
@@ -546,7 +568,7 @@ export default function ProfilePage() {
               <MoreVertical size={20} />
             </button>
             <Menu {...profileMenu.menuProps} size="md" ariaLabel="Profile options">
-              <MenuItem icon={Settings} onSelect={() => openPage('/settings')} onClose={profileMenu.close}>
+              <MenuItem icon={Settings} onSelect={openSettings}>
                 Settings
                 {profileAction.any && <ActionDot />}
               </MenuItem>
@@ -600,7 +622,7 @@ export default function ProfilePage() {
                     <MoreVertical size={20} />
                   </button>
                   <Menu {...profileMenu.menuProps} size="md" ariaLabel="Profile options">
-                    <MenuItem icon={Settings} onSelect={() => openPage('/settings')} onClose={profileMenu.close}>
+                    <MenuItem icon={Settings} onSelect={openSettings}>
                       Settings
                       {profileAction.any && <ActionDot />}
                     </MenuItem>
