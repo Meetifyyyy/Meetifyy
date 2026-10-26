@@ -60,6 +60,7 @@ and adds the native Android SDK); the API uses `@sentry/nestjs`.
 | `GIT_COMMIT_SHA` | Set by the deploy workflows on every rollout. |
 | `SENTRY_TRACES_SAMPLE_RATE` | Default 0.1 production / 1.0 elsewhere. |
 | `SENTRY_PROFILES_SAMPLE_RATE` | Default 0.05 production / 1.0 elsewhere. |
+| `SENTRY_REPORT_LOCAL` | `true` lets a local run report. Default false outside production: a run with no `GIT_COMMIT_SHA` (a laptop) stays off, so it cannot file issues into the deployed development API's project. |
 
 ### Website and app (`frontend/.env*`, Vercel project env vars)
 
@@ -71,6 +72,7 @@ and adds the native Android SDK); the API uses `@sentry/nestjs`.
 | `VITE_SENTRY_ENVIRONMENT` | Optional cross-check; must equal `VITE_APP_ENV`. |
 | `VITE_SENTRY_TRACES_SAMPLE_RATE` | Default 0.05 production / 1.0 elsewhere. |
 | `VITE_SENTRY_PROPAGATE_TRACES` | Join browser and API traces. Default false; see "Trace propagation". |
+| `VITE_SENTRY_REPORT_DEV_SERVER` | `true` lets pages served by Vite's dev server report (`npm run dev`, live-reload APKs). Default false. |
 
 Build-time only (source maps). These are **not** `VITE_` variables, so Vite
 never exposes them to client code:
@@ -96,15 +98,72 @@ never exposes them to client code:
   still see the same friendly screens), page-load/navigation performance.
 - CSP: both `vercel.json` files allow `https://*.ingest.sentry.io`,
   `*.ingest.us.sentry.io` and `*.ingest.de.sentry.io` in `connect-src`.
+- **Tunnel.** On dev.meetifyy.app, meetifyy.app and www.meetifyy.app the SDK
+  sends to `/api/app-events` on the site itself (`tunnel` in
+  `shared/lib/sentryOptions.js`), and a host-conditional rewrite in both
+  `vercel.json` files forwards it to that environment's ingest URL. Ad and
+  tracker blockers block `*.ingest.sentry.io` outright — the dev site's console
+  showed every envelope failing with `net::ERR_BLOCKED_BY_CLIENT` — so without
+  this, the browsers most likely to hit a bug were the ones that never reported
+  it. Each rewrite's destination is one fixed project URL, so the tunnel can
+  only ever deliver into that environment's project.
+  - **The rewrite's destination must be the same project as that host's
+    `VITE_SENTRY_DSN`.** dev.meetifyy.app → the `meetifyy-dev` org's web
+    project; meetifyy.app and www → the `meetifyy` org's. Changing a DSN means
+    changing its rewrite in both `vercel.json` files, in the same commit.
+  - Other hosts (Vercel previews, localhost) have no rewrite and send direct.
+  - The app (APK) never tunnels: its page is `https://localhost` inside the
+    WebView, which no blocker list targets.
+- **Dev server.** Pages served by Vite's dev server do not report unless
+  `VITE_SENTRY_REPORT_DEV_SERVER=true`. Hot-reload errors from a half-saved
+  edit (React Refresh hook-order errors, `X is not defined`, chunk fetches from
+  `localhost:3001/src/...`) are not app errors and cannot happen in a build.
+- **Cloudflare Access (dev.meetifyy.app only).** When the Access session has
+  expired, every same-origin request is redirected to the Access login page.
+  The launch-time version gate in `index.html` fetches `/version.json` with
+  `redirect: 'manual'`, so it sees an `opaqueredirect` instead of following the
+  redirect into a CSP violation and a CORS failure, and reloads the page once
+  per tab session, which takes the browser through Access properly.
+- **Deploy skew.** Each deploy removes the previous build's chunks, so a tab
+  open across a deploy fails its next lazy import ("Failed to fetch dynamically
+  imported module", MEETIFYY-WEB-1). `staleChunkRecovery.js` reloads once per
+  minute and the tab comes back on the new build; the error is still reported,
+  on purpose, so the rate stays visible. Vercel's Skew Protection would keep
+  the old chunks reachable instead, and is a plan-level setting.
 
 ## Android app
 
-- `src/platform/capacitor/sentry.js` runs first in `src/mobile/main.jsx`.
+- Two halves, like the website's. `src/platform/capacitor/sentryBoot.js` runs
+  first in `src/mobile/main.jsx` and is tiny: it decides whether Sentry is on,
+  holds every report made through `shared/lib/monitoring` and every uncaught
+  error and unhandled rejection from then on. The SDK,
+  `src/platform/capacitor/sentry.js`, is its own chunk (~170 KB), imported
+  once the first screen is fully drawn and the page is idle (or 6 s after
+  boot); it starts, waits for the JavaScript client to exist (`@sentry/capacitor`
+  creates it only after the native SDK has initialised), then receives
+  everything held.
   `@sentry/capacitor` starts both the JS SDK (WebView errors) and the native
   Android SDK (Java/Kotlin crashes, NDK crashes, ANRs, app-lifecycle and
   network breadcrumbs, device model and OS version). `cap sync` adds the
   `:sentry-capacitor` Gradle module (`capacitor.settings.gradle`,
   `app/capacitor.build.gradle`).
+- **Why it is not started at boot (2026-10-26):** the SDK was ~22% of the
+  entry chunk (759.7 KB → 590.5 KB without it, production build), which the
+  WebView compiles from scratch on every cold start (a bundled app gets no V8
+  code cache), and its native init ran on Capacitor's single plugin thread
+  ahead of the Keystore reads that decide who is signed in (~360 ms traced on
+  the I2208). **Coverage trade-off, deliberately accepted:** JavaScript errors
+  from boot onward are held and delivered (better than before: the JS SDK used
+  to start only after the native init, so early JS errors were lost), but
+  native Java/NDK crashes are only caught from the SDK's start, a second or two
+  into a cold start, instead of ~1 s. Verified on the I2208: an error thrown
+  1.3 s into boot, before the chunk loaded, reached `meetifyy-android` (dev).
+- Integrations (audited 2026-10-26): the @sentry/capacitor defaults are all
+  error reporting (global handlers, breadcrumbs, linked errors, dedupe, event
+  filters, release/device context, frame rewriting). Tracing
+  (`browserTracingIntegration`) is added only when the sample rate is above 0
+  (production 0.05, development 1.0). Replay, feedback and profiling are not
+  in the bundle.
 - Native crashes are written to disk and sent on the next launch.
 - The release is `meetifyy-android@<versionName>+<commit>`: `versionName` in
   `android/app/build.gradle` is a hand-edited "1.0", so the commit is what
@@ -137,7 +196,19 @@ never exposes them to client code:
   `http.method`, `http.status_code`, `request_id`, `feature` and the internal
   user id. 4xx are expected outcomes and are not sent. Uncaught exceptions and
   unhandled rejections outside requests come from the SDK's global handlers.
-- Health probes are not traced.
+- Health probes are not traced, and neither is the database warm-up and
+  25-second keep-alive (`PrismaService.pingPool`, wrapped in
+  `suppressTracing`). Those `SELECT 1`s run outside any request, so each one
+  was a root transaction, filed as "Slow DB Query" (MEETIFYY-API-2) whenever
+  the pooler answered slowly.
+- **Shutdown order.** Queue processors extend `DrainingWorkerHost`, which
+  closes the BullMQ worker in `beforeApplicationShutdown`; `PrismaService`
+  disconnects in `onApplicationShutdown`, after it. Before, the database closed
+  first and workers kept running jobs against it, which surfaced as unrelated
+  crashes (MEETIFYY-API-C, -G). A query issued after the database has closed
+  now throws `DatabaseUnavailableError` instead of resolving to `undefined`,
+  and transient connection drops (P1001/P1017, "Connection terminated
+  unexpectedly") are retried twice (`connection-retry.middleware.ts`).
 - Source maps: the Dockerfile stamps `dist/` with debug IDs (offline); the
   deploy workflow copies `dist/` out of the built image and uploads it, so
   stack traces resolve to the original `.ts` lines.
@@ -205,6 +276,11 @@ website minutes before the API deploy completes.
 Leave the DSN empty (the default in every `.env.example`), or set
 `SENTRY_ENABLED=false` / `VITE_SENTRY_ENABLED=false`. Dev builds log one line,
 `[sentry] disabled: <reason>`, and nothing else changes.
+
+Local runs are already off by default even with a DSN: the API needs
+`SENTRY_REPORT_LOCAL=true` when it has no `GIT_COMMIT_SHA`, and pages from
+Vite's dev server need `VITE_SENTRY_REPORT_DEV_SERVER=true`. Set the flag only
+for the run that is checking Sentry, against the development DSN.
 
 ## Verifying
 

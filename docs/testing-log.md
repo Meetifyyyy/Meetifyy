@@ -177,6 +177,121 @@ the tap lands on the keyboard and types into the focused field.
 
 ---
 
+## Sentry audit, dev-site errors and dev/production isolation — 2026-10-27
+
+Sentry connector access: the `meetifyy-dev` org only. The production org
+(`meetifyy`) is not connected, so no production issue was inspected.
+
+**Root causes fixed (code, uncommitted)**
+
+| Sentry issue | Cause | Fix |
+|---|---|---|
+| API-C, API-G (`reading 'count'`, `expired is not iterable`) | Prisma closed in `onModuleDestroy`, BullMQ workers in `onApplicationShutdown`: jobs ran against a closed DB on every restart | `DrainingWorkerHost` closes workers in `beforeApplicationShutdown`; Prisma disconnects in `onApplicationShutdown`; `DatabaseUnavailableError` instead of `undefined` |
+| API-D/E/F and 3 of API-6's events (Supavisor `08006` "Failed to connect to database: econnrefused"), API-B (`Connection terminated unexpectedly`) | Pooler refusals and drops not recognised as transient | `connection-retry.middleware.ts`: two retries for P1001/P1002/P1008/P1017 and those messages. The other 432 API-6 events are "table `MatchQueueEntry` does not exist" from the 2026-10-13 dev database rebuild, not a code fault |
+| API-2 (Slow DB Query, `SELECT 1`) | Warm-up and 25 s keep-alive ran outside requests, each a root `prisma:client:operation` transaction | `pingPool` under `suppressTracing` |
+| ANDROID-8 (`setPointerCapture`: no active pointer) | Pointer already released when capture was requested | capture guarded in `openScreenMotion.js` |
+| ANDROID-9 (`(rawCampusUsers \|\| []).forEach is not a function`) | Non-array cache value passed the `\|\| []` guard | `asList` in `useUsersMap.jsx` |
+| Dev console: 83× `net::ERR_BLOCKED_BY_CLIENT` on Sentry envelopes | Ad blocker on `*.ingest.sentry.io` | same-origin tunnel `/api/app-events` + host rewrites |
+| Dev console: CSP `connect-src` violation, CORS failure, `ERR_FAILED` on the Access login URL | `/version.json` fetch followed Cloudflare Access's redirect | `redirect: 'manual'`; on `opaqueredirect`, reload once per tab session |
+| Noise: local runs, live-reload builds | No gate on either | `SENTRY_REPORT_LOCAL`, `VITE_SENTRY_REPORT_DEV_SERVER` (both default off) |
+| Isolation: admin cookies | `admin_*` names identical in both environments on `.meetifyy.app` | `mf_dev_admin_*` in development; production names unchanged |
+
+**Verified**
+- Keep-alive suppression: a scratch script with the real SDK and Prisma
+  client (closed port, so no database) recorded 4 root transactions for two
+  unsuppressed pings and 0 for the same pings under `suppressTracing`.
+- Tunnel contract: an envelope carrying the DSN only in its header, posted to
+  the dev web project's envelope URL, returned 200 and arrived as
+  MEETIFYY-WEB-2. The Vercel rewrite itself is untested until deployed.
+- Live CORS: each API refuses the other environment's origin (preflight).
+- MEETIFYY-WEB-1 (stale chunk) lines up with two deploys six minutes apart;
+  the second event carries the newer release, so the recovery reload worked.
+
+**Not verified (needs a deploy or access)**: the rewrite on Vercel, the
+version-gate reload behind an expired Access session, admin sign-in with the
+new cookie names, production Sentry (org not connected), any production
+behaviour.
+
+---
+
+## Startup, splash, push icon and page transitions — 2026-10-26
+
+Device: iQOO I2208, Android 14, WebView 155, 1080×2408 @ 440 dpi, debug APK
+(`app.meetifyy.dev`, signed in, saved feed on the device). Debug builds run
+without AOT compilation, so native start is slower than a Play release.
+
+**How it was measured.** `am start -W` for TTID (`Displayed`), the
+`Fully drawn` line for TTFD (`reportFullyDrawn`, sent when the first screen
+shows its content AND the splash has begun to uncover it), the debug-only
+`MeetifyyLaunch` log (times since process start), CDP `performance` marks
+(`meetifyy:auth-decided`, `:surface`, `:splash-release:*`, `:fully-drawn`),
+`atrace` for native slices, `screenrecord` + per-frame pixel sampling for
+flicker, and `gfxinfo framestats` for transitions. The phone's speed drifts
+by 10–30% over a long session (heat), so before/after pairs were run
+**interleaved**, reinstalling the old and new APKs alternately.
+
+**Root causes found**
+
+| Symptom | Cause (evidence) |
+|---|---|
+| Splash "flickers" before Home | the exit hid the logo at once and faded the background before the WebView had drawn the page in the window: logo → 2–3 blank frames → feed all at once (screenrecord) |
+| Splash slow to leave | the system handed the held splash to the app ~270 ms after the activity's first frame (`starting_reveal` in atrace), all of it after the page was ready: 340–490 ms from "ready" to reveal |
+| Auth decided late | Sentry's native init (~360 ms traced) ran first on Capacitor's single plugin thread; the Keystore reads queued behind it |
+| JS compiled every launch | no V8 code cache for intercepted responses: `Code Cache/js` held only ~210-byte markers after a dozen launches |
+| Settings flicker from Profile | the menu closed on tap while the native screenshot was being taken: menu gone (frame 20), back in the picture (frame 21), slid away |
+| Chat jumps after opening | history not in memory: skeleton slid in, messages arrived ~0.9 s after the slide |
+| Settings sub-pages | swapped in place with no motion (plain `navigate`), unlike Settings, chats and profiles |
+
+**Results** (cold = force-stopped; times from `am start` unless noted)
+
+| Metric | Before | After | Notes |
+|---|---|---|---|
+| TTID (`Displayed`) | 2.53–3.50 s, median ≈2.55 s | 1.10–1.43 s | not comparable: after, it is the native window with the splash handed over; the page is not visible yet |
+| Home visible (TTFD) | ≈ TTID + 0.35–0.45 s hand-over (≈2.9–3.0 s), not reported | 2.50–2.89 s, median ≈2.56 s | same session as the "before" baseline |
+| Home visible, interleaved A/B, screenrecorded (4 pairs) | median 3.77 s | median 3.47 s | absolute values inflated by recording |
+| Page ready (page clock), interleaved (6 each) | median 1.97 s | median 1.68 s | |
+| Auth decided (page clock), cool phone | ≈1.23 s | ≈1.06 s | Sentry off the plugin thread |
+| Warm start (activity recreated) | TTID 0.92–0.98 s | TTID 0.25–0.27 s, TTFD 0.89–0.93 s | under 1 s to a usable Home |
+| Hot start | 0.09–0.11 s | 0.13–0.17 s | no splash; noise |
+| Entry chunk (production build) | 759.7 KB raw / 243 KB gzip | 590.5 KB / 186 KB | Sentry now a 169 KB lazy chunk |
+| Blank frames at splash exit | 2–3 | 0 | light and dark |
+| Profile → Settings menu flicker | menu vanishes and returns | none | |
+| Chat first open after launch | skeleton, messages +0.9 s | messages during the slide | top 3 histories prefetched at idle |
+
+**The 1-second target.** Met for warm starts (Home fully drawn in ~0.9 s).
+Not met for cold starts: ~1.05 s passes before the page's first byte
+(process, `bindApplication` with debug dex verification, Firebase/Sentry
+providers, WebView/Chromium init ~350 ms on the UI thread), and the page then
+needs ~1.3–1.5 s to parse ~1.2 MB of JS/CSS without a code cache, restore the
+session and render Home.
+
+**Tried and rejected, with numbers**
+
+- V8 explicit compile hints (`//# allFunctionsCalledOnLoad` on the entry and
+  vendor-react): DOMContentLoaded ~95 ms later, boot after it ~120 ms faster,
+  TTID unchanged (2.55 vs 2.53 s medians). Removed.
+- No exit listener (the system's own splash exit): no hand-over wait, but on
+  this device it showed ~130 ms of a near-blank window before the feed.
+- `WebViewCompat.startUpWebView`: needs androidx.webkit 1.16 (we have 1.14);
+  the WebView is inflated ~90 ms into `onCreate`, leaving little to overlap,
+  and starting it from `Application.onCreate` would also load Chromium in
+  push-only background processes. Not adopted.
+
+**Transitions (gfxinfo framestats, this device, 60 Hz).** Open slides: 1–3
+missed frames of ~26, RenderThread "issue" median 4–6 ms. Closing onto a live
+Profile: RenderThread time is bimodal (median ~6 ms or ~15 ms on the same
+build, with or without Profile's cover layers), so it is GPU clock state, not
+page content; 1–3 missed frames per close. Tap → motion: ~140–150 ms (capture
+45–60 ms, navigate + commit ~15 ms, two settle frames ~35 ms, paint wait
+~35 ms). Lower-end devices were not available to test.
+
+**Push icon.** Rendered on this phone's status bar and shade with
+`cmd notification post` (shell-posted, so labelled "Shell"). An end-to-end
+FCM push to DEV APP was not possible: the app's notification permission is
+not granted on this phone.
+
+---
+
 ## Signup on the APK returns to the opening screen — 2026-09-23 (root cause)
 
 **Symptom.** On the last signup step, Create Account sent the user back to the
