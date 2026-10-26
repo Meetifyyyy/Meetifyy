@@ -722,19 +722,50 @@ export class RealtimeGateway
       if (bySession.size === 0) return;
 
       const ids = Array.from(bySession.keys());
-      const alive = await this.prisma.userSession.findMany({
-        where: {
-          id: { in: ids },
-          revoked: false,
-          expiresAt: { gt: new Date() },
-        },
-        select: { id: true },
+      const now = new Date();
+      const rows = await this.prisma.userSession.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, familyId: true, revoked: true, expiresAt: true },
       });
-      const aliveIds = new Set(alive.map((s) => s.id));
+      const isLive = (r: { revoked: boolean; expiresAt: Date }) =>
+        !r.revoked && r.expiresAt > now;
 
+      // A session revoked by a token refresh is not a sign-out: the refresh
+      // replaced it with a new row in the same family (the same login). The
+      // installed app refreshes on resume and hourly, and closing its socket
+      // for that killed every live feature until a restart, because a client
+      // never re-dials a socket the server closed. So a socket stays while its
+      // LOGIN is live, and adopts the newest live session of it. Signing out,
+      // signing out everywhere, a password change or a replay leave no live
+      // row in the family, and those sockets still close. The second query
+      // runs only when some socket's own session was rotated.
+      const stale = rows.filter((r) => !isLive(r));
+      const successor = new Map<string, string>();
+      if (stale.length > 0) {
+        const live = await this.prisma.userSession.findMany({
+          where: {
+            familyId: { in: [...new Set(stale.map((r) => r.familyId))] },
+            revoked: false,
+            expiresAt: { gt: now },
+          },
+          orderBy: { createdAt: 'desc' },
+          select: { id: true, familyId: true },
+        });
+        for (const r of live) {
+          if (!successor.has(r.familyId)) successor.set(r.familyId, r.id);
+        }
+      }
+
+      const byId = new Map(rows.map((r) => [r.id, r]));
       for (const [sessionId, list] of bySession) {
-        if (aliveIds.has(sessionId)) continue;
+        const row = byId.get(sessionId);
+        if (row && isLive(row)) continue;
+        const next = row ? successor.get(row.familyId) : undefined;
         for (const socket of list) {
+          if (next) {
+            socket.data.sessionId = next;
+            continue;
+          }
           socket.emit('session:revoked', { reason: 'signed_out' });
           socket.disconnect(true);
         }

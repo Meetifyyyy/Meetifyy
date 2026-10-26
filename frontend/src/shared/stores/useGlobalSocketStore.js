@@ -32,6 +32,9 @@ export const useGlobalSocketStore = create((set, get) => ({
   _lastToken: null,
   _lastOrigin: null,
   _lastDeviceId: null,
+  // The native session id the current socket connected under (installed app
+  // only; see `revive`).
+  _lastSessionId: null,
   _gaveUp: false,
 
   connect: (token, deviceId) => {
@@ -124,7 +127,10 @@ export const useGlobalSocketStore = create((set, get) => ({
         set({ isConnected: false, lastDisconnectAt: Date.now() });
       });
 
-      set({ socket: newSocket, _lastToken: token, _lastOrigin: socketUrl, _lastDeviceId: deviceId });
+      // Refreshed on every (re)connect: `auth` reads the session id afresh.
+      newSocket.on('connect', () => set({ _lastSessionId: getNativeSessionId() || null }));
+
+      set({ socket: newSocket, _lastToken: token, _lastOrigin: socketUrl, _lastDeviceId: deviceId, _lastSessionId: getNativeSessionId() || null });
     }
   },
 
@@ -137,7 +143,7 @@ export const useGlobalSocketStore = create((set, get) => ({
         socket.disconnect();
         socket.close();
       } catch {}
-      set({ socket: null, isConnected: false, _lastToken: null, _lastOrigin: null, _lastDeviceId: null, reconnectCount: 0, _gaveUp: false });
+      set({ socket: null, isConnected: false, _lastToken: null, _lastOrigin: null, _lastDeviceId: null, _lastSessionId: null, reconnectCount: 0, _gaveUp: false });
     }
   },
 }));
@@ -153,16 +159,30 @@ export const useGlobalSocketStore = create((set, get) => ({
  *
  * Only after the manager reports `reconnect_failed`, so this never races a
  * loop that is still backing off — and never re-dials a socket the SERVER
- * disconnected (a refused or revoked session), which is not a network problem
- * and would only be refused again. The `connect` handler re-runs the
- * missed-message sync on its own.
+ * disconnected for a session that is still the one it named (a refused or
+ * revoked session), which is not a network problem and would only be refused
+ * again. The `connect` handler re-runs the missed-message sync on its own.
+ *
+ * One exception, installed app only: a socket the server closed whose session
+ * has since been REPLACED. A token refresh rotates the session id, and a
+ * server that judged the old id alone closed the socket within a minute of
+ * every refresh, leaving every live feature dead until a restart. The server
+ * now follows the rotation; this covers a socket closed before it did. It
+ * dials once per new id: a real sign-out has no new id to dial with.
  */
 if (typeof window !== 'undefined') {
   const revive = () => {
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
-    const { socket, _gaveUp } = useGlobalSocketStore.getState();
-    if (socket && _gaveUp && !socket.connected) {
+    const { socket, _gaveUp, _lastSessionId } = useGlobalSocketStore.getState();
+    if (!socket || socket.connected) return;
+    if (_gaveUp) {
       useGlobalSocketStore.setState({ _gaveUp: false });
+      try { socket.connect(); } catch {}
+      return;
+    }
+    const sessionId = getNativeSessionId() || null;
+    if (!socket.active && sessionId && sessionId !== _lastSessionId) {
+      useGlobalSocketStore.setState({ _lastSessionId: sessionId });
       try { socket.connect(); } catch {}
     }
   };
