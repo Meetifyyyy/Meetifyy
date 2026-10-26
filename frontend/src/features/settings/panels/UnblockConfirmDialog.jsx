@@ -12,6 +12,7 @@ export default function UnblockConfirmDialog({ contact, onConfirm, onCancel, isS
 
   return (
     <ConfirmModal
+      centered
       title={`Unblock ${name}?`}
       desc="They will be able to see your profile and content again."
       visible={Boolean(contact)}

@@ -110,12 +110,12 @@
 
 /* ── Phones: a bottom sheet (drag-to-dismiss via useSheetDrag) ── */
 @media (max-width: 768px) {
-  .confirmOverlay {
+  .confirmOverlay:not(.centered) {
     align-items: flex-end;
     padding: 0;
   }
 
-  .confirmModal {
+  .confirmOverlay:not(.centered) .confirmModal {
     width: 100%;
     max-width: none;
     border-radius: 24px 24px 0 0;
@@ -124,7 +124,7 @@
     transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
-  .confirmOverlay.open .confirmModal {
+  .confirmOverlay.open:not(.centered) .confirmModal {
     transform: translateY(0);
   }
 }

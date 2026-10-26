@@ -19,6 +19,8 @@ export default function ConfirmModal({
   confirmLabel,
   isDestructive = false,
   icon = null,
+  // Phones: a centred dialog instead of a bottom sheet (no drag, no handle).
+  centered = false,
 }) {
   const overlayRef = useRef(null);
   const actualDesc = desc || description;
@@ -30,7 +32,7 @@ export default function ConfirmModal({
   // dialog opened on top of another cannot unlock the page when it closes.
   useScrollLock(visible);
   // Dragging the sheet down is a cancel, the same as the backdrop or Back.
-  const sheetRef = useSheetDrag(onCancel, { enabled: visible });
+  const sheetRef = useSheetDrag(onCancel, { enabled: visible && !centered });
 
   useEffect(() => {
     if (visible && overlayRef.current) {
@@ -51,9 +53,9 @@ export default function ConfirmModal({
   };
 
   return createPortal(
-    <div className={styles.confirmOverlay} ref={overlayRef} onClick={(e) => { if (e.target === overlayRef.current) handleClose(); }}>
+    <div className={`${styles.confirmOverlay} ${centered ? styles.centered : ''}`} ref={overlayRef} onClick={(e) => { if (e.target === overlayRef.current) handleClose(); }}>
       <div ref={sheetRef} className={styles.confirmModal}>
-        <div className="sheet-handle" data-sheet-handle aria-hidden="true" />
+        {!centered && <div className="sheet-handle" data-sheet-handle aria-hidden="true" />}
         <div className={`${styles.confirmIcon} ${isDestructive ? styles.confirmIconDestructive : styles.confirmIconPrimary}`}>
           {icon || (isDestructive ? (
             <AlertTriangle size={24} strokeWidth={2} />

@@ -1600,6 +1600,7 @@ export default function SettingsRoute() {
 
       {showClearCache && (
         <ConfirmModal
+          centered
           title="Clear cached data?"
           desc="Frees space on this device. You stay signed in and nothing you haven't sent is lost."
           onCancel={() => { if (!clearingCache) setShowClearCache(false); }}

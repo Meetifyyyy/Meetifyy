@@ -247,6 +247,7 @@ export default function SettingsEmailPanel() {
       </p>
 
       <ConfirmModal
+        centered
         visible={confirmOpen}
         title="Remove college email?"
         description="Campus, your college directory and campus communities close for you straight away. Your posts, profile and other communities stay. You can add a college email again after 30 days."
