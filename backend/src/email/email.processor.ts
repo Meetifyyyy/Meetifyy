@@ -1,4 +1,5 @@
-import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
+import { OnWorkerEvent, Processor } from '@nestjs/bullmq';
+import { DrainingWorkerHost } from '../common/queues/draining-worker-host';
 import { Logger, OnModuleInit } from '@nestjs/common';
 import { EmailDeliveryStatus } from '@prisma/client';
 import { Resend } from 'resend';
@@ -32,7 +33,7 @@ import type { EmailJob } from './email-jobs';
 const SUPPORT_JOB_NAMES: string[] = Object.values(SUPPORT_EMAIL_JOBS);
 
 @Processor('email')
-export class EmailProcessor extends WorkerHost implements OnModuleInit {
+export class EmailProcessor extends DrainingWorkerHost implements OnModuleInit {
   private readonly logger = new Logger(EmailProcessor.name);
   // Null without RESEND_API_KEY: the SDK throws on an empty key, and the key
   // is only required when Resend is the driver (email.config.ts).

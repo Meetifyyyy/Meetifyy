@@ -1,4 +1,5 @@
-import { Processor, WorkerHost, OnWorkerEvent } from '@nestjs/bullmq';
+import { Processor, OnWorkerEvent } from '@nestjs/bullmq';
+import { DrainingWorkerHost } from '../common/queues/draining-worker-host';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { InstantMatchService } from './instant-match.service';
@@ -12,7 +13,7 @@ export const JOB_EXPIRE_STALE = 'expire-stale';
  * once instead of emitting duplicate notifications from every replica.
  */
 @Processor(INSTANT_MATCH_QUEUE)
-export class InstantMatchProcessor extends WorkerHost {
+export class InstantMatchProcessor extends DrainingWorkerHost {
   private readonly logger = new Logger(InstantMatchProcessor.name);
 
   constructor(private readonly instantMatchService: InstantMatchService) {

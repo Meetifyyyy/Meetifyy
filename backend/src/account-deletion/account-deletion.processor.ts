@@ -1,4 +1,5 @@
-import { Processor, WorkerHost, OnWorkerEvent } from '@nestjs/bullmq';
+import { Processor, OnWorkerEvent } from '@nestjs/bullmq';
+import { DrainingWorkerHost } from '../common/queues/draining-worker-host';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { AccountDeletionPurgeService } from './account-deletion.purge.service';
@@ -15,7 +16,7 @@ import {
  * replicas are not all doing the same scan every 15 minutes.
  */
 @Processor(ACCOUNT_DELETION_QUEUE)
-export class AccountDeletionProcessor extends WorkerHost {
+export class AccountDeletionProcessor extends DrainingWorkerHost {
   private readonly logger = new Logger(AccountDeletionProcessor.name);
 
   constructor(private readonly purge: AccountDeletionPurgeService) {

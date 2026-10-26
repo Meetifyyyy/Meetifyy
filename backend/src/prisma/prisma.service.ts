@@ -1,8 +1,8 @@
 import {
   Injectable,
   Logger,
+  OnApplicationShutdown,
   OnModuleInit,
-  OnModuleDestroy,
 } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -10,8 +10,8 @@ import { Pool } from 'pg';
 import { config } from '../config';
 import { dbLine } from '../common/logging/log-format';
 import { detach } from '../common/utils/detach.util';
-import { stringField } from '../common/utils/type-guards.util';
 import * as os from 'node:os';
+import { connectionRetryMiddleware } from './connection-retry.middleware';
 
 /**
  * Connects through node-postgres rather than Prisma's own Rust connection layer.
@@ -82,7 +82,7 @@ export class PrismaService
     },
     'query' | 'error' | 'warn'
   >
-  implements OnModuleInit, OnModuleDestroy
+  implements OnModuleInit, OnApplicationShutdown
 {
   private readonly logger = new Logger('DB');
   private keepAliveTimer: NodeJS.Timeout | null = null;
@@ -162,49 +162,14 @@ export class PrismaService
       this.logger.warn(`Postgres pool error (recovered): ${err.message}`);
     });
 
-    // Handle transient database connection drops with automatic retry
-    this.$use(async (params, next) => {
-      if (this.isDestroyed) {
-        return;
-      }
-      let retries = 2;
-      while (retries >= 0) {
-        try {
-          // Passed through untouched: a middleware sees every model's results.
-          return (await next(params)) as unknown;
-        } catch (error: unknown) {
-          const message = stringField(error, 'message') ?? '';
-          const code = stringField(error, 'code');
-          if (
-            this.isDestroyed ||
-            message.includes('Cannot use a pool after calling end on the pool')
-          ) {
-            return;
-          }
-          const isConnError =
-            code === 'P1001' ||
-            code === 'P1002' ||
-            code === 'P1008' ||
-            code === 'P1017' ||
-            message.includes("Can't reach database server") ||
-            message.includes('Timed out fetching a new connection') ||
-            message.includes('Connection pool timeout') ||
-            message.includes('EMAXCONNSESSION') ||
-            message.includes('max clients reached') ||
-            message.includes('ConnectionReset');
-
-          if (isConnError && retries > 0) {
-            retries--;
-            this.logger.warn(
-              `Database transient connection issue (${code || 'network'}). Retrying... (${retries} attempts remaining)`,
-            );
-            await new Promise((res) => setTimeout(res, 200));
-            continue;
-          }
-          throw error;
-        }
-      }
-    });
+    // Retries transient connection drops, and refuses queries once the
+    // database has closed (see the middleware's own notes).
+    this.$use(
+      connectionRetryMiddleware({
+        isClosed: () => this.isDestroyed,
+        warn: (message) => this.logger.warn(message),
+      }),
+    );
   }
 
   /**
@@ -338,7 +303,16 @@ export class PrismaService
     }
   }
 
-  async onModuleDestroy() {
+  /**
+   * The database closes in the LAST shutdown pass, not the first.
+   *
+   * It used to close in `onModuleDestroy`, the first pass, while queue workers
+   * (closed by @nestjs/bullmq in `onApplicationShutdown`) went on running jobs
+   * against it. Workers now drain in `beforeApplicationShutdown`
+   * (common/queues/draining-worker-host.ts), so by the time this runs nothing
+   * of ours is still asking for the database.
+   */
+  async onApplicationShutdown() {
     this.isDestroyed = true;
     if (this.keepAliveTimer) {
       clearInterval(this.keepAliveTimer);

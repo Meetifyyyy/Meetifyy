@@ -1,4 +1,5 @@
-import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { Processor } from '@nestjs/bullmq';
+import { DrainingWorkerHost } from '../common/queues/draining-worker-host';
 import { Job } from 'bullmq';
 import { Logger } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
@@ -36,7 +37,7 @@ export interface ActivityInvitationsJob {
 }
 
 @Processor(NOTIFICATIONS_QUEUE)
-export class NotificationsProcessor extends WorkerHost {
+export class NotificationsProcessor extends DrainingWorkerHost {
   private readonly logger = new Logger('NotificationsProcessor');
 
   constructor(

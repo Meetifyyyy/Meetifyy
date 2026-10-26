@@ -1,4 +1,5 @@
-import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { Processor } from '@nestjs/bullmq';
+import { DrainingWorkerHost } from '../common/queues/draining-worker-host';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { PushPlatform } from '@prisma/client';
@@ -60,7 +61,7 @@ function asMessageJob(data: unknown): MessagePushJob | null {
  * collapse it on the device by tag/topic.
  */
 @Processor(PUSH_QUEUE, { concurrency: 5 })
-export class PushProcessor extends WorkerHost {
+export class PushProcessor extends DrainingWorkerHost {
   private readonly logger = new Logger('PushWorker');
 
   constructor(
