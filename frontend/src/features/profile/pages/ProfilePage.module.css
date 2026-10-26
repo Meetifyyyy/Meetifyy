@@ -52,7 +52,8 @@
   overflow: hidden;
   /* 8px to the first post, the same as between posts (.postsContainer). */
   margin-bottom: 8px;
-  box-shadow: none;
+  /* The confession card's lift; flat in dark mode (end of file). */
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px -16px rgba(15, 23, 42, 0.18);
   width: 100%;
   max-width: 100%;
   min-width: 0;
@@ -502,6 +503,7 @@
   background: var(--color-bg-white);
   border-radius: var(--radius-lg);
   border: none;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px -16px rgba(15, 23, 42, 0.18);
 }
 
 .emptyStateIcon {
@@ -589,7 +591,6 @@
     margin-bottom: 8px;
     width: 100% !important;
     max-width: 100% !important;
-    box-shadow: none;
   }
 
   .profileInfo {
@@ -891,6 +892,8 @@
     background: var(--color-bg-white);
     border-radius: 0 0 24px 24px;
     margin-bottom: 8px;
+    /* The card is display: contents here, so its shadow moves to this box. */
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px -16px rgba(15, 23, 42, 0.18);
   }
 
   :global(html[data-collapsing-header]) .coverPullBlur > * {
@@ -934,4 +937,11 @@
   background: #fff;
   transform-origin: left center;
   transition: transform 0.2s ease;
+}
+
+/* Dark mode stays flat, like the confession cards. */
+:global(html[data-theme='dark']) .profileCard,
+:global(html[data-theme='dark']) .profileInfo,
+:global(html[data-theme='dark']) .emptyState {
+  box-shadow: none;
 }

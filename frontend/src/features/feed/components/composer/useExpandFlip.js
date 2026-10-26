@@ -64,10 +64,12 @@ function followingContent(start, levels) {
 /**
  * Plays one expand (`closing` false) or collapse (`closing` true): the card's
  * clip between its collapsed and full height, and the content after it
- * translated by the same difference. A collapse holds its end frame
+ * translated by the same difference. The card's shadow layer, if any, moves
+ * with the content: it sits on the card's box, so translated by the same
+ * difference its bottom edge follows the clip. A collapse holds its end frame
  * (`fill: forwards`) until the collapsed layout has committed.
  */
-function playFlip(card, anchor, delta, closing) {
+function playFlip(card, anchor, delta, closing, shadow) {
   const radius = getComputedStyle(card).borderTopLeftRadius || '0px';
   const open = { clipPath: `inset(0px 0px 0px 0px round ${radius})` };
   const shut = { clipPath: `inset(0px 0px ${delta}px 0px round ${radius})` };
@@ -77,12 +79,13 @@ function playFlip(card, anchor, delta, closing) {
     ? { duration: EXPAND_FLIP_MS, easing: EASING, fill: 'forwards' }
     : { duration: EXPAND_FLIP_MS, easing: EASING };
   const clip = card.animate(closing ? [open, shut] : [shut, open], timing);
-  const moves = followingContent(anchor, ASCEND_LEVELS)
-    .map((el) => el.animate(closing ? [rest, up] : [up, rest], timing));
+  const moved = followingContent(anchor, ASCEND_LEVELS);
+  if (shadow) moved.push(shadow);
+  const moves = moved.map((el) => el.animate(closing ? [rest, up] : [up, rest], timing));
   return [clip, ...moves];
 }
 
-export function useExpandFlip({ expanded, cardRef, anchorRef }) {
+export function useExpandFlip({ expanded, cardRef, anchorRef, shadowRef }) {
   const [layoutExpanded, setLayoutExpanded] = useState(expanded);
   const heightRef = useRef(0); // the card's last laid-out height
   const collapsedHeightRef = useRef(0);
@@ -143,7 +146,7 @@ export function useExpandFlip({ expanded, cardRef, anchorRef }) {
     // a 30px jump. Nothing moves meanwhile: the layout is still expanded.
     startFrameRef.current = requestAnimationFrame(() => {
       startFrameRef.current = requestAnimationFrame(() => {
-        const animations = playFlip(card, anchor, delta, true);
+        const animations = playFlip(card, anchor, delta, true, shadowRef?.current);
         animationsRef.current = animations;
         animations[0].finished.then(
           // The fill holds the end frame until the collapsed layout has committed;
@@ -175,7 +178,7 @@ export function useExpandFlip({ expanded, cardRef, anchorRef }) {
     const full = card.offsetHeight;
     const delta = full - collapsedHeightRef.current;
     if (delta <= 0) return;
-    animationsRef.current = playFlip(card, anchor, delta, false);
+    animationsRef.current = playFlip(card, anchor, delta, false, shadowRef?.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layoutExpanded]);
 

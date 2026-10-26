@@ -154,6 +154,16 @@
    to show, and a sticky ":hover" after a tap would leave the card lit. The
    selector is two classes so it beats the grid's `> *` border, and it restates
    the background because `.row:hover` above would otherwise tint it. */
+/* At rest the Campus cards carry the confession card's lift; dark mode stays
+   flat like confessions. */
+.row.highlight {
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px -16px rgba(15, 23, 42, 0.18);
+}
+
+[data-theme='dark'] .row.highlight {
+  box-shadow: none;
+}
+
 @media (hover: hover) and (pointer: fine) {
   .row.highlight {
     transition:

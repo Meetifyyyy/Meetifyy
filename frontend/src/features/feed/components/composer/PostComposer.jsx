@@ -102,6 +102,7 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit, draftScope = '
 
   const composerRef = useRef(null);
   const cardRef = useRef(null);
+  const shadowRef = useRef(null);
   const inputRef = useRef(null);
   const imageFileRef = useRef(null);
   const videoFileRef = useRef(null);
@@ -446,7 +447,7 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit, draftScope = '
   const expandedState = isExpanded || hasContent;
   // The expand area's SIZE follows this, which lags expandedState while the
   // collapse animates; its content fades with expandedState itself.
-  const layoutExpanded = useExpandFlip({ expanded: expandedState, cardRef, anchorRef: composerRef });
+  const layoutExpanded = useExpandFlip({ expanded: expandedState, cardRef, anchorRef: composerRef, shadowRef });
 
   // The keyboard is raised by the tap itself, while the composer expands.
   // It used to be held back (inputmode="none", then a blur and re-focus once
@@ -477,6 +478,7 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit, draftScope = '
         </div>
       )}
 
+      <span className={styles.composerShadow} ref={shadowRef} aria-hidden="true" />
       <div
         ref={cardRef}
         className={`${styles.postComposer}${showPoll ? ` ${styles.hasPoll}` : ''}${expandedState ? ` ${styles.expanded}` : ''}`}
