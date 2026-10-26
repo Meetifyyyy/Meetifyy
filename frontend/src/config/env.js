@@ -117,3 +117,11 @@ export const IS_MOBILE_BUILD = import.meta.env.VITE_CLIENT === 'mobile';
 export const MODE = import.meta.env.MODE;
 export const IS_DEV_BUILD = import.meta.env.DEV;
 export const IS_PROD_BUILD = import.meta.env.PROD;
+/**
+ * The page is being served by Vite's dev server (HMR), not from a build.
+ *
+ * `import.meta.hot` exists only under the dev server. Unlike IS_DEV_BUILD it
+ * is false for `vite build --mode development` (the debug APK, the dev site's
+ * Vercel build), which are deployments and must report like one.
+ */
+export const IS_DEV_SERVER = Boolean(import.meta.hot);

@@ -47,6 +47,7 @@ const EXTENSION_URLS = [/^chrome-extension:\/\//, /^moz-extension:\/\//, /^safar
  * @param {string} [p.hostname]      website only
  * @param {boolean} [p.isNonProductionHost]
  * @param {string} [p.apiOrigin]     for trace propagation
+ * @param {boolean} [p.isDevServer]  served by Vite's dev server (config IS_DEV_SERVER)
  * @returns {{ options: object|null, disabledReason: string|null }}
  */
 export function buildSentryOptions({
@@ -58,6 +59,7 @@ export function buildSentryOptions({
   hostname = '',
   isNonProductionHost = false,
   apiOrigin = '',
+  isDevServer = false,
 }) {
   const off = (disabledReason) => ({ options: null, disabledReason });
 
@@ -65,6 +67,12 @@ export function buildSentryOptions({
   if (!sentry?.dsn) return off(platform === 'web' ? 'no VITE_SENTRY_DSN' : 'no VITE_SENTRY_ANDROID_DSN');
   if (sentry.expectedEnvironment && sentry.expectedEnvironment !== environment) {
     return off(`VITE_SENTRY_ENVIRONMENT (${sentry.expectedEnvironment}) does not match VITE_APP_ENV (${environment})`);
+  }
+  // A dev server is a developer's machine, not a deployment: its hot-reload
+  // errors and test-harness events went into the development projects
+  // alongside the deployed site's and app's (docs/sentry.md).
+  if (isDevServer && !sentry.reportDevServer) {
+    return off('served by the Vite dev server (set VITE_SENTRY_REPORT_DEV_SERVER=true to report)');
   }
   if (platform === 'web' && hostname) {
     const host = hostname.toLowerCase();

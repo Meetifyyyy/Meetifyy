@@ -194,6 +194,14 @@ export const config = {
        * request fails its preflight.
        */
       propagateTraces: bool('VITE_SENTRY_PROPAGATE_TRACES', { fallback: false }),
+      /**
+       * Let a page served by Vite's dev server report. Off by default: local
+       * dev servers (the website, the app's live reload, the browser test
+       * harness) used to report into the deployed development projects, and
+       * their hot-reload errors, half-edited code and synthetic test events
+       * were indistinguishable from real ones there.
+       */
+      reportDevServer: bool('VITE_SENTRY_REPORT_DEV_SERVER', { fallback: false }),
       tracesSampleRate: sampleRate(
         str('VITE_SENTRY_TRACES_SAMPLE_RATE'),
         isProductionDeployment ? 0.05 : 1,
@@ -253,6 +261,6 @@ assertEnvValid();
  * the production bundle — so use this constant for anything that gates a lazy
  * import or a whole dev-only block.
  */
-export { IS_DEV_BUILD, IS_MOBILE_BUILD, IS_PROD_BUILD, MODE } from './env';
+export { IS_DEV_BUILD, IS_DEV_SERVER, IS_MOBILE_BUILD, IS_PROD_BUILD, MODE } from './env';
 
 export default config;

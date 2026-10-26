@@ -51,6 +51,22 @@ export function sentryDisabledReason(): string | null {
   if (obs.sentryEnvironment && obs.sentryEnvironment !== config.env) {
     return `SENTRY_ENVIRONMENT (${obs.sentryEnvironment}) does not match APP_ENV (${config.env})`;
   }
+  /*
+   * A run with no release is not a deployment: both deploy workflows set
+   * GIT_COMMIT_SHA on every rollout. Without this, a developer's machine
+   * reported into the same `development` environment as the deployed API —
+   * watch-mode restarts, a local SMTP that was not running, verification
+   * scripts — and its issues were indistinguishable from the server's
+   * (MEETIFYY-API-3, -4, -5, -C, -G were all `server_name: <laptop>`).
+   * Production is exempt: it always reports.
+   */
+  if (
+    config.env !== 'production' &&
+    !resolveRelease() &&
+    !obs.sentryReportLocal
+  ) {
+    return 'local run (no GIT_COMMIT_SHA); set SENTRY_REPORT_LOCAL=true to report';
+  }
   return null;
 }
 

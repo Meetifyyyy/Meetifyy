@@ -6,6 +6,7 @@
  * arrives, and imports the SDK chunk (platform/web/sentry.js) once the page is
  * idle. If the decision is "off", nothing else happens at all.
  */
+import { IS_DEV_SERVER } from '@config';
 import { buildSentryOptions } from '@shared/lib/sentryOptions';
 import { bufferUntilInstalled, captureError, stopBuffering } from '@shared/lib/monitoring';
 
@@ -22,8 +23,9 @@ function whenIdle(fn) {
  * @param {object} p.config
  * @param {boolean} p.isNonProductionHost
  * @param {string} p.release   meetifyy-web@<commit>, stamped at build time
+ * @param {boolean} [p.isDevServer]  served by Vite's dev server (stays off unless asked)
  */
-export function bootWebSentry({ config, isNonProductionHost, release }) {
+export function bootWebSentry({ config, isNonProductionHost, release, isDevServer = IS_DEV_SERVER }) {
   const { options, disabledReason } = buildSentryOptions({
     sentry: config.integrations.sentry,
     environment: config.env,
@@ -33,6 +35,7 @@ export function bootWebSentry({ config, isNonProductionHost, release }) {
     hostname: window.location.hostname,
     isNonProductionHost,
     apiOrigin: config.api.baseUrl,
+    isDevServer,
   });
 
   if (!options) {

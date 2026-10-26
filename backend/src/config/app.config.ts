@@ -212,6 +212,14 @@ export const appConfigValues = {
     sentryRelease: str('SENTRY_RELEASE'),
     /** The deployed commit, set by the deploy workflows. */
     gitCommitSha: str('GIT_COMMIT_SHA'),
+    /**
+     * Let a LOCAL run report (one with no release: no GIT_COMMIT_SHA and no
+     * SENTRY_RELEASE, which every deployment has). Off by default, so a
+     * developer's machine does not file its restarts, scripts and half-edited
+     * code under the deployed development API's environment. Never consulted
+     * in production, which always reports.
+     */
+    sentryReportLocal: bool('SENTRY_REPORT_LOCAL', { default: 'false' }),
     sentryTracesSampleRate: num('SENTRY_TRACES_SAMPLE_RATE', {
       default: IS_PRODUCTION ? '0.1' : '1.0',
       min: 0,

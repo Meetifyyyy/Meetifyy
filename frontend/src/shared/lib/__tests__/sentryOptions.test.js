@@ -88,3 +88,40 @@ describe('buildSentryOptions — what is sent', () => {
     expect(event.user).toEqual({ id: 'u1' });
   });
 });
+
+describe('buildSentryOptions — local dev servers', () => {
+  it('stays off on a Vite dev server, website or app', () => {
+    for (const platform of ['web', 'android']) {
+      const { options, disabledReason } = build({
+        platform,
+        environment: 'development',
+        isProduction: false,
+        hostname: 'localhost',
+        isDevServer: true,
+      });
+      expect(options).toBeNull();
+      expect(disabledReason).toMatch(/dev server/);
+    }
+  });
+
+  it('reports from a dev server only when asked to', () => {
+    const { options } = build({
+      platform: 'android',
+      environment: 'development',
+      isProduction: false,
+      isDevServer: true,
+      sentry: { reportDevServer: true },
+    });
+    expect(options).not.toBeNull();
+  });
+
+  it('a build is not a dev server, whatever its mode', () => {
+    const { options } = build({
+      platform: 'android',
+      environment: 'development',
+      isProduction: false,
+      isDevServer: false,
+    });
+    expect(options).not.toBeNull();
+  });
+});
