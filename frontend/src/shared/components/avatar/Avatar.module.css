@@ -131,18 +131,20 @@
   }
 }
 
+/* Centred on the avatar's circle at 45 degrees (0.1464 of the size in from the
+   corner), so it sits on the edge rather than off the box's corner. The ring is
+   inside the dot's size (border-box), which is what the offset is based on. No
+   shadow: the white ring alone separates it from the photo. */
 .onlineDot {
+  --dot-ring: max(2px, calc(var(--size) * 0.045));
+  --dot: calc(clamp(9px, calc(var(--size) * 0.24), 18px) + 2 * var(--dot-ring));
   position: absolute;
-  bottom: 0;
-  right: 0;
-  width: calc(var(--size) * 0.22);
-  height: calc(var(--size) * 0.22);
-  min-width: 8px;
-  min-height: 8px;
-  max-width: 18px;
-  max-height: 18px;
+  right: calc(var(--size) * 0.1464 - var(--dot) / 2);
+  bottom: calc(var(--size) * 0.1464 - var(--dot) / 2);
+  box-sizing: border-box;
+  width: var(--dot);
+  height: var(--dot);
   border-radius: 50%;
   background: var(--color-success);
-  border: calc(var(--size) * 0.04) solid var(--color-bg-white);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  border: var(--dot-ring) solid var(--color-bg-white);
 }
