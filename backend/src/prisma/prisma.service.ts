@@ -5,6 +5,7 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
+import { suppressTracing } from '@sentry/nestjs';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 import { config } from '../config';
@@ -123,6 +124,26 @@ export class PrismaService
     const fallback = os.cpus().length * 2 + 1;
     const size = Number.isFinite(fromUrl) && fromUrl > 0 ? fromUrl : fallback;
     return Math.max(1, Math.min(size, 30));
+  }
+
+  /**
+   * One `SELECT 1` per pooled connection, concurrently (see the warm-up in
+   * onModuleInit for why it must fan out).
+   *
+   * Untraced: these run outside any request, so each ping became a root
+   * transaction of its own — every 25 seconds, per replica — and Sentry filed
+   * them as a "Slow DB Query" issue (MEETIFYY-API-2) whenever the pooler was
+   * slow to answer. They are the app's housekeeping, not anything a user
+   * waited on, and they spent the trace quota on nothing.
+   */
+  private pingPool(size: number): Promise<void> {
+    return suppressTracing(async () => {
+      await Promise.all(
+        Array.from({ length: size }, () =>
+          this.$queryRawUnsafe('SELECT 1').catch(() => {}),
+        ),
+      );
+    });
   }
 
   constructor() {
@@ -268,11 +289,7 @@ export class PrismaService
       // on the first request to touch each endpoint, and again whenever traffic
       // fanned out wider than the pool had grown.
       const poolSize = this.getPoolSize();
-      await Promise.all(
-        Array.from({ length: poolSize }, () =>
-          this.$queryRawUnsafe('SELECT 1').catch(() => {}),
-        ),
-      );
+      await this.pingPool(poolSize);
       this.logger.log(`Connected and pool warmed up (${poolSize} connections)`);
 
       // Keepalive to prevent pooler idle-connection drops (P1001). Fans out
@@ -284,11 +301,7 @@ export class PrismaService
           detach('database keep-alive', async () => {
             if (this.isDestroyed) return;
             try {
-              await Promise.all(
-                Array.from({ length: poolSize }, () =>
-                  this.$queryRawUnsafe('SELECT 1').catch(() => {}),
-                ),
-              );
+              await this.pingPool(poolSize);
             } catch {
               // The keep-alive is a warm-up ping. Its whole purpose is to fail quietly when the pool is not reachable.
             }
