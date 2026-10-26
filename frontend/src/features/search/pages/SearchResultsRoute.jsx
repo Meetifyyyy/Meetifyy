@@ -18,6 +18,7 @@ import { searchApi } from '@shared/api/apiClient';
 import Post from '@features/feed/components/post/Post';
 import CrewCard from '@features/crew/components/cards/CrewCard';
 import styles from './SearchResultsRoute.module.css';
+import { useWhiteSurface } from '@shared/hooks/useWhiteSurface';
 import { afterPageTransition, hasPageTransitionDriver, keepPageTransition } from '@shared/lib/navigation/pageTransition';
 import { usePageTransition } from '@shared/hooks/usePageTransition';
 import { CENTRE_EFFECT } from '@shared/lib/navigation/centreTransition';
@@ -37,7 +38,7 @@ const QUICK_CHIPS = [
 
 const UserRow = memo(function UserRow({ data, onOpen }) {
   return (
-    <div className={styles.resultCard} onClick={() => onOpen('user', data)}>
+    <div className={`${styles.resultItem} ${styles.resultCard}`} onClick={() => onOpen('user', data)}>
       <Avatar src={data.avatar} name={data.displayName} size="44px" disableHover />
       <div className={styles.feedInfo}>
         <span className={styles.feedName} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
@@ -60,7 +61,7 @@ const CommunityRow = memo(function CommunityRow({ data, onOpen }) {
   const hasDescription = Boolean(data.description && data.description.trim() && data.description.toLowerCase() !== data.name?.toLowerCase());
 
   return (
-    <div className={styles.resultCard} onClick={() => onOpen('community', data)}>
+    <div className={`${styles.resultItem} ${styles.resultCard}`} onClick={() => onOpen('community', data)}>
       <div className={styles.communityIconBox}>
         {avatar && isImageUrl(avatar) && !imgError ? (
           <img
@@ -92,6 +93,8 @@ const CommunityRow = memo(function CommunityRow({ data, onOpen }) {
 
 export default function SearchResultsRoute() {
   const crewActivities = useCrewActivities();
+  // Light theme on a phone: white behind the page, not the blue gradient.
+  useWhiteSurface();
   const [searchParams, setSearchParams] = useSearchParams();
   const rawQ = searchParams.get('q') || '';
   const navigate = useNavigate();
@@ -491,7 +494,7 @@ export default function SearchResultsRoute() {
                 if (kind === 'activity') {
                   const activityData = activitiesById.get(String(data.id)) || data;
                   return (
-                    <div key={id} className={styles.crewCardWrapper}>
+                    <div key={id} className={`${styles.resultItem} ${styles.crewCardWrapper}`}>
                       <CrewCard
                         activity={activityData}
                         onClick={() => openEntity('activity', activityData)}
@@ -504,7 +507,7 @@ export default function SearchResultsRoute() {
                 }
                 if (kind === 'post') {
                   return (
-                    <div key={id} className={styles.postWrapper}>
+                    <div key={id} className={`${styles.resultItem} ${styles.postWrapper}`}>
                       <Post postData={data} onClick={handlePostClick} onCommentClick={handleCommentClick} />
                     </div>
                   );

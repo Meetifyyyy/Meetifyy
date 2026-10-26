@@ -277,17 +277,7 @@
   display: flex;
   align-items: center;
   gap: 0.85rem;
-  background: var(--color-bg-white);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
   padding: 0.85rem 1rem;
-  cursor: pointer;
-  transition: border-color var(--transition-fast), background var(--transition-fast);
-}
-
-.resultCard:hover {
-  border-color: var(--color-primary);
-  background: var(--color-bg-soft);
 }
 
 .feedInfo {
@@ -584,19 +574,6 @@
 
   .resultCard {
     padding: 0.8rem 0.85rem;
-    /* Lighter on mobile: no hover repaint work, no tap-highlight flash, and the
-       body owns the scroll so cards paint on a simple flat surface. */
-    transition: none;
-    -webkit-tap-highlight-color: transparent;
-  }
-
-  .resultCard:hover {
-    border-color: var(--color-border);
-    background: var(--color-bg-white);
-  }
-
-  .resultCard:active {
-    background: var(--color-bg-soft);
   }
 
   .feedName {
@@ -632,12 +609,38 @@
   margin-bottom: 0;
 }
 
-.crewCardWrapper > div {
-  box-shadow: none !important;
+/* Every result — person, community, activity, post — wears the same shell:
+   one thin subtle border, the whole card highlighted on mouse hover, and no
+   tap flash on touch. The activity and post cards inside drop their own
+   border, shadow, lift and hover here only (scoped to this page's wrapper),
+   so they look unchanged everywhere else. */
+.resultItem {
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border-light, var(--color-border));
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+  -webkit-tap-highlight-color: transparent;
 }
 
-.crewCardWrapper > div:hover {
+@media (hover: hover) and (pointer: fine) {
+  .resultItem:hover {
+    background: var(--color-bg-soft);
+  }
+}
+
+
+.crewCardWrapper > div,
+.crewCardWrapper > div:hover,
+.crewCardWrapper > div:active,
+.postWrapper > div,
+.postWrapper > div:hover,
+.postWrapper > div:active {
+  background: transparent !important;
+  border-color: transparent !important;
   box-shadow: none !important;
+  transform: none !important;
 }
 
 @media (hover: hover) and (pointer: fine) {
