@@ -4,7 +4,8 @@ import { config } from '../../config';
 
 export interface IssuedAdminSessionCookies {
   /**
-   * The CSRF token that was just written to `admin_csrf`.
+   * The CSRF token that was just written to the CSRF cookie (`admin_csrf` in
+   * production; see adminCookieName).
    *
    * Returned so the handler can put it in the response body. That is not a
    * convenience — it is the fix for the portal's "CSRF validation failed"
@@ -23,6 +24,30 @@ export interface IssuedAdminSessionCookies {
    */
   csrfToken: string;
 }
+
+/**
+ * The admin session cookies' names, which depend on the environment.
+ *
+ * Development and production both scope cookies to `.meetifyy.app`
+ * (COOKIE_DOMAIN), and a browser sends a parent-domain cookie to every
+ * subdomain. With one set of names, signing in to the development admin
+ * portal overwrote the production portal's session in the same browser and
+ * each admin API received the other environment's tokens — the collision the
+ * user session cookies were already given distinct names for (`namePrefix` in
+ * auth.config). The admin cookies now follow the same prefix: production (and
+ * tests) keep the historical `admin_*`, so no production session is dropped;
+ * development uses `mf_dev_admin_*`.
+ */
+export function adminCookieName(
+  kind: 'access' | 'refresh' | 'csrf',
+  namePrefix: string = config.auth.cookie.namePrefix,
+): string {
+  return namePrefix === 'mf' ? `admin_${kind}` : `${namePrefix}_admin_${kind}`;
+}
+
+export const ADMIN_ACCESS_COOKIE = adminCookieName('access');
+export const ADMIN_REFRESH_COOKIE = adminCookieName('refresh');
+export const ADMIN_CSRF_COOKIE = adminCookieName('csrf');
 
 /**
  * Cookie attributes, entirely from configuration.
@@ -54,19 +79,19 @@ export function issueAdminSessionCookies(
   const { accessMaxAgeMs, refreshMaxAgeMs } = config.auth.cookie;
   const base = cookieBase();
 
-  res.cookie('admin_access', accessToken, {
+  res.cookie(ADMIN_ACCESS_COOKIE, accessToken, {
     ...base,
     httpOnly: true,
     maxAge: accessMaxAgeMs,
   });
 
-  res.cookie('admin_refresh', refreshToken, {
+  res.cookie(ADMIN_REFRESH_COOKIE, refreshToken, {
     ...base,
     httpOnly: true,
     maxAge: refreshMaxAgeMs,
   });
 
-  res.cookie('admin_csrf', csrfToken, {
+  res.cookie(ADMIN_CSRF_COOKIE, csrfToken, {
     // Deliberately readable by scripts. Making it HttpOnly would look like a
     // hardening win and would break the same-site and local-development paths
     // that still read it directly. The token is not a credential on its own —
@@ -81,7 +106,7 @@ export function issueAdminSessionCookies(
 
 export function clearAdminSessionCookies(res: Response): void {
   const base = cookieBase();
-  res.clearCookie('admin_access', { ...base, httpOnly: true });
-  res.clearCookie('admin_refresh', { ...base, httpOnly: true });
-  res.clearCookie('admin_csrf', { ...base });
+  res.clearCookie(ADMIN_ACCESS_COOKIE, { ...base, httpOnly: true });
+  res.clearCookie(ADMIN_REFRESH_COOKIE, { ...base, httpOnly: true });
+  res.clearCookie(ADMIN_CSRF_COOKIE, { ...base });
 }

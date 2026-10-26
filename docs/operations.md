@@ -236,6 +236,23 @@ No output means refused, which is the correct answer for that pair.
 Unset, it defaults to `https://localhost`, the installed app's origin. Empty
 means "no app origins", and every request from the app fails CORS.
 
+## Cookies
+
+Both environments set cookies on the shared `.meetifyy.app`, so every cookie
+name carries the environment's prefix (`COOKIE_NAME_PREFIX`: `mf` in
+production, `mf_dev` in development). A browser signed in to both holds two
+separate sets, and neither environment can read, overwrite or clear the
+other's.
+
+The admin console's cookies used to be the exception: `admin_access`,
+`admin_refresh` and `admin_csrf` in both environments, so signing in to
+dev-admin replaced admin's cookies and the reverse. They now follow the prefix
+(`adminCookieName` in `admin-auth-cookies.ts`): production keeps the bare
+`admin_*` names, so live admin sessions were not touched, and development uses
+`mf_dev_admin_*`. The admin frontend reads its CSRF cookie by the same rule
+(`VITE_SESSION_COOKIE_PREFIX`, derived from `VITE_APP_ENV`). Any other
+environment gets its own prefix the same way.
+
 ## CSP
 
 ### Failed asset loads and automatic reloads

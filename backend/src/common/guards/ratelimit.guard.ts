@@ -18,6 +18,7 @@ import * as jwt from 'jsonwebtoken';
 import { ADMIN_TOKEN_ALGORITHM } from '../../admin/auth/admin-token.constants';
 import { config } from '../../config';
 import { USER_ACCESS_COOKIE } from '../../auth/session/user-session-cookies';
+import { ADMIN_ACCESS_COOKIE } from '../../admin/auth/admin-auth-cookies';
 
 /**
  * The global tier, applied to every route.
@@ -94,7 +95,7 @@ export class RateLimitGuard implements CanActivate {
    * Reads whatever a previous guard already attached first, then falls back to
    * verifying a token locally. Two token families exist and BOTH must be
    * handled: Supabase-issued user tokens, and admin session tokens signed with
-   * ADMIN_JWT_ACCESS_SECRET which arrive in an `admin_access` cookie (not
+   * ADMIN_JWT_ACCESS_SECRET which arrive in the admin access cookie (not
    * necessarily an Authorization header). An admin whose identity went
    * unresolved would fall into the anonymous per-IP tier, so every admin in one
    * office would share a single 120/min budget while loading a dashboard.
@@ -149,7 +150,7 @@ export class RateLimitGuard implements CanActivate {
     const secret = config.auth.admin.accessSecret;
     if (!secret) return null;
 
-    const token = request?.cookies?.admin_access || bearer;
+    const token = request?.cookies?.[ADMIN_ACCESS_COOKIE] || bearer;
     if (!token) return null;
 
     try {

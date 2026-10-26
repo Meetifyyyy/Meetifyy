@@ -108,9 +108,25 @@ export function clearCsrfToken(): void {
   csrfToken = null;
 }
 
-/** The cookie, when this deployment happens to be same-site. */
+/**
+ * The CSRF cookie's name in this environment, mirroring the backend's
+ * `adminCookieName` (admin-auth-cookies.ts): `admin_csrf` in production,
+ * `mf_dev_admin_csrf` in development.
+ */
+export function adminCsrfCookieName(prefix: string = config.sessionCookiePrefix): string {
+  return prefix === 'mf' ? 'admin_csrf' : `${prefix}_admin_csrf`;
+}
+
+/**
+ * The cookie, when this deployment happens to be same-site.
+ *
+ * Development and production share `.meetifyy.app`, so on the development
+ * portal `document.cookie` can hold the PRODUCTION portal's `admin_csrf` as
+ * well; only this environment's name is read.
+ */
 function readCsrfCookie(): string | null {
-  const match = document.cookie.match(new RegExp('(^| )admin_csrf=([^;]+)'));
+  const name = adminCsrfCookieName().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = document.cookie.match(new RegExp(`(^| )${name}=([^;]+)`));
   return match ? decodeURIComponent(match[2]) : null;
 }
 
@@ -183,7 +199,7 @@ export async function apiRequest<T = any>(
   const response = await fetch(url, {
     ...options,
     headers: buildHeaders(options),
-    credentials: 'include', // HttpOnly cookies (admin_access, admin_refresh, admin_csrf)
+    credentials: 'include', // the admin session cookies (see adminCsrfCookieName)
   });
 
   // Happy path

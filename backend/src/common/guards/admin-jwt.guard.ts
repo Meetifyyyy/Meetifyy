@@ -13,6 +13,10 @@ import { timingSafeEqual } from 'crypto';
 import type { AdminRequest } from '../types/authenticated-request';
 import { payloadObject, stringClaim } from '../utils/jwt-claims.util';
 import { ADMIN_TOKEN_ALGORITHM } from '../../admin/auth/admin-token.constants';
+import {
+  ADMIN_ACCESS_COOKIE,
+  ADMIN_CSRF_COOKIE,
+} from '../../admin/auth/admin-auth-cookies';
 
 @Injectable()
 export class AdminJwtGuard implements CanActivate {
@@ -26,7 +30,7 @@ export class AdminJwtGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<AdminRequest>();
 
     // 1. Extract access token from HttpOnly cookie or Authorization header
-    let token = request.cookies?.admin_access;
+    let token = request.cookies?.[ADMIN_ACCESS_COOKIE];
     if (!token && request.headers.authorization) {
       token = request.headers.authorization.replace('Bearer ', '').trim();
     }
@@ -96,7 +100,7 @@ export class AdminJwtGuard implements CanActivate {
     const method = (request.method || '').toUpperCase();
     if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
       const csrfHeader = request.headers['x-csrf-token'];
-      const csrfCookie = request.cookies?.admin_csrf;
+      const csrfCookie = request.cookies?.[ADMIN_CSRF_COOKIE];
 
       if (
         !csrfCookie ||

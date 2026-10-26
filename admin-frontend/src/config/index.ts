@@ -64,9 +64,22 @@ function bool(name: string, { fallback = false } = {}): boolean {
 export const IS_DEV_BUILD = import.meta.env.DEV;
 export const MODE = import.meta.env.MODE;
 
+const appEnv = str('VITE_APP_ENV', { fallback: MODE });
+
 export const config = {
-  env: str('VITE_APP_ENV', { fallback: MODE }),
+  env: appEnv,
   isDevBuild: IS_DEV_BUILD,
+
+  /**
+   * The API's cookie name prefix for this environment, mirroring the backend's
+   * COOKIE_NAME_PREFIX (auth.config.ts): `mf` in production, `mf_dev` in
+   * development. Development and production share `.meetifyy.app`, so this
+   * page can see both environments' admin cookies and must read its own.
+   */
+  sessionCookiePrefix: str('VITE_SESSION_COOKIE_PREFIX', {
+    fallback:
+      appEnv === 'production' ? 'mf' : appEnv === 'development' ? 'mf_dev' : `mf_${appEnv}`,
+  }),
 
   app: {
     name: str('VITE_APP_NAME', { fallback: 'Meetifyy Admin' }),

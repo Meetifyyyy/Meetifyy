@@ -1,4 +1,5 @@
 import {
+  adminCookieName,
   clearAdminSessionCookies,
   issueAdminSessionCookies,
 } from './admin-auth-cookies';
@@ -106,5 +107,36 @@ describe('admin session cookies', () => {
       'admin_csrf',
       'admin_refresh',
     ]);
+  });
+});
+
+/**
+ * Development and production share `.meetifyy.app`, so the admin cookies must
+ * carry different names in each, exactly as the user session cookies do —
+ * otherwise signing in to one admin portal signs the same browser out of the
+ * other. Production keeps the names its live sessions already use.
+ */
+describe('admin cookie names by environment', () => {
+  it('keeps the historical names in production', () => {
+    expect(adminCookieName('access', 'mf')).toBe('admin_access');
+    expect(adminCookieName('refresh', 'mf')).toBe('admin_refresh');
+    expect(adminCookieName('csrf', 'mf')).toBe('admin_csrf');
+  });
+
+  it('gives development its own names', () => {
+    expect(adminCookieName('access', 'mf_dev')).toBe('mf_dev_admin_access');
+    expect(adminCookieName('refresh', 'mf_dev')).toBe('mf_dev_admin_refresh');
+    expect(adminCookieName('csrf', 'mf_dev')).toBe('mf_dev_admin_csrf');
+  });
+
+  it('never lets two environments share a name', () => {
+    const names = (prefix: string) =>
+      (['access', 'refresh', 'csrf'] as const).map((k) =>
+        adminCookieName(k, prefix),
+      );
+    const prod = new Set(names('mf'));
+    for (const prefix of ['mf_dev', 'mf_staging']) {
+      for (const name of names(prefix)) expect(prod.has(name)).toBe(false);
+    }
   });
 });

@@ -24,6 +24,8 @@ import {
   type AdminRequest,
 } from '../../common/types/authenticated-request';
 import {
+  ADMIN_CSRF_COOKIE,
+  ADMIN_REFRESH_COOKIE,
   clearAdminSessionCookies,
   issueAdminSessionCookies,
 } from './admin-auth-cookies';
@@ -120,7 +122,7 @@ export class AdminAuthController {
     // cannot send it. Only a string is a token.
     const bodyToken = requestBody(req).refreshToken;
     const refreshToken =
-      req.cookies?.admin_refresh ||
+      req.cookies?.[ADMIN_REFRESH_COOKIE] ||
       (typeof bodyToken === 'string' ? bodyToken : undefined);
     if (!refreshToken) {
       this.clearAuthCookies(res);
@@ -168,7 +170,7 @@ export class AdminAuthController {
     return {
       success: true,
       admin: req.admin,
-      csrfToken: req.cookies?.admin_csrf ?? null,
+      csrfToken: req.cookies?.[ADMIN_CSRF_COOKIE] ?? null,
     };
   }
 
