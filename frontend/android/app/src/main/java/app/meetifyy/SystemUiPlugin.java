@@ -242,6 +242,23 @@ public class SystemUiPlugin extends Plugin {
     }
 
     /**
+     * The first screen shows its content, not a placeholder: reported to the
+     * system as fully drawn (time to full display). See MainActivity.onPageFullyDrawn.
+     *
+     * @param call `what`: which content was found, for the debug log only.
+     */
+    @PluginMethod
+    public void fullyDrawn(PluginCall call) {
+        final String what = call.getString("what", "");
+        final Activity activity = getActivity();
+        if (activity instanceof MainActivity) {
+            final MainActivity main = (MainActivity) activity;
+            activity.runOnUiThread(() -> main.onPageFullyDrawn(what));
+        }
+        call.resolve();
+    }
+
+    /**
      * Whether the page draws under the side insets (a landscape cutout or a
      * side navigation bar). Normally the decor view is padded by them and the
      * strips show the window colour; a screen that runs edge to edge (the

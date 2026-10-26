@@ -13,8 +13,38 @@
  * It never holds the splash for long: after `maxWaitMs` it releases whatever
  * is on screen, exactly as before. Authentication itself is untouched; this
  * only decides which frame the splash fades onto.
+ *
+ * FULLY DRAWN
+ * Releasing the splash is Android's time to initial display. The screen it
+ * reveals can still be a skeleton (Home with no saved feed, waiting on the
+ * network), so after the release this keeps watching for the first screen's
+ * real content — the feed having decided what to show (`data-launch-content`
+ * on Feed) or the signed-out opening screen — and reports it once through
+ * `onFullyDrawn` (native reportFullyDrawn: time to full display). A launch that
+ * lands somewhere without such a marker (a link into a chat) reports nothing
+ * rather than a guess, and the watch stops after `fullyDrawnMaxMs`.
  */
 export const LAUNCH_SURFACE_SELECTOR = '#root main, #root [data-launch-surface]';
+export const LAUNCH_CONTENT_SELECTOR = '#root [data-launch-content], #root [data-launch-surface]';
+
+/** Calls `onFound` once `selector` matches under #root, or never; returns a stop function. */
+function watchForContent(onFound, selector = LAUNCH_CONTENT_SELECTOR) {
+  if (typeof document === 'undefined') return () => {};
+  if (document.querySelector(selector)) {
+    onFound();
+    return () => {};
+  }
+  const root = document.getElementById('root');
+  if (!root || typeof MutationObserver === 'undefined') return () => {};
+  const observer = new MutationObserver(() => {
+    if (!document.querySelector(selector)) return;
+    observer.disconnect();
+    onFound();
+  });
+  // Attributes too: the feed's marker is added to an element already in the DOM.
+  observer.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-launch-content'] });
+  return () => observer.disconnect();
+}
 
 export function installLaunchReadiness({
   boot = typeof window === 'undefined' ? undefined : window.__meetifyyBoot,
@@ -27,6 +57,10 @@ export function installLaunchReadiness({
   // Told as the splash is released, so native can lift it without waiting for
   // its next poll (which queues behind this thread). Optional.
   onRelease = () => {},
+  // Told once the first screen shows its content (see FULLY DRAWN). Optional.
+  onFullyDrawn = () => {},
+  watchContent = watchForContent,
+  fullyDrawnMaxMs = 15_000,
 } = {}) {
   if (!boot || typeof boot.ready !== 'function') return;
   const release = boot.ready;
@@ -35,12 +69,26 @@ export function installLaunchReadiness({
   // Marks on the page's own timeline, readable over devtools from a device
   // build: where a launch spends its time between auth and the splash lifting.
   const mark = (name) => { try { performance.mark(name); } catch { /* optional */ } };
+  const watchFullyDrawn = () => {
+    let done = false;
+    let stop = () => {};
+    const found = () => {
+      if (done) return;
+      done = true;
+      stop();
+      mark('meetifyy:fully-drawn');
+      try { onFullyDrawn(); } catch { /* reporting only */ }
+    };
+    stop = watchContent(found);
+    if (!done) later(() => { done = true; stop(); }, fullyDrawnMaxMs);
+  };
   const releaseOnce = (via) => {
     if (released) return;
     released = true;
     mark(`meetifyy:splash-release:${via}`);
     release();
     try { onRelease(); } catch { /* the poll still lifts the splash */ }
+    watchFullyDrawn();
   };
 
   boot.ready = () => {

@@ -5,9 +5,11 @@ import android.graphics.drawable.ColorDrawable;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.Process;
 import android.os.SystemClock;
 import android.util.Log;
 import android.webkit.WebView;
+import android.view.Choreographer;
 import android.view.View;
 import android.view.animation.DecelerateInterpolator;
 
@@ -30,14 +32,30 @@ public class MainActivity extends BridgeActivity {
 
     private static final long SPLASH_TIMEOUT_MS = 5000;
     private static final long POLL_INTERVAL_MS = 32;
-    /** The splash fades over the already-painted page: a crossfade, not a cut. */
     /*
-     * Short, and the background only. The page under the splash is fully
-     * painted by the time it lifts, so the fade is a reveal, not a wait.
+     * The exit, once the page is on screen beneath the splash (see
+     * exitSplashOncePainted): the logo shrinks a little and fades, and the
+     * background follows a few frames behind it, so the page is revealed by a
+     * crossfade with the logo already almost gone. Short: the page under the
+     * splash is fully painted, so this is a reveal, not a wait.
      */
-    private static final long SPLASH_FADE_MS = 150L;
+    private static final long SPLASH_ICON_EXIT_MS = 100L;
+    private static final float SPLASH_ICON_EXIT_SCALE = 0.92f;
+    private static final long SPLASH_BACKGROUND_DELAY_MS = 55L;
+    private static final long SPLASH_BACKGROUND_EXIT_MS = 170L;
+    /** Longest wait for the WebView to report it has drawn the page (see exitSplashOncePainted). */
+    private static final long SPLASH_PAINT_WAIT_MS = 250L;
 
     private boolean contentPainted = false;
+    private boolean fullyDrawnReported = false;
+    /** The splash has begun to uncover the page (fadeSplashOut). */
+    private boolean splashRevealing = false;
+    /** The page reported its content before the reveal began: what it found, reported at the reveal. */
+    private String pendingFullyDrawn = null;
+    /** The splash, handed over to this window and held until the page is ready (see onCreate). */
+    private SplashScreenViewProvider heldSplash = null;
+    private boolean splashExitStarted = false;
+    private long visualStateRequestId = 0;
     private final Handler handler = new Handler(Looper.getMainLooper());
 
     @Override
@@ -75,18 +93,43 @@ public class MainActivity extends BridgeActivity {
         }
 
         /*
-         * The SYSTEM splash stays on screen until the page is ready and has
-         * painted (see launchReadiness.js), with a static logo.
+         * The splash is handed over to this window as soon as the activity has
+         * drawn, and kept there, unchanged, until the page is ready and has
+         * painted (see launchReadiness.js and finishLaunch).
          *
-         * Handing it over to a view in this window early — which is what any
-         * logo animation would need, since Android 12+ draws a held splash in
-         * its own window — moved the logo ~15px as the window's insets settled.
-         * Holding the system window leaves nothing to line up.
+         * It used to be the other way round: the SYSTEM splash window was held
+         * (setKeepOnScreenCondition) until the page was ready, and only then
+         * handed over. But the hand-over itself is slow — traced on the I2208
+         * (2026-10-26), after the activity's first frame the system ran its own
+         * `starting_reveal` step for ~270 ms before the app received the splash
+         * view, and the logs showed 340-490 ms from "page ready" to the reveal
+         * starting. All of that was spent after the page was ready, behind a
+         * splash. Handed over at the activity's first frame instead, the same
+         * wait overlaps the page's own boot.
+         *
+         * The handed-over splash is a view in this window, on top of everything
+         * (the page beneath may be blank until it paints; nothing of it shows).
+         * A change in the window's insets would re-lay it out and could move
+         * the centred logo — the ~15 px shift that once kept the splash in the
+         * system window — so its logo is pinned from the moment it arrives
+         * (pinSplashIcon).
          */
-        splashScreen.setKeepOnScreenCondition(() -> !contentPainted);
         splashScreen.setOnExitAnimationListener(provider -> {
-            if (provider == null) return;
-            fadeSplashOut(provider);
+            if (provider == null) {
+                // Nothing to hold or animate: the page is uncovered as it is.
+                splashRevealing = true;
+                if (pendingFullyDrawn != null) {
+                    final String what = pendingFullyDrawn;
+                    pendingFullyDrawn = null;
+                    onPageFullyDrawn(what);
+                }
+                return;
+            }
+            heldSplash = provider;
+            pinSplashIcon(provider);
+            if (isDebuggable()) Log.i("MeetifyyLaunch", "splash handed over at +" + sinceProcessStart() + "ms");
+            if (contentPainted) exitSplashOncePainted(provider);
+            // Otherwise finishLaunch starts the exit once the page is ready.
         });
 
         final long deadline = SystemClock.uptimeMillis() + SPLASH_TIMEOUT_MS;
@@ -174,13 +217,55 @@ public class MainActivity extends BridgeActivity {
         finishLaunch(getBridge() != null ? getBridge().getWebView() : null, "push");
     }
 
-    /** Lifts the splash; from here the page owns the system bars. */
+    /**
+     * The page is ready and painted: the splash may go (once it has been handed
+     * to this window; see onCreate). From here the page owns the system bars.
+     */
     private void finishLaunch(WebView webView, String via) {
         if (contentPainted) return;
         contentPainted = true;
-        // Debug builds only: when, and by which path, the splash lifted.
-        if ((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) Log.i("MeetifyyLaunch", "splash released via " + via);
+        // Debug builds only: when, and by which path, the page reported ready.
+        if (isDebuggable()) Log.i("MeetifyyLaunch", "page ready via " + via + " at +" + sinceProcessStart() + "ms");
         if (webView != null) requestPageBars(webView);
+        if (heldSplash != null) exitSplashOncePainted(heldSplash);
+    }
+
+    /**
+     * The first screen has its content, not a placeholder (SystemUiPlugin.fullyDrawn,
+     * from launchReadiness.js): Home's first posts or its empty state, or the
+     * signed-out opening screen.
+     *
+     * Reported to the system with reportFullyDrawn(), which is what Android
+     * calls time to full display (TTFD): `Fully drawn` in the log, the metric
+     * Android vitals and Macrobenchmark read. The splash lifting is time to
+     * initial display, which on a launch with no saved feed can be a skeleton.
+     * Once per activity, and only once the content is VISIBLE: when the page
+     * has it before the splash has begun to uncover the page (a saved feed),
+     * the report waits for the reveal, so the time is when the user can see
+     * it, not when it existed behind the splash.
+     */
+    void onPageFullyDrawn(String what) {
+        if (fullyDrawnReported || !contentPainted || isFinishing()) return;
+        if (!splashRevealing) {
+            pendingFullyDrawn = what == null ? "" : what;
+            return;
+        }
+        fullyDrawnReported = true;
+        if (isDebuggable()) Log.i("MeetifyyLaunch", "fully drawn (" + what + ") at +" + sinceProcessStart() + "ms");
+        try {
+            reportFullyDrawn();
+        } catch (SecurityException e) {
+            // Some OEM builds guard this behind a permission on older releases; the app is unaffected.
+        }
+    }
+
+    private boolean isDebuggable() {
+        return (getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0;
+    }
+
+    /** Milliseconds since this process was forked: a cold start's own clock, for the debug log. */
+    private static long sinceProcessStart() {
+        return SystemClock.uptimeMillis() - Process.getStartUptimeMillis();
     }
 
     /**
@@ -220,6 +305,31 @@ public class MainActivity extends BridgeActivity {
         webView.evaluateJavascript(script, null);
     }
 
+    /**
+     * Keeps the handed-over splash's logo exactly where the system drew it.
+     *
+     * The splash view is laid out by this window, and the window's insets
+     * settle while the page boots (the bars go transparent, the page publishes
+     * its own). Each change re-lays out the splash view and could move the
+     * centred logo; this cancels any such shift with an equal and opposite
+     * translation, measured on screen, so the logo never moves between the
+     * system's window and this one, or while it is held.
+     */
+    private void pinSplashIcon(SplashScreenViewProvider provider) {
+        final View splashView = provider.getView();
+        View icon = provider.getIconView();
+        if (icon == null) icon = findSplashIcon(splashView);
+        if (icon == null) return;
+        final int[] start = new int[2];
+        icon.getLocationOnScreen(start);
+        final int startY = start[1] - Math.round(icon.getTranslationY());
+        icon.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
+            final int[] now = new int[2];
+            v.getLocationOnScreen(now);
+            v.setTranslationY(startY - (now[1] - Math.round(v.getTranslationY())));
+        });
+    }
+
     /** The splash logo view, in the splash view the exit listener is handed. */
     private View findSplashIcon(View root) {
         final int iconId = getResources().getIdentifier(
@@ -229,15 +339,65 @@ public class MainActivity extends BridgeActivity {
     }
 
     /**
-     * Reveals the page, which is already painted beneath the splash.
-     * The page is told as the reveal starts, so its own entrance plays under it.
+     * Starts the exit only once the page is actually on screen beneath it.
+     * Called when the page is ready and the splash is in this window, in
+     * whichever order those happen (onCreate's listener, finishLaunch).
      *
-     * The logo leaves at once and only the background fades. Fading the whole
-     * splash view together left the large logo half-transparent over the feed
-     * for ~250 ms — a ghosted double image, measured frame by frame on a device
-     * and seen as a flicker on every launch. Instagram cuts straight to its
-     * feed; X's logo leaves before the timeline shows. Either way no logo is
-     * ever drawn on top of content.
+     * "Ready" means the page has painted in Chromium; the window may not have
+     * drawn that yet, so the WebView beneath can still be empty. Recorded on
+     * the I2208 (2026-10-26) the old exit, which hid the logo
+     * at once and faded the background, showed the logo, then two to three
+     * frames of plain splash colour with no logo, then the feed all at once —
+     * the blink seen as the splash "flickering". `postVisualStateCallback`
+     * fires when the WebView's next draw shows the page as it is now; the exit
+     * starts on the frame after that, so whatever the splash uncovers is the
+     * page. A WebView that never reports (detached, not drawing) is not waited
+     * on for long.
+     */
+    private void exitSplashOncePainted(SplashScreenViewProvider provider) {
+        if (splashExitStarted) return;
+        splashExitStarted = true;
+        final WebView webView = getBridge() != null ? getBridge().getWebView() : null;
+        if (webView == null) {
+            fadeSplashOut(provider);
+            return;
+        }
+        final boolean[] started = { false };
+        final Runnable start = () -> {
+            if (started[0]) return;
+            started[0] = true;
+            Choreographer.getInstance().postFrameCallback(frameTimeNanos -> fadeSplashOut(provider));
+        };
+        final Runnable fallback = () -> {
+            if (isDebuggable() && !started[0]) Log.i("MeetifyyLaunch", "page paint not reported; revealing anyway");
+            start.run();
+        };
+        handler.postDelayed(fallback, SPLASH_PAINT_WAIT_MS);
+        final long requestId = ++visualStateRequestId;
+        webView.postVisualStateCallback(requestId, new WebView.VisualStateCallback() {
+            @Override
+            public void onComplete(long id) {
+                if (id != requestId) return;
+                handler.removeCallbacks(fallback);
+                if (isDebuggable() && !started[0]) Log.i("MeetifyyLaunch", "page painted at +" + sinceProcessStart() + "ms");
+                start.run();
+            }
+        });
+    }
+
+    /**
+     * Reveals the page, which is painted beneath the splash (see
+     * exitSplashOncePainted). The page is told as the reveal starts, so its own
+     * entrance plays under it.
+     *
+     * The logo leaves first: it shrinks slightly and fades over 100 ms, fastest
+     * at the start, and the background starts fading 55 ms in, when the logo
+     * is about 80% gone. By the time the page shows through, the logo has
+     * left, so there is no ghosted logo over the feed (what fading the whole
+     * view at once looked like), and the page follows the logo closely enough
+     * that there is no blank pause between them (what cutting the logo at once
+     * and then fading looked like). Both are view properties on hardware
+     * layers: nothing is re-laid out or re-rastered per frame.
      *
      * The logo is pinned for the duration: the page repaints the system bars
      * as the splash lifts, and a change in their insets re-lays out the splash
@@ -245,8 +405,19 @@ public class MainActivity extends BridgeActivity {
      * such shift is cancelled with an equal and opposite translation.
      */
     private void fadeSplashOut(SplashScreenViewProvider provider) {
+        if (isFinishing() || isDestroyed()) {
+            provider.remove();
+            return;
+        }
         final View splashView = provider.getView();
         notifySplashExiting();
+        splashRevealing = true;
+        if (isDebuggable()) Log.i("MeetifyyLaunch", "splash reveal starts at +" + sinceProcessStart() + "ms");
+        if (pendingFullyDrawn != null) {
+            final String what = pendingFullyDrawn;
+            pendingFullyDrawn = null;
+            onPageFullyDrawn(what);
+        }
         if (splashView == null) {
             provider.remove();
             notifySplashExited();
@@ -255,20 +426,21 @@ public class MainActivity extends BridgeActivity {
         View icon = provider.getIconView();
         if (icon == null) icon = findSplashIcon(splashView);
         if (icon != null) {
-            icon.setAlpha(0f);
-            final int[] start = new int[2];
-            icon.getLocationOnScreen(start);
-            final int startY = start[1] - Math.round(icon.getTranslationY());
-            icon.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
-                final int[] now = new int[2];
-                v.getLocationOnScreen(now);
-                v.setTranslationY(startY - (now[1] - Math.round(v.getTranslationY())));
-            });
+            icon.animate()
+                .alpha(0f)
+                .scaleX(SPLASH_ICON_EXIT_SCALE)
+                .scaleY(SPLASH_ICON_EXIT_SCALE)
+                .setDuration(SPLASH_ICON_EXIT_MS)
+                .setInterpolator(new DecelerateInterpolator())
+                .withLayer()
+                .start();
         }
         splashView.animate()
             .alpha(0f)
-            .setDuration(SPLASH_FADE_MS)
+            .setStartDelay(SPLASH_BACKGROUND_DELAY_MS)
+            .setDuration(SPLASH_BACKGROUND_EXIT_MS)
             .setInterpolator(new DecelerateInterpolator())
+            .withLayer()
             .withEndAction(() -> {
                 provider.remove();
                 notifySplashExited();

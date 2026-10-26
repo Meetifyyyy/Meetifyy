@@ -175,7 +175,11 @@ function Feed({ onPostClick, onCommentClick }) {
           never a post card. With Home's header slid away the card under the
           bar was all a sample could see, and the header then slid back in
           wearing the card's colour (and the photo's, for a frame). */}
-      <div className={styles.feed} data-bars-ignore="">
+      {/* data-launch-content: the feed has decided what to show (posts, or its
+          empty, error or offline state), not a skeleton. The installed app
+          reports that moment to Android as the launch being fully drawn
+          (mobile/launchReadiness.js); it changes nothing on the page. */}
+      <div className={styles.feed} data-bars-ignore="" data-launch-content={isLoading ? undefined : ''}>
         {/* `gap` matches `.feed`'s own, so this occupies no layout space. */}
         <HeaderScrollEdge gap="0.5rem" />
 

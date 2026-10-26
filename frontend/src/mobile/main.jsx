@@ -72,7 +72,7 @@ import DeepLinkNavigator from './navigation/DeepLinkNavigator';
 import { installBackgroundSocket } from './backgroundSocket';
 import { installLinkPressGuard } from './installLinkPressGuard';
 import { config } from '../config';
-import { installCapacitorSentry } from '../platform/capacitor/sentry';
+import { bootCapacitorSentry } from '../platform/capacitor/sentryBoot';
 
 import '../styles/variables.css';
 import '../styles/global.css';
@@ -83,14 +83,37 @@ import '../styles/typography.css';
  */
 import './mobile.css';
 
-// Error monitoring first (JavaScript and native crashes), so a failure during
-// boot is reported too. A no-op without a DSN; see platform/capacitor/sentry.js
-// and docs/sentry.md. The version is stamped at build time by
-// vite.mobile.config.js.
-installCapacitorSentry({
+/**
+ * Error monitoring (JavaScript and native crashes). A no-op without a DSN; see
+ * platform/capacitor/sentryBoot.js and docs/sentry.md. The version is stamped
+ * at build time by vite.mobile.config.js.
+ *
+ * Booted first, so a report or an uncaught error from here on is held; the SDK
+ * itself (its own chunk) is loaded and started once the first screen is fully
+ * drawn and the page is idle (see installLaunchReadiness below), or at the cap.
+ *
+ * Not at boot, because both halves of it cost the launch: the SDK was about a
+ * fifth of the entry chunk the WebView compiles on every cold start, and its
+ * native init ran on Capacitor's one plugin thread ahead of the Keystore reads
+ * that decide who is signed in — traced on the I2208 (2026-10-26),
+ * SecureStorage only began once Sentry's init had run for ~360 ms.
+ */
+const MONITORING_START_CAP_MS = 6000;
+const loadMonitoring = bootCapacitorSentry({
   config,
   appVersion: typeof __MEETIFYY_APP_VERSION__ === 'string' ? __MEETIFYY_APP_VERSION__ : '',
 });
+const startMonitoringWhenIdle = () => {
+  if (!loadMonitoring) return;
+  if (typeof window.requestIdleCallback === 'function') {
+    window.requestIdleCallback(loadMonitoring, { timeout: 1500 });
+  } else {
+    setTimeout(loadMonitoring, 300);
+  }
+};
+// A launch that never reports a usable first screen (a link straight into a
+// chat has no marker) still gets monitoring.
+if (loadMonitoring) setTimeout(loadMonitoring, MONITORING_START_CAP_MS);
 
 /**
  * The same cache settings as the website, with one deliberate change.
@@ -202,6 +225,15 @@ installLaunchReadiness({
   onRelease: () => systemBars.launchReady({
     theme: document.documentElement.getAttribute('data-theme') || '',
   }),
+  // The first screen's content is up (Home's feed has decided what to show,
+  // or the signed-out opening screen): Android's "fully drawn". Work that
+  // waits for a usable first screen starts from here.
+  onFullyDrawn: () => {
+    systemBars.launchFullyDrawn({
+      what: document.querySelector('#root [data-launch-surface]') ? 'opening screen' : 'home feed',
+    });
+    startMonitoringWhenIdle();
+  },
 });
 
 /**

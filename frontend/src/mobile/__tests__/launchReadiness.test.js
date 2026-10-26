@@ -86,6 +86,70 @@ describe('launch readiness', () => {
     expect(release).toHaveBeenCalledTimes(1);
   });
 
+  describe('fully drawn', () => {
+    /** A harness whose content watcher is driven by hand. */
+    function contentHarness({ contentAtRelease = false } = {}) {
+      const release = vi.fn();
+      const boot = { appReady: false, ready: release };
+      const onFullyDrawn = vi.fn();
+      const queue = [];
+      const timers = [];
+      let notify = null;
+      const stop = vi.fn();
+      const watchContent = vi.fn((found) => {
+        if (contentAtRelease) {
+          found();
+          return stop;
+        }
+        notify = found;
+        return stop;
+      });
+      installLaunchReadiness({
+        boot, now: () => 0, nextFrame: (cb) => queue.push(cb), hasSurface: () => true,
+        later: (cb, ms) => timers.push({ cb, ms }), onFullyDrawn, watchContent, fullyDrawnMaxMs: 15000,
+      });
+      const frames = (n) => { for (let i = 0; i < n; i += 1) queue.splice(0).forEach((cb) => cb()); };
+      return { boot, release, onFullyDrawn, watchContent, stop, frames, timers, appear: () => notify?.() };
+    }
+
+    it('does not look for content before the splash is released', () => {
+      const { boot, watchContent } = contentHarness();
+      boot.ready();
+      expect(watchContent).not.toHaveBeenCalled();
+    });
+
+    it('reports once the first content appears after the release', () => {
+      const { boot, onFullyDrawn, frames, appear, stop } = contentHarness();
+      boot.ready();
+      frames(2);
+      expect(onFullyDrawn).not.toHaveBeenCalled();
+      appear();
+      expect(onFullyDrawn).toHaveBeenCalledTimes(1);
+      expect(stop).toHaveBeenCalled();
+      appear();
+      expect(onFullyDrawn).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports at once when the content is already there', () => {
+      const { boot, onFullyDrawn, frames } = contentHarness({ contentAtRelease: true });
+      boot.ready();
+      frames(2);
+      expect(onFullyDrawn).toHaveBeenCalledTimes(1);
+    });
+
+    it('stops watching, reporting nothing, when no content comes', () => {
+      const { boot, onFullyDrawn, frames, timers, appear, stop } = contentHarness();
+      boot.ready();
+      frames(2);
+      const cap = timers.find((t) => t.ms === 15000);
+      expect(cap).toBeTruthy();
+      cap.cb();
+      expect(stop).toHaveBeenCalled();
+      appear();
+      expect(onFullyDrawn).not.toHaveBeenCalled();
+    });
+  });
+
   it('tells native as it releases, exactly once', () => {
     const onRelease = vi.fn();
     const release = vi.fn();

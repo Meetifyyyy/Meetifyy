@@ -1,6 +1,8 @@
 /**
- * Sentry for the installed app (meetifyy-android, and meetifyy-ios if built).
- * Called by src/mobile/main.jsx before render.
+ * Sentry for the installed app (meetifyy-android, and meetifyy-ios if built):
+ * the SDK half, a chunk of its own. Imported by platform/capacitor/sentryBoot.js
+ * once the first screen is usable; see that file for when, and for how reports
+ * made before then are kept.
  *
  * @sentry/capacitor wraps @sentry/react and ALSO starts the native SDK
  * (sentry-android, added to the Gradle build by the plugin on `cap sync`). So
@@ -17,55 +19,71 @@ import {
   addBreadcrumb,
   browserTracingIntegration,
   captureException,
+  getClient,
   init,
   setTag,
   setUser,
   withScope,
 } from '@sentry/capacitor';
 import { init as reactInit } from '@sentry/react';
-import { Capacitor } from '@capacitor/core';
-import { buildSentryOptions } from '@shared/lib/sentryOptions';
 import { createSentryAdapter, installMonitoring } from '@shared/lib/monitoring';
 
+/** How long the JavaScript client may take to appear after `init` (it waits on the native SDK). */
+const CLIENT_WAIT_MS = 10_000;
+const CLIENT_POLL_MS = 50;
+
 /**
- * @param {object} p
- * @param {object} p.config
- * @param {string} p.appVersion   <versionName>+<commit>, stamped at build time
+ * @sentry/capacitor's `init` returns at once but creates the JavaScript client
+ * only after the native SDK has initialised, asynchronously (its `sdkInit`).
+ * Anything handed to the SDK before then is dropped: the reports held since
+ * boot, and any uncaught error, since its global handlers are not installed
+ * yet either. So nothing is handed over until the client exists.
  */
-export function installCapacitorSentry({ config, appVersion }) {
-  const platform = Capacitor.getPlatform() === 'ios' ? 'ios' : 'android';
-  const { options, disabledReason } = buildSentryOptions({
-    sentry: config.integrations.sentry,
-    environment: config.env,
-    isProduction: config.isProduction,
-    platform,
-    release: appVersion ? `meetifyy-${platform}@${appVersion}` : '',
-    apiOrigin: config.api.baseUrl,
+function whenClientReady({ wait = CLIENT_WAIT_MS, poll = CLIENT_POLL_MS } = {}) {
+  return new Promise((resolve) => {
+    const started = Date.now();
+    const check = () => {
+      const client = getClient();
+      if (client) resolve(client);
+      else if (Date.now() - started >= wait) resolve(null);
+      else setTimeout(check, poll);
+    };
+    check();
   });
+}
 
-  if (!options) {
-    if (config.isDevBuild) console.info(`[sentry] disabled: ${disabledReason}`);
-    return false;
-  }
-
+/**
+ * Starts the native and JavaScript SDKs and, once the JavaScript client is up,
+ * hands the app's reporting facade to them, which delivers everything held
+ * since boot.
+ *
+ * @param {object} options   from buildSentryOptions (sentryBoot.js decided it is on)
+ * @param {'android'|'ios'} platform
+ * @returns {Promise<boolean>} whether reporting is live
+ */
+export async function startCapacitorSentry(options, platform) {
   try {
     init(
       {
         ...options,
-        // Native crash reporting and ANR detection come with the native SDK.
         enableNative: true,
         enableNativeCrashHandling: true,
         integrations: options.tracesSampleRate > 0 ? [browserTracingIntegration()] : [],
       },
       reactInit,
     );
-    // Set through the scope (not just initialScope) so the native layer gets it
-    // too: native crashes and ANRs are tagged with the app like JS errors are.
     setTag('app', platform);
-    installMonitoring(createSentryAdapter({ withScope, captureException, addBreadcrumb, setUser }));
-    return true;
   } catch (err) {
     console.warn('[sentry] init failed; continuing without it', err);
+    installMonitoring(null);
     return false;
   }
+  const client = await whenClientReady();
+  if (!client) {
+    console.warn('[sentry] the SDK did not start; continuing without it');
+    installMonitoring(null);
+    return false;
+  }
+  installMonitoring(createSentryAdapter({ withScope, captureException, addBreadcrumb, setUser }));
+  return true;
 }

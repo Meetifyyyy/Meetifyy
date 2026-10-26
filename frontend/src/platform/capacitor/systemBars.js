@@ -148,6 +148,15 @@ export function createCapacitorSystemBars({ getComputed } = {}) {
       SystemUi.appReady({ theme: theme || '' }).catch(() => {});
     },
     /**
+     * Tells the shell the first screen shows its content (`SystemUiPlugin.fullyDrawn`),
+     * which reports it to Android as fully drawn. Fire-and-forget: an older
+     * shell without the method simply reports nothing.
+     */
+    launchFullyDrawn({ what } = {}) {
+      if (!Capacitor.isNativePlatform?.() || Capacitor.getPlatform?.() !== 'android') return;
+      SystemUi.fullyDrawn({ what: what || '' }).catch(() => {});
+    },
+    /**
      * Android: whether the page draws under the LEFT and RIGHT insets too (a
      * landscape cutout or a side navigation bar). Normally the window is
      * padded there and those strips show the window colour; a screen that
