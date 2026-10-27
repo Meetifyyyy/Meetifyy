@@ -85,6 +85,20 @@ describe('API Sentry start-up rules', () => {
     expect(init).toHaveBeenCalled();
   });
 
+  it('drops the node-postgres integration and keeps the rest', () => {
+    const { init } = load('development', { gitCommitSha: 'abc123' });
+    const [{ integrations }] = init.mock.calls[0] as [
+      { integrations: (defaults: { name: string }[]) => { name?: string }[] },
+    ];
+    const names = integrations([
+      { name: 'Http' },
+      { name: 'Postgres' },
+      { name: 'Prisma' },
+    ]).map((integration) => integration.name);
+    expect(names).not.toContain('Postgres');
+    expect(names).toEqual(expect.arrayContaining(['Http', 'Prisma']));
+  });
+
   it('stays off when the environment cross-check disagrees', () => {
     const { reason, init } = load('development', {
       gitCommitSha: 'abc123',

@@ -201,6 +201,14 @@ never exposes them to client code:
   `suppressTracing`). Those `SELECT 1`s run outside any request, so each one
   was a root transaction, filed as "Slow DB Query" (MEETIFYY-API-2) whenever
   the pooler answered slowly.
+- **No node-postgres integration.** Database spans come from Prisma's own
+  instrumentation. Prisma's engine calls the pg adapter from native code, so
+  on Node 22 every pg span inherits the context the engine was loaded in —
+  the boot trace — and once that trace has been sent each one goes out as a
+  root transaction of its own ("pg-pool.connect", "SELECT 1"), whatever the
+  sample rate. `instrument.ts` filters the `Postgres` integration out; nothing
+  else uses `pg` directly. Reproduced on a real Postgres with
+  `node --no-async-context-frame` (Node 22's context behaviour on Node 24).
 - **Shutdown order.** Queue processors extend `DrainingWorkerHost`, which
   closes the BullMQ worker in `beforeApplicationShutdown`; `PrismaService`
   disconnects in `onApplicationShutdown`, after it. Before, the database closed

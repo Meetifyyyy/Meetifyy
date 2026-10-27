@@ -83,7 +83,23 @@ if (disabledReason) {
       dsn: obs.sentryDsn,
       environment: config.env,
       release: resolveRelease(),
-      integrations: [nodeProfilingIntegration()],
+      /**
+       * Database spans come from Prisma's own instrumentation, which records
+       * every statement under the operation that ran it. The node-postgres
+       * integration is removed because it cannot place its spans: Prisma's
+       * engine calls the pg adapter from native code, so on Node 22 every
+       * query's pg spans inherit the context the engine was LOADED in — the
+       * boot trace. Once that trace has been sent, each later pg span went out
+       * as a root transaction of its own ("pg-pool.connect", "SELECT 1"), for
+       * every query the replica ever ran, whatever the sample rate: 1,670 in
+       * the first 200 seconds of one dev revision whose boot trace happened
+       * to be sampled. They duplicated Prisma's statement spans and nothing
+       * else uses pg directly (the pool exists only for the Prisma adapter).
+       */
+      integrations: (defaults) => [
+        ...defaults.filter((integration) => integration.name !== 'Postgres'),
+        nodeProfilingIntegration(),
+      ],
       // Sampling defaults to 10% of traces and 5% of profiles in production and
       // 100% elsewhere — 1.0 in production adds measurable per-request overhead
       // and inflates Sentry costs. Both are tunable per environment.
