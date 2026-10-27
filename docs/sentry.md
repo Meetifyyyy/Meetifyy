@@ -201,6 +201,49 @@ never exposes them to client code:
   `suppressTracing`). Those `SELECT 1`s run outside any request, so each one
   was a root transaction, filed as "Slow DB Query" (MEETIFYY-API-2) whenever
   the pooler answered slowly.
+- **Only units of work start a trace.** A request, a queue job, and each
+  piece of background work traced by `traceBackground`
+  (`observability/background-trace.ts`). Everything inside one of those is
+  its child and is kept with it.
+  - **The rule** (`observability/trace-sampler.ts`, consulted only for a span
+    with no parent): a database or cache call never starts a trace (Redis,
+    Postgres, any `prisma:*` span), and neither does a Nest guard, interceptor
+    or middleware (`middleware.nestjs`). On their own they are fragments.
+    Before this, about 121,000 spans of BullMQ's own Redis polling and about
+    4,700 single-query traces from timers and sockets arrived in ten hours of
+    the dev API, each its own trace.
+  - **Background units**, one named transaction each, its queries inside:
+    - timers: `task activities.lifecycle-sweep` (every 60 s, 5%),
+      `task realtime.revoked-session-sweep` (60 s, 5%),
+      `task messages.instant-match-chat-cleanup` (5 min, 10%), the 6-hourly
+      retention sweeps, the slow-request and error-log flushes (only when
+      there is something to write), and the BullMQ fallback sweeps;
+    - socket events: `ws <event>` via `SocketTraceInterceptor` on the
+      gateway, plus `ws connect` / `ws disconnect`. Frequent ones are capped
+      in `SOCKET_TRACE_RATES` (heartbeat and typing 1%, receipts 5%); `ping`
+      is not traced;
+    - pub/sub: the two domain events that do I/O
+      (`pubsub user.settings_updated`, `pubsub activity.visibilityChanged`).
+      The other listeners only clear in-memory caches, so there is nothing to
+      trace.
+    Each unit starts a NEW trace, so a timer armed during boot does not run
+    every tick inside the boot trace (whose spans would later arrive as
+    orphans).
+  - The Instant Match expiry sweep (every 10 s) is sampled at 1%: about 86
+    traces a day instead of 8,640 (about 150,000 spans in the same ten hours).
+  - A rate a unit declares is an upper bound; the environment's
+    `SENTRY_TRACES_SAMPLE_RATE` still caps it. Everything else uses that rate,
+    or follows the browser's decision when the trace continues one.
+  - Errors are not sampled by this; they are always sent.
+  - New background work: wrap it in `traceBackground`, or its queries will not
+    be traced at all (they are dropped as fragments, not mis-traced).
+  - Checked on real Postgres (PGlite) and real Redis + BullMQ, Node 22
+    context semantics: 388 transactions before, 22 after, every one a request
+    or a unit with its database and Redis spans inside. Through a real Nest
+    gateway and socket.io client, acks, `{event, data}` replies and
+    `WsException` errors behave exactly as before. About 25 ns per sampling
+    decision; with BullMQ idle, the API's CPU time fell from 356 to 267 ms a
+    minute (184 ms without Sentry).
 - **No node-postgres integration.** Database spans come from Prisma's own
   instrumentation. Prisma's engine calls the pg adapter from native code, so
   on Node 22 every pg span inherits the context the engine was loaded in —
@@ -278,6 +321,18 @@ The API accepts `sentry-trace` and `baggage` (CORS `allowedHeaders` in
 which must not be switched on until that API is deployed in the environment:
 a preflight that rejects a header fails the whole request, and Vercel ships the
 website minutes before the API deploy completes.
+
+## Quota
+
+Spans (traces) and errors are metered separately. On 2026-10-27 the
+development org ran out of span quota (`span_usage_exceeded`): from then on
+every trace was refused with a 429 until the quota resets or is raised, while
+errors kept arriving. The SDKs honour the 429's retry-after and stop sending
+for that window, so the app itself is not slowed; a browser still logs the
+refused request in its console. Find dropped volume and its reason with the
+Sentry connector's `find_dropped_events`, or Stats in Sentry. The causes were
+background noise, all fixed in the API: the database keep-alive, orphaned
+node-postgres spans, BullMQ's Redis polling and the 10-second sweep (see API).
 
 ## Disabling locally
 
