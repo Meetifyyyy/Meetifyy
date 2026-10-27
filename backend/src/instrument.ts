@@ -35,6 +35,7 @@ import * as Sentry from '@sentry/nestjs';
 import { nodeProfilingIntegration } from '@sentry/profiling-node';
 import { config } from './config';
 import { scrubEvent } from './observability/sentry-scrub';
+import { createTracesSampler } from './observability/trace-sampler';
 
 const obs = config.app.observability;
 
@@ -102,8 +103,10 @@ if (disabledReason) {
       ],
       // Sampling defaults to 10% of traces and 5% of profiles in production and
       // 100% elsewhere — 1.0 in production adds measurable per-request overhead
-      // and inflates Sentry costs. Both are tunable per environment.
-      tracesSampleRate: obs.sentryTracesSampleRate,
+      // and inflates Sentry costs. Both are tunable per environment. Traces
+      // are sampled at that rate except BullMQ's own Redis polling (never) and
+      // the 10-second Instant Match sweep (1%): see observability/trace-sampler.
+      tracesSampler: createTracesSampler(obs.sentryTracesSampleRate),
       profilesSampleRate: obs.sentryProfilesSampleRate,
       initialScope: { tags: { app: 'api' } },
       // Health probes run every few seconds and say nothing about real traffic.
