@@ -4,8 +4,9 @@
  *
  * Work that runs outside an HTTP request has no trace to join, so every
  * database query or Redis command inside it used to start a trace of its own:
- * on the development API, about 4,700 single-query traces in ten hours, none
- * of which said what work it was part of. trace-sampler.ts now drops a
+ * on the development API, an estimated 4,700 single-query traces in ten hours
+ * (about 940 stored, at its 20% sample rate), none of which said what work it
+ * was part of. trace-sampler.ts now drops a
  * database or cache call that starts a trace, and this is how such work is
  * traced instead: under its own name, with its queries as children, and at a
  * lower rate when it runs often.

@@ -209,9 +209,11 @@ never exposes them to client code:
     with no parent): a database or cache call never starts a trace (Redis,
     Postgres, any `prisma:*` span), and neither does a Nest guard, interceptor
     or middleware (`middleware.nestjs`). On their own they are fragments.
-    Before this, about 121,000 spans of BullMQ's own Redis polling and about
-    4,700 single-query traces from timers and sockets arrived in ten hours of
-    the dev API, each its own trace.
+    Before this, in ten hours of the dev API, BullMQ's own Redis polling
+    produced about 121,000 spans and timers and sockets about 4,700
+    single-query traces, each its own trace. These are Sentry's estimates of
+    what the API produced: Explore extrapolates `count()` by the sample rate,
+    and at the dev API's 20% it stored a fifth (`count_sample()`).
   - **Background units**, one named transaction each, its queries inside:
     - timers: `task activities.lifecycle-sweep` (every 60 s, 5%),
       `task realtime.revoked-session-sweep` (60 s, 5%),
@@ -230,7 +232,8 @@ never exposes them to client code:
     every tick inside the boot trace (whose spans would later arrive as
     orphans).
   - The Instant Match expiry sweep (every 10 s) is sampled at 1%: about 86
-    traces a day instead of 8,640 (about 150,000 spans in the same ten hours).
+    traces a day instead of about 1,700 at the dev API's 20% (an estimated
+    150,000 spans produced in the same ten hours).
   - A rate a unit declares is an upper bound; the environment's
     `SENTRY_TRACES_SAMPLE_RATE` still caps it. Everything else uses that rate,
     or follows the browser's decision when the trace continues one.

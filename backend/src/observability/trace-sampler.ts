@@ -7,8 +7,9 @@
  * decision, so a request's database and Redis spans are kept or dropped with
  * the request — nothing here thins out a trace.
  *
- * WHY IT EXISTS: about ten hours of the development API, measured in Sentry on
- * 2026-10-26 before the org's span quota ran out:
+ * WHY IT EXISTS: about ten hours of the development API on 2026-10-26, before
+ * the org's span quota ran out. Sentry's estimate of what the API produced;
+ * at the dev API's 20% sample rate it stored a fifth of each:
  *   redis-evalsha / redis-bzpopmin / redis-client …   ~121,000 spans
  *   instant-match process (the expiry sweep)           ~150,000 spans
  *   single Prisma queries from timers, sockets …       ~4,700 traces
