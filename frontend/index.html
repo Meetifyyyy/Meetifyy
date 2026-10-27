@@ -402,18 +402,21 @@
       }
 
       /*
-       * `redirect: 'manual'`: the development site sits behind Cloudflare
-       * Access, and a page restored from cache after its Access session has
-       * expired gets this request redirected to the Access login on another
-       * origin. Followed, that was a CSP report, a CORS failure and
-       * ERR_FAILED in the console on every such load; and the app went on
-       * running with every later asset request (a lazy route chunk) failing
-       * the same way. Not followed, it arrives here as an opaque redirect,
-       * and the page is reloaded once, so the browser goes through the login
-       * at the top level and comes back. Production is not behind Access and
-       * never redirects this file.
+       * The development site sits behind Cloudflare Access, which lets a
+       * request through only with its session cookie. `credentials:
+       * 'same-origin'` sends it: this used to be 'omit', so on dev EVERY check
+       * was redirected to the Access login on another origin, signed in or
+       * not — a CSP report, a CORS failure and ERR_FAILED in the console on
+       * every load, and the version gate never once read the version there.
+       *
+       * `redirect: 'manual'` covers the session that really has expired (a
+       * page restored from cache, a tab left open): instead of following the
+       * redirect into the same three errors it arrives here as an opaque
+       * redirect, and the page is reloaded once, so the browser goes through
+       * the login at the top level and comes back. Production is not behind
+       * Access and never redirects this file.
        */
-      fetch('/version.json', { cache: 'no-store', credentials: 'omit', redirect: 'manual' })
+      fetch('/version.json', { cache: 'no-store', credentials: 'same-origin', redirect: 'manual' })
         .then(function (r) {
           if (r.type === 'opaqueredirect') {
             var EDGE_KEY = 'meetifyy_edge_auth_reload';
