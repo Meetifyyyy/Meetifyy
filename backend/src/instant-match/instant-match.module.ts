@@ -10,6 +10,8 @@ import {
   JOB_EXPIRE_STALE,
 } from './instant-match.processor';
 import { EXPIRY_SWEEP_MS } from './instant-match.constants';
+import { traceBackground } from '../observability/background-trace';
+import { SWEEP_TRACE_RATE } from '../observability/trace-sampler';
 import { PrismaModule } from '../prisma/prisma.module';
 import { MessagesModule } from '../messages/messages.module';
 import { RedisModule } from '../redis/redis.module';
@@ -76,7 +78,15 @@ export class InstantMatchModule implements OnModuleInit, OnModuleDestroy {
         err,
       );
       this.fallbackTimer = setInterval(() => {
-        void this.instantMatchService.expireStale().catch((sweepErr) => {
+        // Every 10 s, like the queued sweep, so traced at the same 1%.
+        void traceBackground(
+          {
+            name: 'task instant-match.expiry-sweep',
+            op: 'task',
+            traceRate: SWEEP_TRACE_RATE,
+          },
+          () => this.instantMatchService.expireStale(),
+        ).catch((sweepErr) => {
           this.logger.error('Fallback expiry sweep failed', sweepErr);
         });
       }, EXPIRY_SWEEP_MS);

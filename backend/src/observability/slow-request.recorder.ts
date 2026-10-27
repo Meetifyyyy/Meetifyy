@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 
 import { config } from '../config';
 import { PrismaService } from '../prisma/prisma.service';
+import { traceBackground } from './background-trace';
 
 export interface SlowRequestRecord {
   route: string;
@@ -69,7 +70,11 @@ export class SlowRequestRecorder implements OnModuleDestroy {
     this.buffer = [];
 
     try {
-      await this.prisma.slowRequest.createMany({ data: batch });
+      // Traced as a unit only when there is something to write.
+      await traceBackground(
+        { name: 'task slow-requests.flush', op: 'task' },
+        () => this.prisma.slowRequest.createMany({ data: batch }),
+      );
     } catch (error) {
       // Deliberately not re-queued: if the database is the reason requests are
       // slow, retrying these inserts makes the incident worse.

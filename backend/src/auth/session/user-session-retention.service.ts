@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 
 import { UserSessionService } from './user-session.service';
+import { traceBackground } from '../../observability/background-trace';
 
 /**
  * Deletes session rows that can no longer authorize anything.
@@ -43,7 +44,11 @@ export class UserSessionRetentionService
   async onModuleInit(): Promise<void> {
     await this.sweep();
     this.timer = setInterval(
-      () => void this.sweep(),
+      () =>
+        void traceBackground(
+          { name: 'task sessions.retention-sweep', op: 'task' },
+          () => this.sweep(),
+        ),
       UserSessionRetentionService.SWEEP_INTERVAL_MS,
     );
     // Never a reason to keep the process alive for this.

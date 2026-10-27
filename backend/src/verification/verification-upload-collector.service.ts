@@ -5,6 +5,7 @@ import {
   OnModuleDestroy,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { traceBackground } from '../observability/background-trace';
 import { StorageService } from '../uploads/uploads.service';
 
 /**
@@ -62,7 +63,11 @@ export class VerificationUploadCollectorService
   async onModuleInit() {
     await this.sweep();
     this.timer = setInterval(
-      () => void this.sweep(),
+      () =>
+        void traceBackground(
+          { name: 'task verification.upload-sweep', op: 'task' },
+          () => this.sweep(),
+        ),
       VerificationUploadCollectorService.SWEEP_INTERVAL_MS,
     );
     // A pending interval must not hold the process open on shutdown.

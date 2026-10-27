@@ -7,6 +7,7 @@ import {
 
 import { config } from '../config';
 import { PrismaService } from '../prisma/prisma.service';
+import { traceBackground } from './background-trace';
 
 /**
  * Enforces the rolling retention window on SlowRequest.
@@ -33,7 +34,11 @@ export class SlowRequestRetentionService
     if (!config.observability.slowRequests.enabled) return;
     await this.sweep();
     this.timer = setInterval(
-      () => void this.sweep(),
+      () =>
+        void traceBackground(
+          { name: 'task slow-requests.retention-sweep', op: 'task' },
+          () => this.sweep(),
+        ),
       SlowRequestRetentionService.SWEEP_INTERVAL_MS,
     );
     this.timer.unref?.();

@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 
 import { config } from '../config';
 import { PrismaService } from '../prisma/prisma.service';
+import { traceBackground } from './background-trace';
 
 export type ErrorSeverity = 'UNEXPECTED' | 'EXPECTED';
 
@@ -118,7 +119,10 @@ export class ErrorLogRecorder implements OnModuleDestroy {
     this.buffer = [];
 
     try {
-      await this.prisma.errorLog.createMany({ data: batch });
+      // Traced as a unit only when there is something to write.
+      await traceBackground({ name: 'task error-logs.flush', op: 'task' }, () =>
+        this.prisma.errorLog.createMany({ data: batch }),
+      );
     } catch (error) {
       // Not re-queued. If the database is the reason these errors exist,
       // retrying the inserts makes the incident worse.

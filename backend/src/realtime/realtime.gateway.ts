@@ -8,6 +8,7 @@ import {
   ConnectedSocket,
   OnGatewayInit,
 } from '@nestjs/websockets';
+import { UseInterceptors } from '@nestjs/common';
 import type { IncomingHttpHeaders } from 'http';
 import type { AppServer, AppSocket } from './socket-types';
 import {
@@ -67,6 +68,8 @@ import { config } from '../config';
 import { normalizeIp } from '../common/rate-limit/client-ip.util';
 import type { RateLimitPolicyName } from '../config/rate-limit.config';
 import { detach } from '../common/utils/detach.util';
+import { traceBackground } from '../observability/background-trace';
+import { SocketTraceInterceptor } from './socket-trace.interceptor';
 import { errorMessage } from '../common/utils/error.util';
 import { isRecord } from '../common/utils/type-guards.util';
 import {
@@ -155,6 +158,10 @@ const RATE_LIMIT_MESSAGES: Record<string, string> = Object.fromEntries(
     credentials: true,
   },
 })
+// Each socket event is traced as one unit, with its queries as children
+// (socket-trace.interceptor.ts sets the name and, for frequent events, a low
+// rate). Without it every query a handler made was a trace of its own.
+@UseInterceptors(SocketTraceInterceptor)
 export class RealtimeGateway
   implements
     OnGatewayInit,
@@ -301,7 +308,15 @@ export class RealtimeGateway
      * next step if that minute matters.
      */
     this.sessionSweepTimer = setInterval(() => {
-      void this.disconnectRevokedSessions();
+      // 1,440 a day, so traced at 5% (observability/background-trace).
+      void traceBackground(
+        {
+          name: 'task realtime.revoked-session-sweep',
+          op: 'task',
+          traceRate: 0.05,
+        },
+        () => this.disconnectRevokedSessions(),
+      );
     }, 60_000);
     this.sessionSweepTimer.unref?.();
 
@@ -471,30 +486,38 @@ export class RealtimeGateway
           status: 'offline',
           lastActive: new Date().toISOString(),
         };
-        this.prisma.conversationParticipant
-          .findMany({
-            where: { userId: uId, deletedAt: null, leftAt: null },
-            select: { conversationId: true },
-          })
-          .then((userConvs) => {
-            userConvs.forEach((c) => {
-              if (c.conversationId)
-                this.server
-                  .to(`conv_${c.conversationId}`)
-                  .emit('presence:update', offlinePayload);
-            });
-          })
-          .catch(() => {});
+        // One traced unit; each step still fails on its own, silently.
+        void traceBackground(
+          { name: 'pubsub user.settings_updated', op: 'pubsub.process' },
+          () =>
+            Promise.all([
+              this.prisma.conversationParticipant
+                .findMany({
+                  where: { userId: uId, deletedAt: null, leftAt: null },
+                  select: { conversationId: true },
+                })
+                .then((userConvs) => {
+                  userConvs.forEach((c) => {
+                    if (c.conversationId)
+                      this.server
+                        .to(`conv_${c.conversationId}`)
+                        .emit('presence:update', offlinePayload);
+                  });
+                })
+                .catch(() => {}),
 
-        // Re-evaluate and broadcast true status based on new rules
-        this.presenceService
-          .getPresence(uId)
-          .then((presence) => {
-            const status = presence?.status || 'offline';
-            const lastSeen = presence?.lastSeen || new Date().toISOString();
-            void this.broadcastPresenceUpdate(uId, status, lastSeen);
-          })
-          .catch(() => {});
+              // Re-evaluate and broadcast true status based on new rules
+              this.presenceService
+                .getPresence(uId)
+                .then((presence) => {
+                  const status = presence?.status || 'offline';
+                  const lastSeen =
+                    presence?.lastSeen || new Date().toISOString();
+                  return this.broadcastPresenceUpdate(uId, status, lastSeen);
+                })
+                .catch(() => {}),
+            ]),
+        );
       }
     }
 
@@ -549,13 +572,17 @@ export class RealtimeGateway
       if (changedId) {
         // Evict first, notify second — the surviving subscribers are exactly the
         // ones still authorized when the event lands.
-        this.revalidateActivityRoom(changedId)
-          .then(() => {
-            this.server
-              .to(`activity_${changedId}`)
-              .emit('domainEvent', payload);
-          })
-          .catch(() => {});
+        void traceBackground(
+          { name: 'pubsub activity.visibilityChanged', op: 'pubsub.process' },
+          () =>
+            this.revalidateActivityRoom(changedId)
+              .then(() => {
+                this.server
+                  .to(`activity_${changedId}`)
+                  .emit('domainEvent', payload);
+              })
+              .catch(() => {}),
+        );
       }
       return;
     }
@@ -791,7 +818,14 @@ export class RealtimeGateway
     if (this.cacheEvictionTimer) clearInterval(this.cacheEvictionTimer);
   }
 
-  async handleConnection(client: AppSocket) {
+  /** Each connection is traced as one unit (observability/background-trace). */
+  handleConnection(client: AppSocket): Promise<void> {
+    return traceBackground({ name: 'ws connect', op: 'websocket.server' }, () =>
+      this.connect(client),
+    );
+  }
+
+  private async connect(client: AppSocket): Promise<void> {
     // Connection limiting comes in two tiers, and the ORDER is load-bearing.
     //
     // This one is per-address and runs BEFORE the token is verified, because
@@ -1117,7 +1151,14 @@ export class RealtimeGateway
     this.logger.log(`Connected user=${userId} socket=${client.id}`);
   }
 
-  async handleDisconnect(client: AppSocket) {
+  handleDisconnect(client: AppSocket): Promise<void> {
+    return traceBackground(
+      { name: 'ws disconnect', op: 'websocket.server' },
+      () => this.disconnect(client),
+    );
+  }
+
+  private async disconnect(client: AppSocket): Promise<void> {
     const userId = client.data.userId;
 
     if (userId) {

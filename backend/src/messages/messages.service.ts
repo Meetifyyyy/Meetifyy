@@ -34,6 +34,7 @@ import {
 } from './core/group-membership';
 import Redis from 'ioredis';
 import { PrismaService } from '../prisma/prisma.service';
+import { traceBackground } from '../observability/background-trace';
 import { PresenceService } from '../presence/presence.service';
 import { DomainEventService } from '../events/domain-event.service';
 import { generatePublicId } from '../common/utils/public-id.util';
@@ -299,7 +300,16 @@ export class MessagesService
     // as broken. Expiry is driven purely by `expiresAt`, which is stamped at
     // creation — it does not depend on any message ever being sent.
     this.instantMatchCleanupTimer = setInterval(
-      () => void this.cleanupExpiredInstantMatches(),
+      () =>
+        // 288 a day, so traced at 10% (observability/background-trace).
+        void traceBackground(
+          {
+            name: 'task messages.instant-match-chat-cleanup',
+            op: 'task',
+            traceRate: 0.1,
+          },
+          () => this.cleanupExpiredInstantMatches(),
+        ),
       5 * 60 * 1000,
     );
     this.instantMatchCleanupTimer.unref?.();

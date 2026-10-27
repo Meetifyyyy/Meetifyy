@@ -69,6 +69,7 @@ import {
 import { CrewActivityMember, NotificationType, Prisma } from '@prisma/client';
 import { detach } from '../common/utils/detach.util';
 import { errorMessage } from '../common/utils/error.util';
+import { traceBackground } from '../observability/background-trace';
 import { VerificationAccessService } from '../common/verification/verification-access.service';
 import type { CreateActivityDto } from './dto/activity.dto';
 
@@ -209,11 +210,22 @@ export class ActivitiesService implements OnModuleInit {
   }
 
   onModuleInit() {
-    // Run auto-expiration every 60 seconds
+    // Run auto-expiration every 60 seconds, traced as one unit (1,440 a day,
+    // so at 5%). Each step still fails on its own without stopping the others.
     setInterval(() => {
-      this.autoExpireActivities().catch(() => {});
-      this.expireStartedInvitations().catch(() => {});
-      this.announceStartedActivities().catch(() => {});
+      void traceBackground(
+        {
+          name: 'task activities.lifecycle-sweep',
+          op: 'task',
+          traceRate: 0.05,
+        },
+        () =>
+          Promise.all([
+            this.autoExpireActivities().catch(() => {}),
+            this.expireStartedInvitations().catch(() => {}),
+            this.announceStartedActivities().catch(() => {}),
+          ]),
+      );
     }, 60000);
   }
 

@@ -7,6 +7,7 @@ import {
 
 import { config } from '../config';
 import { PrismaService } from '../prisma/prisma.service';
+import { traceBackground } from './background-trace';
 
 /**
  * Enforces the rolling retention window on ErrorLog.
@@ -31,7 +32,11 @@ export class ErrorLogRetentionService implements OnModuleInit, OnModuleDestroy {
     if (!config.observability.errorLogs.enabled) return;
     await this.sweep();
     this.timer = setInterval(
-      () => void this.sweep(),
+      () =>
+        void traceBackground(
+          { name: 'task error-logs.retention-sweep', op: 'task' },
+          () => this.sweep(),
+        ),
       ErrorLogRetentionService.SWEEP_INTERVAL_MS,
     );
     this.timer.unref?.();

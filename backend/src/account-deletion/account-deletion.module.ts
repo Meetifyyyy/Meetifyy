@@ -18,6 +18,7 @@ import { UploadsModule } from '../uploads/uploads.module';
 import { UserOtpModule } from '../otp/user-otp.module';
 import { EmailModule } from '../email/email.module';
 import { AuthModule } from '../auth/auth.module';
+import { traceBackground } from '../observability/background-trace';
 
 @Module({
   imports: [
@@ -78,7 +79,10 @@ export class AccountDeletionModule implements OnModuleInit, OnModuleDestroy {
         err,
       );
       this.fallbackTimer = setInterval(() => {
-        void this.purge.runSweep().catch((sweepErr) => {
+        void traceBackground(
+          { name: 'task account-deletion.purge-sweep', op: 'task' },
+          () => this.purge.runSweep(),
+        ).catch((sweepErr) => {
           this.logger.error('Fallback purge sweep failed', sweepErr);
         });
       }, PURGE_SWEEP_MS);
