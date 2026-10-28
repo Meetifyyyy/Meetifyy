@@ -346,16 +346,21 @@
    never a fifth to reveal, and the row simply left the rest of its width empty.
    A cap here now would clip cards the measurement had already made room for. */
 
-/* The college picker (join flow) sits on a plain page colour instead of the
-   app's blue radial gradient. html and body both paint that gradient (html
-   with !important), so both are overridden while this screen is mounted;
-   --color-bg-white is the dark surface in dark mode.
-   Phones only: on large screens the picker is a card on the desktop layout,
-   whose header band and sidebar are built for the gradient. */
+/* The Campus page, verified or not, sits on a plain page colour instead of the
+   app's blue radial gradient: white in the light theme, pure black in the dark
+   one. html and body both paint that gradient (html with !important), so both
+   are overridden while this page is mounted. Phones only: on large screens
+   the page is a card on the desktop layout, whose header band and sidebar are
+   built for the gradient. */
 @media (max-width: 768px) {
-  :global(html):has(.hubJoin),
-  :global(html):has(.hubJoin) :global(body) {
-    background: var(--color-bg-white, #ffffff) !important;
+  :global(html):has(.campusPage),
+  :global(html):has(.campusPage) :global(body) {
+    background: #ffffff !important;
+  }
+
+  :global(html[data-theme='dark']):has(.campusPage),
+  :global(html[data-theme='dark']):has(.campusPage) :global(body) {
+    background: #000000 !important;
   }
 }
 
