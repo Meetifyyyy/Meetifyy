@@ -69,6 +69,16 @@ const TreeActionsContext = createContext({
 const TreeSelectionContext = createContext(null);
 
 /**
+ * Whether the section has already shown its first comments (a ref, so reading
+ * it never re-renders anything). A row decides once, when it mounts, whether
+ * to fade in: the ones that are part of the section as it opens (including
+ * coming back to it from a profile) are simply there, as they were; only a
+ * comment that arrives afterwards (yours, someone's live, the next page, a
+ * reply opened) eases in.
+ */
+const SectionShownContext = createContext({ current: true });
+
+/**
  * Per-comment UI selection for one comment section.
  *
  * Deliberately not React state: a comment must be able to ask "am I the one
@@ -199,6 +209,9 @@ export function CommentTreeRoot({ postId, comments, onReplyRequest, replyTargetI
   if (storeRef.current === null) storeRef.current = createSelectionStore();
   const store = storeRef.current;
 
+  const shownRef = useRef(false);
+  useEffect(() => { shownRef.current = true; }, []);
+
   // A #comment-<id> link: open the thread holding it, then bring it into view.
   useEffect(() => {
     if (!window.location.hash.startsWith('#comment-')) return undefined;
@@ -234,11 +247,13 @@ export function CommentTreeRoot({ postId, comments, onReplyRequest, replyTargetI
   return (
     <TreeSelectionContext.Provider value={store}>
       <TreeActionsContext.Provider value={treeActions}>
-        <div className={styles.treeRoot}>
-          {comments.map((comment) => (
-            <CommentNode key={comment.id} postId={postId} comment={comment} />
-          ))}
-        </div>
+        <SectionShownContext.Provider value={shownRef}>
+          <div className={styles.treeRoot}>
+            {comments.map((comment) => (
+              <CommentNode key={comment.id} postId={postId} comment={comment} />
+            ))}
+          </div>
+        </SectionShownContext.Provider>
       </TreeActionsContext.Provider>
     </TreeSelectionContext.Provider>
   );
@@ -391,7 +406,9 @@ function CommentItemImpl({ postId, comment, threadId, replyTo = null, isReply })
     toggleLike(postId, comment, currentUser?.id);
   };
 
-  const rowClass = `${styles.comment} ${isReply ? styles.reply : styles.topLevel}`;
+  const sectionShown = useContext(SectionShownContext);
+  const [entersLate] = useState(() => sectionShown.current);
+  const rowClass = `${styles.comment} ${isReply ? styles.reply : styles.topLevel} ${entersLate ? styles.rowEnter : ''}`;
 
   // ─── Deleted: a placeholder, kept so the replies around it still make sense.
   if (comment.isDeleted) {

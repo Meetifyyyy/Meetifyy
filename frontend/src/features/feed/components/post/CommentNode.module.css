@@ -63,6 +63,10 @@
   position: relative;
   /* Keeps the highlight's z-index:-1 inside the row, above the page. */
   isolation: isolate;
+}
+
+/* Only a comment that arrives after the section is already on screen. */
+.rowEnter {
   animation: rowAppear 180ms ease-out both;
 }
 
@@ -423,7 +427,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .comment { animation: none; }
+  .rowEnter { animation: none; }
   .comment::before { transition: none; }
   .actionBtn,
   .replyToggle,
