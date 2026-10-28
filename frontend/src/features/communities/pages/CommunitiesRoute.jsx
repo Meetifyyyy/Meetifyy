@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus, Search } from '@shared/components/icons';
 import { useAuth } from '@shared/context/AuthContext';
@@ -9,6 +9,7 @@ import RightPanel from '@layout/RightPanel';
 import CommunitiesAside from '../components/directory/CommunitiesAside';
 import styles from './CommunitiesRoute.module.css';
 import { useWhiteSurface } from '@shared/hooks/useWhiteSurface';
+import { settleAfter, useTabSwipe } from '../hooks/useTabSwipe';
 
 const CreateCommunityModal = lazy(() => import('../components/modals/CreateCommunityModal'));
 
@@ -25,6 +26,11 @@ const TABS = [
  * The tab lives in the URL (`?tab=explore`),
  * replaced rather than pushed, so back from a community returns to the same
  * view and a link can open Explore directly.
+ *
+ * The two views are panes side by side. Choosing a tab slides to the other
+ * pane, and a sideways swipe on the content drags them (hooks/useTabSwipe);
+ * the indicator under the tabs follows both. At rest only the active pane is in
+ * the page, so the page is as tall as that pane and nothing else.
  */
 export default function CommunitiesRoute() {
   const navigate = useNavigate();
@@ -35,6 +41,17 @@ export default function CommunitiesRoute() {
   useWhiteSurface();
 
   const tab = params.get('tab') === 'explore' ? 'explore' : 'yours';
+  const tabIndex = TABS.findIndex((t) => t.id === tab);
+
+  const viewportRef = useRef(null);
+  const trackRef = useRef(null);
+  const tabsRef = useRef(null);
+  const settleTimer = useRef(0);
+  const prevTab = useRef(tab);
+  // Explore is built the first time it is wanted (opened, or a swipe towards it
+  // starts) and kept after, so it does not load for someone who never goes there.
+  const [exploreWanted, setExploreWanted] = useState(tab === 'explore');
+  const exploreMounted = exploreWanted || tab === 'explore';
 
   const update = useCallback((changes) => {
     setParams((prev) => {
@@ -48,6 +65,44 @@ export default function CommunitiesRoute() {
   }, [setParams]);
 
   const setTab = useCallback((id) => update({ tab: id === 'explore' ? 'explore' : '' }), [update]);
+
+  const swipeCommitted = useTabSwipe({
+    viewportRef,
+    trackRef,
+    tabsRef,
+    index: tabIndex,
+    count: TABS.length,
+    timer: settleTimer,
+    onStart: () => setExploreWanted(true),
+    onCommit: (i) => setTab(TABS[i].id),
+  });
+
+  // Choosing a tab (a tap, a link, Back) slides to its pane. A swipe has already
+  // started the slide from where the finger let go, so it is only left to finish.
+  useLayoutEffect(() => {
+    const from = TABS.findIndex((t) => t.id === prevTab.current);
+    prevTab.current = tab;
+    const track = trackRef.current;
+    const tabs = tabsRef.current;
+    if (!track || from === tabIndex) return;
+    if (swipeCommitted.current) {
+      swipeCommitted.current = false;
+      return;
+    }
+    window.clearTimeout(settleTimer.current);
+    track.dataset.moving = '1';
+    track.style.transition = 'none';
+    track.style.setProperty('--drag', '0px');
+    track.style.setProperty('--tab-index', String(from));
+    tabs?.style.setProperty('--tab-progress', String(from));
+    void track.offsetWidth; // the start position takes hold before the slide
+    track.style.transition = '';
+    track.style.setProperty('--tab-index', String(tabIndex));
+    tabs?.style.setProperty('--tab-progress', String(tabIndex));
+    settleAfter(settleTimer, track, tabs);
+  }, [tab, tabIndex, swipeCommitted]);
+
+  useEffect(() => () => window.clearTimeout(settleTimer.current), []);
   // Search is its own page. The scroll position is kept so Back from it lands
   // where the viewer left off rather than at the top.
   const openSearch = useCallback(() => {
@@ -91,13 +146,15 @@ export default function CommunitiesRoute() {
                 </button>
               </div>
             </div>
-            <nav data-tab={tab} className={styles.tabs} role="tablist" aria-label="Communities">
+            <nav ref={tabsRef} data-tab={tab} className={styles.tabs} role="tablist" aria-label="Communities">
               {TABS.map(({ id, label }) => (
                 <button
                   key={id}
+                  id={`communities-tab-${id}`}
                   type="button"
                   role="tab"
                   aria-selected={tab === id}
+                  aria-controls={`communities-pane-${id}`}
                   className={`${styles.tab} ${tab === id ? styles.tabActive : ''}`}
                   onClick={() => setTab(id)}
                 >
@@ -107,11 +164,30 @@ export default function CommunitiesRoute() {
             </nav>
           </div>
 
-          {tab === 'yours' ? (
-            <YourCommunities />
-          ) : (
-            <ExploreCommunities />
-          )}
+          <div ref={viewportRef} className={styles.viewport}>
+            <div ref={trackRef} className={styles.track}>
+              <section
+                id="communities-pane-yours"
+                role="tabpanel"
+                aria-labelledby="communities-tab-yours"
+                data-active={tab === 'yours'}
+                className={styles.pane}
+              >
+                <YourCommunities />
+              </section>
+              {exploreMounted ? (
+                <section
+                  id="communities-pane-explore"
+                  role="tabpanel"
+                  aria-labelledby="communities-tab-explore"
+                  data-active={tab === 'explore'}
+                  className={styles.pane}
+                >
+                  <ExploreCommunities />
+                </section>
+              ) : null}
+            </div>
+          </div>
         </div>
       </main>
 
