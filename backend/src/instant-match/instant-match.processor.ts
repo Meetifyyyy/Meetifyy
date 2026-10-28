@@ -6,6 +6,7 @@ import { InstantMatchService } from './instant-match.service';
 
 export const INSTANT_MATCH_QUEUE = 'instant-match';
 export const JOB_EXPIRE_STALE = 'expire-stale';
+export const JOB_EXPIRE_REQUEST = 'expire-request';
 
 /**
  * Runs the expiry sweep on the shared BullMQ queue rather than on a per-process
@@ -23,6 +24,15 @@ export class InstantMatchProcessor extends DrainingWorkerHost {
   async process(job: Job): Promise<void> {
     if (job.name === JOB_EXPIRE_STALE) {
       await this.instantMatchService.expireStale();
+    } else if (job.name === JOB_EXPIRE_REQUEST) {
+      const data: unknown = job.data;
+      const sessionId =
+        typeof data === 'object' && data !== null && 'sessionId' in data
+          ? data.sessionId
+          : null;
+      if (typeof sessionId === 'string') {
+        await this.instantMatchService.expireRequest(sessionId);
+      }
     }
   }
 

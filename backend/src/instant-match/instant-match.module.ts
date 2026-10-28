@@ -1,13 +1,17 @@
 import { Module, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
 import { BullModule, InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
-import { InstantMatchService } from './instant-match.service';
+import {
+  InstantMatchService,
+  setRequestExpiryScheduler,
+} from './instant-match.service';
 import { InstantMatchController } from './instant-match.controller';
 import { InstantMatchRateLimiter } from './instant-match.rate-limiter';
 import {
   InstantMatchProcessor,
   INSTANT_MATCH_QUEUE,
   JOB_EXPIRE_STALE,
+  JOB_EXPIRE_REQUEST,
 } from './instant-match.processor';
 import { EXPIRY_SWEEP_MS } from './instant-match.constants';
 import { traceBackground } from '../observability/background-trace';
@@ -49,6 +53,28 @@ export class InstantMatchModule implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit() {
+    // A request is withdrawn at its own deadline by a delayed job; the sweep
+    // below is the backstop if that job never runs.
+    setRequestExpiryScheduler((sessionId, delayMs) => {
+      this.queue
+        .add(
+          JOB_EXPIRE_REQUEST,
+          { sessionId },
+          {
+            delay: delayMs,
+            jobId: `${JOB_EXPIRE_REQUEST}-${sessionId}`,
+            removeOnComplete: true,
+            removeOnFail: 50,
+          },
+        )
+        .catch((err: unknown) => {
+          this.logger.warn(
+            `Could not schedule the request expiry for ${sessionId}; the sweep will withdraw it`,
+            err,
+          );
+        });
+    });
+
     try {
       // Repeatable jobs are keyed by name + pattern, so re-registering on every
       // boot is a no-op rather than a duplicate schedule.
@@ -95,6 +121,7 @@ export class InstantMatchModule implements OnModuleInit, OnModuleDestroy {
   }
 
   onModuleDestroy() {
+    setRequestExpiryScheduler(null);
     if (this.fallbackTimer) clearInterval(this.fallbackTimer);
   }
 }

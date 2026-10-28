@@ -3,6 +3,7 @@ import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import {
   InstantMatchService,
   setRealtimeGatewayRef,
+  setRequestExpiryScheduler,
 } from './instant-match.service';
 import {
   PrismaFake,
@@ -635,6 +636,56 @@ describe('InstantMatchService', () => {
       const byUser = Object.fromEntries(emitter.emitMatchDeclined.mock.calls);
       expect(byUser.alice.reason).toMatch(/request cancelled/i);
       expect(byUser.bob.reason).toMatch(/withdrew/i);
+    });
+
+    it('waits exactly 30 seconds for a yes, whatever the activity, and schedules the withdrawal', async () => {
+      const scheduled: Array<[string, number]> = [];
+      setRequestExpiryScheduler((id, delay) => scheduled.push([id, delay]));
+      try {
+        // Bob's coffee would be 30s anyway; a sports ask would have been 60.
+        const before = Date.now();
+        await service.requestMatch('alice', 'bob');
+
+        const byUser = Object.fromEntries(emitter.emitMatchFound.mock.calls);
+        expect(byUser.alice.timer).toBe(30);
+        expect(byUser.bob.timer).toBe(30);
+        const left = prisma.sessions[0].expiresAt.getTime() - before;
+        // No grace on top: what they see is what the server enforces.
+        expect(left).toBeGreaterThanOrEqual(30_000);
+        expect(left).toBeLessThan(31_000);
+        expect(scheduled).toEqual([[prisma.sessions[0].id, 30_250]]);
+      } finally {
+        setRequestExpiryScheduler(null);
+      }
+    });
+
+    it('withdraws an unanswered request and returns both to searching', async () => {
+      await service.requestMatch('alice', 'bob');
+      emitter.emitMatchDeclined.mockClear();
+
+      await service.expireRequest(prisma.sessions[0].id);
+
+      expect(prisma.sessions[0].status).toBe('EXPIRED');
+      expect(prisma.queue.map((e) => e.userId).sort()).toEqual([
+        'alice',
+        'bob',
+      ]);
+      const byUser = Object.fromEntries(emitter.emitMatchDeclined.mock.calls);
+      expect(byUser.alice.reason).toMatch(/request withdrawn/i);
+      expect(byUser.alice.requeued).toBe(true);
+      expect(byUser.bob.reason).toMatch(/request expired/i);
+      expect(byUser.bob.requeued).toBe(true);
+    });
+
+    it('leaves a request that was answered in time alone', async () => {
+      await service.requestMatch('alice', 'bob');
+      await service.respondToMatch('bob', prisma.sessions[0].id, 'accept');
+      emitter.emitMatchDeclined.mockClear();
+
+      await service.expireRequest(prisma.sessions[0].id);
+
+      expect(prisma.sessions[0].status).toBe('ACCEPTED');
+      expect(emitter.emitMatchDeclined).not.toHaveBeenCalled();
     });
 
     it('is about what the other person is up for, on both cards and the session', async () => {

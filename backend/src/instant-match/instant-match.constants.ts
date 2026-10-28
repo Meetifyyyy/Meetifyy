@@ -48,6 +48,11 @@ export const ACCEPT_TIMER_INDOOR = 30;
 export const ACCEPT_TIMER_OUTDOOR = 60;
 export const ACCEPT_TIMER_TODAY = 90;
 
+/** How long a request sent straight to someone waits for a yes, whatever the
+ *  activity. When it passes unanswered the request is withdrawn and both people
+ *  go back to searching (see InstantMatchService.requestMatch). */
+export const REQUEST_WINDOW_SECS = 30;
+
 /** Grace period added to the server-side deadline so a client that
  *  responds on the final tick is not rejected by clock skew. */
 export const ACCEPT_TIMER_GRACE_MS = 5_000;

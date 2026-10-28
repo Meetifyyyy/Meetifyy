@@ -31,6 +31,7 @@ import {
 import {
   QUEUE_TTL_MS,
   ACCEPT_TIMER_GRACE_MS,
+  REQUEST_WINDOW_SECS,
   getAcceptTimerSecs,
 } from './instant-match.constants';
 
@@ -256,6 +257,21 @@ export let realtimeGatewayRef: InstantMatchEmitter | null = null;
 
 export function setRealtimeGatewayRef(ref: InstantMatchEmitter | null) {
   realtimeGatewayRef = ref;
+}
+
+/**
+ * Asks the shared job queue to run `expireRequest` for one session after a
+ * delay. Set by InstantMatchModule once the queue exists. Left unset (tests, a
+ * queue that failed to start) the periodic sweep still withdraws the request,
+ * only up to one sweep later than the deadline.
+ */
+export let requestExpiryScheduler:
+  ((sessionId: string, delayMs: number) => void) | null = null;
+
+export function setRequestExpiryScheduler(
+  fn: ((sessionId: string, delayMs: number) => void) | null,
+) {
+  requestExpiryScheduler = fn;
 }
 
 @Injectable()
@@ -879,10 +895,19 @@ export class InstantMatchService implements OnModuleInit {
     {
       requestedByA = false,
       activity,
-    }: { requestedByA?: boolean; activity?: string } = {},
+      exactDeadline = false,
+    }: {
+      requestedByA?: boolean;
+      activity?: string;
+      /** No grace on top of the timer: the deadline the people see is the
+       *  deadline the server enforces. */
+      exactDeadline?: boolean;
+    } = {},
   ): Promise<{ id: string; expiresAt: Date } | null> {
     const expiresAt = new Date(
-      Date.now() + timerSecs * 1000 + ACCEPT_TIMER_GRACE_MS,
+      Date.now() +
+        timerSecs * 1000 +
+        (exactDeadline ? 0 : ACCEPT_TIMER_GRACE_MS),
     );
 
     try {
@@ -1029,11 +1054,12 @@ export class InstantMatchService implements OnModuleInit {
       throw new BadRequestException('They are not searching any more');
     }
 
-    // The request is about what *they* are up for, so their activity and
-    // timing set the window.
-    const timer = getAcceptTimerSecs(theirs.activity, theirs.timePreference);
+    // What they are up for is the activity, but the wait is the same for every
+    // request: 30 seconds, then it is withdrawn and both go back to searching.
+    const timer = REQUEST_WINDOW_SECS;
     const session = await this.claimPair(mine, theirs, timer, {
       requestedByA: true,
+      exactDeadline: true,
       // What they are up for is what was asked for: it is the activity both
       // cards describe and the reason the chat opens with.
       activity: theirs.activity,
@@ -1063,6 +1089,9 @@ export class InstantMatchService implements OnModuleInit {
       expiresAt: expiresAtMs,
       requested: true,
     });
+
+    // Withdrawn on the dot rather than at the next sweep.
+    requestExpiryScheduler?.(session.id, timer * 1000 + 250);
 
     this.logger.log(
       `match:requested ${session.id} ${requesterId} -> ${targetUserId}`,
@@ -1360,6 +1389,16 @@ export class InstantMatchService implements OnModuleInit {
 
   // ─── Expiry ─────────────────────────────────────────────────────────────────
 
+  /**
+   * Withdraws one direct request at its deadline (a delayed job). A request
+   * that was answered in time is no longer PENDING, so this finds nothing.
+   */
+  async expireRequest(sessionId: string): Promise<void> {
+    if (await this.expireSession(sessionId)) {
+      this.logger.log(`match:request-withdrawn ${sessionId}`);
+    }
+  }
+
   async expireStale(): Promise<void> {
     const now = new Date();
 
@@ -1415,6 +1454,7 @@ export class InstantMatchService implements OnModuleInit {
     });
     if (!session) return false;
 
+    const wasRequest = isDirectRequest(session.snapshotA);
     const sides: Array<[string, unknown]> = [
       [session.userAId, session.snapshotA],
       [session.userBId, session.snapshotB],
@@ -1422,10 +1462,15 @@ export class InstantMatchService implements OnModuleInit {
 
     for (const [uid, snap] of sides) {
       const requeued = await this.requeue(uid, readQueueSnapshot(snap));
+      // A request nobody answered is withdrawn, not "timed out": the sender
+      // should know it is gone, and the other person that it lapsed.
+      const subject = !wasRequest
+        ? 'Match timed out'
+        : uid === session.userAId
+          ? 'Request withdrawn — no answer in 30 seconds'
+          : 'Request expired';
       realtimeGatewayRef?.emitMatchDeclined(uid, {
-        reason: requeued
-          ? 'Match timed out — back to searching'
-          : 'Match timed out',
+        reason: requeued ? `${subject} — back to searching` : subject,
         requeued,
       });
       if (requeued) await this.tryMatch(uid);
@@ -1680,10 +1725,12 @@ export class InstantMatchService implements OnModuleInit {
           candidate: this.toCandidateDto(other),
           activity: session.activity,
           area: snapshot?.area ?? null,
-          timer: getAcceptTimerSecs(
-            session.activity,
-            snapshot?.timePreference ?? 'now',
-          ),
+          timer: isDirectRequest(session.snapshotA)
+            ? REQUEST_WINDOW_SECS
+            : getAcceptTimerSecs(
+                session.activity,
+                snapshot?.timePreference ?? 'now',
+              ),
           expiresAt: session.expiresAt.getTime(),
           // After a reload the requester must land on the wait, not on an
           // Accept they already gave; the other side keeps the request label.
