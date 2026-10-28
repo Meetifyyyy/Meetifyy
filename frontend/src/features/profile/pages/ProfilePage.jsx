@@ -96,7 +96,7 @@ INTERESTS_BY_CATEGORY.forEach(category => {
 });
 
 
-import CoverImage, { warmCover } from '@shared/components/ui/CoverImage';
+import CoverImage, { warmCover, getCleanCoverUrl } from '@shared/components/ui/CoverImage';
 import CoverEditorSheet from '../components/CoverEditorSheet';
 import BlurredCover from '@shared/components/ui/BlurredCover';
 import CollapsingHeader from '@shared/components/CollapsingHeader/CollapsingHeader';
@@ -561,6 +561,9 @@ export default function ProfilePage() {
         onBack={() => goBack('/home')}
         backVariant="profile"
         coverBackground
+        // No picture (nor gradient) on the cover: the header reads as the theme's
+        // own plain surface, with its text, icons and status bar to match.
+        coverIsPhoto={!getCleanCoverUrl(shownCover).isEmpty}
         headerRef={collapsingHeaderRef}
         rightAction={IS_MOBILE_BUILD ? (
           <div className={s.menuWrap}>

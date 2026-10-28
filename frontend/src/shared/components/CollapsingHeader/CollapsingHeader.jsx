@@ -49,7 +49,7 @@ export default function CollapsingHeader({
   return (
     <div
       ref={headerRef}
-      className={`${styles.header} ${coverShade ? '' : styles.noCoverShade} ${backVariant === 'profile' ? styles.profileHeader : ''} ${coverBackground ? styles.withCover : ''}`}
+      className={`${styles.header} ${coverShade ? '' : styles.noCoverShade} ${backVariant === 'profile' ? styles.profileHeader : ''} ${coverBackground ? styles.withCover : ''} ${coverIsPhoto ? '' : styles.plainCover}`}
     >
       {!coverBackground && <div className={styles.surface} aria-hidden="true" />}
       <button

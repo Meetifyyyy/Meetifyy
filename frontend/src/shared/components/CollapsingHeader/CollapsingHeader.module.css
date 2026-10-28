@@ -124,6 +124,38 @@
   opacity: 0;
 }
 
+/*
+ * A cover with no picture is the theme's pale (or dark) grey, so the white
+ * title, the dark discs and the white icons built for a photo vanish into it.
+ * Over a plain cover everything takes the theme's own text colour and a faint
+ * chip, the way the rest of the app's headers do. `coverIsPhoto` is false for
+ * it (the status-bar icons follow the theme for the same reason).
+ */
+.plainCover .back,
+.plainCover .backProfile,
+.plainCover button:not(.back) {
+  background: rgba(0, 0, 0, 0.07) !important;
+}
+
+:global(html[data-theme='dark']) .plainCover .back,
+:global(html[data-theme='dark']) .plainCover .backProfile,
+:global(html[data-theme='dark']) .plainCover button:not(.back) {
+  background: rgba(255, 255, 255, 0.12) !important;
+}
+
+.plainCover .iconOnCover,
+.plainCover button:not(.back) {
+  color: var(--color-text-main) !important;
+}
+
+.plainCover.profileHeader .title {
+  color: var(--color-text-main);
+}
+
+.plainCover.profileHeader .subtitle {
+  color: var(--color-text-muted);
+}
+
 /* Names ease in once the header surface is readable beneath them. */
 .titles {
   position: relative;
