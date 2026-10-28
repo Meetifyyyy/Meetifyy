@@ -4,8 +4,10 @@ import { campusAffiliationApi } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
+import { useSheetDrag } from '@shared/hooks/useSheetDrag';
 import { isValidEmail } from '@shared/utils/emailValidation';
-import { AlertCircle, Check, GraduationCap, Loader2, Plus, X } from '@shared/components/icons';
+import { AlertCircle, Check, Loader2, Plus, X } from '@shared/components/icons';
+import Campus3DIcon from '../Campus3DIcon';
 import styles from './CampusAffiliation.module.css';
 
 /** The internal placeholder some accounts carry instead of a real address. */
@@ -54,13 +56,11 @@ export function RequestCollegeCard({ initialName = '', compact = false }) {
       <div className={`${styles.requestCard} ${compact ? styles.requestCardCompact : ''}`}>
         <div className={styles.requestText}>
           <p className={styles.requestTitle}>Can&apos;t find your college?</p>
-          <p className={styles.requestBody}>
-            Request it and we&apos;ll add it. Everything else on Meetifyy works in the meantime.
-          </p>
+          <p className={styles.requestBody}>We&apos;ll add it and let you know.</p>
         </div>
         <button type="button" className={styles.secondaryBtn} onClick={() => setOpen(true)}>
           <Plus size={16} aria-hidden="true" />
-          <span>Request it</span>
+          <span>Add your campus</span>
         </button>
       </div>
       {open ? <RequestCollegeDialog initialName={initialName} onClose={() => setOpen(false)} /> : null}
@@ -95,6 +95,13 @@ export function RequestCollegeDialog({ initialName = '', onClose }) {
 
   useOverlayBack(true, close);
   useScrollLock(true);
+  // Drag down to dismiss on a phone, where it is a bottom sheet (not while a
+  // request is being sent). The keyboard goes away as the sheet starts to move.
+  const sheetRef = useSheetDrag(close, {
+    enabled: !submitting,
+    media: '(max-width: 640px)',
+    onDragStart: () => document.activeElement?.blur?.(),
+  });
 
   useEffect(() => {
     const onKey = (e) => {
@@ -153,26 +160,23 @@ export function RequestCollegeDialog({ initialName = '', onClose }) {
   return createPortal(
     <div className={styles.sheetBackdrop} onClick={close}>
       <div
+        ref={sheetRef}
         className={styles.sheet}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className={styles.sheetGrip} aria-hidden="true" />
+        <div className={styles.sheetGrip} data-sheet-handle aria-hidden="true" />
         <div className={styles.sheetHeader}>
           <span className={styles.sheetIcon} aria-hidden="true">
-            <GraduationCap size={20} />
+            <Campus3DIcon size={56} />
           </span>
           <div className={styles.sheetHeading}>
             <h2 id={titleId} className={styles.sheetTitle}>
-              {done ? 'Request sent' : 'Request your college'}
+              {done ? 'Request sent' : 'Add your campus'}
             </h2>
-            {done ? null : (
-              <p className={styles.sheetSub}>
-                Tell us where you study. We check the college&apos;s email domain, add it, and email you.
-              </p>
-            )}
+            {done ? null : <p className={styles.sheetSub}>We&apos;ll email you when it&apos;s added.</p>}
           </div>
           <button
             type="button"
@@ -283,11 +287,8 @@ export function RequestCollegeDialog({ initialName = '', onClose }) {
                   spellCheck={false}
                   maxLength={100}
                   aria-invalid={Boolean(fieldErrors.collegeEmail)}
-                  aria-describedby={`${titleId}-collegeEmail-hint${fieldErrors.collegeEmail ? ` ${titleId}-collegeEmail-err` : ''}`}
+                  aria-describedby={fieldErrors.collegeEmail ? `${titleId}-collegeEmail-err` : undefined}
                 />
-                <span className={styles.hint} id={`${titleId}-collegeEmail-hint`}>
-                  Used to find your college&apos;s email domain. It does not verify you or change your account.
-                </span>
                 {fieldError('collegeEmail')}
               </label>
 
@@ -300,8 +301,14 @@ export function RequestCollegeDialog({ initialName = '', onClose }) {
             </div>
 
             <div className={styles.sheetFoot}>
-              <button type="button" className={styles.secondaryBtn} onClick={close} disabled={submitting}>
-                Cancel
+              <button
+                type="button"
+                className={styles.sheetCancel}
+                onClick={close}
+                disabled={submitting}
+                aria-label="Cancel"
+              >
+                <X size={22} aria-hidden="true" />
               </button>
               <button type="submit" className={styles.primaryBtn} disabled={submitting} aria-busy={submitting || undefined}>
                 {submitting ? (
@@ -310,7 +317,7 @@ export function RequestCollegeDialog({ initialName = '', onClose }) {
                     <span>Sending…</span>
                   </>
                 ) : (
-                  <span>Send request</span>
+                  <span>Add my campus</span>
                 )}
               </button>
             </div>

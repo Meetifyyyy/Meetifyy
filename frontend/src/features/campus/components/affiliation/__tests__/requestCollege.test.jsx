@@ -17,12 +17,13 @@ vi.mock('@shared/api/apiClient', () => ({
 vi.mock('@shared/context/AuthContext', () => ({ useAuth: () => ({ currentUser }) }));
 vi.mock('@shared/hooks/useOverlayBack', () => ({ useOverlayBack: () => {} }));
 vi.mock('@shared/hooks/useScrollLock', () => ({ useScrollLock: () => {} }));
+vi.mock('@shared/hooks/useSheetDrag', () => ({ useSheetDrag: () => ({ current: null }) }));
 
 const { RequestCollegeCard, requestCollegeErrorMessage } = await import('../RequestCollege');
 
 function openForm(props = {}) {
   render(<RequestCollegeCard {...props} />);
-  fireEvent.click(screen.getByRole('button', { name: /request it/i }));
+  fireEvent.click(screen.getByRole('button', { name: /add your campus/i }));
   return screen.getByRole('dialog');
 }
 
@@ -47,7 +48,7 @@ describe('Request your college', () => {
     openForm();
     fireEvent.change(field('College name'), { target: { value: 'ab' } });
     fireEvent.change(field('Your college email'), { target: { value: 'not-an-email' } });
-    fireEvent.click(screen.getByRole('button', { name: /send request/i }));
+    fireEvent.click(screen.getByRole('button', { name: /add my campus/i }));
 
     expect(await screen.findByText(/3 to 120 characters/)).toBeTruthy();
     expect(screen.getByText(/address your college gave you/)).toBeTruthy();
@@ -59,7 +60,7 @@ describe('Request your college', () => {
     openForm();
     fireEvent.change(field('College name'), { target: { value: '  Hill College ' } });
     fireEvent.change(field('Your college email'), { target: { value: 'Asha@Hill.AC.in ' } });
-    fireEvent.click(screen.getByRole('button', { name: /send request/i }));
+    fireEvent.click(screen.getByRole('button', { name: /add my campus/i }));
 
     await waitFor(() => expect(requestCollege).toHaveBeenCalledTimes(1));
     expect(requestCollege).toHaveBeenCalledWith({
@@ -80,7 +81,7 @@ describe('Request your college', () => {
     fireEvent.change(field('Your email'), { target: { value: 'ravi@mail.com' } });
     fireEvent.change(field('College name'), { target: { value: 'Hill College' } });
     fireEvent.change(field('Your college email'), { target: { value: 'ravi@hill.edu' } });
-    fireEvent.click(screen.getByRole('button', { name: /send request/i }));
+    fireEvent.click(screen.getByRole('button', { name: /add my campus/i }));
 
     await waitFor(() => expect(requestCollege).toHaveBeenCalled());
     expect(requestCollege.mock.calls[0][0]).toMatchObject({ name: 'Ravi K', personalEmail: 'ravi@mail.com' });
@@ -91,10 +92,10 @@ describe('Request your college', () => {
     openForm();
     fireEvent.change(field('College name'), { target: { value: 'Hill College' } });
     fireEvent.change(field('Your college email'), { target: { value: 'a@hill.edu' } });
-    fireEvent.click(screen.getByRole('button', { name: /send request/i }));
+    fireEvent.click(screen.getByRole('button', { name: /add my campus/i }));
 
     expect((await screen.findByRole('alert')).textContent).toMatch(/already sent a few requests/);
-    expect(screen.getByRole('button', { name: /send request/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /add my campus/i })).toBeTruthy();
   });
 
   it('keeps technical errors off the screen', () => {
