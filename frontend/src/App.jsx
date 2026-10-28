@@ -134,13 +134,21 @@ const TermsPage = IS_MOBILE_BUILD ? null : lazyRoute(() => import('./features/in
 const OpenLegalOnWebsite = IS_MOBILE_BUILD ? lazyRoute(() => import('./features/info/pages/OpenLegalOnWebsite')) : null;
 
 /**
+ * Boundary options for the website's public pages — landing, About, the legal
+ * documents and Help. They have no shell to keep, so a crash there shows the
+ * error screen over the whole viewport rather than as a card on the page
+ * gradient. The installed app's opening screen is not one of them.
+ */
+const PUBLIC_PAGE_BOUNDARY = { fullScreen: true };
+
+/**
  * A legal page route's element: the page on the website, a hand-off to it in
  * the app. Each route keeps a literal `path:` key, which seoRoutes.test.js reads
  * out of this file to check every path is routed on Vercel.
  */
 const legalElement = (path, Page) => (IS_MOBILE_BUILD
   ? <OpenLegalOnWebsite path={path} />
-  : <StaticRoute>{withBoundary(<Page />, null)}</StaticRoute>);
+  : <StaticRoute>{withBoundary(<Page />, null, PUBLIC_PAGE_BOUNDARY)}</StaticRoute>);
 // Help & Support is website-only too: the website is its single source of
 // truth. The app's Settings > Help & Support covers reporting, ideas, your
 // requests and the Safety centre; "Browse all help" and help search open this
@@ -405,7 +413,7 @@ export default function App({ homeElement, rootExtras = null }) {
           path: '/',
           element: (
             <PublicRoute>
-              {withBoundary(homeElement ?? (LandingPage ? <LandingPage /> : null), null)}
+              {withBoundary(homeElement ?? (LandingPage ? <LandingPage /> : null), null, homeElement ? {} : PUBLIC_PAGE_BOUNDARY)}
             </PublicRoute>
           ),
         },
@@ -449,7 +457,7 @@ export default function App({ homeElement, rootExtras = null }) {
         },
         {
           path: '/about',
-          element: <StaticRoute>{withBoundary(<AboutPage />, null)}</StaticRoute>,
+          element: <StaticRoute>{withBoundary(<AboutPage />, null, PUBLIC_PAGE_BOUNDARY)}</StaticRoute>,
         },
         {
           path: '/privacy-policy',

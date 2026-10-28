@@ -215,3 +215,31 @@
     border-color: rgba(255, 255, 255, 0.16);
   }
 }
+
+/* ── Full screen (public pages) ─────────────────────────────────────────────
+   The landing page, About, the legal documents and Help have no shell to sit
+   inside, so on every width this is the whole viewport on a flat surface — the
+   card, its border and the page gradient behind it are gone. Declared last so
+   it wins over the phone rules above at equal specificity. */
+.fullScreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: auto;
+  height: 100dvh;
+  max-height: none;
+  min-height: 100dvh;
+  z-index: 99999;
+  padding: 1.5rem 1rem;
+  overflow-y: auto;
+  background: #ffffff;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+[data-theme="dark"] .fullScreen {
+  background: #000000;
+}

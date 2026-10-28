@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
+import { usePlainBackdrop } from '@shared/hooks/usePlainBackdrop';
 import styles from './RouteErrorScreen.module.css';
 
 function AlertCircleIcon() {
@@ -29,16 +30,19 @@ function AlertCircleIcon() {
  * It sits inside the main content column so the application shell (header,
  * sidebar) stays fully intact.
  *
- * There used to be a second, full-viewport variant. Onboarding was the only
- * route that asked for it — it was the only caller passing `fullScreen`, and
- * the only path the component special-cased — so it went with that route.
+ * Public pages (the landing page, About, the legal documents and Help) have no
+ * shell to keep and sit on the page gradient, so they pass `fullScreen`: the
+ * screen then covers the whole viewport on a flat surface, with the gradient
+ * flattened behind it, instead of floating as a card on the pale blue page.
  *
  * Props:
- *  onRetry — resets the boundary state so React retries the render
+ *  onRetry    — resets the boundary state so React retries the render
+ *  fullScreen — cover the whole viewport on a plain surface (public pages)
  */
-export default function RouteErrorScreen({ onRetry }) {
+export default function RouteErrorScreen({ onRetry, fullScreen = false }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  usePlainBackdrop(fullScreen);
 
   const handleRetry = () => {
     try {
@@ -61,7 +65,7 @@ export default function RouteErrorScreen({ onRetry }) {
   };
 
   return (
-    <div className={styles.fullPageWrapper} role="alert">
+    <div className={`${styles.fullPageWrapper}${fullScreen ? ` ${styles.fullScreen}` : ''}`} role="alert">
       <div className={styles.container}>
         <div className={styles.iconWrapper}>
           <AlertCircleIcon />
