@@ -45,6 +45,28 @@ export function initialFor(name) {
 }
 
 /**
+ * Where to draw a glyph (alphabetic baseline, centre-aligned) so the ink of the
+ * letter, not its em box, sits in the middle of a `size` square.
+ *
+ * @param {{ actualBoundingBoxLeft?: number, actualBoundingBoxRight?: number,
+ *           actualBoundingBoxAscent?: number, actualBoundingBoxDescent?: number }} metrics
+ * @param {number} size
+ * @returns {{ x: number, y: number } | null} null when the metrics carry no ink bounds
+ */
+export function centredGlyphOrigin(metrics, size) {
+  const left = metrics?.actualBoundingBoxLeft;
+  const right = metrics?.actualBoundingBoxRight;
+  const ascent = metrics?.actualBoundingBoxAscent;
+  const descent = metrics?.actualBoundingBoxDescent;
+  if (![left, right, ascent, descent].every(Number.isFinite)) return null;
+  if (ascent + descent <= 0 || left + right <= 0) return null;
+  return {
+    x: size / 2 - (right - left) / 2,
+    y: size / 2 + (ascent - descent) / 2,
+  };
+}
+
+/**
  * Draws `name`'s initial on `gradientCss` and returns it as an image File.
  *
  * @param {string} name          community (or entity) name
@@ -83,10 +105,21 @@ export async function generateInitialAvatarFile(name, gradientCss, options = {})
   // it wants them, and a square source stays correct in the places that don't.
   ctx.fillStyle = '#ffffff';
   ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
   ctx.font = `700 ${Math.round(size * 0.44)}px "Segoe UI", system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif`;
-  // Nudged down a touch: `middle` sits on the em box, which reads high for capitals.
-  ctx.fillText(initialFor(name), size / 2, size / 2 + size * 0.02);
+  const letter = initialFor(name);
+  // Centred on the letter's own ink, not on its em box. `middle` sits on the
+  // box, which is not where a capital's weight is (it reads low in some fonts
+  // and high in others, and the nudge that tried to correct it was a guess),
+  // so the glyph is measured and placed so its bounds are centred both ways.
+  const origin = centredGlyphOrigin(ctx.measureText(letter), size);
+  if (origin) {
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(letter, origin.x, origin.y);
+  } else {
+    // A canvas that cannot measure ink: the em-box centre, nudged down a touch.
+    ctx.textBaseline = 'middle';
+    ctx.fillText(letter, size / 2, size / 2 + size * 0.02);
+  }
 
   const blob = await new Promise((resolve) => {
     // WebP first for size; browsers that cannot encode it hand back a PNG, which
