@@ -2331,7 +2331,7 @@
   }
 
   :global(html[data-collapsing-header]) .mobileHeader {
-    top: calc(12px + var(--status-bar-inset, 0px));
+    top: calc(12px + (var(--collapsing-header-h, 56px) - 56px) / 2 + var(--status-bar-inset, 0px));
   }
 
   /*
@@ -2396,7 +2396,7 @@
     height: calc(clamp(100px, 15vw, 155px) + var(--status-bar-inset, 0px));
     max-height: none;
     position: sticky;
-    top: var(--cover-pin-top, calc(56px - clamp(100px, 15vw, 155px)));
+    top: var(--cover-pin-top, calc(var(--collapsing-header-h, 56px) - clamp(100px, 15vw, 155px)));
     /* Above the content that scrolls beneath it, below the header (60). */
     z-index: 5;
     /* The picture is drawn `--cover-extend` px taller than the box; clipped
@@ -2448,7 +2448,7 @@
   :global(html[data-collapsing-header]) .menuWrap {
     display: block;
     position: absolute;
-    top: calc(12px + var(--status-bar-inset, 0px));
+    top: calc(12px + (var(--collapsing-header-h, 56px) - 56px) / 2 + var(--status-bar-inset, 0px));
     right: 12px;
     z-index: 63;
     pointer-events: auto;

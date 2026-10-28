@@ -14,7 +14,7 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  height: calc(56px + var(--status-bar-inset, 0px));
+  height: calc(var(--collapsing-header-h, 56px) + var(--status-bar-inset, 0px));
   padding: var(--status-bar-inset, 0px) 0.75rem 0 0.5rem;
   box-sizing: border-box;
   pointer-events: none;
@@ -173,7 +173,6 @@
 
 .profileHeader .title {
   color: #fff;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.48);
 }
 
 .subtitle {
@@ -187,13 +186,12 @@
 
 .profileHeader .subtitle {
   color: rgba(255, 255, 255, 0.88);
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.48);
 }
 
 @media (max-width: 768px) {
   .header :global(.menuWrap) {
     position: absolute;
-    top: calc(12px + var(--status-bar-inset, 0px));
+    top: calc(12px + (var(--collapsing-header-h, 56px) - 56px) / 2 + var(--status-bar-inset, 0px));
     right: 12px;
     z-index: 3;
     pointer-events: auto;

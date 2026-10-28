@@ -775,7 +775,7 @@
      * bottom edge reaches the header's bottom, and stays there, blurred.
      */
     position: sticky;
-    top: var(--cover-pin-top, calc(56px - 100vw / 3));
+    top: var(--cover-pin-top, calc(var(--collapsing-header-h, 56px) - 100vw / 3));
     /* Above the content that scrolls beneath it, below the header (60). */
     z-index: 5;
     /* The picture is drawn `--cover-extend` px taller than the box (what the
@@ -903,7 +903,7 @@
 
   :global(html[data-collapsing-header]) .menuWrap {
     position: absolute;
-    top: calc(12px + var(--status-bar-inset, 0px));
+    top: calc(12px + (var(--collapsing-header-h, 56px) - 56px) / 2 + var(--status-bar-inset, 0px));
     right: 12px;
     z-index: 63;
     pointer-events: auto;

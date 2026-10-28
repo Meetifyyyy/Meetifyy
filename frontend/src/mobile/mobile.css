@@ -333,3 +333,10 @@ img {
   --side-inset-left: var(--side-inset-left-raw, 0px);
   --side-inset-right: var(--side-inset-right-raw, 0px);
 }
+
+/* Height of the Profile and Community header below the status bar. One value
+   for the bar, its menu button and the cover's pin line; the page rules fall
+   back to 56px, which is what the website's CSS never reads anyway. */
+:root {
+  --collapsing-header-h: 64px;
+}
