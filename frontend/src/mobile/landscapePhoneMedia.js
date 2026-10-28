@@ -22,6 +22,14 @@
  * portrait phones, tablets, and every desktop size behave exactly as before.
  * The website never loads this.
  *
+ * Container queries on the Messages layout get the same treatment (see
+ * `adaptContainerRule`). The layout is a query container, and on a phone on its
+ * side that container is ~800px wide, so its `@container messages` rules chose
+ * the two-pane desktop arrangement while the `@media` rules above had already
+ * stacked the layout as a column: the chat landed below the screen and the
+ * right half stayed empty. Container size cannot be compared with the screen's
+ * height, so such a rule is mirrored into a `@media` block instead.
+ *
  * Plain ES module with no imports: it runs in Node (the PostCSS plugin) as well
  * as in the app.
  */
@@ -56,6 +64,56 @@ export function adaptMediaQuery(list) {
   return list.split(',').map(adaptOne).join(', ');
 }
 
+/**
+ * Containers whose layout decision is "one pane or two". A container query
+ * can't ask about the screen, so for these the rule is mirrored into the
+ * matching `@media` block (max-width: a phone on its side takes the narrow
+ * branch too) or gated to tall screens (min-width: the wide branch).
+ */
+const PHONE_LAYOUT_CONTAINERS = new Set(['messages']);
+
+/**
+ * What a `@container <name> <condition>` rule needs in addition to itself:
+ * `{ phone }` is a media query list that should also apply the rule's body,
+ * `{ tall }` a media query the rule must additionally sit inside. Null when the
+ * rule is not one of those.
+ */
+export function adaptContainerQuery(params) {
+  if (typeof params !== 'string') return null;
+  const match = params.trim().match(/^([\w-]+)\s+(\(.*)$/s);
+  if (!match || !PHONE_LAYOUT_CONTAINERS.has(match[1])) return null;
+  const condition = match[2];
+  const min = condition.match(MIN_W);
+  if (min && Number(min[1]) > MOBILE_MAX) {
+    return { tall: `(min-device-height: ${LANDSCAPE_PHONE_MAX_HEIGHT + 1}px)` };
+  }
+  const max = condition.match(MAX_W);
+  if (max && Number(max[1]) >= MOBILE_MAX) {
+    return { phone: condition.replace(MAX_W, `(max-device-height: ${LANDSCAPE_PHONE_MAX_HEIGHT}px)`) };
+  }
+  return null;
+}
+
+const adaptedContainerRules = new WeakSet();
+
+/** Applies `adaptContainerQuery` to a PostCSS `@container` at-rule. */
+function adaptContainerRule(rule) {
+  // Idempotent for the same reason as `adaptMediaQuery`: PostCSS visits a node
+  // again after the plugin has changed its surroundings.
+  if (adaptedContainerRules.has(rule)) return;
+  adaptedContainerRules.add(rule);
+  const adapted = adaptContainerQuery(rule.params);
+  if (!adapted) return;
+  if (adapted.tall) {
+    const gate = rule.clone({ name: 'media', params: adapted.tall });
+    gate.removeAll();
+    rule.replaceWith(gate);
+    gate.append(rule);
+    return;
+  }
+  rule.after(rule.clone({ name: 'media', params: adapted.phone }));
+}
+
 /** PostCSS plugin applying `adaptMediaQuery` to every `@media` rule. */
 export function landscapePhoneMediaPostcss() {
   return {
@@ -65,6 +123,7 @@ export function landscapePhoneMediaPostcss() {
         const next = adaptMediaQuery(rule.params);
         if (next !== rule.params) rule.params = next;
       },
+      container: adaptContainerRule,
     },
   };
 }

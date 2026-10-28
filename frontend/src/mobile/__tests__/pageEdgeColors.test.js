@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { pageGradientColorAt } from '../pageEdgeColors';
-import { adaptMediaQuery } from '../landscapePhoneMedia';
+import postcss from 'postcss';
+import { adaptMediaQuery, adaptContainerQuery, landscapePhoneMediaPostcss } from '../landscapePhoneMedia';
 
 const vars = {
   '--bg-gradient-center': '#ffffff',
@@ -52,5 +53,37 @@ describe('adaptMediaQuery (landscape phones keep the mobile layout)', () => {
   it('leaves phone-only breakpoints and non-width queries alone', () => {
     expect(adaptMediaQuery('(max-width: 480px)')).toBe('(max-width: 480px)');
     expect(adaptMediaQuery('(prefers-color-scheme: dark)')).toBe('(prefers-color-scheme: dark)');
+  });
+});
+
+describe('container queries on the Messages layout (landscape phones stay single-pane)', () => {
+  it('mirrors a narrow-layout rule into the short-screen media branch', () => {
+    expect(adaptContainerQuery('messages (max-width: 768px)'))
+      .toEqual({ phone: '(max-device-height: 500px)' });
+    expect(adaptContainerQuery('messages (min-width: 480px) and (max-width: 768px)'))
+      .toEqual({ phone: '(min-width: 480px) and (max-device-height: 500px)' });
+  });
+
+  it('keeps short screens out of the two-pane branch', () => {
+    expect(adaptContainerQuery('messages (min-width: 769px)'))
+      .toEqual({ tall: '(min-device-height: 501px)' });
+  });
+
+  it('leaves other containers and phone-only widths alone', () => {
+    expect(adaptContainerQuery('chatpane (max-width: 768px)')).toBeNull();
+    expect(adaptContainerQuery('(max-width: 768px)')).toBeNull();
+    expect(adaptContainerQuery('messages (max-width: 479px)')).toBeNull();
+  });
+
+  it('rewrites the stylesheet once, so the rule that stacks the layout and the one that hides the list agree', async () => {
+    const css = `
+      @container messages (min-width: 769px) { .pane { display: flex } }
+      @container messages (max-width: 768px) { .list { display: none } }
+    `;
+    const out = (await postcss([landscapePhoneMediaPostcss()]).process(css, { from: undefined })).css;
+    expect(out).toContain('@media (min-device-height: 501px)');
+    expect(out).toContain('@media (max-device-height: 500px)');
+    expect(out.match(/@media \(max-device-height: 500px\)/g)).toHaveLength(1);
+    expect(out.match(/@media \(min-device-height: 501px\)/g)).toHaveLength(1);
   });
 });
