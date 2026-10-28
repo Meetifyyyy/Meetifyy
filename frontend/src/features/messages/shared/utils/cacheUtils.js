@@ -4,7 +4,7 @@ import {
   messageCarriesGalleryMedia,
   removeConversationMedia,
 } from './conversationMediaCache';
-import { inviteSummary } from './inviteSummary';
+import { messagePreviewText } from './messagePreview';
 
 /**
  * A system message is the conversation narrating itself — "@gyu changed group
@@ -21,7 +21,6 @@ export function isSystemMessage(msg) {
   const type = msg.type;
   return type === 'SYSTEM' || type === 'system' || Boolean(msg.isSystem);
 }
-
 
 export function matchesConversationId(c, targetId) {
   if (!c || !targetId) return false;
@@ -182,9 +181,6 @@ export function compareMessages(a, b) {
   return idA.localeCompare(idB);
 }
 
-// Shared status rank — higher = further along the delivery pipeline.
-export const STATUS_RANK = { failed: -1, sending: 0, sent: 1, delivered: 2, read: 3, seen: 3 };
-
 /**
  * `createIfMissing` decides what happens when there is no cached history under
  * this key yet, and the default of `false` matters.
@@ -331,6 +327,10 @@ export function updateMessageInCache(queryClient, activeChatId, targetId, patch)
     if (patch.clientId) targetKeys.add(String(patch.clientId));
   }
 
+  const unsending = Boolean(
+    patch && typeof patch === 'object' && (patch.isUnsent || patch.state === 'UNSENT'),
+  );
+
   queryClient.setQueryData(['messages', activeChatId], (old) => {
     if (!old || !old.pages) return old;
 
@@ -376,6 +376,13 @@ export function updateMessageInCache(queryClient, activeChatId, targetId, patch)
 
           return resMsg;
         }
+        // A reply quoting a message that has just been unsent keeps its own
+        // text, but the quote loses the original's: the server's history does
+        // the same (buildReplyToSnapshot), and a cached copy must not go on
+        // showing what was taken back.
+        if (unsending && m.replyTo && targetKeys.has(String(m.replyTo.id))) {
+          return { ...m, replyTo: unsentQuote(m.replyTo) };
+        }
         return m;
       }),
     }));
@@ -384,57 +391,57 @@ export function updateMessageInCache(queryClient, activeChatId, targetId, patch)
   });
 }
 
-export function updateConversationPreview(queryClient, conversationId, previewText, timestamp = new Date().toISOString(), unreadIncrement = 0) {
-  if (!queryClient || !conversationId) return;
-
-  queryClient.setQueryData(['conversations'], (old) => {
-    if (!old) return old;
-
-    let list = Array.isArray(old) ? [...old] : (old.conversations ? [...old.conversations] : null);
-    if (!list) return old;
-
-    const numericTimestamp = new Date(timestamp).getTime();
-    const idx = list.findIndex((c) => matchesConversationId(c, conversationId));
-    if (idx !== -1) {
-      let textVal = typeof previewText === 'string' ? previewText : (previewText?.text || '');
-      const prevMsgObj = list[idx].lastMessage || {};
-      
-      if (!textVal && (previewText?.inviteData || prevMsgObj?.inviteData)) {
-        textVal = inviteSummary(previewText?.inviteData || prevMsgObj?.inviteData);
-      } else if (!textVal && (previewText?.mediaType || prevMsgObj?.mediaType)) {
-        const mt = previewText?.mediaType || prevMsgObj?.mediaType;
-        textVal = mt === 'image' ? 'Photo' : mt === 'video' ? 'Video' : 'Audio';
-      } else if (!textVal && (previewText?.mediaUrl || prevMsgObj?.mediaUrl)) {
-        textVal = 'Media';
-      }
-
-      const newMsgObj = {
-        ...prevMsgObj,
-        text: textVal,
-        createdAt: timestamp
-      };
-
-      const targetConv = {
-        ...list[idx],
-        lastMsg: textVal || list[idx].lastMsg || '',
-        lastMessageText: textVal || list[idx].lastMessageText || '',
-        lastMessage: newMsgObj,
-        updatedAt: timestamp,
-        timestamp: numericTimestamp,
-        unreadCount: Math.max(0, (list[idx].unreadCount || 0) + unreadIncrement),
-        unread: Math.max(0, (list[idx].unread || 0) + unreadIncrement),
-      };
-
-      list.splice(idx, 1);
-      list.unshift(targetConv);
-    }
-
-    return Array.isArray(old) ? list : { ...old, conversations: list };
-  });
+/** A reply's quote of a message that has been unsent: who, and nothing of what. */
+export function unsentQuote(replyTo) {
+  return {
+    ...replyTo,
+    text: '',
+    mediaUrl: null,
+    mediaType: null,
+    thumbnailUrl: null,
+    shareType: null,
+    shareId: null,
+    shareTitle: null,
+    shareAvatar: null,
+    shareColor: null,
+    isUnsent: true,
+  };
 }
 
-export function updateMessageStatusInCache(queryClient, activeChatId, messageId, status) {
-  updateMessageInCache(queryClient, activeChatId, messageId, { status });
+/**
+ * Copies of the cached messages `keys` names and of the replies quoting them,
+ * taken before an optimistic change, so a refused change can put back exactly
+ * those rows - not refetch the whole thread, which re-laid-out the chat and
+ * could drop messages that arrived in between.
+ */
+export function snapshotMessages(queryClient, conversationId, keys) {
+  const wanted = new Set([...keys].filter(Boolean).map(String));
+  const taken = new Map();
+  const pages = queryClient?.getQueryData(['messages', conversationId])?.pages || [];
+  pages.forEach((page) => (page?.messages || []).forEach((m) => {
+    const own = [m.id, m.clientId, m.tempId].filter(Boolean).map(String);
+    if (own.some((k) => wanted.has(k)) || (m.replyTo && wanted.has(String(m.replyTo.id)))) {
+      taken.set(String(m.id || m.clientId || m.tempId), m);
+    }
+  }));
+  return taken;
+}
+
+/** Puts back the rows `snapshotMessages` took, leaving everything else as it is now. */
+export function restoreMessages(queryClient, conversationId, snapshot) {
+  if (!queryClient || !snapshot || snapshot.size === 0) return;
+  queryClient.setQueryData(['messages', conversationId], (old) => {
+    if (!old?.pages) return old;
+    return {
+      ...old,
+      pages: old.pages.map((page) => ({
+        ...page,
+        messages: (page.messages || []).map(
+          (m) => snapshot.get(String(m.id || m.clientId || m.tempId)) || m,
+        ),
+      })),
+    };
+  });
 }
 
 export function removeMessageFromCache(queryClient, activeChatId, messageId) {
@@ -453,7 +460,6 @@ export function removeMessageFromCache(queryClient, activeChatId, messageId) {
     return { ...old, pages: newPages };
   });
 }
-
 
 /**
  * Wipe every client-side trace of one conversation for the user who deleted it.
@@ -488,7 +494,6 @@ export function purgeConversationFromCaches(queryClient, convId, conversations =
 
   return [...aliases];
 }
-
 
 /**
  * Apply a group role change to every cache that renders a role.
@@ -534,7 +539,6 @@ export function applyGroupRoleChange(queryClient, convId, targetUserId, newRole)
   });
 }
 
-
 /**
  * Drops one pending join request from the cached group, in the conversation
  * list and in its details. Used when the server refuses to accept it
@@ -561,7 +565,6 @@ export function removeGroupJoinRequest(queryClient, convId, targetUserId) {
   });
 }
 
-
 /**
  * The conversation-list row preview.
  *
@@ -581,10 +584,8 @@ export function derivePreviewText(c) {
   if (c.lastMessageText) return c.lastMessageText;
   if (!c.lastMessage) return '';
   if (c.lastMessage.text) return c.lastMessage.text;
-  if (c.lastMessage.mediaUrl) {
-    if (c.lastMessage.mediaType === 'image') return 'Photo';
-    if (c.lastMessage.mediaType === 'video') return 'Video';
-    return 'Audio';
-  }
-  return '';
+  // The same table as everything else that writes a preview (messagePreview.js).
+  const hasContent = c.lastMessage.mediaUrl || c.lastMessage.mediaType || c.lastMessage.inviteData
+    || c.lastMessage.state === 'UNSENT' || c.lastMessage.isUnsent;
+  return hasContent ? messagePreviewText(c.lastMessage) : '';
 }

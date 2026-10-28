@@ -1,8 +1,7 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useMentionSuggestions } from '../../hooks/useMentionSuggestions';
+import { filterLocalMentions } from './localMentions';
 import MentionDropdown from './MentionDropdown';
-import { cleanUrlDisplay } from '@shared/utils/linkPreview';
-import { sanitizeUrl } from '@shared/utils/urlSanitize';
 import { visibleViewportBottom } from '@shared/utils/visibleViewport';
 import styles from './MentionInput.module.css';
 
@@ -16,69 +15,19 @@ function escapeHtml(str) {
     .replace(/'/g, '&#x27;');
 }
 
-function convertUrlsToChipsHTML(text) {
-  if (!text) return '';
-  const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+)/g;
-  
-  return escapeHtml(text).replace(urlRegex, (url) => {
-    const cleanDisplay = cleanUrlDisplay(url);
-    const truncatedDisplay = cleanDisplay.length > 40 ? cleanDisplay.slice(0, 37) + '...' : cleanDisplay;
-    const cleanUrl = url.startsWith('www.') ? `https://${url}` : url;
-    const safeUrl = sanitizeUrl(cleanUrl);
-    return `<span class="${styles.urlChip}" contenteditable="false" data-url="${safeUrl}">[ ${truncatedDisplay} ]</span>`;
-  });
-}
-
-function checkForUrlsAndConvertToChips(el) {
-  const sel = window.getSelection();
-  if (!sel || sel.rangeCount === 0) return;
-  const range = sel.getRangeAt(0);
-  const cursorNode = range.startContainer;
-  const cursorOffset = range.startOffset;
-
-  if (cursorNode.nodeType !== Node.TEXT_NODE) return;
-
-  const textVal = cursorNode.nodeValue;
-  const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+)/i;
-  const match = textVal.match(urlRegex);
-  if (!match) return;
-
-  const url = match[0];
-  const urlIndex = match.index;
-  
-  // Only convert if cursor is past the end of the URL (meaning user typed space/completed URL)
-  if (cursorOffset < urlIndex + url.length) {
-    return;
-  }
-
-  const cleanDisplay = cleanUrlDisplay(url);
-  const truncatedDisplay = cleanDisplay.length > 40 ? cleanDisplay.slice(0, 37) + '...' : cleanDisplay;
-
-  const beforeText = textVal.slice(0, urlIndex);
-  const afterText = textVal.slice(urlIndex + url.length);
-
-  cursorNode.nodeValue = beforeText;
-
-  const cleanUrl = url.startsWith('www.') ? `https://${url}` : url;
-  const safeUrl = sanitizeUrl(cleanUrl);
-
-  const chip = document.createElement('span');
-  chip.className = styles.urlChip;
-  chip.setAttribute('contenteditable', 'false');
-  chip.setAttribute('data-url', safeUrl);
-  chip.innerText = `[ ${truncatedDisplay} ]`;
-
-  cursorNode.parentNode.insertBefore(chip, cursorNode.nextSibling);
-
-  const afterNode = document.createTextNode(afterText);
-  chip.parentNode.insertBefore(afterNode, chip.nextSibling);
-
-  const newRange = document.createRange();
-  const relativeOffset = cursorOffset - (urlIndex + url.length);
-  newRange.setStart(afterNode, Math.min(relativeOffset, afterText.length));
-  newRange.setEnd(afterNode, Math.min(relativeOffset, afterText.length));
-  sel.removeAllRanges();
-  sel.addRange(newRange);
+/**
+ * Text, as the editor's HTML: escaped, with line breaks as <br>.
+ *
+ * URLs stay exactly as typed. They used to be swapped for a non-editable chip
+ * reading "[ example.com/… ]" the moment a space followed them, and the chip
+ * serialised back as a SANITISED copy of the address (`www.x.com` was sent as
+ * `https://www.x.com`, anything the sanitiser rejected was sent as nothing).
+ * That was the "[ ]" in the composer: the text could not be edited, selected
+ * or deleted character by character, and what was sent was not what was
+ * typed. How a link looks once SENT is the message renderer's job (RichText).
+ */
+function textToEditorHtml(text) {
+  return escapeHtml(text || '').replace(/\n/g, '<br>');
 }
 
 
@@ -98,6 +47,11 @@ export default function MentionInput({
   inputRef,
   ariaDescribedBy,
   ariaInvalid,
+  // 'search' (posts, comments): people found by a search per term.
+  // 'local': `mentionCandidates`, filtered in memory (a group's members).
+  // 'off': "@" is just a character (direct chats).
+  mentionMode = 'search',
+  mentionCandidates = null,
 }) {
   const containerRef = useRef(null);
   const editorRef = useRef(null);
@@ -113,12 +67,18 @@ export default function MentionInput({
   const lastParsedTextRef = useRef(null);
   const savedRangeRef = useRef(null);
 
-  const { suggestions, loading } = useMentionSuggestions({
+  const searched = useMentionSuggestions({
     query: mentionQuery,
     communityId,
     maxResults: 15,
-    enabled: mentionActive,
+    enabled: mentionActive && mentionMode === 'search',
   });
+  const localSuggestions = useMemo(
+    () => (mentionMode === 'local' && mentionActive ? filterLocalMentions(mentionCandidates, mentionQuery) : []),
+    [mentionMode, mentionActive, mentionCandidates, mentionQuery],
+  );
+  const suggestions = mentionMode === 'local' ? localSuggestions : searched.suggestions;
+  const loading = mentionMode === 'local' ? false : searched.loading;
 
   // Track active selection range within the editor
   const saveSelection = useCallback(() => {
@@ -174,8 +134,9 @@ export default function MentionInput({
           textString += tagText;
           mentions.push({ userId, username, start, end });
         } else if (node.hasAttribute('data-url')) {
-          const rawUrl = node.getAttribute('data-url');
-          textString += rawUrl;
+          // A link chip from an older build (a restored draft, a paste): it
+          // stands for the address it carries.
+          textString += node.getAttribute('data-url') || '';
         } else if (node.nodeName === 'BR') {
           textString += '\n';
         } else if (node.nodeName === 'DIV' || node.nodeName === 'P') {
@@ -210,8 +171,6 @@ export default function MentionInput({
     const el = editorRef.current;
     if (!el) return;
 
-    checkForUrlsAndConvertToChips(el);
-
     const parsed = parseDOM();
     lastParsedTextRef.current = parsed.text;
     el.setAttribute('data-empty', parsed.text ? 'false' : 'true');
@@ -219,7 +178,11 @@ export default function MentionInput({
       onChange(parsed);
     }
 
-    // Check caret for @ trigger
+    // Check caret for @ trigger. Not at all where mentions are off.
+    if (mentionMode === 'off') {
+      setMentionActive(false);
+      return;
+    }
     const sel = window.getSelection();
     if (!sel || sel.rangeCount === 0) {
       setMentionActive(false);
@@ -282,7 +245,7 @@ export default function MentionInput({
     }
 
     setMentionActive(false);
-  }, [onChange, parseDOM, singleLine]);
+  }, [onChange, parseDOM, singleLine, mentionMode]);
 
   // Insert text/emoji at current or saved cursor position, then reposition caret directly after
   const insertTextAtCursor = useCallback((textToInsert) => {
@@ -402,7 +365,7 @@ export default function MentionInput({
     el.setAttribute('data-empty', 'false');
 
     if (!mentions || mentions.length === 0) {
-      el.innerHTML = convertUrlsToChipsHTML(text).replace(/\n/g, '<br>');
+      el.innerHTML = textToEditorHtml(text);
       return;
     }
 
@@ -413,13 +376,13 @@ export default function MentionInput({
 
     sorted.forEach(m => {
       if (m.start >= cursor && m.end <= text.length && text.slice(m.start, m.end) === `@${m.username}`) {
-        html += convertUrlsToChipsHTML(text.slice(cursor, m.start)).replace(/\n/g, '<br>');
+        html += textToEditorHtml(text.slice(cursor, m.start));
         html += `<span class="${styles.pill}" contenteditable="false" data-user-id="${escapeHtml(String(m.userId))}" data-username="${escapeHtml(m.username)}">@${escapeHtml(m.username)}</span>`;
         cursor = m.end;
       }
     });
 
-    html += convertUrlsToChipsHTML(text.slice(cursor)).replace(/\n/g, '<br>');
+    html += textToEditorHtml(text.slice(cursor));
     el.innerHTML = html;
   }, [value, currentVal]);
 
@@ -544,13 +507,9 @@ export default function MentionInput({
             pill.innerText = `@${node.getAttribute('data-username')}`;
             frag.appendChild(pill);
           } else if (node.hasAttribute('data-url')) {
-            const chip = document.createElement('span');
-            chip.className = styles.urlChip;
-            chip.setAttribute('contenteditable', 'false');
-            const safeUrl = sanitizeUrl(node.getAttribute('data-url'));
-            chip.setAttribute('data-url', safeUrl);
-            chip.innerText = node.innerText;
-            frag.appendChild(chip);
+            // A link chip copied from an older build pastes as its address,
+            // as ordinary editable text.
+            frag.appendChild(document.createTextNode(node.getAttribute('data-url') || ''));
           } else if (node.nodeName === 'BR') {
             frag.appendChild(document.createElement('br'));
           } else {

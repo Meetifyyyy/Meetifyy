@@ -40,6 +40,7 @@ Four layers, kept apart (spec 10E):
 |---|---|---|
 | Direct message | `dm.controller` / `messages.controller` -> `createNotification(MESSAGE)`; socket `message:send` -> `realtime.gateway` | "You have a new message from [Name]." / "You have N new messages from [Name]." |
 | Group message | `group-chats.controller`, socket `message:send` | title = group name, body "New message from [Name]" / "N new messages" |
+| Removed from a group | `group-chats.controller` / `messages.controller` `removeMember` -> `enqueueForGroupRemoval` (not on leaving) | "You were removed from [Group]." (category Messages) |
 | Post like | `posts.service` like path | "[Name] liked your post." ("[Name] and N others ...") |
 | Comment like | `posts.service` comment-like path | "[Name] liked your comment." |
 | Comment on your post | `posts.service` addComment | "[Name] commented on your post." |
@@ -94,7 +95,10 @@ dropped (the in-app row stays) if any of these no longer holds:
   exists, the recipient can still review it, the joiner is still a member or
   the request still PENDING;
 - for messages: the recipient is still a participant, not left, not muted,
-  and still has unread messages in that conversation.
+  and still has unread messages in that conversation;
+- for a removal: the recipient's `leftAt` is still that removal's time (a
+  re-add, or a later removal that pushes on its own, drops it), and the
+  conversation is a group.
 
 Devices are read at send time too, by the recipient's user id, so a token
 that moved to another account (account switch) is never sent the old
@@ -102,10 +106,11 @@ account's notifications.
 
 ### Grouping, dedupe, retries
 
-- **Messages**: one delayed job per (recipient, conversation) with a fixed
-  job id, so a burst within 3 s becomes one push. The text uses the
-  participant's own `unreadCount`, which messaging already maintains and
-  resets on read. On the device the push replaces the previous one for the
+- **Messages**: the first message of a burst is pushed at once (a Redis
+  `SET NX PX 3000` per recipient and conversation opens the burst); the rest
+  collapse into one delayed job per 3 s window with a fixed job id. The text
+  uses the participant's own `unreadCount`, which messaging already maintains
+  and resets on read. On the device the push replaces the previous one for the
   same conversation (web `tag`, Android notification `tag`, FCM collapse key).
 - **Viewing the conversation**: the open chat marks messages seen as they
   arrive (`conversation:mark_seen`), so by send time `unreadCount` is 0 and no
@@ -116,7 +121,10 @@ account's notifications.
   aggregating into the same row pushes again and replaces the tray entry
   ("A and 1 other liked your post.").
 - **Duplicate enqueues** of the same row state collapse on the BullMQ job id
-  (`n_<rowId>_<updatedAt>`).
+  (`n_<rowId>_<updatedAt>`); a removal on `gr_<recipient>_<conversation>_<leftAt>`.
+- **Removal**: shares the group's collapse key, so it replaces a pending
+  "N new messages" for that group instead of sitting beside it, and opens the
+  chat, which shows that they are no longer a member.
 - **Retries**: up to 5 attempts, exponential backoff. A per-device Redis
   marker means a retry caused by one device's 503 does not re-send to the
   devices that already accepted it.

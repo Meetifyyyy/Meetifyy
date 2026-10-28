@@ -8,6 +8,7 @@ import { MessagingCoreModule } from './core/messaging-core.module';
 import { RedisModule } from '../redis/redis.module';
 import { MentionsModule } from '../mentions/mentions.module';
 import { BlocksService } from '../users/blocks.service';
+import { PushModule } from '../push/push.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { BlocksService } from '../users/blocks.service';
     NotificationsModule,
     MessagingCoreModule,
     MentionsModule,
+    PushModule,
   ],
   controllers: [MessagesController],
   providers: [MessagesService, BlocksService],

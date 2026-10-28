@@ -25,26 +25,7 @@ import {
 } from '../constants/mediaLimits';
 import { generateImagePlaceholder } from './imagePlaceholder';
 
-/**
- * Creates an instantly-available local preview URL for a File/Blob.
- * Returns { url, revoke } — call revoke() once the server asset has painted
- * to avoid leaking the object URL (memory only, never persisted).
- */
-export const createLocalPreview = (file) => {
-  if (!file || typeof URL === 'undefined' || !URL.createObjectURL) {
-    return { url: null, revoke: () => {} };
-  }
-  const url = URL.createObjectURL(file);
-  let revoked = false;
-  return {
-    url,
-    revoke: () => {
-      if (revoked) return;
-      revoked = true;
-      try { URL.revokeObjectURL(url); } catch (_) { /* ignore */ }
-    },
-  };
-};
+
 
 /**
  * Reads intrinsic dimensions of an image File without a full main-thread decode.

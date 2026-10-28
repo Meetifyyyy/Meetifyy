@@ -71,7 +71,7 @@ import { detach } from '../common/utils/detach.util';
 import { traceBackground } from '../observability/background-trace';
 import { SocketTraceInterceptor } from './socket-trace.interceptor';
 import { errorMessage } from '../common/utils/error.util';
-import { isRecord } from '../common/utils/type-guards.util';
+import { isRecord, stringField } from '../common/utils/type-guards.util';
 import {
   ConversationRefPayload,
   DeliveryReceiptPayload,
@@ -86,6 +86,8 @@ import {
   JoinRoomsPayload,
   INVALID_PAYLOAD,
 } from './socket-payloads';
+import { publicMessage } from '../messages/message-alert.util';
+import { CONVERSATION_REVIVED } from '../messages/core/conversation-revive';
 
 /**
  * The client address behind a socket.
@@ -521,33 +523,62 @@ export class RealtimeGateway
       }
     }
 
-    if (type === 'group:member_added') {
-      const convId = inData('conversationId') || top('conversationId');
-      const targetUser = inData('userId') || top('userId');
-      if (convId && targetUser) {
-        const userSockets = this.server.sockets.adapter.rooms.get(targetUser);
-        if (userSockets) {
-          userSockets.forEach((socketId) => {
-            const socket = this.server.sockets.sockets.get(socketId);
-            if (socket) void socket.join(`conv_${convId}`);
-          });
-        }
+    // Room membership follows group membership. A conversation's room exists
+    // under two names (its internal and its public id, see handleConnection),
+    // so both are joined or left; leaving only the one the request happened to
+    // name kept a removed user's sockets in the other, still receiving the
+    // group's typing, presence and read events. The participant check cache is
+    // dropped for the user too, so a removed member's typing is refused at
+    // once rather than when the cached "yes" expires (and a re-added one is
+    // let in at once).
+    if (type === 'group:member_added' || type === 'group:member_removed') {
+      const removed = type === 'group:member_removed';
+      const subject = removed
+        ? inData('targetUserId') || top('targetUserId') || inData('userId')
+        : inData('userId') || top('userId');
+      const rooms = [
+        inData('conversationId') || top('conversationId'),
+        inData('publicId'),
+        inData('internalId'),
+      ]
+        .filter((id): id is string => Boolean(id))
+        .map((id) => `conv_${id}`);
+      if (subject && rooms.length > 0) {
+        this.forgetParticipantChecks(subject);
+        const userSockets = this.server.sockets.adapter.rooms.get(subject);
+        userSockets?.forEach((socketId) => {
+          const socket = this.server.sockets.sockets.get(socketId);
+          if (!socket) return;
+          if (removed) {
+            rooms.forEach((room) => void socket.leave(room));
+          } else {
+            void socket.join(rooms);
+          }
+        });
       }
     }
 
-    if (type === 'group:member_removed') {
-      const convId = inData('conversationId') || top('conversationId');
-      const targetUser =
-        inData('targetUserId') || top('targetUserId') || inData('userId');
-      if (convId && targetUser) {
-        const userSockets = this.server.sockets.adapter.rooms.get(targetUser);
-        if (userSockets) {
-          userSockets.forEach((socketId) => {
-            const socket = this.server.sockets.sockets.get(socketId);
-            if (socket) void socket.leave(`conv_${convId}`);
-          });
-        }
+    // A message brought a hidden conversation back for these members: their
+    // sockets skipped its rooms at connect (handleConnection joins only
+    // visible conversations), so they join both names now. Server-side only;
+    // the message itself already reached them through their own room.
+    if (type === CONVERSATION_REVIVED) {
+      const rooms = [inData('internalId'), inData('publicId')]
+        .filter((id): id is string => Boolean(id))
+        .map((id) => `conv_${id}`);
+      const userIds = Array.isArray(payload.targetUserIds)
+        ? payload.targetUserIds.filter(
+            (t): t is string => typeof t === 'string' && t.length > 0,
+          )
+        : [];
+      if (rooms.length === 0) return;
+      for (const userId of userIds) {
+        this.forgetParticipantChecks(userId);
+        this.server.sockets.adapter.rooms.get(userId)?.forEach((socketId) => {
+          void this.server.sockets.sockets.get(socketId)?.join(rooms);
+        });
       }
+      return;
     }
 
     // Post-scoped realtime: fan comment/like/poll/deletion activity out to
@@ -1219,8 +1250,9 @@ export class RealtimeGateway
         conversationId,
         parsed.value,
       );
+      // Never the recipient and mute lists (message-alert.util.ts publicMessage).
       const payload = {
-        ...message,
+        ...publicMessage(message),
         tempId: clientKey,
         clientId: clientKey,
         status: 'sent',
@@ -1281,6 +1313,10 @@ export class RealtimeGateway
         // REJECTED and must not be retried; RATE_LIMITED and ERROR may be.
         // Builds that predate it ignore the field.
         code: sendFailureCode(err),
+        // Why, when the server said (NOT_A_MEMBER, RECIPIENT_UNAVAILABLE, ...),
+        // so the bubble can say "You're no longer in this group" rather than
+        // a bare "Not delivered". Additive; older builds ignore it.
+        ...(refusalCode(err) ? { errorCode: refusalCode(err) } : {}),
       };
     }
   }
@@ -1794,6 +1830,14 @@ export class RealtimeGateway
           : RealtimeGateway.PARTICIPANT_MISS_TTL_MS),
     });
     return conv;
+  }
+
+  /** Drops every cached participant verdict for `userId` on this instance. */
+  private forgetParticipantChecks(userId: string): void {
+    const prefix = `${userId}:`;
+    for (const key of this.participantConvCache.keys()) {
+      if (key.startsWith(prefix)) this.participantConvCache.delete(key);
+    }
   }
 
   /**
@@ -2312,6 +2356,12 @@ function authSessionId(auth: unknown): string {
 }
 
 /** How a refused `message:send` is classified for the client's retry logic. */
+/** The machine-readable `code` an HttpException was thrown with, if any. */
+export function refusalCode(err: unknown): string | undefined {
+  if (!(err instanceof HttpException)) return undefined;
+  return stringField(err.getResponse(), 'code');
+}
+
 export function sendFailureCode(
   err: unknown,
 ): 'REJECTED' | 'RATE_LIMITED' | 'ERROR' {

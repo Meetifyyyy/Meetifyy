@@ -7,9 +7,8 @@
  * (padding on its overlay, a smaller max-height). That is one layout change in
  * the frame the keyboard STARTS to move, so the sheet is already at its final
  * place while the keyboard is still at the bottom of the screen and the two
- * only meet ~250ms later. Closing needs nothing: the sheet drops to the bottom
- * at once, behind the keyboard that is still leaving, and is uncovered as the
- * keyboard goes.
+ * only meet ~250ms later. Closing the same in reverse: the sheet dropped to its
+ * old place at once while the keyboard was still leaving.
  *
  * A FLIP animation fixes opening without the sheet knowing about it. The caller
  * (useKeyboardInset) measures the sheet BEFORE it publishes --kb-inset and again
@@ -19,6 +18,18 @@
  * every modal; none of them needs markup or CSS of its own for it, and one that
  * does not move (a docked composer that lifts itself, a page that scrolls
  * instead) is left alone because its distance is ~0.
+ *
+ * A sheet on the bottom of the screen is usually also SHORTENED to fit above
+ * the keyboard (its height capped by --kb-inset). Following its bottom edge
+ * then made its top edge dip on the first frame and rise from there (measured
+ * on the I2208: 41px down, then up), since the shortening lands at once. Such a
+ * sheet follows its top edge instead, which is what the eye tracks. The gap
+ * that opens between its bottom edge and the rising keyboard is filled with
+ * the sheet's own colour for the length of the slide (a paint-only box-shadow,
+ * no layout), and that fill ends behind the keyboard, which overlays the page.
+ * Closing is the same slide the other way: the top edge glides down with the
+ * keyboard instead of dropping at once, and the sheet's lengthened lower part
+ * stays behind the keyboard as it leaves.
  *
  * `translate`, not `transform`: a sheet's entrance animation owns `transform`.
  */
@@ -59,36 +70,64 @@ export function sheetEdges(sheet) {
 }
 
 /**
- * How far layout moved the sheet between two measurements, positive = up.
- * A sheet standing on the bottom of the screen is followed by its bottom edge
- * (its height may have been capped, which moves the top by a different amount);
- * anything else by its middle, which is what a centred dialog keeps.
+ * How to slide the sheet that layout moved between two measurements.
+ *
+ * `travel`, positive = up: a sheet standing on the bottom of the screen (before
+ * or after) is followed by its top edge; anything else by its middle, which is
+ * what a centred dialog keeps.
+ * `extend`: how far below its bottom edge the sheet's colour has to reach while
+ * it slides, so no gap shows above the keyboard; the amount layout shortened
+ * it by on the way up, 0 otherwise.
+ *
+ * @returns {{ travel: number, extend: number }}
  */
-export function sheetTravel(before, after, viewportHeight = window.innerHeight) {
-  if (before.bottom >= viewportHeight - 4) return before.bottom - after.bottom;
-  return (before.top + before.bottom - after.top - after.bottom) / 2;
+export function sheetSlide(before, after, viewportHeight = window.innerHeight) {
+  const onBottom = before.bottom >= viewportHeight - 4 || after.bottom >= viewportHeight - 4;
+  if (!onBottom) {
+    return { travel: (before.top + before.bottom - after.top - after.bottom) / 2, extend: 0 };
+  }
+  const travel = before.top - after.top;
+  const shortened = (before.bottom - after.bottom) - travel;
+  return { travel, extend: travel > 0 && shortened >= MIN_MOVE_PX ? Math.ceil(shortened) : 0 };
+}
+
+/** The sheet's own colour reaching `extend` px below it, beside its own shadow. */
+function extensionShadow(sheet, extend) {
+  const style = getComputedStyle(sheet);
+  const colour = style.backgroundColor;
+  if (!colour || colour === 'transparent' || /rgba\(.*,\s*0\)$/.test(colour)) return null;
+  const own = style.boxShadow && style.boxShadow !== 'none' ? `${style.boxShadow}, ` : '';
+  return `${own}0 ${extend}px 0 0 ${colour}`;
 }
 
 /**
- * Plays `travel` px back as a slide into place.
+ * Plays a slide back into place.
  * @param {HTMLElement} sheet
- * @param {number} travel     from sheetTravel
+ * @param {{travel: number, extend?: number}} slide  from sheetSlide
  * @param {{duration: number, delay?: number}} timing  the keyboard's, in ms
  *        (`delay` is negative: how far the keyboard has already moved)
  * @returns {boolean} whether an animation was started
  */
-export function riseSheet(sheet, travel, { duration, delay = 0 }) {
+export function riseSheet(sheet, { travel, extend = 0 }, { duration, delay = 0 }) {
   if (!sheet || typeof sheet.animate !== 'function') return false;
   if (!(duration > 0) || Math.abs(travel) < MIN_MOVE_PX) return false;
   if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return false;
 
   running.get(sheet)?.cancel();
+  // Painted once for the slide and removed with it: by then it lies behind
+  // the keyboard. Inline, restoring whatever inline value was there.
+  const shadow = extend > 0 ? extensionShadow(sheet, extend) : null;
+  const inlineShadow = sheet.style.boxShadow;
+  if (shadow) sheet.style.boxShadow = shadow;
   const animation = sheet.animate(
     { translate: [`0 ${Math.round(travel)}px`, '0 0'] },
     { duration, delay, easing: IME_EASING, fill: 'none' },
   );
   running.set(sheet, animation);
-  const done = () => { if (running.get(sheet) === animation) running.delete(sheet); };
+  const done = () => {
+    if (shadow) sheet.style.boxShadow = inlineShadow;
+    if (running.get(sheet) === animation) running.delete(sheet);
+  };
   animation.onfinish = done;
   animation.oncancel = done;
   return true;

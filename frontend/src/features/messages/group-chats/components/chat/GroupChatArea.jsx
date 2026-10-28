@@ -5,6 +5,7 @@ import { useChatAreaState } from '@features/messages/shared/hooks/useChatAreaSta
 import { useMessagingEligibility } from '@shared/hooks/useMessagingEligibility';
 import { resolveComposerState } from '@shared/utils/messagingEligibility';
 import ChatAreaLayout from '@features/messages/shared/components/ChatAreaLayout';
+import { useClearChatConfirm } from '@features/messages/shared/components/modals/ClearChatModal';
 import GroupChatHeader from './GroupChatHeader';
 
 export default function GroupChatArea({
@@ -55,15 +56,26 @@ export default function GroupChatArea({
       memberDetails: groupDetails.memberDetails || conversation?.memberDetails || [],
       memberCount: groupDetails.memberCount ?? conversation?.memberCount ?? 0,
       pendingRequests: groupDetails.pendingRequests || conversation?.pendingRequests || [],
-      isMember: groupDetails.myRole !== undefined ? true : (conversation?.isMember !== false),
+      // Membership is the conversation's own statement (list row or history,
+      // whichever is newer — see MessagesLayout), never inferred from the
+      // details having a role. Those details are a cached copy, and treating
+      // "has a role" as "is a member" is what kept a removed user's composer
+      // open: the query stops fetching once they are out, but kept its data.
+      isMember: conversation?.isMember !== false,
     };
   }, [conversation, groupDetails]);
 
   const state = useChatAreaState(effectiveConv);
   const { currentUser } = state;
+  // Clearing is confirmed first (ClearChatModal); the menus open the dialog.
+  const clearChat = useClearChatConfirm(effectiveConv, onClearChat);
 
   const isBanned = effectiveConv?.myMembershipStatus === 'BANNED';
-  const isKicked = effectiveConv?.myMembershipStatus === 'KICKED' || effectiveConv?.isMember === false;
+  // Out of the group: removed by an admin, left by choice, or (when this device
+  // only knows the server's `isMember: false`) one of the two.
+  const isKicked = effectiveConv?.myMembershipStatus === 'KICKED';
+  const hasLeft = effectiveConv?.myMembershipStatus === 'LEFT';
+  const isOut = isKicked || hasLeft || effectiveConv?.isMember === false;
   const isPending = effectiveConv?.myMembershipStatus === 'PENDING';
   const isAdmin =
     String(effectiveConv?.ownerId || effectiveConv?.hostId || effectiveConv?.creatorId) ===
@@ -78,8 +90,12 @@ export default function GroupChatArea({
     resolveComposerState({
       membershipReason: isBanned
         ? 'You have been banned from this group'
-        : isKicked
-          ? 'You have been removed from this group'
+        : isOut
+          ? (isKicked
+            ? 'You have been removed from this group'
+            : hasLeft
+              ? 'You left this group'
+              : "You're no longer in this group")
           : isPending
             ? 'Your join request is pending'
             : null,
@@ -88,46 +104,49 @@ export default function GroupChatArea({
     });
 
   return (
-    <ChatAreaLayout
-      {...state}
-      conversation={effectiveConv}
-      onClearChat={onClearChat}
-      showChatOnMobile={showChatOnMobile}
-      isLoading={isLoading}
-      notFound={notFound}
-      hasMore={hasMore}
-      isLoadingMore={isLoadingMore}
-      onLoadMore={onLoadMore}
-      onMarkSeen={onMarkSeen}
-      onRetryUpload={onRetryUpload}
-      onRetrySend={onRetrySend}
-      onCancelUpload={onCancelUpload}
-      onSendMessage={onSendMessage}
-      onBack={onBack}
-      onNewMessage={onNewMessage}
-      emptyIcon="👥"
-      emptyLabel="Select a conversation"
-      showTypingAvatar
-      inputDisabled={inputDisabled}
-      inputDisabledReason={inputDisabledReason}
-      header={
-        <GroupChatHeader
-          conversation={effectiveConv}
-          onBack={onBack}
-          onLeaveGroup={onLeaveGroup}
-          onEndGroup={onEndGroup}
-          onClearChat={onClearChat}
-          onToggleSearch={() => {
-            if (state.showSearch) {
-              state.closeSearch();
-            } else {
-              state.openSearch();
-            }
-          }}
-          onOpenDetails={() => state.setShowDetails(true)}
-          isAdmin={isAdmin}
-        />
-      }
-    />
+    <>
+      <ChatAreaLayout
+        {...state}
+        conversation={effectiveConv}
+        onClearChat={clearChat.request}
+        showChatOnMobile={showChatOnMobile}
+        isLoading={isLoading}
+        notFound={notFound}
+        hasMore={hasMore}
+        isLoadingMore={isLoadingMore}
+        onLoadMore={onLoadMore}
+        onMarkSeen={onMarkSeen}
+        onRetryUpload={onRetryUpload}
+        onRetrySend={onRetrySend}
+        onCancelUpload={onCancelUpload}
+        onSendMessage={onSendMessage}
+        onBack={onBack}
+        onNewMessage={onNewMessage}
+        emptyIcon="👥"
+        emptyLabel="Select a conversation"
+        showTypingAvatar
+        inputDisabled={inputDisabled}
+        inputDisabledReason={inputDisabledReason}
+        header={
+          <GroupChatHeader
+            conversation={effectiveConv}
+            onBack={onBack}
+            onLeaveGroup={onLeaveGroup}
+            onEndGroup={onEndGroup}
+            onClearChat={clearChat.request}
+            onToggleSearch={() => {
+              if (state.showSearch) {
+                state.closeSearch();
+              } else {
+                state.openSearch();
+              }
+            }}
+            onOpenDetails={() => state.setShowDetails(true)}
+            isAdmin={isAdmin}
+          />
+        }
+      />
+      {clearChat.dialog}
+    </>
   );
 }

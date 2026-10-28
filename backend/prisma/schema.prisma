@@ -566,6 +566,10 @@ model ConversationParticipant {
   unreadCount        Int              @default(0)
   clearedAt          DateTime?
   leftAt             DateTime?
+  // The group's name and photo when this member left. A former member's list
+  // row shows the group as it was then, not as it is now. Cleared on rejoin.
+  leftGroupName      String?
+  leftGroupAvatarKey String?
   deletedAt          DateTime?
   conversation       Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   user               User             @relation(fields: [userId], references: [id], onDelete: Cascade)

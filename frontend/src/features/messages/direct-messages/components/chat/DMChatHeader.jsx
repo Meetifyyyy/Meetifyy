@@ -80,7 +80,7 @@ export default function DMChatHeader({
           <button 
             {...moreMenu.triggerProps}
             className={`${styles.msgChatActionBtn} ${moreMenu.open ? styles.msgChatActionBtnActive : ''}`}
-            title="More Options"
+            title="More options"
           >
             <MoreVertical size={20} strokeWidth={2.25} />
           </button>

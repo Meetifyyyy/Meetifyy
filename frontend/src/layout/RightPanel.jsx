@@ -6,7 +6,6 @@ import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import { useNotifications } from '@shared/hooks/useNotifications';
 import { timeAgo } from '@shared/utils/time';
 import Avatar from '@shared/components/avatar/Avatar';
-import { canSeeOnlineStatus } from '@shared/utils/presence';
 import styles from './RightPanel.module.css';
 import { useQuery } from '@tanstack/react-query';
 import { usersApi, getMediaUrl } from '@shared/api/apiClient';
@@ -47,7 +46,6 @@ export function NotificationsActivity() {
   const { notifications, isLoading } = useNotifications();
   const users = useUsersMap();
   const navigate = useNavigate();
-
 
   // Grouped the same way as the Notifications page, so four likes on one post
   // take one of these four slots instead of all of them.
@@ -480,75 +478,3 @@ export function UpcomingEvents() {
   );
 }
 
-export function UniversityEvents({ events, title = 'Ongoing Events', onViewAll }) {
-  if (!events || events.length === 0) return null;
-
-  return (
-    <div className={styles.panelCard}>
-      <h3 className={styles.panelTitle}>{title}</h3>
-      {events.map((e, i) => {
-        const dateParts = e.date.split(' ');
-        const month = dateParts[0];
-        const day = dateParts[1] || '';
-        
-        return (
-          <div key={i} className={styles.eventItem}>
-            <div className={styles.eventDate}>{month}<br /><span>{day}</span></div>
-            <div className={styles.eventDetail}>
-              <div className={styles.eventName}>{e.title}</div>
-              <div className={styles.eventMeta}>{e.time} • {e.location}</div>
-              {e.desc && <div className={styles.eventDesc}>{e.desc}</div>}
-            </div>
-          </div>
-        );
-      })}
-      <button className={styles.viewAllBtn} onClick={onViewAll}>View All Events</button>
-    </div>
-  );
-}
-
-export function UniversityMembers({ members, title = 'Members', onViewAll }) {
-  const { currentUser } = useAuth();
-  const { data: usersData = [] } = useQuery({ queryKey: ['users'], queryFn: () => usersApi.getAll() });
-  const users = useMemo(() => usersData.reduce((acc, u) => ({ ...acc, [u.id]: u }), {}), [usersData]);
-  const navigate = useNavigate();
-  if (!members || members.length === 0) return null;
-
-  const displayMembers = members.slice(0, 5);
-
-  return (
-    <div className={styles.panelCard}>
-      <h3 className={styles.panelTitle}>{title}</h3>
-      {displayMembers.map((m, i) => {
-        const targetUsername = m.username || m.name.toLowerCase().replace(/[^a-z0-9]/g, '');
-        const isSelf = targetUsername === currentUser?.username;
-        const targetUser = Object.values(users).find(u => u.username === targetUsername);
-        const canSee = targetUser ? canSeeOnlineStatus(currentUser, targetUser) : true;
-        const isOnline = canSee ? (targetUser ? targetUser.isOnline : m.online) : false;
-        return (
-          <div key={i} className={styles.friendItem}>
-            <Avatar 
-              src={m.avatar} 
-              name={m.name} 
-              size="36px" 
-              onClick={() => navigate(`/profile/${targetUsername}`, { state: { from: location.pathname } })}
-            />
-            <div className={styles.friendInfo} style={{ cursor: 'pointer' }} onClick={() => navigate(`/profile/${targetUsername}`, { state: { from: location.pathname } })}>
-              <div className={styles.friendName}>{m.name} {m.admin && '👑'}</div>
-              <div className={styles.memberBranch}>{m.branch} • {m.year}</div>
-              <div className={`${styles.friendStatus}${isOnline ? ` ${styles.online}` : ''}`}>
-                {isOnline ? 'Online' : 'Offline'}
-              </div>
-            </div>
-            {!isSelf && (
-              <FollowButton targetUsername={targetUsername} initialFollowing={targetUser?.isFollowing} size="sm" />
-            )}
-          </div>
-        );
-      })}
-      {members.length > 5 && (
-        <button className={styles.viewAllBtn} onClick={onViewAll}>View All Members</button>
-      )}
-    </div>
-  );
-}

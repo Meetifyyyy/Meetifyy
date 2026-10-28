@@ -17,6 +17,23 @@ import { DomainEventService } from '../events/domain-event.service';
  * `sendMessage` already computes both id lists in one batched query, so this
  * costs no extra round trip.
  */
+/**
+ * A message as clients receive it: never the server's lists of whom it went
+ * to and who had muted the chat. Those used to travel in every copy (and in
+ * the sender's own response), so any member could read off who had muted the
+ * group.
+ */
+export function publicMessage<T extends object>(
+  message: T,
+): Omit<T, 'recipientIds' | 'unmutedRecipientIds'> {
+  const copy = Object.fromEntries(
+    Object.entries(message).filter(
+      ([key]) => key !== 'recipientIds' && key !== 'unmutedRecipientIds',
+    ),
+  );
+  return copy as Omit<T, 'recipientIds' | 'unmutedRecipientIds'>;
+}
+
 export function emitMessageNew(
   domainEventService: DomainEventService,
   message: object,
@@ -28,6 +45,7 @@ export function emitMessageNew(
 ): Promise<void>[] {
   const unmuted = new Set(opts.unmutedRecipientIds || []);
   const recipients = opts.recipientIds || [];
+  message = publicMessage(message);
   const mutedIds = recipients.filter((id) => !unmuted.has(id));
   const unmutedIds = recipients.filter((id) => unmuted.has(id));
 

@@ -50,14 +50,6 @@ export function parseConversationRoute(param1, param2) {
 }
 
 /**
- * Validates whether an actual slug matches the expected slug.
- */
-export function validateSlug(actualSlug, expectedSlug) {
-  if (!actualSlug || !expectedSlug) return false;
-  return actualSlug.toLowerCase() === expectedSlug.toLowerCase();
-}
-
-/**
  * Computes the correct canonical URL for a conversation given the current URL path.
  */
 export function correctConversationUrl(conversation, currentUserId, currentPathname = '/inbox') {

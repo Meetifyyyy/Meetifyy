@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
+import { useAuth } from '@shared/context/AuthContext';
 import MentionInput from '@shared/components/mentions/MentionInput';
 import LazyEmojiPicker, { preloadEmojiPicker } from '@shared/components/ui/LazyEmojiPicker';
 import styles from './ChatInputAreaStyles.module.css';
@@ -45,6 +46,20 @@ export default function ChatInputArea({
   disabledReason,
 }) {
   const sendMessageFn = propOnSendMessage || onSend;
+  const { currentUser } = useAuth();
+
+  // Mentions are a group feature: the group's members and @everyone, from the
+  // member list the chat already holds, filtered as you type with no request.
+  // In a direct chat "@" is plain text (the other person gets every message
+  // anyway, and the old picker offered anyone on the platform).
+  const isGroupChat = conversation?.type === 'GROUP' || Boolean(conversation?.isGroup);
+  const memberDetails = conversation?.memberDetails;
+  const mentionCandidates = useMemo(() => {
+    if (!isGroupChat || !Array.isArray(memberDetails)) return [];
+    return memberDetails
+      .filter((m) => m && m.username && !m.isDeleted && String(m.userId) !== String(currentUser?.id))
+      .map((m) => ({ id: m.userId, username: m.username, displayName: m.displayName || m.username, avatar: m.avatar }));
+  }, [isGroupChat, memberDetails, currentUser?.id]);
   // Survives leaving the chat, switching chats and the app being killed.
   // Emptying it after a send (below) is what deletes the saved draft.
   const draftScope = chatDraftScope(conversation, persistDraft);
@@ -510,6 +525,8 @@ export default function ChatInputArea({
                   inputRef={inputRef}
                   className={styles.msgInput}
                   placeholder="Type a message..."
+                  mentionMode={isGroupChat ? 'local' : 'off'}
+                  mentionCandidates={mentionCandidates}
                   value={inputValue}
                   onChange={(val) => {
                     /*

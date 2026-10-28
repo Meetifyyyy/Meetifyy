@@ -4,7 +4,7 @@ import { render, screen, cleanup, fireEvent, act, waitFor } from '@testing-libra
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 /**
- * The group Invite modal's people list.
+ * The group Invite sheet's people list.
  *
  * Two defects, both visible in the same list:
  *
@@ -26,46 +26,16 @@ const getConnectionsMock = vi.fn();
 const getGroupDetailsMock = vi.fn();
 
 vi.mock('@shared/api/apiClient', () => ({
-  // Added with the cookie migration: AuthContext reads these to decide whether
-  // a cookie session is worth recovering, and to carry the CSRF token the
-  // server returns in the body of every session-issuing response.
-  readCsrfCookie: () => '',
-  mayHaveCookieSession: () => false,
-  rememberCsrfToken: () => {},
-  forgetCsrfToken: () => {},
-  authApi: {
-    currentSession: async () => ({ user: null }),
-    adoptSession: async () => ({}),
-    logoutSession: async () => ({}),
-  },
-  apiClient: { get: async () => ({}), post: async () => ({}) },
   usersApi: { getConnections: (...a) => getConnectionsMock(...a) },
   groupApi: { getDetails: (...a) => getGroupDetailsMock(...a) },
-  getMediaUrl: (v) => v,
+  dmApi: { sendGroupInvite: vi.fn() },
 }));
 
 let currentUser = { id: 'me', username: 'me', displayName: 'Me' };
 vi.mock('@shared/context/AuthContext', () => ({
   useAuth: () => ({ currentUser, updateCurrentUser: vi.fn(), isLoggedIn: true }),
 }));
-
-vi.mock('@shared/hooks/useMessages', () => ({
-  useConversations: () => ({ conversations: [] }),
-}));
-vi.mock('@shared/hooks/useMessageActions', () => ({
-  useMessageActions: () => ({
-    startConversation: vi.fn(),
-    sendDirectMessage: vi.fn(),
-  }),
-}));
-vi.mock('@shared/components/avatar/Avatar', () => ({
-  default: () => <span data-testid="avatar" />,
-  getProcessedAvatarUrl: (v) => v,
-}));
-vi.mock('@shared/components/avatar/DefaultAvatar', () => ({
-  default: () => <span data-testid="default-avatar" />,
-}));
-vi.mock('@shared/utils/toast', () => ({ showToast: vi.fn() }));
+vi.mock('@shared/components/avatar/ShareModalAvatar', () => ({ default: () => <span /> }));
 
 import InviteModal from '../InviteModal';
 
@@ -88,7 +58,7 @@ const renderModal = (group = GROUP) => {
 };
 
 const type = async (text) => {
-  fireEvent.change(screen.getByPlaceholderText('Search people...'), {
+  fireEvent.change(screen.getByRole('textbox', { name: 'Search people' }), {
     target: { value: text },
   });
   await act(async () => {
@@ -103,10 +73,9 @@ const settle = async () =>
     await Promise.resolve();
   });
 
+/** Who the sheet offers, by display name. */
 const renderedHandles = () =>
-  Array.from(document.querySelectorAll('[class*="contactHandle"]')).map(
-    (n) => n.textContent,
-  );
+  screen.queryAllByRole('option').map((n) => `@${n.textContent.toLowerCase()}`);
 
 beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
@@ -120,7 +89,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('Invite modal — who is offered', () => {
+describe('Invite sheet — who is offered', () => {
   it('does not offer people who are already in the group', async () => {
     getConnectionsMock.mockResolvedValue([
       { id: 'owner', username: 'owner', displayName: 'Owner' },
@@ -133,6 +102,29 @@ describe('Invite modal — who is offered', () => {
 
     await waitFor(() => {
       expect(renderedHandles()).toEqual(['@outsider']);
+    });
+  });
+
+  it('offers someone removed earlier, though the chat history still lists them', async () => {
+    // The panel's group carries the history's `participants`, which keeps
+    // former members; only the member lists say who is in the group now.
+    getConnectionsMock.mockResolvedValue([
+      { id: 'removed', username: 'removed', displayName: 'Removed' },
+      { id: 'member', username: 'member', displayName: 'Member' },
+    ]);
+    getGroupDetailsMock.mockResolvedValue({
+      ownerId: 'owner',
+      memberDetails: [{ userId: 'owner' }, { userId: 'member' }],
+    });
+
+    renderModal({
+      ...GROUP,
+      participants: [{ userId: 'owner' }, { userId: 'member' }, { userId: 'removed' }],
+    });
+    await settle();
+
+    await waitFor(() => {
+      expect(renderedHandles()).toEqual(['@removed']);
     });
   });
 
@@ -163,7 +155,7 @@ describe('Invite modal — who is offered', () => {
     await settle();
     getConnectionsMock.mockClear();
 
-    const input = screen.getByPlaceholderText('Search people...');
+    const input = screen.getByRole('textbox', { name: 'Search people' });
     for (const value of ['a', 'an', 'ani', 'anit', 'anita']) {
       fireEvent.change(input, { target: { value } });
       await act(async () => {

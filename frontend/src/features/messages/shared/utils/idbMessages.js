@@ -559,7 +559,7 @@ function isUnsentRow(row, outboxIds, now) {
   if (row.queued === true) return true;
   const status = row.status;
   // A message that failed is kept for as long as the user has not dealt with
-  // it: deleting it would make "Not delivered" vanish, as if it had been sent.
+  // it: deleting it would make "Not sent" vanish, as if it had been sent.
   // There are few, and they still count toward the per-chat cap.
   if (status === 'failed' || status === 'FAILED') return true;
   // A "sending" row with no outbox entry is stuck, not pending; after a week

@@ -7,9 +7,8 @@
  * on next visit before the network response arrives.
  */
 import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import { communitiesApi } from '@shared/api/apiClient';
-import { createSubmissionKey } from '@shared/lib/idempotencyKey';
 import { idbGet, idbSet, idbDelete, idbEpoch } from '@shared/lib/idb';
 import { useHasCampusAccess, useCampusDeniedHandler } from './useCampusAffiliation';
 import { useAuth } from '@shared/context/AuthContext';
@@ -424,41 +423,3 @@ export function useJoinCommunity() {
   return useGuardedMutation(mutation, 'action');
 }
 
-export function useLeaveCommunity() {
-  const queryClient = useQueryClient();
-  const mutation = useMutation({
-    mutationFn: (id) => communitiesApi.leave(id),
-    onSuccess: (_data, id) => invalidateCommunity(queryClient, id),
-  });
-  return useGuardedMutation(mutation, 'action');
-}
-
-export function useCreateCommunity() {
-  const queryClient = useQueryClient();
-  // Same key across retries of one submission: a retry after a lost response
-  // replays the first create instead of making a second community.
-  const [submissionKey] = useState(createSubmissionKey);
-  const mutation = useMutation({
-    mutationFn: (data) => communitiesApi.create(data, { idempotencyKey: submissionKey.keyFor(data) }),
-    onSuccess: (created) => {
-      submissionKey.done();
-      return invalidateCommunity(queryClient, created?.id);
-    },
-  });
-  return useGuardedMutation(mutation, 'community');
-}
-
-/**
- * Prefetch a community by ID on hover intent.
- */
-export function usePrefetchCommunity() {
-  const queryClient = useQueryClient();
-  return useCallback((id) => {
-    if (!id) return;
-    queryClient.prefetchQuery({
-      queryKey: COMMUNITY_KEYS.byId(id),
-      queryFn: () => communitiesApi.getById(id),
-      staleTime: 5 * 60 * 1000,
-    });
-  }, [queryClient]);
-}

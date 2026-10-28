@@ -6,10 +6,17 @@ import { PushPlatform } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { PushAudienceService } from './push-audience.service';
-import { buildMessagePush, buildNotificationPush } from './push-payload';
+import {
+  buildGroupJoinRequestPush,
+  buildGroupRemovedPush,
+  buildMessagePush,
+  buildNotificationPush,
+} from './push-payload';
 import { WebPushProvider } from './providers/web-push.provider';
 import { FcmProvider } from './providers/fcm.provider';
 import {
+  GroupJoinRequestPushJob,
+  GroupRemovedPushJob,
   MessagePushJob,
   NotificationPushJob,
   PUSH_JOB,
@@ -33,6 +40,34 @@ function asNotificationJob(data: unknown): NotificationPushJob | null {
   const o = data as Record<string, unknown>;
   return isString(o.notificationId) && isString(o.recipientId)
     ? { notificationId: o.notificationId, recipientId: o.recipientId }
+    : null;
+}
+
+function asGroupJoinRequestJob(data: unknown): GroupJoinRequestPushJob | null {
+  if (!data || typeof data !== 'object') return null;
+  const o = data as Record<string, unknown>;
+  return isString(o.recipientId) &&
+    isString(o.conversationId) &&
+    isString(o.requesterId)
+    ? {
+        recipientId: o.recipientId,
+        conversationId: o.conversationId,
+        requesterId: o.requesterId,
+      }
+    : null;
+}
+
+function asGroupRemovedJob(data: unknown): GroupRemovedPushJob | null {
+  if (!data || typeof data !== 'object') return null;
+  const o = data as Record<string, unknown>;
+  return isString(o.recipientId) &&
+    isString(o.conversationId) &&
+    isString(o.removedAt)
+    ? {
+        recipientId: o.recipientId,
+        conversationId: o.conversationId,
+        removedAt: o.removedAt,
+      }
     : null;
 }
 
@@ -88,6 +123,38 @@ export class PushProcessor extends DrainingWorkerHost {
         data.recipientId,
         message,
         `n:${input.id}:${job.id ?? ''}`,
+      );
+      return;
+    }
+    if (job.name === PUSH_JOB.groupJoinRequest) {
+      const data = asGroupJoinRequestJob(job.data);
+      if (!data) return;
+      const input = await this.audience.forGroupJoinRequest(
+        data.recipientId,
+        data.conversationId,
+        data.requesterId,
+      );
+      if (!input) return;
+      await this.deliver(
+        data.recipientId,
+        buildGroupJoinRequestPush(input),
+        `jr:${data.conversationId}:${data.requesterId}`,
+      );
+      return;
+    }
+    if (job.name === PUSH_JOB.groupRemoved) {
+      const data = asGroupRemovedJob(job.data);
+      if (!data) return;
+      const input = await this.audience.forGroupRemoval(
+        data.recipientId,
+        data.conversationId,
+        data.removedAt,
+      );
+      if (!input) return;
+      await this.deliver(
+        data.recipientId,
+        buildGroupRemovedPush(input),
+        `gr:${data.conversationId}:${data.removedAt}`,
       );
       return;
     }

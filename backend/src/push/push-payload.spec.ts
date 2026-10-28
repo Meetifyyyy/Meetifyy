@@ -1,6 +1,7 @@
 import { NotificationEntityType, NotificationType } from '@prisma/client';
 import {
   NotificationPushInput,
+  buildGroupRemovedPush,
   buildMessagePush,
   buildNotificationPush,
   categoryForType,
@@ -162,6 +163,41 @@ describe('push payloads', () => {
       t: 'chat',
       conversationId: 'pub-1',
     });
+  });
+
+  it('a removal names the group, opens the chat, and replaces its message notification', () => {
+    const removal = buildGroupRemovedPush({
+      routeId: 'pub-1',
+      conversationId: 'conv-1',
+      groupName: 'Hostel B',
+    });
+    expect(removal.body).toBe('You were removed from Hostel B.');
+    expect(removal.category).toBe('messages');
+    expect(removal.intent).toEqual({
+      v: '1',
+      t: 'chat',
+      conversationId: 'pub-1',
+    });
+    // Same tray slot as the group's message notifications, so a pending
+    // "3 new messages" is replaced rather than left beside it.
+    expect(removal.collapseKey).toBe(
+      buildMessagePush({
+        routeId: 'pub-1',
+        conversationId: 'conv-1',
+        isGroup: true,
+        groupName: 'Hostel B',
+        senderName: 'Aarav',
+        unread: 3,
+      }).collapseKey,
+    );
+    expect(JSON.stringify(removal)).not.toContain('conv-1');
+    expect(
+      buildGroupRemovedPush({
+        routeId: 'pub-1',
+        conversationId: 'conv-1',
+        groupName: null,
+      }).body,
+    ).toBe('You were removed from a group.');
   });
 
   it('carries no content, ids or tokens beyond the destination (web and FCM)', () => {

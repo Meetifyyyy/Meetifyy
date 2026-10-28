@@ -13,7 +13,6 @@ vi.mock('@shared/api/apiClient', () => ({
   deriveThumbnailKey: () => null,
 }));
 
-const { default: OptimizedImage } = await import('../OptimizedImage');
 const { default: MediaGrid } = await import('../../../../features/feed/components/post/MediaGrid');
 
 const PH = `data:image/webp;base64,${btoa('RIFF \u0000\u0000\u0000WEBPVP8 abcdefghijklmnopqrstuvwxyz')}`;
@@ -105,23 +104,5 @@ describe('ImagePlaceholder for a cached image', () => {
     const { rerender } = render(<ImagePlaceholder src={PH} />);
     rerender(<ImagePlaceholder src={PH} done />);
     expect(screen.getByTestId('image-placeholder').className).toMatch(/done/);
-  });
-});
-
-describe('OptimizedImage blur-up placeholder', () => {
-  it('shows the placeholder while loading and drops it for the skeleton-free loaded state', async () => {
-    vi.useFakeTimers();
-    const { container } = render(<OptimizedImage src="https://x/a.webp" alt="a" placeholder={PH} />);
-    expect(screen.getByTestId('image-placeholder')).toBeTruthy();
-    expect(container.querySelector('.animate-pulse')).toBeNull();
-    fireEvent.load(screen.getByAltText('a'));
-    act(() => { vi.advanceTimersByTime(700); });
-    expect(screen.queryByTestId('image-placeholder')).toBeNull();
-  });
-
-  it('keeps its skeleton when no placeholder is given', () => {
-    const { container } = render(<OptimizedImage src="https://x/a.webp" alt="a" />);
-    expect(screen.queryByTestId('image-placeholder')).toBeNull();
-    expect(container.querySelector('.animate-pulse')).not.toBeNull();
   });
 });

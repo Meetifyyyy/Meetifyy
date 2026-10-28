@@ -8,6 +8,7 @@ import { NotificationsModule } from '../../notifications/notifications.module';
 import { MessagingCoreModule } from '../core/messaging-core.module';
 import { MentionsModule } from '../../mentions/mentions.module';
 import { BlocksService } from '../../users/blocks.service';
+import { PushModule } from '../../push/push.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { BlocksService } from '../../users/blocks.service';
     NotificationsModule,
     MessagingCoreModule,
     MentionsModule,
+    PushModule,
   ],
   controllers: [GroupChatsController],
   providers: [GroupChatsService, BlocksService],

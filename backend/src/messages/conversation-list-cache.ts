@@ -47,3 +47,12 @@ export function conversationListFirstPageKeys(userId: string): string[] {
   }
   return keys;
 }
+
+/**
+ * The version counter of a group's cached details (GroupChatsService
+ * getGroupDetails). Bumping it retires every viewer's cached copy at once.
+ * Shared so both services that change membership can bump it.
+ */
+export function groupDetailsVersionKey(realConvId: string): string {
+  return `groupDetails:ver:${realConvId}`;
+}

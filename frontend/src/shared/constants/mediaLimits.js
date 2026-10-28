@@ -11,7 +11,6 @@ export const MAX_COVERED_IMAGE_SIZE_BYTES = 10 * 1024 * 1024; // 10,485,760 byte
  * Messages and posts have tighter per-file limits: see UPLOAD_LIMITS.
  */
 export const MAX_MEDIA_UPLOAD_SIZE_MB = 50;
-export const MAX_MEDIA_UPLOAD_SIZE_BYTES = 50 * 1024 * 1024;
 
 export const COVERED_IMAGE_SIZE_ERROR_MESSAGE = 'File size limit is 10 MB';
 
@@ -230,8 +229,3 @@ export const VERIFICATION_COMPRESS_OPTIONS = {
 /** Shortest edge we will accept — below this an ID is not reviewable. */
 export const VERIFICATION_MIN_DIMENSION = 320;
 
-/** The two documents a submission is made of, in payload order. */
-export const VERIFICATION_DOCUMENTS = {
-  selfie: { field: 'selfieMediaId', label: 'selfie' },
-  collegeId: { field: 'idCardMediaId', label: 'college ID' },
-};

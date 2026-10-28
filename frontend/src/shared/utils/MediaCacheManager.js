@@ -8,6 +8,11 @@ class MediaCacheManager {
   constructor() {
     this.cache = new Map(); // key -> { url, expiresAt }
     this.pendingRequests = new Map(); // key -> Promise
+    // Conversation keys the server answered without a URL: it declined to sign
+    // them (deleted, unsent, or no longer the viewer's to see). Kept apart from
+    // a request that failed, which resolves the same way (null) but is worth
+    // trying again. See wasDeclined().
+    this.declinedKeys = new Set();
     this.batchQueue = new Set();
     this.batchTimeout = null;
     this.resolvers = []; // Array of { resolve, reject, keys }
@@ -314,6 +319,7 @@ class MediaCacheManager {
             stable,
           });
           if (stable) persistedAny = true;
+          this.declinedKeys.delete(key);
           resolve(url);
         } else {
           // For derived thumbnail keys with no server URL, resolve to null so callers fallback to full image
@@ -328,6 +334,7 @@ class MediaCacheManager {
              * same question it has just answered no to. Null is the truthful
              * result and lets the caller show its own empty state.
              */
+            this.declinedKeys.add(key);
             resolve(null);
           } else {
             // Use absolute backend URL so avatars work on Vercel (frontend-only deployments)
@@ -354,6 +361,20 @@ class MediaCacheManager {
         this._forgetPending(entry);
       });
     }
+  }
+
+  /**
+   * Whether the server answered for `rawKey` and declined to sign it, as
+   * opposed to the request failing (offline, timed out, server error). Only a
+   * decline is a final answer; a failure is worth trying again.
+   */
+  wasDeclined(rawKey) {
+    if (!rawKey || typeof rawKey !== 'string') return false;
+    let key = rawKey;
+    const match = key.match(/\/api\/media\/(.+)$/);
+    if (match) key = match[1].split('?')[0];
+    key = key.replace(/^\/+/, '');
+    return this.declinedKeys.has(key);
   }
 
   /**
@@ -416,6 +437,7 @@ class MediaCacheManager {
   clear() {
     this.generation += 1;
     this.cache.clear();
+    this.declinedKeys.clear();
     this.pendingRequests.clear();
     if (this.batchTimeout) clearTimeout(this.batchTimeout);
     this.batchTimeout = null;

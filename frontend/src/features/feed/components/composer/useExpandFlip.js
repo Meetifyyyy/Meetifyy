@@ -10,8 +10,7 @@ import { useLayoutEffect, useRef, useState } from 'react';
  * snapped shut however the curve was tuned.
  *
  * Instead the layout changes ONCE, and the in-between frames are drawn with
- * `transform` and `clip-path` only, which the compositor animates without
- * touching layout (FLIP):
+ * `translate` and `clip-path` only, neither of which touches layout (FLIP):
  *
  *  - expand: the card takes its full height in one frame. It is clipped back to
  *    its old height and the content after it is translated back up by the
@@ -20,6 +19,16 @@ import { useLayoutEffect, useRef, useState } from 'react';
  *    content after it slides up. When that finishes the layout collapses in
  *    one frame, which is invisible because everything is already where the
  *    collapsed layout puts it.
+ *
+ * The clip and the slide are written together, in the same frame, by one
+ * per-frame loop. They used to be two Web Animations with the same timing, but
+ * a `clip-path` animation runs on the main thread and a `transform` one on the
+ * compositor: whenever the main thread was busy (the keyboard closing, the
+ * blur, the restyle of the page), the content after the card kept sliding up
+ * while the card's edge stood still. The gap under the composer closed, the
+ * next card ("Find your communities") ran into it, and the edge then jumped
+ * shut when the main thread caught up. Written together they can be late
+ * together, never apart.
  *
  * Returns `layoutExpanded`, which lags `expanded` by the collapse animation and
  * is what the expand container's size must follow.
@@ -30,8 +39,41 @@ import { useLayoutEffect, useRef, useState } from 'react';
  */
 
 const EXPAND_FLIP_MS = 280;
-const EASING = 'cubic-bezier(0.2, 0, 0, 1)';
 const ASCEND_LEVELS = 1;
+
+/** The CSS `cubic-bezier(x1, y1, x2, y2)` timing function, as a function of time. */
+export function cubicBezier(x1, y1, x2, y2) {
+  const at = (a, b, t) => 3 * a * t * (1 - t) ** 2 + 3 * b * t * t * (1 - t) + t ** 3;
+  return (x) => {
+    if (x <= 0) return 0;
+    if (x >= 1) return 1;
+    // x(t) only rises, so halving the interval finds it; 24 steps is far
+    // below a pixel over the animation's travel.
+    let lo = 0;
+    let hi = 1;
+    for (let i = 0; i < 24; i += 1) {
+      const mid = (lo + hi) / 2;
+      if (at(x1, x2, mid) < x) lo = mid;
+      else hi = mid;
+    }
+    return at(y1, y2, (lo + hi) / 2);
+  };
+}
+
+const ease = cubicBezier(0.2, 0, 0, 1);
+
+/**
+ * Whether this browser can draw the in-between frames: the slide uses the
+ * individual `translate` property. Without it (or without CSS.supports, as in
+ * jsdom) the size simply changes in one step.
+ */
+function canAnimate() {
+  try {
+    return window.CSS?.supports?.('translate', '0px 1px') === true;
+  } catch {
+    return false;
+  }
+}
 
 function prefersReducedMotion() {
   try {
@@ -64,40 +106,87 @@ function followingContent(start, levels) {
 /**
  * Plays one expand (`closing` false) or collapse (`closing` true): the card's
  * clip between its collapsed and full height, and the content after it
- * translated by the same difference. The card's shadow layer, if any, moves
- * with the content: it sits on the card's box, so translated by the same
- * difference its bottom edge follows the clip. A collapse holds its end frame
- * (`fill: forwards`) until the collapsed layout has committed.
+ * translated by the same difference, both written in the same frame. The
+ * card's shadow layer, if any, moves with the content: it sits on the card's
+ * box, so translated by the same difference its bottom edge follows the clip.
+ *
+ * The first frame is drawn at once, so an expand started before paint never
+ * shows its full height unclipped. A collapse holds its end frame until
+ * `cancel()`, which the hook calls once the collapsed layout has committed.
+ * `finished` resolves true when the animation ran to its end, false when it
+ * was cancelled first.
  */
-function playFlip(card, anchor, delta, closing, shadow) {
+export function playFlip(card, anchor, delta, closing, shadow) {
   const radius = getComputedStyle(card).borderTopLeftRadius || '0px';
-  const open = { clipPath: `inset(0px 0px 0px 0px round ${radius})` };
-  const shut = { clipPath: `inset(0px 0px ${delta}px 0px round ${radius})` };
-  const rest = { transform: 'translateY(0px)' };
-  const up = { transform: `translateY(${-delta}px)` };
-  const timing = closing
-    ? { duration: EXPAND_FLIP_MS, easing: EASING, fill: 'forwards' }
-    : { duration: EXPAND_FLIP_MS, easing: EASING };
-  const clip = card.animate(closing ? [open, shut] : [shut, open], timing);
   const moved = followingContent(anchor, ASCEND_LEVELS);
   if (shadow) moved.push(shadow);
-  const moves = moved.map((el) => el.animate(closing ? [rest, up] : [up, rest], timing));
-  return [clip, ...moves];
+
+  // Whatever was inline before is put back afterwards.
+  const saved = [
+    [card, 'clipPath', card.style.clipPath],
+    ...moved.flatMap((el) => [
+      [el, 'translate', el.style.translate],
+      [el, 'willChange', el.style.willChange],
+    ]),
+  ];
+  const restore = () => saved.forEach(([el, prop, value]) => { el.style[prop] = value; });
+
+  // Their own compositor layers for the duration, as an animation would give
+  // them, so moving them repaints nothing.
+  moved.forEach((el) => { el.style.willChange = 'transform'; });
+
+  // `shut` is how far the card is closed: 0 open, 1 at its collapsed height.
+  const draw = (shut) => {
+    const px = Math.round(delta * shut * 100) / 100;
+    card.style.clipPath = `inset(0px 0px ${px}px 0px round ${radius})`;
+    moved.forEach((el) => { el.style.translate = `0px ${-px}px`; });
+  };
+
+  let frame = 0;
+  let start = null;
+  let settle;
+  const finished = new Promise((resolve) => { settle = resolve; });
+
+  const tick = (now) => {
+    if (start === null) start = now;
+    const t = Math.min(1, (now - start) / EXPAND_FLIP_MS);
+    const eased = ease(t);
+    draw(closing ? eased : 1 - eased);
+    if (t < 1) {
+      frame = requestAnimationFrame(tick);
+      return;
+    }
+    frame = 0;
+    if (!closing) restore();
+    settle(true);
+  };
+
+  draw(closing ? 0 : 1);
+  frame = requestAnimationFrame(tick);
+
+  return {
+    finished,
+    cancel() {
+      cancelAnimationFrame(frame);
+      restore();
+      settle(false);
+    },
+  };
 }
 
 export function useExpandFlip({ expanded, cardRef, anchorRef, shadowRef }) {
   const [layoutExpanded, setLayoutExpanded] = useState(expanded);
   const heightRef = useRef(0); // the card's last laid-out height
   const collapsedHeightRef = useRef(0);
-  const animationsRef = useRef([]);
+  const animationRef = useRef(null);
   const prevExpandedRef = useRef(expanded);
 
   const startFrameRef = useRef(0);
 
   const cancelAll = () => {
     cancelAnimationFrame(startFrameRef.current);
-    animationsRef.current.forEach((a) => a.cancel());
-    animationsRef.current = [];
+    animationRef.current?.cancel();
+    animationRef.current = null;
   };
 
   // Track the card's height after every layout, so the expand step knows the
@@ -118,7 +207,7 @@ export function useExpandFlip({ expanded, cardRef, anchorRef, shadowRef }) {
 
     const card = cardRef.current;
     const anchor = anchorRef.current;
-    const animate = Boolean(card && anchor && card.animate) && !prefersReducedMotion();
+    const animate = Boolean(card && anchor) && canAnimate() && !prefersReducedMotion();
 
     if (expanded) {
       cancelAll();
@@ -146,14 +235,14 @@ export function useExpandFlip({ expanded, cardRef, anchorRef, shadowRef }) {
     // a 30px jump. Nothing moves meanwhile: the layout is still expanded.
     startFrameRef.current = requestAnimationFrame(() => {
       startFrameRef.current = requestAnimationFrame(() => {
-        const animations = playFlip(card, anchor, delta, true, shadowRef?.current);
-        animationsRef.current = animations;
-        animations[0].finished.then(
-          // The fill holds the end frame until the collapsed layout has committed;
-          // the layout effect below cancels it in that same frame.
-          () => setLayoutExpanded(false),
-          () => {}, // cancelled by a re-expand
-        );
+        const animation = playFlip(card, anchor, delta, true, shadowRef?.current);
+        animationRef.current = animation;
+        // The end frame is held until the collapsed layout has committed; the
+        // layout effect below cancels it in that same frame. A re-expand
+        // cancels it first, and then the layout stays expanded.
+        void animation.finished.then((completed) => {
+          if (completed) setLayoutExpanded(false);
+        });
       });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -174,11 +263,11 @@ export function useExpandFlip({ expanded, cardRef, anchorRef, shadowRef }) {
 
     const card = cardRef.current;
     const anchor = anchorRef.current;
-    if (!card || !anchor || !card.animate || prefersReducedMotion()) return;
+    if (!card || !anchor || !canAnimate() || prefersReducedMotion()) return;
     const full = card.offsetHeight;
     const delta = full - collapsedHeightRef.current;
     if (delta <= 0) return;
-    animationsRef.current = playFlip(card, anchor, delta, false, shadowRef?.current);
+    animationRef.current = playFlip(card, anchor, delta, false, shadowRef?.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layoutExpanded]);
 

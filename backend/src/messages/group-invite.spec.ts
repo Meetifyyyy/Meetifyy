@@ -42,6 +42,7 @@ describe('group invites', () => {
         .fn<Promise<unknown>, [Prisma.ConversationJoinRequestUpsertArgs]>()
         .mockResolvedValue({}),
       delete: jest.fn().mockResolvedValue({}),
+      deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     message: {
       create: jest.fn(),
@@ -262,7 +263,10 @@ describe('group invites', () => {
 
       await service.joinGroupByInvite(CONV_ID, USER_ID);
 
-      expect(prisma.conversationJoinRequest.delete).toHaveBeenCalled();
+      // deleteMany: there may be no request row, and that is not an error.
+      expect(prisma.conversationJoinRequest.deleteMany).toHaveBeenCalledWith({
+        where: { conversationId: CONV_ID, userId: USER_ID },
+      });
     });
 
     it('rejects a group that does not exist', async () => {

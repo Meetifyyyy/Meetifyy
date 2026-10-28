@@ -65,18 +65,6 @@ export function useCampusEvent(id) {
   });
 }
 
-/** The acting representative's own events (any status), for the management view. */
-export function useMyCampusEvents(enabled = true) {
-  const { isLoggedIn, currentUser } = useAuth();
-  const query = useQuery({
-    queryKey: CAMPUS_EVENT_KEYS.mine,
-    queryFn: () => campusEventsApi.getMine(),
-    enabled: enabled && isLoggedIn && Boolean(currentUser?.isCampusRep),
-    staleTime: 15_000,
-  });
-  return { events: query.data?.events ?? [], isLoading: query.isLoading };
-}
-
 function useInvalidateCampusEvents() {
   const queryClient = useQueryClient();
   return () => queryClient.invalidateQueries({ queryKey: CAMPUS_EVENT_KEYS.all });

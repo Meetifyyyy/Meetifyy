@@ -24,10 +24,6 @@ const TERMINAL = new Set([
   INVITE_STATUS.EXPIRED,
 ]);
 
-export function isTerminalInviteStatus(status) {
-  return TERMINAL.has(status);
-}
-
 /**
  * Resolves the status of an invite row.
  *

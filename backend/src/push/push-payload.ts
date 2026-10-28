@@ -210,6 +210,64 @@ export function buildMessagePush(m: MessagePushInput): PushMessage {
   };
 }
 
+export interface GroupRemovedPushInput {
+  /** The id the app routes by (public id). */
+  routeId: string;
+  /** Conversation.id, for the collapse key only. */
+  conversationId: string;
+  groupName: string | null;
+}
+
+/**
+ * "You were removed from <group>". On the messages channel, and under the
+ * same collapse key as that group's message pushes, so it replaces any
+ * "3 new messages" still in the tray for a group the person can no longer
+ * open. Tapping it opens the chat, which shows the removed state.
+ */
+export function buildGroupRemovedPush(g: GroupRemovedPushInput): PushMessage {
+  const name = safeName(g.groupName, 'a group');
+  return {
+    category: 'messages',
+    title: APP_NAME,
+    body: `You were removed from ${name}.`,
+    intent: { v: '1', t: 'chat', conversationId: g.routeId },
+    collapseKey: collapseKeyFor('c', g.conversationId),
+    urgency: 'normal',
+    ttlSeconds: ONE_DAY,
+  };
+}
+
+export interface GroupJoinRequestPushInput {
+  /** The id the app routes by (public id). */
+  routeId: string;
+  /** Conversation.id, for the collapse key only. */
+  conversationId: string;
+  groupName: string | null;
+  requesterName: string | null;
+}
+
+/**
+ * "<Name> asked to join <group>." to the group's owner and admins. One tray
+ * entry per group (a second request replaces the first), apart from the
+ * group's message pushes; tapping it opens the group, whose details hold the
+ * requests.
+ */
+export function buildGroupJoinRequestPush(
+  g: GroupJoinRequestPushInput,
+): PushMessage {
+  const who = safeName(g.requesterName, 'Someone');
+  const group = safeName(g.groupName, 'your group');
+  return {
+    category: 'messages',
+    title: APP_NAME,
+    body: `${who} asked to join ${group}.`,
+    intent: { v: '1', t: 'chat', conversationId: g.routeId },
+    collapseKey: collapseKeyFor('n', `join-request:${g.conversationId}`),
+    urgency: 'normal',
+    ttlSeconds: ONE_DAY,
+  };
+}
+
 /**
  * The web push body: exactly what the service worker reads. Kept small (web
  * push services accept 4 KB; this is well under 1 KB).

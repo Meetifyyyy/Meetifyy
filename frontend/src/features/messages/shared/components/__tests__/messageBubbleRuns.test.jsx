@@ -70,7 +70,7 @@ describe('data-status-line', () => {
     expect(row(mine({ queued: true, status: 'sending' })).hasAttribute('data-status-line')).toBe(true);
   });
 
-  it('marks a failed message, which shows "Not delivered"', () => {
+  it('marks a failed message, which shows "Not sent"', () => {
     expect(row(mine({ status: 'failed' })).hasAttribute('data-status-line')).toBe(true);
   });
 

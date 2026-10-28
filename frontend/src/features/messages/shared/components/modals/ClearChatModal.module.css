@@ -1,0 +1,20 @@
+/* The reason a clear failed, above the buttons that retry it. */
+.error {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 6px;
+  margin: -0.75rem 0 1rem;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: var(--color-danger, #dc2626);
+}
+
+:global([data-theme='dark']) .error {
+  color: #f87171;
+}
+
+.error svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}

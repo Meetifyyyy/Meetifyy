@@ -212,11 +212,6 @@ export function canGoBackInApp() {
   return mirror.canGoBack(currentIdx());
 }
 
-/** Test/debug seam: the page stack as the app currently sees it. */
-export function debugHistoryStack() {
-  return mirror.stack.keys();
-}
-
 /**
  * Centralized navigation hook.
  *

@@ -174,13 +174,40 @@ export function parseIntentFromPath(pathname: string): Intent | null {
       return seg[1] && seg[1] !== 'create' ? Intents.activity(seg[1]) : null;
     case 'campus':
       return seg[1] === 'events' && seg[2] ? Intents.event(seg[2]) : null;
+    // A conversation link is `/messages/<slug>/<id>` (what the app and the
+    // invite button generate), `/messages/<id>`, or the older
+    // `/messages/<id>/<slug>`; `/inbox/...` is the previous prefix and still
+    // what group invite links carry. The id used to be read from the first
+    // segment, which for the canonical form is the slug — so a shared invite
+    // opened "a chat" named after the group, which does not exist.
     case 'messages':
-      return seg[1] ? Intents.chat(seg[1]) : null;
+    case 'inbox': {
+      const id = conversationIdFromSegments(seg[1], seg[2]);
+      return id ? Intents.chat(id) : null;
+    }
     case 'settings':
       return Intents.settings(seg[1]);
     default:
       return null;
   }
+}
+
+/**
+ * The conversation id in `/messages/<a>/<b>`. Mirrors parseConversationRoute
+ * (shared/utils/conversationUrl.js), which this module may not import: a
+ * single segment is the id; of two, the first is the id only when it looks
+ * like one (a UUID or a legacy `c_` id), otherwise it is the slug.
+ */
+function conversationIdFromSegments(
+  first: string | undefined,
+  second: string | undefined,
+): string | null {
+  if (!first) return null;
+  if (!second) return first;
+  const looksLikeId =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(first) ||
+    first.startsWith('c_');
+  return looksLikeId ? first : second;
 }
 
 /**

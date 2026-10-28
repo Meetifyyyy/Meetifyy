@@ -12,15 +12,18 @@ import { createVerificationAccessMock } from '../common/verification/testing/ver
  * The invite preview stays readable and tells the client to show the verify
  * prompt instead of a Join button.
  *
- * Both services carry their own `acceptGroupJoinRequest`; the join and preview
- * paths live on MessagingCoreService. Both are driven here.
+ * All three live on MessagingCoreService (each service used to carry its own
+ * `acceptGroupJoinRequest`); both services are driven here.
  */
 const CONV = 'conv-1';
 const OWNER = 'owner';
 const VERIFIED = 'verified-user';
 const UNVERIFIED = 'unverified-user';
 
-function makePrisma(opts: { whoCanJoin?: string } = {}) {
+function makePrisma(
+  opts: { whoCanJoin?: string; status?: string; memberIds?: string[] } = {},
+) {
+  const members = new Set([OWNER, ...(opts.memberIds ?? [])]);
   return {
     conversation: {
       findFirst: jest.fn(() =>
@@ -33,23 +36,32 @@ function makePrisma(opts: { whoCanJoin?: string } = {}) {
           ownerId: OWNER,
           whoCanJoin: opts.whoCanJoin ?? 'ANYONE',
           visibility: 'PUBLIC',
-          status: 'ACTIVE',
+          status: opts.status ?? 'ACTIVE',
           memberCount: 1,
         }),
       ),
     },
     conversationParticipant: {
-      // Only the owner is a member; anyone else has no row.
+      // The owner (and any listed member) has a row; anyone else has none.
       findUnique: jest.fn(
-        (args: { where: { userId_conversationId: { userId: string } } }) =>
-          Promise.resolve(
-            args.where.userId_conversationId.userId === OWNER
-              ? { role: 'OWNER', leftAt: null, deletedAt: null }
+        (args: { where: { userId_conversationId: { userId: string } } }) => {
+          const id = args.where.userId_conversationId.userId;
+          return Promise.resolve(
+            members.has(id)
+              ? {
+                  role: id === OWNER ? 'OWNER' : 'MEMBER',
+                  leftAt: null,
+                  deletedAt: null,
+                  joinedAt: new Date('2026-10-28T10:00:00Z'),
+                }
               : null,
-          ),
+          );
+        },
       ),
       count: jest.fn(() => Promise.resolve(1)),
       upsert: jest.fn(() => Promise.resolve({})),
+      // Read by the cache eviction that follows an accepted request.
+      findMany: jest.fn(() => Promise.resolve([])),
     },
     conversationJoinRequest: {
       findUnique: jest.fn(() =>
@@ -57,6 +69,7 @@ function makePrisma(opts: { whoCanJoin?: string } = {}) {
       ),
       upsert: jest.fn(() => Promise.resolve({})),
       delete: jest.fn(() => Promise.resolve({})),
+      deleteMany: jest.fn(() => Promise.resolve({ count: 0 })),
     },
     $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
   };
@@ -150,12 +163,37 @@ describe.each(services)('%s — group join verification', (_name, proto) => {
       expect(prisma.$transaction).not.toHaveBeenCalled();
     });
 
-    it('admits a verified requester as before', async () => {
+    it('admits a verified requester, reporting the change and both group ids', async () => {
       const prisma = makePrisma({ whoCanJoin: 'APPROVAL' });
       await expect(
         make(prisma).acceptGroupJoinRequest(CONV, OWNER, VERIFIED),
-      ).resolves.toEqual({ success: true });
+      ).resolves.toMatchObject({
+        success: true,
+        changed: true,
+        publicId: 'pub-1',
+        internalId: CONV,
+        membershipChangedAt: expect.any(String) as unknown,
+      });
       expect(prisma.conversationParticipant.upsert).toHaveBeenCalledTimes(1);
+    });
+
+    it('a second approval (another admin, a double tap) succeeds without a second write', async () => {
+      const prisma = makePrisma({
+        whoCanJoin: 'APPROVAL',
+        memberIds: [VERIFIED],
+      });
+      await expect(
+        make(prisma).acceptGroupJoinRequest(CONV, OWNER, VERIFIED),
+      ).resolves.toMatchObject({ success: true, changed: false });
+      expect(prisma.conversationParticipant.upsert).not.toHaveBeenCalled();
+    });
+
+    it('a group that has ended takes no one', async () => {
+      const prisma = makePrisma({ whoCanJoin: 'APPROVAL', status: 'Closed' });
+      await expect(
+        make(prisma).acceptGroupJoinRequest(CONV, OWNER, VERIFIED),
+      ).rejects.toThrow('GROUP_CLOSED');
+      expect(prisma.conversationParticipant.upsert).not.toHaveBeenCalled();
     });
   });
 

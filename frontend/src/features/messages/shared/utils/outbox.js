@@ -22,7 +22,7 @@
  *   account's are flushed, and sign-out empties the store (idbClearMessages).
  * - It re-sent everything on every reconnect, forever. Retries back off
  *   (2s doubling to 5 min) and stop after OUTBOX_MAX_ATTEMPTS or
- *   OUTBOX_MAX_AGE_MS, leaving the message "Not delivered" with tap-to-retry.
+ *   OUTBOX_MAX_AGE_MS, leaving the message "Not sent" with tap-to-retry.
  * - It could not tell a network failure from a refusal, so a message to
  *   someone who had blocked the sender was retried indefinitely. The server
  *   now classifies refusals (`code: 'REJECTED'`) and those are never retried.
@@ -92,7 +92,9 @@ export function isNetworkFailure(failure) {
  * @param {{ put(entry, epoch?): Promise<void>, delete(clientId): Promise<void>, all(userId): Promise<object[]> }} deps.store
  * @param {(entry) => Promise<{ ok: true, message?: object } | { ok: false, failure?: unknown, offline?: boolean }>} deps.send
  * @param {(entry, serverMsg, generation?) => void} deps.onSent   the server confirmed it
- * @param {(entry, generation?) => void} deps.onFailed             given up, or refused
+ * @param {(entry, generation?, failure?) => void} deps.onFailed  given up, or refused;
+ *   `failure` is the last attempt's (a socket ack or an HTTP error), so the
+ *   bubble can say why
  * @param {() => string | null} deps.getUserId
  * @param {() => number} [deps.getGeneration] changes when the local caches are
  *   cleared (sign-out); work started under an older one writes and sends nothing
@@ -246,11 +248,11 @@ export function createOutbox({
       soft.delete(entry.clientId);
       const kept = await store.put({ ...entry, attempts, failed: true, failedAt: now() }, generation);
       // Not stored as failed: left as it was it would be sent again by itself,
-      // behind a "Not delivered" the person can see. The screen's retry rebuilds
+      // behind a "Not sent" the person can see. The screen's retry rebuilds
       // a send from the bubble when there is no entry.
       if (kept === false) await store.delete(entry.clientId);
       if (generation !== undefined && generation !== getGeneration()) return 'stale';
-      onFailed(entry, generation);
+      onFailed(entry, generation, detail);
       return 'failed';
     }
     const delay = retryDelay(attempts);
@@ -380,7 +382,7 @@ export function createOutbox({
   /**
    * Delivers an entry storage would not keep: once, through the same `send`,
    * with the outcome reported at once. A failure of any kind is final (nothing
-   * is left to retry it), so it shows as "Not delivered" with tap-to-retry
+   * is left to retry it), so it shows as "Not sent" with tap-to-retry
    * instead of "Sending…" forever. While it is out, it holds back newer
    * messages of its chat, as a stored one would.
    */
@@ -405,7 +407,7 @@ export function createOutbox({
     }
     if (!stale()) {
       if (result?.ok) onSent(entry, result.message, epoch);
-      else onFailed(entry, epoch);
+      else onFailed(entry, epoch, result?.failure);
     }
     // Newer messages of this chat were held behind it.
     void flush();

@@ -27,6 +27,7 @@ import DMContextMenu from '../../direct-messages/components/sidebar/DMContextMen
 import GroupContextMenu from '../../group-chats/components/sidebar/GroupContextMenu';
 
 import GroupInvitePanel from '../../shared/components/GroupInvitePanel';
+import { newerMembership } from '../../shared/utils/groupMembership';
 import NewMessageModal from '../../shared/components/modals/NewMessageModal';
 import MuteAlertsModal from '../../shared/components/modals/MuteAlertsModal';
 import BlockUserModal from '@shared/components/modals/BlockUserModal';
@@ -294,8 +295,27 @@ export default function MessagesLayout() {
     // fallback name "Chat" with a generic avatar.
     const identityPending = !baseConv.isDraft && !baseConv.name && !initialPage?.name && !otherMsg && isConversationsLoading;
 
+    // The viewer's membership: the list row and the history response both
+    // state it, and they can disagree while one of them is behind (a removal
+    // that landed after history was fetched, or a deep-linked group the list
+    // never covered). The one the server stamped later is current.
+    // A row whose type is not known yet (a deep-linked group the list has
+    // not loaded) is included: its history is the only statement there is.
+    const membership = isGroupConv || !baseConv.type
+      ? newerMembership(
+          { isMember: baseConv.isMember, membershipChangedAt: baseConv.membershipChangedAt },
+          { isMember: initialPage?.isMember, membershipChangedAt: initialPage?.membershipChangedAt },
+        )
+      : null;
+
     return {
       ...baseConv,
+      ...(membership
+        ? {
+            isMember: membership.isMember,
+            membershipChangedAt: membership.membershipChangedAt,
+          }
+        : {}),
       name: inferredName,
       identityPending,
       avatar: inferredAvatar,

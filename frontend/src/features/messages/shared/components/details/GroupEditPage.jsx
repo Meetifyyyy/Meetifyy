@@ -38,7 +38,7 @@ export default function GroupEditPage({
         >
           <ArrowLeft size={20} />
         </button>
-        <h2 className={sharedStyles.headerTitle}>Edit Group</h2>
+        <h2 className={sharedStyles.headerTitle}>Edit group</h2>
         <button 
           type="button"
           className={styles.saveHeaderBtn}
@@ -87,14 +87,14 @@ export default function GroupEditPage({
           />
 
           <div className={sharedStyles.section}>
-            <h3 className={sharedStyles.sectionTitle}>Group Name</h3>
+            <h3 className={sharedStyles.sectionTitle}>Group name</h3>
             <div style={{ position: 'relative' }}>
               <input
                 type="text"
                 className={styles.textInput}
                 value={editName}
                 onChange={(e) => setEditName(e.target.value.substring(0, 120))}
-                placeholder="Group Name"
+                placeholder="Group name"
                 maxLength={120}
                 style={{ paddingRight: '4.5rem' }}
               />

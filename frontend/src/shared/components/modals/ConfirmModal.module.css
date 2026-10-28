@@ -108,6 +108,27 @@
   composes: action-btn--primary from global;
 }
 
+/*
+ * Centred (`centered`): on every screen size. Its bottom padding takes the
+ * on-screen keyboard too, which overlays the page in the installed app
+ * (--kb-inset, useKeyboardInset), so a dialog with a field stays in the space
+ * above the keyboard, and scrolls there if it does not fit, through keyboard
+ * open, rotation and resize alike.
+ */
+.confirmOverlay.centered {
+  padding: max(1.25rem, env(safe-area-inset-top))
+           max(1rem, env(safe-area-inset-right))
+           max(1.25rem, env(safe-area-inset-bottom), var(--kb-inset, 0px))
+           max(1rem, env(safe-area-inset-left));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  box-sizing: border-box;
+}
+
+.confirmOverlay.centered .confirmModal {
+  margin: auto;
+}
+
 /* ── Phones: a bottom sheet (drag-to-dismiss via useSheetDrag) ── */
 @media (max-width: 768px) {
   .confirmOverlay:not(.centered) {

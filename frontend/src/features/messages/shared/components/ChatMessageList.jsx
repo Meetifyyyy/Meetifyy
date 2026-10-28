@@ -310,8 +310,16 @@ export default function ChatMessageList({
   }, [sortedMessages.length, isLoading, error, onMarkSeen]);
 
   // ── Reset when conversation changes ──────────────────────────────────────
-
-  useEffect(() => {
+  //
+  // A layout effect, declared before the scroll management below, so it runs
+  // first. It was a plain effect, and React runs those AFTER layout effects:
+  // a chat that opened with its messages already cached had its initial
+  // scroll (below) done and then undone, `hasScrolledInitialRef` back to false
+  // and the recorded scroll height back to 0. Until the next message arrived,
+  // the keyboard observer and the image-load re-pin both bailed out on that
+  // flag, so the thread neither followed the keyboard (the newest messages
+  // went behind it) nor stayed on the latest message as photos loaded.
+  useLayoutEffect(() => {
     hasScrolledInitialRef.current = false;
     prevConvIdRef.current = null;
     prevFirstMsgIdRef.current = null;

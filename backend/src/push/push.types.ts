@@ -7,6 +7,8 @@ export const PUSH_QUEUE = 'push';
 export const PUSH_JOB = {
   notification: 'push-notification',
   message: 'push-message',
+  groupRemoved: 'push-group-removed',
+  groupJoinRequest: 'push-group-join-request',
 } as const;
 
 /**
@@ -108,6 +110,24 @@ export interface NotificationPushJob {
 }
 
 /** The job a chat message enqueues, one per recipient and conversation. */
+/** Someone was removed from a group by an admin (not when they leave). */
+export interface GroupRemovedPushJob {
+  recipientId: string;
+  /** Conversation.id (internal), never the public id. */
+  conversationId: string;
+  /** The removal's own time (`leftAt`), so a later re-add cancels this push. */
+  removedAt: string;
+}
+
+/** A group admin's push for a new request to join. */
+export interface GroupJoinRequestPushJob {
+  /** An owner or admin of the group. */
+  recipientId: string;
+  /** Conversation.id (internal), never the public id. */
+  conversationId: string;
+  requesterId: string;
+}
+
 export interface MessagePushJob {
   recipientId: string;
   /** Conversation.id (internal), never the public id. */

@@ -10,7 +10,7 @@
  *   ...
  *   <a onMouseEnter={() => prefetchProfile(queryClient, username)}>...</a>
  */
-import { communitiesApi, activitiesApi, usersApi, messagesApi } from '@shared/api/apiClient';
+import { communitiesApi, activitiesApi, usersApi } from '@shared/api/apiClient';
 import { PROFILE_KEYS } from './useProfile';
 import { warmCover } from '@shared/components/ui/CoverImage';
 
@@ -62,15 +62,3 @@ export function prefetchActivity(queryClient, id) {
 
 // ── Messages ─────────────────────────────────────────────────────────────────
 
-/**
- * Prefetch the first page of message history when entering the messages screen
- * or hovering a conversation row. Limits to 30 messages — enough to fill the screen.
- */
-export function prefetchConversationHistory(queryClient, conversationId) {
-  if (!conversationId || !queryClient) return;
-  queryClient.prefetchQuery({
-    queryKey: ['messages', conversationId],
-    queryFn: () => messagesApi.getHistory(conversationId, null, null, 30),
-    staleTime: 10 * 1000,
-  });
-}

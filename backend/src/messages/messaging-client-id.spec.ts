@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { MessagingCoreService } from './core/messaging-core.service';
 import { stub } from '../common/testing/stub';
 import type { PrismaService } from '../prisma/prisma.service';
@@ -45,6 +46,7 @@ describe('MessagingCoreService — one message per client id', () => {
   let create: jest.Mock;
   let transaction: jest.Mock;
   let persistAndNotify: jest.Mock;
+  let emit: jest.Mock<Promise<void>, [string, unknown, string[]?]>;
   let blockedByMe: string[];
 
   beforeEach(() => {
@@ -52,6 +54,9 @@ describe('MessagingCoreService — one message per client id', () => {
     create = jest.fn(() => 'create-op');
     transaction = jest.fn(() => Promise.resolve([row('new-msg')]));
     persistAndNotify = jest.fn(() => Promise.resolve());
+    emit = jest.fn((_type: string, _data: unknown, _targets?: string[]) =>
+      Promise.resolve(),
+    );
     blockedByMe = [];
     const prisma = {
       conversation: {
@@ -65,11 +70,14 @@ describe('MessagingCoreService — one message per client id', () => {
               {
                 userId: ME,
                 isMuted: false,
+                deletedAt: null,
                 user: { accountStatus: 'ACTIVE', deletedAt: null },
               },
+              // They hid the chat; a new message brings it back for them.
               {
                 userId: 'them',
                 isMuted: false,
+                deletedAt: new Date('2026-09-30T00:00:00Z'),
                 user: { accountStatus: 'ACTIVE', deletedAt: null },
               },
             ],
@@ -77,7 +85,11 @@ describe('MessagingCoreService — one message per client id', () => {
         ),
         update: jest.fn(() => 'update-op'),
       },
-      conversationParticipant: { updateMany: jest.fn(() => 'participants-op') },
+      conversationParticipant: {
+        updateMany: jest.fn(() => 'participants-op'),
+        // The in-transaction membership re-check (see sendMessageOnce).
+        update: jest.fn(() => 'membership-op'),
+      },
       message: { findFirst, create },
       $transaction: transaction,
     };
@@ -87,7 +99,7 @@ describe('MessagingCoreService — one message per client id', () => {
       stub<PresenceService>({
         getPresenceMany: jest.fn(() => Promise.resolve(new Map())),
       }),
-      stub<DomainEventService>({ emit: jest.fn() }),
+      stub<DomainEventService>({ emit }),
       stub<MentionsService>({
         sanitize: jest.fn(() =>
           Promise.resolve([{ userId: 'them', username: 'them' }]),
@@ -128,6 +140,29 @@ describe('MessagingCoreService — one message per client id', () => {
     // Nobody is notified a second time by the controller's fan-out.
     expect(res.recipientIds).toEqual([]);
     expect(res.unmutedRecipientIds).toEqual([]);
+  });
+
+  it('has the members a send brings back join its rooms; a retry announces nothing', async () => {
+    const revivals = () =>
+      emit.mock.calls.filter(([type]) => type === 'conversation:revived');
+    await service.sendMessage(ME, CONV, { text: 'hi', clientId: 'c-9' });
+    expect(revivals()).toEqual([
+      [
+        'conversation:revived',
+        {
+          conversationId: CONV,
+          publicId: CONV,
+          internalId: CONV,
+          userIds: ['them'],
+        },
+        ['them'],
+      ],
+    ]);
+
+    emit.mockClear();
+    findFirst.mockImplementation(() => Promise.resolve(row('new-msg')));
+    await service.sendMessage(ME, CONV, { text: 'hi', clientId: 'c-9' });
+    expect(revivals()).toEqual([]);
   });
 
   it('stores the client id on a first send, so a retry can find it', async () => {
@@ -172,6 +207,24 @@ describe('MessagingCoreService — one message per client id', () => {
     await expect(
       service.sendMessage(ME, CONV, { text: 'hi', clientId: 'c-4' }),
     ).rejects.toThrow();
+  });
+
+  it('refuses a send whose sender was removed while it was in flight', async () => {
+    // The membership check before the transaction passed; the removal then
+    // committed, so the in-transaction re-check matches no row (P2025) and
+    // the insert rolls back with it.
+    transaction.mockImplementationOnce(() =>
+      Promise.reject(
+        new Prisma.PrismaClientKnownRequestError('No record found', {
+          code: 'P2025',
+          clientVersion: 'test',
+        }),
+      ),
+    );
+    await expect(
+      service.sendMessage(ME, CONV, { text: 'hi', clientId: 'c-6' }),
+    ).rejects.toMatchObject({ response: { code: 'NOT_A_MEMBER' } });
+    expect(persistAndNotify).not.toHaveBeenCalled();
   });
 
   it('refuses a client id already used in another conversation, instead of looping', async () => {

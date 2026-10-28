@@ -11,7 +11,6 @@ import {
   UseGuards,
   BadRequestException,
 } from '@nestjs/common';
-import { inviteSummary } from '../core/invite-data';
 import type { AuthenticatedRequest } from '../../common/types/authenticated-request';
 import { DmService } from './dm.service';
 import { BlocksService } from '../../users/blocks.service';
@@ -21,8 +20,11 @@ import { DomainEventService } from '../../events/domain-event.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { NotificationFactory } from '../../notifications/notification.factory';
 import { SendMessageDto } from '../core/dto/send-message.dto';
-import { emitMessageNew } from '../message-alert.util';
+import { SendGroupInviteDto } from '../core/dto/send-group-invite.dto';
+import { emitMessageNew, publicMessage } from '../message-alert.util';
 import { VerificationAccessService } from '../../common/verification/verification-access.service';
+import { announceUnsent } from '../unsend-announce.util';
+import { previewOf } from '../core/message-preview';
 
 @Controller('api/dm')
 export class DmController {
@@ -124,6 +126,43 @@ export class DmController {
     return res;
   }
 
+  /**
+   * Invites one person to a group, in one request.
+   *
+   * The invite modal used to find or create the DM first and then send the
+   * card into it: two round trips per person. And for someone it had never
+   * messaged it sent to a client-side "draft" id the send route cannot
+   * resolve, so that invite failed outright ("Couldn't send invite").
+   *
+   * Here, in order: the group is checked and the card built from it
+   * (buildGroupInvite: the inviter is still in it, it is open, the target is
+   * not already in it) before anything is written; the DM is found or created
+   * (startDM: blocks, eligibility, first-contact rate limit, per-pair lock);
+   * and the card is sent through the same handler as any message (send rate
+   * limit, idempotency by clientId, fan-out after the response).
+   */
+  @Post('invite')
+  @UseGuards(JwtGuard)
+  @VerifiedOnly()
+  async sendGroupInvite(
+    @Req() req: AuthenticatedRequest,
+    @Body() body: SendGroupInviteDto,
+  ) {
+    const userId = req.user?.id;
+    const inviteData = await this.dmService.buildGroupInvite(
+      body.groupId,
+      userId,
+      body.targetUserId,
+    );
+    const dm = await this.dmService.startDM(userId, body.targetUserId);
+    const payload = Object.assign(new SendMessageDto(), {
+      text: '',
+      inviteData,
+      ...(body.clientId ? { clientId: body.clientId } : {}),
+    });
+    return this.sendMessage(req, dm.id, payload);
+  }
+
   @Get(':id')
   @UseGuards(JwtGuard)
   async getHistory(
@@ -163,11 +202,7 @@ export class DmController {
       new Set([userId, ...unblockedParticipantIds]),
     );
 
-    const previewText =
-      message.text ||
-      (message.inviteData
-        ? inviteSummary(message.inviteData) || 'Group invite'
-        : '');
+    const previewText = previewOf(message);
 
     setImmediate(() => {
       // Muted recipients still receive the message, flagged `alert: false`.
@@ -186,7 +221,8 @@ export class DmController {
             publicId: message.publicId,
             internalId: message.internalId,
             lastMessage: {
-              text: previewText,
+              id: message.id,
+              text: previewOf(message),
               createdAt: message.createdAt,
               senderId: userId,
             },
@@ -219,7 +255,7 @@ export class DmController {
       }
     });
 
-    return message;
+    return publicMessage(message);
   }
 
   @Post(':id/read')
@@ -292,37 +328,9 @@ export class DmController {
   ) {
     const userId = req.user?.id;
     const result = await this.dmService.unsendMessage(messageId, userId);
-    if (result.success && result.conversationId) {
-      const pubId = result.publicId || result.conversationId;
-      const participantIds = result.participantIds || [];
-      setImmediate(() => {
-        void this.domainEventService.emit(
-          'message:updated',
-          {
-            id: messageId,
-            conversationId: pubId,
-            publicId: pubId,
-            internalId: result.conversationId,
-            state: 'UNSENT',
-            text: 'This message was unsent',
-            mediaUrl: null,
-            mediaType: null,
-            inviteData: null,
-            replyTo: null,
-          },
-          participantIds,
-        );
-        void this.domainEventService.emit(
-          'conversation:updated',
-          {
-            conversationId: pubId,
-            lastMessageText: 'This message was unsent',
-            updatedAt: new Date().toISOString(),
-          },
-          participantIds,
-        );
-      });
-    }
+    // Only a change is announced: unsending twice is answered with success
+    // (`changed: false`) and must not send every device the event again.
+    announceUnsent(this.domainEventService, result);
     return result;
   }
 
@@ -378,15 +386,8 @@ export class DmController {
             publicId: message.publicId,
             internalId: message.internalId,
             lastMessage: {
-              text:
-                message.text ||
-                (message.mediaUrl
-                  ? message.mediaType === 'image'
-                    ? 'Photo'
-                    : message.mediaType === 'video'
-                      ? 'Video'
-                      : 'Audio'
-                  : ''),
+              id: message.id,
+              text: previewOf(message),
               createdAt: message.createdAt,
               senderId: userId,
             },

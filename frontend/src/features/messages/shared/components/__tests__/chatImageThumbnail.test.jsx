@@ -18,6 +18,8 @@ const cache = vi.hoisted(() => ({
   getSyncUrl: vi.fn(() => null),
   getUrl: vi.fn(),
   invalidate: vi.fn(),
+  // The server answered and would not sign it: here, anything not in `signed`.
+  wasDeclined: vi.fn(),
 }));
 vi.mock('@shared/utils/MediaCacheManager', () => ({ mediaCache: cache }));
 
@@ -43,6 +45,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   cache.getSyncUrl.mockReturnValue(null);
   cache.getUrl.mockImplementation(async (v) => cache.signed.get(v) ?? null);
+  cache.wasDeclined.mockImplementation((v) => !cache.signed.has(v));
   cache.signed.clear();
 });
 afterEach(cleanup);
@@ -73,13 +76,15 @@ describe('received chat image', () => {
     renderBubble();
 
     await waitFor(() => expect(img()?.getAttribute('src')).toBe('https://cdn.example/a.webp?sig=2'));
-    expect(screen.queryByText('Unavailable')).toBeNull();
+    expect(screen.queryByText(/Photo unavailable|Photo couldn't load/)).toBeNull();
   });
 
-  it('ends on Unavailable - not an endless skeleton - when nothing can be signed', async () => {
+  it('ends on Photo unavailable - not an endless skeleton - when the server will not sign it', async () => {
     renderBubble();
-    await waitFor(() => expect(screen.getByText('Unavailable')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Photo unavailable')).toBeTruthy());
     expect(skeleton()).toBeNull();
+    // A refusal is final: nothing to retry.
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
   });
 
   it('re-signs once when the picture fails to load, then moves on to the full image', async () => {
@@ -99,7 +104,11 @@ describe('received chat image', () => {
     fireEvent.error(img());                       // the original is bad too: re-sign it once...
     await waitFor(() => expect(img()).not.toBeNull());
     fireEvent.error(img());                       // ...and then stop
-    await waitFor(() => expect(screen.getByText('Unavailable')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("Photo couldn't load")).toBeTruthy());
+
+    // A load failure (not a refusal) can be tried again, from the thumbnail.
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(img()?.getAttribute('src')).toBe('https://cdn.example/a_thumb.webp?sig=1'));
   });
 
   it('paints an optimistic local preview immediately, without signing', () => {

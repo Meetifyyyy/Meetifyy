@@ -27,6 +27,8 @@ type Participant = {
   leftAt: Date | null;
   deletedAt: Date | null;
   joinedAt: Date;
+  leftGroupName?: string | null;
+  leftGroupAvatarKey?: string | null;
 };
 type Key = {
   userId_conversationId: { userId: string; conversationId: string };
@@ -36,7 +38,13 @@ type Where = Partial<Record<keyof Participant, unknown>>;
 function makeStore() {
   const conversations = new Map<
     string,
-    { id: string; type: string; ownerId: string | null }
+    {
+      id: string;
+      type: string;
+      ownerId: string | null;
+      name: string | null;
+      avatarKey: string | null;
+    }
   >();
   const participants = new Map<string, Participant>();
   const k = (w: Key) =>
@@ -59,7 +67,12 @@ function makeStore() {
         data,
       }: {
         where: { id: string };
-        data: { ownerId: string };
+        data: {
+          ownerId?: string;
+          updatedAt?: Date;
+          name?: string;
+          avatarKey?: string | null;
+        };
       }) => {
         const c = conversations.get(where.id)!;
         Object.assign(c, data);
@@ -86,6 +99,17 @@ function makeStore() {
         Object.assign(p, data);
         return Promise.resolve({ ...p });
       },
+      updateMany: ({
+        where,
+        data,
+      }: {
+        where: Where;
+        data: Partial<Participant>;
+      }) => {
+        const hit = [...participants.values()].filter((p) => matches(p, where));
+        hit.forEach((p) => Object.assign(p, data));
+        return Promise.resolve({ count: hit.length });
+      },
       upsert: ({
         where,
         update,
@@ -107,7 +131,11 @@ function makeStore() {
         return Promise.resolve({ ...participants.get(k(where))! });
       },
     },
-    $transaction: (ops: Promise<unknown>[]) => Promise.all(ops),
+    // Both forms Prisma takes: a batch, or a callback given the client.
+    $transaction: (
+      ops: Promise<unknown>[] | ((tx: unknown) => Promise<unknown>),
+    ): Promise<unknown> =>
+      typeof ops === 'function' ? ops(prisma) : Promise.all(ops),
   };
 
   let clock = 0;
@@ -120,6 +148,8 @@ function makeStore() {
       id,
       type,
       ownerId: members.find(([, r]) => r === 'OWNER')?.[0] ?? null,
+      name: `${id} name`,
+      avatarKey: `groups/${id}.webp`,
     });
     for (const [userId, role] of members)
       participants.set(`${userId}|${id}`, {
@@ -133,7 +163,8 @@ function makeStore() {
   };
   const member = (userId: string, conversationId: string) =>
     participants.get(`${userId}|${conversationId}`);
-  return { prisma, addConversation, member };
+  const group = (id: string) => conversations.get(id)!;
+  return { prisma, addConversation, member, group };
 }
 
 type MemberOps = Pick<
@@ -146,12 +177,19 @@ const services: [string, (prisma: unknown) => MemberOps][] = [
   ['GroupChatsService', (prisma) => build(GroupChatsService.prototype, prisma)],
 ];
 
+/** Whose cached conversation list each service was asked to drop. */
+let evicted: string[] = [];
+
 function build<T extends object>(proto: T, prisma: unknown): T {
   const service = Object.create(proto) as T;
   Object.assign(service, {
     prisma,
     resolveConversationId: (id: string) => Promise.resolve(id),
-    invalidateUserConversationsCache: () => Promise.resolve(),
+    invalidateUserConversationsCache: (ids: string[] = []) => {
+      evicted.push(...ids);
+      return Promise.resolve();
+    },
+    invalidateGroupDetailsVersion: () => Promise.resolve(),
     verificationAccess: { assertUsersEligible: () => Promise.resolve() },
     blocksService: { isBlocked: () => Promise.resolve(false) },
   });
@@ -163,6 +201,7 @@ describe.each(services)('%s — group membership routes', (_name, make) => {
   let service: MemberOps;
 
   beforeEach(() => {
+    evicted = [];
     store = makeStore();
     service = make(store.prisma);
     store.addConversation('dm', 'DM', [
@@ -237,7 +276,7 @@ describe.each(services)('%s — group membership routes', (_name, make) => {
     it('an active member adds someone new', async () => {
       await expect(
         service.addGroupMember('grp', 'member', 'carol'),
-      ).resolves.toEqual({
+      ).resolves.toMatchObject({
         success: true,
         alreadyMember: false,
       });
@@ -264,5 +303,100 @@ describe.each(services)('%s — group membership routes', (_name, make) => {
       await service.leaveGroup('grp', 'owner');
       expect(store.member('admin', 'grp')!.role).toBe('OWNER');
     });
+  });
+
+  describe('authority is read from the row as it is now', () => {
+    const notAMember = { response: { code: 'NOT_A_MEMBER' } };
+
+    it('a removed admin can no longer remove anyone', async () => {
+      store.addConversation('g2', 'GROUP', [
+        ['o', 'OWNER'],
+        ['a1', 'ADMIN'],
+        ['m1', 'MEMBER'],
+        ['m2', 'MEMBER'],
+      ]);
+      await service.removeGroupMember('g2', 'o', 'a1');
+      await expect(
+        service.removeGroupMember('g2', 'a1', 'm1'),
+      ).rejects.toMatchObject(notAMember);
+      expect(store.member('m1', 'g2')!.leftAt).toBeNull();
+    });
+
+    it('a removed or departed member keeps no role', async () => {
+      await service.removeGroupMember('grp', 'owner', 'admin');
+      expect(store.member('admin', 'grp')!.role).toBe('MEMBER');
+      await service.leaveGroup('grp', 'owner');
+      expect(store.member('owner', 'grp')!.role).toBe('MEMBER');
+    });
+
+    it('an owner who left cannot act as owner', async () => {
+      await service.leaveGroup('grp', 'owner');
+      await expect(
+        service.removeGroupMember('grp', 'owner', 'member'),
+      ).rejects.toMatchObject(notAMember);
+    });
+
+    it('a member who only hid the chat can still be removed', async () => {
+      store.member('member', 'grp')!.deletedAt = new Date();
+      await expect(
+        service.removeGroupMember('grp', 'admin', 'member'),
+      ).resolves.toMatchObject({ success: true, changed: true });
+      expect(store.member('member', 'grp')!.leftAt).not.toBeNull();
+    });
+  });
+
+  describe('repeats change nothing and announce nothing', () => {
+    it('removing someone twice succeeds once', async () => {
+      await expect(
+        service.removeGroupMember('grp', 'admin', 'member'),
+      ).resolves.toMatchObject({ changed: true });
+      const firstLeftAt = store.member('member', 'grp')!.leftAt;
+      await expect(
+        service.removeGroupMember('grp', 'owner', 'member'),
+      ).resolves.toMatchObject({ success: true, changed: false });
+      expect(store.member('member', 'grp')!.leftAt).toBe(firstLeftAt);
+    });
+
+    it('leaving twice succeeds once', async () => {
+      await expect(service.leaveGroup('grp', 'member')).resolves.toMatchObject({
+        changed: true,
+      });
+      await expect(service.leaveGroup('grp', 'member')).resolves.toMatchObject({
+        success: true,
+        changed: false,
+      });
+    });
+  });
+
+  it('a former member keeps the group as it was when they left, until they rejoin', async () => {
+    await service.removeGroupMember('grp', 'admin', 'member');
+    await service.leaveGroup('grp', 'admin');
+    // Renamed and re-photographed after both had gone.
+    Object.assign(store.group('grp'), { name: 'Renamed', avatarKey: null });
+    for (const who of ['member', 'admin']) {
+      expect(store.member(who, 'grp')).toMatchObject({
+        leftGroupName: 'grp name',
+        leftGroupAvatarKey: 'groups/grp.webp',
+      });
+    }
+    expect(store.member('owner', 'grp')!.leftGroupName).toBeUndefined();
+
+    await service.addGroupMember('grp', 'owner', 'member');
+    expect(store.member('member', 'grp')).toMatchObject({
+      leftAt: null,
+      leftGroupName: null,
+      leftGroupAvatarKey: null,
+    });
+  });
+
+  it('a removed member keeps no unread count they could never clear', async () => {
+    Object.assign(store.member('member', 'grp')!, { unreadCount: 5 });
+    await service.removeGroupMember('grp', 'admin', 'member');
+    expect(store.member('member', 'grp')).toMatchObject({ unreadCount: 0 });
+  });
+
+  it('drops the cached conversation list of the removed user and of everyone still in the group', async () => {
+    await service.removeGroupMember('grp', 'admin', 'member');
+    expect(new Set(evicted)).toEqual(new Set(['member', 'owner', 'admin']));
   });
 });

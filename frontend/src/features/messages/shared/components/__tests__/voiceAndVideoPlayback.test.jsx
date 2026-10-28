@@ -11,8 +11,15 @@ vi.mock('@shared/hooks/useSignedMediaSrc', () => ({
     ? { ...signed.state, refresh: signed.refresh }
     : { src: '', failed: false, pending: false, attempt: 0, refresh: signed.refresh }),
 }));
+// Whether the server declined to sign (final) or the request failed (retryable).
+const declined = vi.hoisted(() => ({ value: false }));
 vi.mock('@shared/utils/MediaCacheManager', () => ({
-  mediaCache: { getSyncUrl: (v) => v, getUrl: vi.fn(async (v) => v), invalidate: vi.fn() },
+  mediaCache: {
+    getSyncUrl: (v) => v,
+    getUrl: vi.fn(async (v) => v),
+    invalidate: vi.fn(),
+    wasDeclined: () => declined.value,
+  },
 }));
 
 import VoiceMessagePlayer from '../VoiceMessagePlayer';
@@ -22,6 +29,7 @@ import { PLAYBACK_PRIORITY } from '@shared/utils/playbackPriority';
 
 beforeEach(() => {
   vi.clearAllMocks();
+  declined.value = false;
   signed.state = { src: 'https://signed.example/a.webm', failed: false, pending: false, attempt: 0 };
   // jsdom implements neither playback nor `paused`; model just enough of both.
   vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(function play() {
@@ -117,11 +125,20 @@ describe('chat video tile (MV-004, MV-009, MV-025)', () => {
     expect(container.querySelector('video')).toBeNull();
   });
 
-  it('reports a refused signature as unavailable and offers a retry', () => {
+  it('reports a refused signature as unavailable, with nothing to retry', () => {
     signed.state = { src: '', failed: true, pending: false, attempt: 0 };
+    declined.value = true;
     render(<VideoPlayerWithOverlay src={KEY} />);
 
     expect(screen.getByText('Video unavailable')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+  });
+
+  it('a signature that could not be fetched offers a retry', () => {
+    signed.state = { src: '', failed: true, pending: false, attempt: 0 };
+    render(<VideoPlayerWithOverlay src={KEY} />);
+
+    expect(screen.getByText("Video couldn't load")).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(signed.refresh).toHaveBeenCalledTimes(1);
   });
@@ -154,11 +171,11 @@ describe('chat video tile (MV-004, MV-009, MV-025)', () => {
     const { container } = render(<VideoPlayerWithOverlay src={KEY} onOpenMediaModal={vi.fn()} />);
     fireEvent.error(container.querySelector('video'));
     expect(signed.refresh).toHaveBeenCalledTimes(1);
-    expect(screen.queryByText('Video unavailable')).toBeNull();
+    expect(screen.queryByText("Video couldn't load")).toBeNull();
 
     fireEvent.error(container.querySelector('video'));
     expect(signed.refresh).toHaveBeenCalledTimes(1);
-    expect(screen.getByText('Video unavailable')).toBeTruthy();
+    expect(screen.getByText("Video couldn't load")).toBeTruthy();
   });
 });
 

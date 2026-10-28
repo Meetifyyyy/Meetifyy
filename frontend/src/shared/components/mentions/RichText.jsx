@@ -10,6 +10,7 @@ import {
 import { hashtagSearchPath, splitHashtags } from '@shared/utils/hashtags';
 import styles from './RichText.module.css';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
+import { inAppPathFor, isModifiedClick } from '@shared/utils/inAppLink';
 
 
 /**
@@ -42,26 +43,49 @@ export function markMatches(text, term, keyPrefix, markClass) {
   return out;
 }
 
-export default function RichText({ content = '', mentions = [], className = '', urlLimit = 50, highlight = '', linkHashtags = false }) {
+/**
+ * @param {boolean} [verifiedMentionsOnly] Style only the @handles in
+ *   `mentions` (which the server verified when the text was saved), matched by
+ *   name wherever they appear. For messages: their text can be normalised
+ *   before display, which moves the stored offsets, and anything that merely
+ *   looks like a handle must stay plain text.
+ * @param {string} [linkClassName] Added to every link, for surfaces with their
+ *   own link treatment (a chat bubble's colour depends on whose it is).
+ * @param {string} [mentionClassName] Added to every @mention, likewise.
+ */
+const isEveryone = (username) => String(username || '').toLowerCase() === 'everyone';
+
+export default function RichText({ content = '', mentions = [], className = '', urlLimit = 50, highlight = '', linkHashtags = false, verifiedMentionsOnly = false, linkClassName = '', mentionClassName = '' }) {
   const navigate = useNavigate();
   // useUsersMap() always returns an object, so the `= {}` default is no longer needed.
   const users = useUsersMap();
 
   if (!content) return null;
 
+  const verifiedNames = verifiedMentionsOnly
+    ? new Set((Array.isArray(mentions) ? mentions : [])
+      .map((m) => String(m?.username || '').toLowerCase())
+      .filter(Boolean))
+    : null;
+
   // Helper to check if username exists in known users
   const isValidUser = (username) => {
     if (!username) return false;
     const clean = username.toLowerCase();
+    if (verifiedNames) return verifiedNames.has(clean);
     return Object.keys(users).some(k => k.toLowerCase() === clean || (users[k].username && users[k].username.toLowerCase() === clean));
   };
+  const mentionClass = `${styles.mentionLink}${mentionClassName ? ` ${mentionClassName}` : ''}`;
 
   const handleMentionClick = (e, username) => {
     e.stopPropagation();
-    if (username) {
+    if (username && !isEveryone(username)) {
       navigate(`/profile/${username}`);
     }
   };
+  // `@everyone` (group chats) tags the whole group: styled like any mention,
+  // but it is not a person and has no profile to open.
+  const mentionTitle = (username) => (isEveryone(username) ? 'Everyone in this group' : `Go to @${username}'s profile`);
 
   /**
    * Plain text, with search hits marked and — where `linkHashtags` is on —
@@ -114,7 +138,7 @@ export default function RichText({ content = '', mentions = [], className = '', 
    * shortened or tidied, and an address that is not http(s) is never given an
    * anchor at all.
    */
-  const renderTextWithLinks = (text, keyPrefix) => {
+  const renderTextWithLinks = (text, keyPrefix, renderRun = renderPlain) => {
     if (!text) return null;
 
     const matcher = createUrlMatcher();
@@ -128,7 +152,7 @@ export default function RichText({ content = '', mentions = [], className = '', 
       const href = resolveHref(url);
 
       if (match.index > cursor) {
-        out.push(renderPlain(text.slice(cursor, match.index), `${keyPrefix}-${cursor}`));
+        out.push(renderRun(text.slice(cursor, match.index), `${keyPrefix}-${cursor}`));
       }
 
       if (href) {
@@ -141,11 +165,21 @@ export default function RichText({ content = '', mentions = [], className = '', 
             // `noopener` denies the opened tab a handle on this one via
             // `window.opener`; `noreferrer` keeps the referrer off the request.
             rel="noopener noreferrer nofollow ugc"
-            className={styles.urlLink}
+            className={`${styles.urlLink}${linkClassName ? ` ${linkClassName}` : ''}`}
             // The whole address, for anyone who wants to see where it goes
             // before following it — the label may be shortened.
             title={url}
-            onClick={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              // A link to one of this site's own pages (a group invite, a
+              // post, a profile) opens it here rather than leaving the app.
+              if (e.defaultPrevented || isModifiedClick(e)) return;
+              const inApp = inAppPathFor(href);
+              if (inApp) {
+                e.preventDefault();
+                navigate(inApp);
+              }
+            }}
           >
             {label}
           </a>
@@ -161,16 +195,16 @@ export default function RichText({ content = '', mentions = [], className = '', 
       cursor = match.index + raw.length;
     }
 
-    if (cursor === 0) return renderPlain(text, keyPrefix);
+    if (cursor === 0) return renderRun(text, keyPrefix);
     if (cursor < text.length) {
-      out.push(renderPlain(text.slice(cursor), `${keyPrefix}-${cursor}-tail`));
+      out.push(renderRun(text.slice(cursor), `${keyPrefix}-${cursor}-tail`));
     }
     return out;
   };
 
 
   // 1. If structured mentions exist, slice by exact indices
-  if (Array.isArray(mentions) && mentions.length > 0) {
+  if (!verifiedNames && Array.isArray(mentions) && mentions.length > 0) {
     const sorted = [...mentions].sort((a, b) => a.start - b.start);
     const elements = [];
     let cursor = 0;
@@ -207,9 +241,9 @@ export default function RichText({ content = '', mentions = [], className = '', 
           elements.push(
             <span
               key={`mention-${idx}-${m.start}`}
-              className={styles.mentionLink}
+              className={mentionClass}
               onClick={(e) => handleMentionClick(e, m.username)}
-              title={`Go to @${m.username}'s profile`}
+              title={mentionTitle(m.username)}
             >
               {content.slice(m.start, m.end)}
             </span>
@@ -231,32 +265,50 @@ export default function RichText({ content = '', mentions = [], className = '', 
     return <span className={`${styles.wrapper} ${className}`}>{elements}</span>;
   }
 
-  // 2. Fallback regex matching for legacy text without structured mentions array
-  const parts = content.split(/(@[a-zA-Z0-9_.-]+)/g);
+  // 2. Matched by name: legacy text without a structured mentions array, and
+  // messages (verifiedMentionsOnly).
+  //
+  // Links are found first and mentions only in the text between them. The
+  // other way round, a link with an "@" in it (medium.com/@ana) was cut in two
+  // at the "@", and the rest of the address styled as a mention. A handle also
+  // needs something other than a word character before its "@", so an email
+  // address (bob@ana.dev) is never read as a mention of "ana".
+  const renderMentions = (text, keyPrefix) => {
+    const parts = text.split(/(@[a-zA-Z0-9_.-]+)/g);
+    if (parts.length === 1) return renderPlain(text, keyPrefix);
+    return parts.map((part, idx) => {
+      const before = idx > 0 ? parts[idx - 1] : '';
+      if (part.startsWith('@') && part.length > 1 && !/[A-Za-z0-9_]$/.test(before)) {
+        // "@ana." at the end of a sentence: the handle is "ana", the dot is prose.
+        const handle = part.slice(1);
+        const trimmed = handle.replace(/[.-]+$/, '');
+        const username = isValidUser(handle) ? handle : (trimmed && isValidUser(trimmed) ? trimmed : null);
+        if (username) {
+          return (
+            <span key={`${keyPrefix}-m-${idx}`}>
+              <span
+                className={mentionClass}
+                onClick={(e) => handleMentionClick(e, username)}
+                title={mentionTitle(username)}
+              >
+                @{username}
+              </span>
+              {handle.slice(username.length)}
+            </span>
+          );
+        }
+      }
+      return part ? (
+        <span key={`${keyPrefix}-t-${idx}`} className={styles.plainText}>
+          {renderPlain(part, `${keyPrefix}-t-${idx}`)}
+        </span>
+      ) : null;
+    });
+  };
+
   return (
     <span className={`${styles.wrapper} ${className}`}>
-      {parts.map((part, idx) => {
-        if (part.startsWith('@') && part.length > 1) {
-          const username = part.slice(1);
-          if (isValidUser(username)) {
-            return (
-              <span
-                key={idx}
-                className={styles.mentionLink}
-                onClick={(e) => handleMentionClick(e, username)}
-                title={`Go to @${username}'s profile`}
-              >
-                {part}
-              </span>
-            );
-          }
-        }
-        return (
-          <span key={idx} className={styles.plainText}>
-            {renderTextWithLinks(part, `legacy-${idx}`)}
-          </span>
-        );
-      })}
+      {renderTextWithLinks(content, 'rt', renderMentions)}
     </span>
   );
 }

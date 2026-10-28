@@ -84,7 +84,7 @@ export default function GroupChatHeader({
           <button 
             {...moreMenu.triggerProps}
             className={`${styles.msgChatActionBtn} ${moreMenu.open ? styles.msgChatActionBtnActive : ''}`}
-            title="More Options"
+            title="More options"
             aria-label="Group chat options"
           >
             <MoreVertical size={20} strokeWidth={2.25} />

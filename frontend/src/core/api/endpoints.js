@@ -413,6 +413,13 @@ export function createEndpoints({
     // conversation — used by the draft screen, which has no conversation to read.
     getMessagingEligibility: (targetUserId) => apiClient.get(`/api/dm/eligibility/${targetUserId}`),
     startDM: (targetUserId) => apiClient.post('/api/dm', { targetUserId }),
+    /**
+     * Invites one person to a group in one request: the server checks the
+     * group, finds or creates the DM and sends a card it builds itself. The
+     * clientId makes a retry return the invite already sent.
+     */
+    sendGroupInvite: ({ targetUserId, groupId, clientId }) =>
+      apiClient.post('/api/dm/invite', { targetUserId, groupId, clientId }),
     getHistory: (conversationId, deviceId, beforeCursor, limit) => {
       const params = new URLSearchParams();
       if (deviceId) params.set('deviceId', deviceId);
@@ -512,6 +519,8 @@ export function createEndpoints({
       const query = params.toString();
       return apiClient.get(`/api/messages${query ? `?${query}` : ''}`);
     },
+    /** Every conversation that raises the message badge, loaded or not. */
+    getUnreadSummary: () => apiClient.get('/api/messages/unread-summary'),
     getHistory: (conversationId, deviceId, beforeCursor, limit) => {
       const params = new URLSearchParams();
       if (deviceId) params.set('deviceId', deviceId);

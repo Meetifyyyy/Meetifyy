@@ -1,305 +1,376 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
-import { useDebounce } from '@shared/hooks/useDebounce';
-import { copyToClipboard } from '@shared/lib/share/shareTargets';
-import { selectableUsers } from '@shared/lib/conversationTargets';
+/**
+ * Inviting people to a group, from the group's details.
+ *
+ * The share sheet's frame and look (bottom sheet on phones, centred dialog on
+ * desktop; the same handle, search, avatar grid and footer, styled by
+ * ShareSheet.module.css): tap to pick any number of people, then one button.
+ * What it sends and to whom are the invite's own rules:
+ *
+ * - Who is offered: the viewer's connections (`/api/users/connections`, ranked
+ *   by closeness, searched in the database before its limit, verified and
+ *   unblocked only), so someone with no chat yet can be invited. Never the
+ *   viewer, never a current member.
+ * - One request per person (`POST /api/dm/invite`): the server finds or opens
+ *   the chat and builds the card from the group itself. Each person's client
+ *   id is fixed for this opening, so a retry returns the invite already sent
+ *   rather than a second card, and a person once sent to is not sent again.
+ * - Someone who joined in the meantime reads "In group", not a failure. A
+ *   group that has ended, or that the viewer is no longer in, stops the sheet:
+ *   a retry could not change either.
+ * - With nobody picked, the footer offers the group's link (Copy link, Share
+ *   via, …), which is the group's own address.
+ *
+ * It replaces a list with an Invite button on every row, where each tap sent
+ * at once and failures came back as toasts.
+ */
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useQuery, keepPreviousData } from '@tanstack/react-query';
-import { usersApi, groupApi } from '@shared/api/apiClient';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
+import { config } from '@config';
+import { dmApi, groupApi, usersApi } from '@shared/api/apiClient';
+import ShareModalAvatar from '@shared/components/avatar/ShareModalAvatar';
+import { Check } from '@shared/components/icons';
+import ShareTargets from '@shared/components/share/ShareTargets';
+import styles from '@shared/components/share/ShareSheet.module.css';
 import { useAuth } from '@shared/context/AuthContext';
-import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
-import { isImageUrl } from '@shared/utils/avatar';
-import styles from './InviteModal.module.css';
-import { useConversations } from '@shared/hooks/useMessages';
-import { useMessageActions } from '@shared/hooks/useMessageActions';
-import { showToast } from '@shared/utils/toast';
-import { generateConversationUrl } from '@shared/utils/conversationUrl';
+import { useDebounce } from '@shared/hooks/useDebounce';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
-import { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
+import { useSheetDrag } from '@shared/hooks/useSheetDrag';
+import { selectableUsers } from '@shared/lib/conversationTargets';
+import { generateConversationUrl } from '@shared/utils/conversationUrl';
 import { publicOrigin } from '@shared/utils/publicOrigin';
-import { KEYBOARD_OVERLAYS_PAGE } from '@shared/utils/keyboardOverlay';
+import { newForwardOperationId } from '@features/messages/shared/utils/forwardDelivery';
+
+/** How long the "Invited" confirmation shows before the sheet closes itself. */
+const SENT_CLOSE_MS = 900;
+
+/** Under a person's name, by how their invite went. */
+const STATE_LABEL = { sent: 'Invited', member: 'In group', failed: 'Not sent' };
+
+/** Refusals no retry can change: the sheet stops and says why. */
+const STOP_REASON = {
+  NOT_A_MEMBER: 'You’re no longer in this group.',
+  GROUP_CLOSED: 'This group has ended.',
+  GROUP_NOT_FOUND: 'This group no longer exists.',
+};
+
+function stopReason(err) {
+  const code = String(err?.code || '').toUpperCase();
+  return STOP_REASON[code] || STOP_REASON[String(err?.message || '')] || null;
+}
+
+/**
+ * Who is in the group now: owner, admins and members, from the group details
+ * (the server lists current members only) and the row the panel holds.
+ *
+ * Never the chat history's `participants`: that names everyone who has been
+ * in the chat, removed members included, which hid exactly the people one
+ * would invite back.
+ */
+function memberIdsOf(...sources) {
+  const ids = new Set();
+  const add = (value) => {
+    const id = typeof value === 'string' ? value : value?.id || value?.userId || value?.user?.id;
+    if (id) ids.add(String(id));
+  };
+  for (const source of sources) {
+    if (!source) continue;
+    add(source.ownerId);
+    add(source.hostId);
+    for (const key of ['admins', 'members', 'memberDetails']) {
+      if (Array.isArray(source[key])) source[key].forEach(add);
+    }
+  }
+  return ids;
+}
+
+/** The card an older server, without the invite route, is sent. */
+function legacyInviteData(group) {
+  return {
+    type: 'group_invite',
+    groupId: group.id,
+    conversationId: group.id,
+    groupName: group.name || 'Group',
+    groupAvatar: group.avatar || group.avatarKey || null,
+    description: group.description || '',
+    whoCanJoin: group.whoCanJoin || 'ANYONE',
+    memberCount: group.memberCount || group.members?.length || 1,
+  };
+}
 
 export default function InviteModal({ isOpen, onClose, group }) {
-  // Back dismisses this dialog rather than navigating the page behind it.
-  useOverlayBack(Boolean(isOpen), onClose);
-  // Background stays put while this dialog is open. Counted, so a
-  // dialog opened on top of another cannot unlock the page when it closes.
-  useScrollLock(Boolean(isOpen));
-
-  const [searchTerm, setSearchTerm] = useState('');
-  // One request per pause in typing rather than one per keystroke. The search
-  // itself is answered by the database (`/api/users/connections?q=`), which
-  // matches display name and username across every eligible account before
-  // applying the limit -- so a name outside the first page is still findable.
-  const debouncedSearchTerm = useDebounce(searchTerm.trim(), 250);
-  const [copied, setCopied] = useState(false);
-  const [sentTo, setSentTo] = useState(new Set());
-  const [sendingIds, setSendingIds] = useState(new Set());
+  const open = Boolean(isOpen);
+  useOverlayBack(open, onClose);
+  useScrollLock(open);
+  const sheetRef = useSheetDrag(onClose, { enabled: open });
 
   const { currentUser } = useAuth();
-  const { conversations } = useConversations();
-  const { startConversation, sendDirectMessage } = useMessageActions();
-  const modalRef = useRef(null);
-  const copyLockRef = useRef(false);
+  const queryClient = useQueryClient();
 
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selected, setSelected] = useState([]);
+  const [status, setStatus] = useState({}); // userId -> sending | sent | member | failed
+  const [phase, setPhase] = useState('idle'); // idle | sending | sent | failed
+  const [stopped, setStopped] = useState(null);
+  // While the search field has focus the keyboard is up; the link row would
+  // ride up above it and take the space the results need.
+  const [searching, setSearching] = useState(false);
+
+  /** This opening's id, the base of every invite's client id. */
+  const operationRef = useRef(newForwardOperationId());
+  const inFlight = useRef(false);
+  const closeTimer = useRef(null);
+
+  // The panel keeps this mounted while closed, so every opening starts clean,
+  // and results still arriving from the last one are not taken for this one's.
   useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = 'unset';
-    }
-    return () => { document.body.style.overflow = 'unset'; };
-  }, [isOpen]);
+    if (open) return;
+    operationRef.current = newForwardOperationId();
+    inFlight.current = false;
+    clearTimeout(closeTimer.current);
+    setSearchTerm('');
+    setSelected([]);
+    setStatus({});
+    setPhase('idle');
+    setStopped(null);
+    setSearching(false);
+  }, [open]);
+  useEffect(() => () => clearTimeout(closeTimer.current), []);
 
-  const handleCopyLink = () => {
-    if (copyLockRef.current) return;
-    copyLockRef.current = true;
-
-    const relativeUrl = generateConversationUrl(group, currentUser?.id, '/inbox');
-    const link = `${publicOrigin()}${relativeUrl}`;
-
-    // Through the shared helper, which falls back where `navigator.clipboard`
-    // does not exist and reports failure rather than leaving the lock stuck.
-    copyToClipboard(link).then((copied) => {
-      if (!copied) {
-        copyLockRef.current = false;
-        showToast('Could not copy the invite link', 'error');
-        return;
-      }
-      setCopied(true);
-      showToast('Invite link copied', 'success');
-      setTimeout(() => {
-        setCopied(false);
-        copyLockRef.current = false;
-      }, 2000);
-    });
-  };
-
-  const handleSend = async (user) => {
-    if (!group?.id || sentTo.has(user.id) || sendingIds.has(user.id)) return;
-
-    setSendingIds(prev => new Set(prev).add(user.id));
-    try {
-      const dmConvId = await startConversation(user.id);
-      
-      const inviteData = {
-        groupId: group.id,
-        conversationId: group.id,
-        groupName: group.name || 'Group',
-        groupAvatar: group.avatar || group.avatarKey || group.icon || group.coverImage || group.avatarUrl || null,
-        description: group.description || '',
-        whoCanJoin: group.whoCanJoin || 'ANYONE',
-        memberCount: group.memberCount || group.members?.length || 1,
-        type: 'group_invite'
-      };
-
-      await sendDirectMessage(
-        dmConvId,
-        '',
-        null,
-        null,
-        null,
-        null,
-        null,
-        inviteData
-      );
-
-      setSentTo(prev => new Set(prev).add(user.id));
-    } catch {
-      showToast("Couldn't send invite", 'error');
-    } finally {
-      setSendingIds(prev => {
-        const next = new Set(prev);
-        next.delete(user.id);
-        return next;
-      });
-    }
-  };
-
-  // Fetch fresh group details when modal is open to get exact current member list
-  const groupConvId = group?.id || group?.publicId || group?.internalId;
-  const { data: modalGroupDetails } = useQuery({
-    queryKey: ['groupDetails', groupConvId],
-    queryFn: () => groupApi.getDetails(groupConvId),
-    enabled: Boolean(isOpen && groupConvId),
-    staleTime: 1000 * 10,
+  const groupId = group?.id || group?.publicId || group?.internalId;
+  const { data: details } = useQuery({
+    queryKey: ['groupDetails', groupId],
+    queryFn: () => groupApi.getDetails(groupId),
+    enabled: Boolean(open && groupId),
+    staleTime: 10_000,
   });
+  const memberIds = useMemo(() => memberIdsOf(group, details), [group, details]);
 
-  // Current group members & current user
-  const currentMemberIds = useMemo(() => {
-    const ids = new Set();
-    if (currentUser?.id) ids.add(String(currentUser.id));
-
-    const addId = (val) => {
-      if (!val) return;
-      const id = typeof val === 'string' ? val : (val.id || val.userId || val.user?.id);
-      if (id) ids.add(String(id));
-    };
-
-    if (group?.ownerId) ids.add(String(group.ownerId));
-    if (group?.hostId) ids.add(String(group.hostId));
-    if (modalGroupDetails?.ownerId) ids.add(String(modalGroupDetails.ownerId));
-
-    if (Array.isArray(group?.admins)) group.admins.forEach(addId);
-    if (Array.isArray(group?.members)) group.members.forEach(addId);
-    if (Array.isArray(group?.participants)) group.participants.forEach(addId);
-    if (Array.isArray(group?.memberDetails)) group.memberDetails.forEach(addId);
-
-    if (Array.isArray(modalGroupDetails?.admins)) modalGroupDetails.admins.forEach(addId);
-    if (Array.isArray(modalGroupDetails?.members)) modalGroupDetails.members.forEach(addId);
-    if (Array.isArray(modalGroupDetails?.memberDetails)) modalGroupDetails.memberDetails.forEach(addId);
-
-    const conv = (conversations || []).find(
-      c => String(c.id) === String(groupConvId) || String(c.publicId) === String(groupConvId) || String(c.internalId) === String(groupConvId)
-    );
-    if (conv) {
-      if (conv.ownerId) ids.add(String(conv.ownerId));
-      if (Array.isArray(conv.admins)) conv.admins.forEach(addId);
-      if (Array.isArray(conv.members)) conv.members.forEach(addId);
-      if (Array.isArray(conv.participants)) conv.participants.forEach(addId);
-    }
-
-    return ids;
-  }, [conversations, group, modalGroupDetails, currentUser?.id, groupConvId]);
-
-  // Fetch registered candidate users for invitation
-  const { data: fetchedUsers = [], isFetching: isSearching } = useQuery({
-    queryKey: ['all-users-for-invite', debouncedSearchTerm],
-    queryFn: async () => {
-      const list = await usersApi
-        .getConnections(debouncedSearchTerm, 50)
-        .catch(() => []);
-      // `selectableUsers` drops deleted accounts. The server already excludes
-      // them; this covers the window where a cached response (20s server-side,
-      // 30s here) still carries somebody who has since deleted.
-      return selectableUsers(list).filter(
-        (u) => String(u.id) !== String(currentUser?.id)
-      );
-    },
-    enabled: Boolean(isOpen),
+  // One request per pause in typing. The term is matched by the database
+  // before the limit, so a name outside the first page is still found.
+  const term = useDebounce(searchTerm.trim(), 250);
+  const people = useQuery({
+    queryKey: ['all-users-for-invite', term],
+    queryFn: () => usersApi.getConnections(term, 50),
+    enabled: open,
     staleTime: 30_000,
-    // Keeps the previous term's rows on screen while the next request is in
-    // flight, so the list does not blink empty between keystrokes.
+    // The previous term's rows stay while the next request is in flight, so
+    // the grid does not blink empty between keystrokes.
     placeholderData: keepPreviousData,
   });
 
-  /**
-   * People already in the group are not invitable.
-   *
-   * `currentMemberIds` was assembled above and then never used, so every
-   * existing member -- including the group's owner and the viewer -- was
-   * listed with a live "Invite" button that could only produce a redundant
-   * invite. The set is small and entirely in memory (group details plus the
-   * conversation row), which is why this one is a client-side exclusion: it is
-   * a property of the group being invited to, not an eligibility rule. Every
-   * eligibility rule -- blocks, verification -- is
-   * applied by the database inside `getConnections`, before the limit.
-   */
-  const filteredUsers = useMemo(
-    () => fetchedUsers.filter((u) => !currentMemberIds.has(String(u.id))),
-    [fetchedUsers, currentMemberIds],
+  const recipients = useMemo(
+    () =>
+      // `selectableUsers` drops deleted accounts a cached response may still hold.
+      selectableUsers(people.data || []).filter(
+        (u) => String(u.id) !== String(currentUser?.id) && !memberIds.has(String(u.id)),
+      ),
+    [people.data, currentUser?.id, memberIds],
   );
 
-  if (!isOpen) return null;
+  const sendOne = useCallback(
+    async (userId) => {
+      const clientId = `inv_${operationRef.current}_${userId}`.slice(0, 128);
+      try {
+        await dmApi.sendGroupInvite({ targetUserId: userId, groupId, clientId });
+        return 'sent';
+      } catch (err) {
+        if (err?.code === 'ALREADY_MEMBER') return 'member';
+        // A server from before this route: the older two steps, with the chat
+        // found or created on the server, under the same client id.
+        if (err?.status !== 404 || stopReason(err)) throw err;
+        const dm = await dmApi.startDM(userId);
+        await dmApi.sendMessage(dm?.publicId || dm?.id, {
+          text: '',
+          clientId,
+          inviteData: legacyInviteData({ ...group, id: groupId }),
+        });
+        return 'sent';
+      }
+    },
+    [group, groupId],
+  );
+
+  const send = useCallback(async () => {
+    if (inFlight.current || stopped || !groupId) return;
+    const targets = selected.filter((id) => status[id] !== 'sent' && status[id] !== 'member');
+    if (targets.length === 0) return;
+    const operation = operationRef.current;
+    inFlight.current = true;
+    setPhase('sending');
+    setStatus((prev) => ({ ...prev, ...Object.fromEntries(targets.map((id) => [id, 'sending'])) }));
+
+    const results = await Promise.allSettled(targets.map((id) => sendOne(id)));
+    if (operationRef.current !== operation) return; // closed meanwhile
+    inFlight.current = false;
+
+    const next = {};
+    let stop = null;
+    results.forEach((r, i) => {
+      next[targets[i]] = r.status === 'fulfilled' ? r.value : 'failed';
+      if (r.status === 'rejected') stop = stop || stopReason(r.reason);
+    });
+    setStatus((prev) => ({ ...prev, ...next }));
+    // A chat may have been opened for someone: the list picks it up.
+    if (results.some((r) => r.status === 'fulfilled' && r.value === 'sent')) {
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    }
+    if (stop) {
+      setStopped(stop);
+      setPhase('failed');
+      return;
+    }
+    const ok = results.every((r) => r.status === 'fulfilled');
+    setPhase(ok ? 'sent' : 'failed');
+    if (ok) closeTimer.current = setTimeout(onClose, SENT_CLOSE_MS);
+  }, [groupId, onClose, queryClient, selected, sendOne, status, stopped]);
+
+  const toggle = useCallback((id) => {
+    setPhase('idle');
+    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }, []);
+
+  const linkPayload = useMemo(() => {
+    if (!group) return null;
+    const name = group.name?.trim() || 'this group';
+    return {
+      url: `${publicOrigin()}${generateConversationUrl(group, currentUser?.id, '/inbox')}`,
+      title: `${name} on ${config.app.name}`,
+      text: `Join ${name} on ${config.app.name}.`,
+    };
+  }, [group, currentUser?.id]);
+
+  if (!open) return null;
+
+  const close = (e) => {
+    e?.stopPropagation();
+    e?.preventDefault();
+    onClose();
+  };
+  const busy = phase === 'sending';
+  const failedCount = selected.filter((id) => status[id] === 'failed').length;
+  // Picked and not yet through: someone already invited is not counted again.
+  const pending = selected.filter((id) => status[id] !== 'sent' && status[id] !== 'member').length;
+  const label = busy
+    ? 'Inviting…'
+    : phase === 'sent'
+      ? 'Invited'
+      : phase === 'failed'
+        ? `Retry ${failedCount} ${failedCount === 1 ? 'invite' : 'invites'}`
+        : pending <= 1
+          ? 'Invite'
+          : `Invite ${pending}`;
 
   return createPortal(
-    <div
-      className={styles.overlay}
-      data-keyboard-overlay={KEYBOARD_OVERLAYS_PAGE ? '' : undefined}
-      onClick={(e) => {
-        e.stopPropagation();
-        e.preventDefault();
-        onClose();
-      }}
-    >
+    <div className={styles.backdrop} onClick={close}>
       <div
-        className={styles.modal}
-        onClick={e => e.stopPropagation()}
-        ref={modalRef}
+        ref={sheetRef}
+        className={styles.sheet}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="group-invite-title"
+        onClick={(e) => e.stopPropagation()}
       >
         <div className={styles.header}>
-          <h2 className={styles.title}>Invite People</h2>
-          <button className={styles.closeBtn} onClick={onClose} aria-label="Close">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
+          <div className="sheet-handle" data-sheet-handle aria-hidden="true" />
+          <div className={styles.headerRow}>
+            {/* As on the share sheet: no visible title, still announced. */}
+            <h2 id="group-invite-title" className={`${styles.title} ${styles.srOnly}`}>
+              {group?.name ? `Invite to ${group.name}` : 'Invite people'}
+            </h2>
+            <button type="button" className={styles.closeBtn} onClick={close} aria-label="Close">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div className={styles.body}>
+          <label className={styles.search}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="7" />
+              <line x1="20" y1="20" x2="16.5" y2="16.5" />
             </svg>
-          </button>
-        </div>
+            <input
+              type="text"
+              placeholder="Search"
+              aria-label="Search people"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              onFocus={() => setSearching(true)}
+              onBlur={() => setSearching(false)}
+            />
+          </label>
 
-        <div className={styles.searchContainer}>
-          <svg className={styles.searchIcon} width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="11" cy="11" r="8"></circle>
-            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-          </svg>
-          <input
-            type="text"
-            placeholder="Search people..."
-            className={styles.searchInput}
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        </div>
-
-        <div className={styles.list}>
-          {filteredUsers.length > 0 ? (
-            filteredUsers.map(user => {
-              const isSent = sentTo.has(user.id);
-              const isSending = sendingIds.has(user.id);
+          <div className={styles.grid} role="listbox" aria-multiselectable="true" aria-label="Invite">
+            {recipients.map((user) => {
+              const picked = selected.includes(user.id);
+              const state = STATE_LABEL[status[user.id]];
               return (
-                <div key={user.id} className={styles.listItem}>
-                  <div className={styles.contactInfo}>
-                    {isImageUrl(user.avatar) ? (
-                      <img src={getProcessedAvatarUrl(user.avatar)} alt={user.displayName || user.name} className={styles.avatar} onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.svg'; }} />
-                    ) : (
-                      <DefaultAvatar size={40} name={user.displayName || user.name} className={styles.avatar} />
+                <button
+                  key={user.id}
+                  type="button"
+                  role="option"
+                  aria-selected={picked}
+                  className={`${styles.person} ${picked ? styles.picked : ''}`}
+                  onClick={() => toggle(user.id)}
+                  disabled={busy || Boolean(stopped)}
+                >
+                  <span className={styles.avatarWrap}>
+                    <ShareModalAvatar conv={user} size="60px" />
+                    {picked && (
+                      <span className={styles.check} aria-hidden="true">
+                        <Check size={13} strokeWidth={3} />
+                      </span>
                     )}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
-                      <span className={styles.contactName}>{user.displayName || user.name}</span>
-                      <span className={styles.contactHandle}>@{user.username}</span>
-                    </div>
-                  </div>
-                  <button
-                    className={styles.sendBtn}
-                    onClick={() => handleSend(user)}
-                    disabled={isSent || isSending}
-                  >
-                    {isSent ? 'Invited' : (isSending ? 'Sending...' : 'Invite')}
-                  </button>
-                </div>
+                  </span>
+                  <span className={styles.personName}>{user.displayName || user.name || user.username}</span>
+                  {state && (
+                    <span className={`${styles.personState} ${status[user.id] === 'failed' ? styles.personFailed : ''}`}>
+                      {state}
+                    </span>
+                  )}
+                </button>
               );
-            })
-          ) : (
-            <div style={{ textAlign: 'center', padding: '20px', color: 'var(--color-text-light)' }}>
-              {isSearching
-                ? 'Searching\u2026'
-                : searchTerm.trim()
-                  ? 'No matching users.'
-                  : 'No users found.'}
+            })}
+
+            {recipients.length === 0 && (
+              people.isError ? (
+                <p className={styles.empty} role="alert">
+                  Couldn’t load people.{' '}
+                  <button type="button" className={styles.linkBtn} onClick={() => people.refetch()}>Retry</button>
+                </p>
+              ) : people.isFetching ? (
+                <p className={styles.empty} role="status">Searching…</p>
+              ) : (
+                <p className={styles.empty}>{term ? 'No matching people.' : 'No one to invite yet.'}</p>
+              )
+            )}
+          </div>
+
+          {(selected.length > 0 || !searching || stopped) && (
+            <div className={styles.footer}>
+              {stopped && <p className={styles.notice} role="alert">{stopped}</p>}
+              {selected.length > 0 && !stopped ? (
+                <button
+                  type="button"
+                  className={styles.sendBtn}
+                  onClick={send}
+                  disabled={busy || phase === 'sent' || pending === 0}
+                >
+                  {label}
+                </button>
+              ) : (
+                !stopped && linkPayload && <ShareTargets payload={linkPayload} />
+              )}
             </div>
           )}
         </div>
-
-        <button className={styles.copyLinkBtn} onClick={handleCopyLink}>
-          {copied ? (
-            <>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="20 6 9 17 4 12"></polyline>
-              </svg>
-              Copied!
-            </>
-          ) : (
-            <>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
-                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
-              </svg>
-              Copy Invite Link
-            </>
-          )}
-        </button>
       </div>
     </div>,
-    document.body
+    document.body,
   );
 }

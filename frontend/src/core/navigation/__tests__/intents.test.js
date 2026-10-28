@@ -104,6 +104,19 @@ describe('parseIntentFromPath', () => {
     expect(parseIntentFromPath(path)).toEqual(expected);
   });
 
+  it.each([
+    // What the invite button and conversation links generate: slug, then id.
+    ['/messages/design-crew/Xk29Pq', 'Xk29Pq'],
+    ['/inbox/design-crew/Xk29Pq', 'Xk29Pq'],
+    ['/messages/Xk29Pq', 'Xk29Pq'],
+    ['/inbox/Xk29Pq', 'Xk29Pq'],
+    // The older form put the id first.
+    ['/messages/2345fe04-1c2d-4e5f-8a9b-0c1d2e3f4a5b/design-crew', '2345fe04-1c2d-4e5f-8a9b-0c1d2e3f4a5b'],
+    ['/messages/c_abc/chat', 'c_abc'],
+  ])('reads the conversation id out of %s', (path, id) => {
+    expect(parseIntentFromPath(path)).toEqual({ t: 'chat', conversationId: id });
+  });
+
   it('strips query and fragment', () => {
     expect(parseIntentFromPath('/post/abc?ref=push#top')).toEqual({
       t: 'post',

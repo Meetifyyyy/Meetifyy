@@ -4,15 +4,6 @@
  * Includes optimized thumbnails, static poster frames, dimensions, and zero external API dependencies.
  */
 
-export const PRESET_THEMES = [
-  "Party",
-  "Adventure",
-  "Study",
-  "Coffee",
-  "Walk",
-  "Coding"
-];
-
 /**
  * 36 Preset Images across all themes with thumbnails and dimensions.
  */

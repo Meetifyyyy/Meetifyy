@@ -1,290 +1,228 @@
-import { ArrowLeft } from '@shared/components/icons';
+/**
+ * A group's settings: only what does something.
+ *
+ * Checked against the server before this page was rewritten, setting by
+ * setting. Removed, because nothing on the server or in the app ever acted on
+ * them: "Group updates" (stored per member, read by nothing), "Visibility"
+ * (college-only and hidden behaved exactly like everyone; there is no group
+ * discovery for it to apply to) and "Allow sharing" (no check anywhere; the
+ * link is the group's own address). The columns stay, because installed apps
+ * still send them. Leave group and End group went too: they were also at the
+ * foot of the group's details and in the chat's menu, and here they opened a
+ * confirmation this page never showed, so tapping them did nothing.
+ *
+ * What remains, and what enforces it:
+ * - Mute alerts — per member. Muted chats get no push and no unread badge.
+ * - Who can join — admins. Approval routes joins to Requests (server).
+ * - Who can edit group info — admins. Checked in updateGroupInfo (server).
+ * - Transfer ownership — the owner.
+ *
+ * Values are read from the group as the server last sent it; a change shows at
+ * once and is put back if the server refuses it (useGroupActions).
+ */
+import { useEffect, useRef, useState } from 'react';
+import { ArrowLeft, ChevronRight } from '@shared/components/icons';
 import sharedStyles from './ChatDetailsPanel.module.css';
 import styles from './GroupSettingsPage.module.css';
+import { EDIT_PERMISSION, WHO_CAN_JOIN } from '../../utils/groupSettings';
+
+// Each option carries its own hint, and every hint has the same reserved
+// height (GroupSettingsPage.module.css .choiceHint): switching never moves the
+// rows below, which a hint that appeared for one option only used to do.
+const JOIN_OPTIONS = [
+  { value: WHO_CAN_JOIN.ANYONE, label: 'Anyone', hint: 'People with the link or an invite join straight away.' },
+  { value: WHO_CAN_JOIN.APPROVAL, label: 'Approval required', hint: 'Admins review each request before anyone joins.' },
+];
+const EDIT_OPTIONS = [
+  { value: EDIT_PERMISSION.ADMIN, label: 'Admins', hint: 'Only the owner and admins can change the name, photo and description.' },
+  { value: EDIT_PERMISSION.EVERYONE, label: 'Everyone', hint: 'Any member can change the name, photo and description.' },
+];
+
+/**
+ * Two equal options with one highlight that slides between them (a transform,
+ * on the compositor): the labels never change weight or width, so nothing
+ * around the control moves when the choice changes.
+ */
+function Choice({ id, label, options, value, editable, busy, onChange }) {
+  const index = Math.max(0, options.findIndex((o) => o.value === value));
+  const current = options[index];
+  return (
+    <div className={styles.row}>
+      <div className={styles.rowText}>
+        <span className={styles.rowLabel} id={`${id}-label`}>{label}</span>
+        <span className={`${styles.rowHint} ${styles.choiceHint}`}>{current.hint}</span>
+      </div>
+      {editable ? (
+        <div
+          className={styles.segmented}
+          role="radiogroup"
+          aria-labelledby={`${id}-label`}
+          aria-busy={busy || undefined}
+          style={{ '--choice-index': index, '--choice-count': options.length }}
+        >
+          {options.map((o, i) => (
+            <button
+              key={o.value}
+              type="button"
+              role="radio"
+              aria-checked={i === index}
+              className={i === index ? `${styles.segment} ${styles.segmentOn}` : styles.segment}
+              onClick={() => !busy && i !== index && onChange(o.value)}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <span className={styles.rowValue}>{current.label}</span>
+      )}
+    </div>
+  );
+}
+
+/** "Saving…", then "Saved" or "Not saved", in a slot that is always there. */
+function useSaveStatus() {
+  const [status, setStatus] = useState('');
+  const timer = useRef(null);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  const track = async (write) => {
+    clearTimeout(timer.current);
+    setStatus('Saving…');
+    const ok = (await write()) !== false;
+    setStatus(ok ? 'Saved' : 'Not saved');
+    timer.current = setTimeout(() => setStatus(''), 1800);
+  };
+  return [status, track];
+}
 
 export default function GroupSettingsPage({
-  conversation,
   isOwner,
   isAdmin,
   isMember,
-  // ChatDetailsPanel has always passed isClosed, but it was missing from this
-  // destructure, so the read below hit an undeclared identifier and threw
-  // "isClosed is not defined", taking the settings page to the error boundary.
   isClosed,
   canEditGroupInfo,
   whoCanJoin,
-  setWhoCanJoin,
-  visibility,
-  setVisibility,
-  allowSharing,
-  setAllowSharing,
-  editGroupPermission,
-  setEditGroupPermission,
-  groupUpdatesActive,
-  setGroupUpdatesActive,
-  updateGroupSettings,
-  updateGroupEditPermission,
+  editPermission,
+  isMuted,
+  onToggleMute,
+  onChangeWhoCanJoin,
+  onChangeEditPermission,
   onBack,
   onGoToEdit,
   onGoToChangeOwner,
-  handleLeaveGroup,
-  handleEndGroup
 }) {
+  // One write at a time per setting: the server is the authority, and a second
+  // tap while the first is out would race it.
+  const [busy, setBusy] = useState(null);
+  const [status, track] = useSaveStatus();
+  const save = async (key, write) => {
+    if (busy) return;
+    setBusy(key);
+    try {
+      await track(write);
+    } finally {
+      setBusy(null);
+    }
+  };
+
   return (
     <div className={sharedStyles.container}>
-      {/* Header */}
       <div className={sharedStyles.header}>
-        <button 
-          type="button" 
-          className={sharedStyles.backBtn} 
-          onClick={onBack} 
-          title="Back"
-        >
+        <button type="button" className={sharedStyles.backBtn} onClick={onBack} aria-label="Back">
           <ArrowLeft size={20} />
         </button>
-        <h2 className={sharedStyles.headerTitle}>Settings</h2>
+        <h2 className={sharedStyles.headerTitle}>Group settings</h2>
         <div style={{ width: '40px' }} />
       </div>
 
-      {/* Settings options list */}
-      <div className={sharedStyles.scrollBody} key="settings-scroll" style={{ padding: '1rem 0' }}>
-        {isClosed ? (
-          <div style={{ textAlign: 'center', padding: '1rem', color: '#ef4444', fontWeight: 'bold' }}>
-            This group has been closed by the Owner. This chat is now read-only.
-          </div>
-        ) : !isMember ? (
-          <div style={{ textAlign: 'center', padding: '1rem', color: '#ef4444', fontWeight: 'bold' }}>
-            You are no longer a member of this group.
-          </div>
+      <div className={`${sharedStyles.scrollBody} ${styles.body}`}>
+        {isClosed || !isMember ? (
+          <p className={styles.notice}>
+            {isClosed
+              ? 'This group has ended. Its settings can no longer be changed.'
+              : 'You’re no longer in this group.'}
+          </p>
         ) : (
           <>
-            {/* Category: Personalisation */}
-            <div className={styles.categoryBlock}>
-              <div className={styles.categoryHeader}>Personalisation</div>
-              <button 
-                type="button" 
-                className={styles.settingRow} 
-                onClick={canEditGroupInfo ? onGoToEdit : undefined}
-                style={{ cursor: canEditGroupInfo ? 'pointer' : 'default', opacity: canEditGroupInfo ? 1 : 0.7 }}
-              >
-                <span className={styles.settingLabel}>Edit group</span>
-                <div className={styles.settingRight}>
-                  <span className={styles.settingValue}>{conversation.name}</span>
-                  {canEditGroupInfo ? (
-                    <svg className={styles.chevronIcon} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                      <polyline points="9 18 15 12 9 6"></polyline>
-                    </svg>
-                  ) : (
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#888', marginLeft: '4px' }}>
-                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                      <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                    </svg>
-                  )}
-                </div>
-              </button>
-            </div>
-
-            {/* Category: Group Updates */}
-            <div className={styles.categoryBlock} style={{ marginTop: '1.5rem' }}>
-              <div className={styles.categoryHeader}>Group Updates</div>
-              
-              {/* Row with Switch */}
-              <div className={styles.settingRow} style={{ cursor: 'default' }}>
-                <div className={styles.settingLabelCol}>
-                  <span className={styles.settingLabel}>Group Updates</span>
-                  <span className={styles.settingSubtext}>Notifications of group activity in chat</span>
-                </div>
-                <label className={styles.switch}>
-                  <input
-                    type="checkbox"
-                    checked={groupUpdatesActive}
-                    onChange={(e) => {
-                      const newVal = e.target.checked;
-                      setGroupUpdatesActive(newVal);
-                      updateGroupSettings(conversation.id, { groupUpdatesActive: newVal });
-                    }}
-                  />
-                  <span className={styles.slider}></span>
-                </label>
-              </div>
-            </div>
-
-            {/* Category: Privacy */}
-            <div className={styles.categoryBlock} style={{ marginTop: '1.5rem' }}>
-              <div className={styles.categoryHeader}>Privacy</div>
-
-              {/* Row: Who can join */}
-              <button 
-                type="button" 
-                className={styles.settingRow}
-                onClick={() => {
-                  if (isAdmin) {
-                    const newVal = (whoCanJoin === 'ANYONE' || whoCanJoin === 'Anyone') ? 'APPROVAL' : 'ANYONE';
-                    setWhoCanJoin(newVal);
-                    updateGroupSettings(conversation.id, { whoCanJoin: newVal });
-                  }
-                }}
-                style={{ cursor: isAdmin ? 'pointer' : 'default', opacity: isAdmin ? 1 : 0.7 }}
-              >
-                <span className={styles.settingLabel}>Who can join</span>
-                <div className={styles.settingRight}>
-                  <span className={styles.settingValue}>
-                    {(whoCanJoin === 'APPROVAL' || whoCanJoin === 'Request required') ? 'Approval required' : 'Anyone'}
-                  </span>
-                  {isAdmin ? (
-                    <svg className={styles.chevronIcon} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                      <polyline points="9 18 15 12 9 6"></polyline>
-                    </svg>
-                  ) : (
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#888', marginLeft: '4px' }}>
-                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                      <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                    </svg>
-                  )}
-                </div>
-              </button>
-
-              {/* Row: Visibility */}
-              <button 
-                type="button" 
-                className={styles.settingRow}
-                onClick={() => {
-                  if (isAdmin) {
-                    let newVal = 'PUBLIC';
-                    if (visibility === 'PUBLIC' || visibility.startsWith('Visible to everyone')) newVal = 'COLLEGE';
-                    else if (visibility === 'COLLEGE' || visibility.startsWith('Visible only to your college')) newVal = 'HIDDEN';
-                    else newVal = 'PUBLIC';
-                    setVisibility(newVal);
-                    updateGroupSettings(conversation.id, { visibility: newVal });
-                  }
-                }}
-                style={{ cursor: isAdmin ? 'pointer' : 'default', opacity: isAdmin ? 1 : 0.7 }}
-              >
-                <span className={styles.settingLabel}>Visibility</span>
-                <div className={styles.settingRight}>
-                  <span className={styles.settingValue} style={{ maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {(visibility === 'COLLEGE' || visibility.includes('college')) ? 'Visible only to your college' :
-                     (visibility === 'HIDDEN' || visibility.includes('Hidden')) ? 'Hidden group' : 'Visible to everyone'}
-                  </span>
-                  {isAdmin ? (
-                    <svg className={styles.chevronIcon} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                      <polyline points="9 18 15 12 9 6"></polyline>
-                    </svg>
-                  ) : (
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#888', marginLeft: '4px' }}>
-                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                      <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                    </svg>
-                  )}
-                </div>
-              </button>
-
-              {/* Row: Allow sharing switch */}
-              <div className={styles.settingRow} style={{ cursor: 'default', opacity: isAdmin ? 1 : 0.7 }}>
-                <span className={styles.settingLabel}>Allow sharing</span>
-                <div className={styles.settingRight} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <label className={styles.switch}>
-                    <input
-                      type="checkbox"
-                      checked={allowSharing}
-                      onChange={(e) => {
-                        if (isAdmin) {
-                          setAllowSharing(e.target.checked);
-                          updateGroupSettings(conversation.id, { allowSharing: e.target.checked });
-                        }
-                      }}
-                      disabled={!isAdmin}
-                    />
-                    <span className={styles.slider} style={{ cursor: isAdmin ? 'pointer' : 'default' }}></span>
-                  </label>
-                  {!isAdmin && (
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#888' }}>
-                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                      <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                    </svg>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Category: Permissions */}
-            <div className={styles.categoryBlock} style={{ marginTop: '1.5rem' }}>
-              <div className={styles.categoryHeader}>Permissions</div>
-
-              <button 
-                type="button" 
-                className={styles.settingRow}
-                onClick={() => {
-                  if (isAdmin) {
-                    const newVal = (editGroupPermission === 'EVERYONE' || editGroupPermission === 'Everyone') ? 'ADMIN' : 'EVERYONE';
-                    setEditGroupPermission(newVal);
-                    updateGroupEditPermission(conversation.id, newVal);
-                  }
-                }}
-                style={{ cursor: isAdmin ? 'pointer' : 'default', opacity: isAdmin ? 1 : 0.7 }}
-              >
-                <span className={styles.settingLabel}>Who can edit the group</span>
-                <div className={styles.settingRight}>
-                  <span className={styles.settingValue}>
-                    {(editGroupPermission === 'ADMIN' || editGroupPermission === 'Admin' || editGroupPermission === 'Owner and Admins') ? 'Owner and Admins' : 'Everyone'}
-                  </span>
-                  {isAdmin ? (
-                    <svg className={styles.chevronIcon} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                      <polyline points="9 18 15 12 9 6"></polyline>
-                    </svg>
-                  ) : (
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#888', marginLeft: '4px' }}>
-                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                      <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                    </svg>
-                  )}
-                </div>
-              </button>
-            </div>
-
-            {/* Category: Group Actions */}
-            <div className={styles.categoryBlock} style={{ marginTop: '1.5rem', marginBottom: '2rem' }}>
-              <div className={styles.categoryHeader} style={{ color: '#ef4444' }}>Group Actions</div>
-
-              {isOwner && (
-                <button 
-                  type="button" 
-                  className={styles.settingRow}
-                  onClick={onGoToChangeOwner}
-                >
-                  <span className={styles.settingLabel}>Change Owner</span>
-                  <div className={styles.settingRight}>
-                    <svg className={styles.chevronIcon} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                      <polyline points="9 18 15 12 9 6"></polyline>
-                    </svg>
+            <section className={styles.section} aria-label="Notifications">
+              <h3 className={styles.sectionTitle}>Notifications</h3>
+              <div className={styles.card}>
+                <div className={styles.row}>
+                  <div className={styles.rowText}>
+                    <span className={styles.rowLabel} id="mute-alerts-label">Mute alerts</span>
+                    <span className={styles.rowHint}>No notifications or unread count for this group.</span>
                   </div>
-                </button>
-              )}
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={Boolean(isMuted)}
+                    aria-labelledby="mute-alerts-label"
+                    className={isMuted ? styles.switchOn : styles.switch}
+                    onClick={onToggleMute}
+                  >
+                    <span className={styles.knob} />
+                  </button>
+                </div>
+              </div>
+            </section>
 
-              {!isOwner && (
-                <button 
-                  type="button" 
-                  className={styles.settingRow}
-                  onClick={handleLeaveGroup}
+            <section className={styles.section} aria-label="Group">
+              <div className={styles.sectionHead}>
+                <h3 className={styles.sectionTitle}>Group</h3>
+                <span
+                  className={`${styles.status} ${status ? styles.statusOn : ''} ${status === 'Not saved' ? styles.statusError : ''}`}
+                  role="status"
+                  aria-live="polite"
                 >
-                  <span className={styles.settingLabel} style={{ color: '#ef4444', fontWeight: '600' }}>
-                    Leave Group
-                  </span>
-                </button>
-              )}
+                  {status}
+                </span>
+              </div>
+              <div className={styles.card}>
+                {canEditGroupInfo && (
+                  <button type="button" className={`${styles.row} ${styles.rowButton}`} onClick={onGoToEdit}>
+                    <div className={styles.rowText}>
+                      <span className={styles.rowLabel}>Group info</span>
+                      <span className={styles.rowHint}>Name, photo and description</span>
+                    </div>
+                    <ChevronRight size={18} className={styles.chevron} />
+                  </button>
+                )}
+                <Choice
+                  id="who-can-join"
+                  label="Who can join"
+                  options={JOIN_OPTIONS}
+                  value={whoCanJoin}
+                  editable={isAdmin}
+                  busy={busy === 'join'}
+                  onChange={(value) => save('join', () => onChangeWhoCanJoin(value))}
+                />
+                <Choice
+                  id="who-can-edit"
+                  label="Who can edit group info"
+                  options={EDIT_OPTIONS}
+                  value={editPermission}
+                  editable={isAdmin}
+                  busy={busy === 'edit'}
+                  onChange={(value) => save('edit', () => onChangeEditPermission(value))}
+                />
+              </div>
+              {!isAdmin && <p className={styles.footnote}>Only admins can change these.</p>}
+            </section>
 
-              {isOwner && (
-                <button 
-                  type="button" 
-                  className={styles.settingRow}
-                  onClick={() => handleEndGroup()}
-                >
-                  <span className={styles.settingLabel} style={{ color: '#ef4444', fontWeight: '600' }}>
-                    End Group
-                  </span>
-                </button>
-              )}
-            </div>
+            {isOwner && (
+              <section className={styles.section} aria-label="Ownership">
+                <h3 className={styles.sectionTitle}>Ownership</h3>
+                <div className={styles.card}>
+                  <button type="button" className={`${styles.row} ${styles.rowButton}`} onClick={onGoToChangeOwner}>
+                    <div className={styles.rowText}>
+                      <span className={styles.rowLabel}>Transfer ownership</span>
+                      <span className={styles.rowHint}>Make another member the owner. You stay as an admin.</span>
+                    </div>
+                    <ChevronRight size={18} className={styles.chevron} />
+                  </button>
+                </div>
+              </section>
+            )}
           </>
         )}
       </div>

@@ -1,118 +1,253 @@
-.categoryBlock {
-  display: flex;
-  flex-direction: column;
+/* Group settings. Theme tokens only, so it follows light and dark. Related
+   settings share a card; sections are told apart by a quiet title and space,
+   not by coloured headers and a divider under every row. */
+
+/* The shared details body spaces its children 2rem apart: on top of each
+   section's own margin that left wide gaps between sections. */
+.body {
+  gap: 0;
+  padding: 1rem 0 2rem;
+}
+
+.section {
   width: 100%;
   max-width: 600px;
-  margin: 0 auto;
+  margin: 0 auto 1.25rem;
+  padding: 0 1rem;
   box-sizing: border-box;
 }
 
-.categoryHeader {
+.sectionHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0 0.25rem 0.5rem;
+}
+
+.sectionTitle {
+  margin: 0 0 0.5rem 0.25rem;
   font-size: 0.82rem;
   font-weight: 600;
-  color: #1e90ff;
-  padding: 0.5rem 1rem;
-  text-transform: capitalize;
+  color: var(--color-text-muted);
 }
 
-.settingRow {
+.sectionHead .sectionTitle {
+  margin: 0;
+}
+
+/* Always in the layout; only its opacity changes, so nothing moves. */
+.status {
+  min-height: 1.1em;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.statusOn {
+  opacity: 1;
+}
+
+.statusError {
+  color: var(--color-danger, #dc2626);
+}
+
+.card {
+  border-radius: 14px;
+  background: var(--color-bg-soft);
+  overflow: hidden;
+}
+
+.row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
+  gap: 0.6rem 1rem;
   width: 100%;
-  padding: 1.1rem 1rem;
-  background: var(--color-surface-screen);
-  border: none;
-  border-bottom: 1px solid var(--color-border-light);
-  text-align: left;
-  cursor: pointer;
+  min-height: 56px;
+  padding: 0.85rem 1rem;
   box-sizing: border-box;
-  transition: background 0.15s ease;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
 }
 
-.settingRow:hover {
+.row + .row {
+  box-shadow: inset 0 1px 0 var(--color-border-light);
+}
+
+.rowButton {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.rowButton:hover {
   background: var(--color-bg-hover);
 }
 
-.settingLabelCol {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
+.rowButton:focus-visible,
+.segment:focus-visible,
+.switch:focus-visible,
+.switchOn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }
 
-.settingLabel {
+.rowText {
+  display: flex;
+  flex: 1 1 12rem;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.rowLabel {
   font-size: 0.95rem;
   font-weight: 500;
   color: var(--color-text-main);
 }
 
-.settingSubtext {
-  font-size: 0.78rem;
+.rowHint {
+  font-size: 0.8rem;
+  line-height: 1.35;
   color: var(--color-text-muted);
 }
 
-.settingRight {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
+.choiceHint {
+  /* Room for two lines whichever option is chosen, so the hint changing never
+     changes the row's height. */
+  min-height: calc(2 * 1.35em);
 }
 
-.settingValue {
-  font-size: 0.88rem;
+.rowValue {
+  font-size: 0.9rem;
   color: var(--color-text-muted);
 }
 
-.chevronIcon {
-  color: var(--color-text-muted);
+.chevron {
   flex-shrink: 0;
+  color: var(--color-text-muted);
 }
 
-/* Toggle Switch Styles */
-.switch {
+/* Two equal options and one highlight behind them that slides on the
+   compositor; the labels keep their weight and width whichever is chosen.
+   On a narrow screen the control takes the row's width under the label (the
+   row wraps), the same for both values. */
+.segmented {
   position: relative;
-  display: inline-block;
-  width: 44px;
-  height: 24px;
-  flex-shrink: 0;
-}
-
-.switch input {
-  opacity: 0;
-  width: 0;
-  height: 0;
-}
-
-.slider {
-  position: absolute;
-  cursor: pointer;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: var(--color-bg-soft);
-  transition: .3s;
-  border-radius: 24px;
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  /* One width for every choice in the page, so their edges line up. */
+  flex: 0 0 auto;
+  width: 18.5rem;
+  box-sizing: border-box;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--color-surface-screen);
   border: 1px solid var(--color-border-light);
+  isolation: isolate;
 }
 
-.slider:before {
+.segmented::before {
+  content: '';
   position: absolute;
-  content: "";
-  height: 18px;
-  width: 18px;
-  left: 2px;
-  bottom: 2px;
-  background-color: var(--color-text-muted);
-  transition: .3s;
+  z-index: -1;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc((100% - 6px) / var(--choice-count, 2));
+  border-radius: 8px;
+  background: var(--color-primary);
+  transform: translateX(calc(var(--choice-index, 0) * 100%));
+  transition: transform 0.24s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.segment {
+  min-height: 34px;
+  padding: 0 0.6rem;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.24s ease;
+}
+
+.segmentOn {
+  color: #ffffff;
+  cursor: default;
+}
+
+@media (max-width: 560px) {
+  .segmented {
+    width: 100%;
+  }
+}
+
+/* The switch is a button with role="switch": one target, labelled by its row. */
+.switch,
+.switchOn {
+  position: relative;
+  flex-shrink: 0;
+  width: 46px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: var(--color-border-light);
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.switchOn {
+  background: var(--color-primary);
+}
+
+.knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  transition: transform 0.2s ease;
 }
 
-input:checked + .slider {
-  background-color: var(--color-primary);
-  border-color: var(--color-primary);
+.switchOn .knob {
+  transform: translateX(18px);
 }
 
-input:checked + .slider:before {
-  transform: translateX(20px);
-  background-color: #fff;
+@media (prefers-reduced-motion: reduce) {
+  .switch,
+  .switchOn,
+  .knob,
+  .segmented::before,
+  .segment,
+  .status {
+    transition: none;
+  }
+}
+
+.footnote {
+  margin: 0.5rem 0.25rem 0;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.notice {
+  margin: 2rem 1.5rem;
+  text-align: center;
+  font-size: 0.95rem;
+  color: var(--color-text-muted);
 }

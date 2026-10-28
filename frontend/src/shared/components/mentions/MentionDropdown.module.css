@@ -163,3 +163,12 @@
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+/* The @everyone row: a group mark where a person's photo would be. */
+.everyoneAvatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(var(--color-primary-rgb), 0.12);
+  color: var(--color-primary);
+}

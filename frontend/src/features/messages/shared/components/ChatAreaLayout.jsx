@@ -67,7 +67,6 @@ export default function ChatAreaLayout({
   inputDisabled = false,
   inputDisabledReason = null,
   extraModals = null,
-  onLeaveActivity = null,
   // Contact-details actions, supplied by the DM screen.
   onBlockUser = null,
   onClearChat = null,
@@ -149,12 +148,8 @@ export default function ChatAreaLayout({
       <div className={`${styles.chatArea} ${showChatOnMobile ? styles.chatAreaVisible : ''}`}>
         <ChatDetailsPanel
           conversation={conversation}
-          currentUser={currentUser}
-          users={users}
           onBack={closeDetails}
-          onClose={closeDetails}
           onSearch={handleOpenSearch}
-          onLeaveActivity={onLeaveActivity}
           onBlockUser={onBlockUser}
           onClearChat={onClearChat ? () => onClearChat(conversation.id) : undefined}
         />
@@ -261,7 +256,7 @@ export default function ChatAreaLayout({
 
       {unsendConfirmMsg && (
         <ConfirmModal
-          title="Unsend Message"
+          title="Unsend message"
           desc="This message will be removed for everyone in this chat."
           confirmText="Unsend"
           cancelText="Cancel"
@@ -269,6 +264,7 @@ export default function ChatAreaLayout({
           onConfirm={handleUnsend}
           onCancel={() => setUnsendConfirmMsg(null)}
           isDestructive={true}
+          centered
         />
       )}
 

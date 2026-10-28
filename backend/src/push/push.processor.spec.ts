@@ -9,7 +9,14 @@ import { PushProcessor, RetryablePushError } from './push.processor';
 import { WebPushProvider } from './providers/web-push.provider';
 import { FcmProvider } from './providers/fcm.provider';
 import { PUSH_JOB, PushMessage, SendOutcome } from './push.types';
-import { buildNotificationPush, NotificationPushInput } from './push-payload';
+import {
+  buildGroupJoinRequestPush,
+  buildGroupRemovedPush,
+  buildNotificationPush,
+  GroupJoinRequestPushInput,
+  GroupRemovedPushInput,
+  NotificationPushInput,
+} from './push-payload';
 
 const message: PushMessage = {
   category: 'likes',
@@ -57,6 +64,14 @@ function build(devices: Device[], outcomes: Record<string, SendOutcome[]>) {
       [string, string]
     >(),
     forMessage: jest.fn(),
+    forGroupRemoval: jest.fn<
+      Promise<GroupRemovedPushInput | null>,
+      [string, string, string]
+    >(),
+    forGroupJoinRequest: jest.fn<
+      Promise<GroupJoinRequestPushInput | null>,
+      [string, string, string]
+    >(),
   };
   const processor = new PushProcessor(
     stub<PrismaService>(prisma),
@@ -156,8 +171,12 @@ describe('PushProcessor.process', () => {
     const { processor, audience } = build([web], {});
     await processor.process(job(PUSH_JOB.notification, { notificationId: 42 }));
     await processor.process(job(PUSH_JOB.message, 'nope'));
+    await processor.process(
+      job(PUSH_JOB.groupRemoved, { recipientId: 'user-a', conversationId: 7 }),
+    );
     expect(audience.forNotification).not.toHaveBeenCalled();
     expect(audience.forMessage).not.toHaveBeenCalled();
+    expect(audience.forGroupRemoval).not.toHaveBeenCalled();
   });
 
   it('sends the built payload for an allowed notification', async () => {
@@ -181,5 +200,55 @@ describe('PushProcessor.process', () => {
       }),
     );
     expect(webSend.mock.calls[0][1]).toEqual(buildNotificationPush(input));
+  });
+
+  it('a removal is re-checked at send time and sent only if it still stands', async () => {
+    const { processor, audience, webSend } = build([web], {});
+    const data = {
+      recipientId: 'user-a',
+      conversationId: 'conv-1',
+      removedAt: '2026-10-28T10:00:00.000Z',
+    };
+    audience.forGroupRemoval.mockResolvedValueOnce(null);
+    await processor.process(job(PUSH_JOB.groupRemoved, data));
+    expect(audience.forGroupRemoval).toHaveBeenCalledWith(
+      'user-a',
+      'conv-1',
+      '2026-10-28T10:00:00.000Z',
+    );
+    expect(webSend).not.toHaveBeenCalled();
+
+    const input: GroupRemovedPushInput = {
+      routeId: 'pub-1',
+      conversationId: 'conv-1',
+      groupName: 'Hostel B',
+    };
+    audience.forGroupRemoval.mockResolvedValueOnce(input);
+    await processor.process(job(PUSH_JOB.groupRemoved, data));
+    expect(webSend.mock.calls[0][1]).toEqual(buildGroupRemovedPush(input));
+  });
+
+  it('a join request is re-checked at send time and sent to that admin', async () => {
+    const { processor, audience, webSend } = build([web], {});
+    const data = {
+      recipientId: 'admin',
+      conversationId: 'conv-1',
+      requesterId: 'asker',
+    };
+    audience.forGroupJoinRequest.mockResolvedValueOnce(null);
+    await processor.process(job(PUSH_JOB.groupJoinRequest, data));
+    expect(webSend).not.toHaveBeenCalled();
+    const input: GroupJoinRequestPushInput = {
+      routeId: 'pub-1',
+      conversationId: 'conv-1',
+      groupName: 'Hostel B',
+      requesterName: 'Aarav',
+    };
+    audience.forGroupJoinRequest.mockResolvedValueOnce(input);
+    await processor.process(job(PUSH_JOB.groupJoinRequest, data));
+    expect(webSend.mock.calls[0][1]).toEqual(buildGroupJoinRequestPush(input));
+    expect(buildGroupJoinRequestPush(input).body).toBe(
+      'Aarav asked to join Hostel B.',
+    );
   });
 });

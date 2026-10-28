@@ -2,6 +2,7 @@ import { useChatAreaState } from '@features/messages/shared/hooks/useChatAreaSta
 import { useMessagingEligibility } from '@shared/hooks/useMessagingEligibility';
 import { resolveComposerState } from '@shared/utils/messagingEligibility';
 import ChatAreaLayout from '@features/messages/shared/components/ChatAreaLayout';
+import { useClearChatConfirm } from '@features/messages/shared/components/modals/ClearChatModal';
 import DMChatHeader from './DMChatHeader';
 
 export default function DMChatArea({
@@ -24,6 +25,8 @@ export default function DMChatArea({
   onCancelUpload,
 }) {
   const state = useChatAreaState(conversation);
+  // Clearing is confirmed first (ClearChatModal); the menus open the dialog.
+  const clearChat = useClearChatConfirm(conversation, conversation?.isDraft ? undefined : onClearChat);
 
   // Mutual: the composer is disabled whichever side placed the block.
   const isBlocked = Boolean(
@@ -51,52 +54,55 @@ export default function DMChatArea({
   });
 
   return (
-    <ChatAreaLayout
-      {...state}
-      conversation={conversation}
-      // Block and Clear live in the contact details now, so they are handed down
-      // to it. Blocking is about the PERSON and works before a conversation
-      // exists; clearing needs a real conversation to act on.
-      onBlockUser={onBlockUser}
-      onClearChat={conversation?.isDraft ? undefined : onClearChat}
-      showChatOnMobile={showChatOnMobile}
-      isLoading={isLoading}
-      notFound={notFound}
-      hasMore={hasMore}
-      isLoadingMore={isLoadingMore}
-      onLoadMore={onLoadMore}
-      onMarkSeen={onMarkSeen}
-      onRetryUpload={onRetryUpload}
-      onRetrySend={onRetrySend}
-      onCancelUpload={onCancelUpload}
-      onSendMessage={onSendMessage}
-      onBack={onBack}
-      onNewMessage={onNewMessage}
-      inputDisabled={composer.disabled}
-      inputDisabledReason={composer.reason}
-      header={
-        <DMChatHeader
-          conversation={conversation}
-          onBack={onBack}
-          /*
-           * A draft has no conversation row yet, so its id is the synthetic
-           * `draft_<userId>` this screen invents to key the route. Clearing is
-           * conversation-scoped: handed that id it called an endpoint that
-           * cannot resolve it and silently did nothing, so it is withheld
-           * rather than disabled - there is nothing to clear in an empty draft.
-           */
-          onClearChat={conversation?.isDraft ? undefined : onClearChat}
-          onToggleSearch={conversation?.isDraft ? undefined : () => {
-            if (state.showSearch) {
-              state.closeSearch();
-            } else {
-              state.openSearch();
-            }
-          }}
-          onOpenDetails={() => state.setShowDetails(true)}
-          profileOnly={!canSend}
-        />
-      }
-    />
+    <>
+      <ChatAreaLayout
+        {...state}
+        conversation={conversation}
+        // Block and Clear live in the contact details now, so they are handed down
+        // to it. Blocking is about the PERSON and works before a conversation
+        // exists; clearing needs a real conversation to act on.
+        onBlockUser={onBlockUser}
+        onClearChat={clearChat.request}
+        showChatOnMobile={showChatOnMobile}
+        isLoading={isLoading}
+        notFound={notFound}
+        hasMore={hasMore}
+        isLoadingMore={isLoadingMore}
+        onLoadMore={onLoadMore}
+        onMarkSeen={onMarkSeen}
+        onRetryUpload={onRetryUpload}
+        onRetrySend={onRetrySend}
+        onCancelUpload={onCancelUpload}
+        onSendMessage={onSendMessage}
+        onBack={onBack}
+        onNewMessage={onNewMessage}
+        inputDisabled={composer.disabled}
+        inputDisabledReason={composer.reason}
+        header={
+          <DMChatHeader
+            conversation={conversation}
+            onBack={onBack}
+            /*
+             * A draft has no conversation row yet, so its id is the synthetic
+             * `draft_<userId>` this screen invents to key the route. Clearing is
+             * conversation-scoped: handed that id it called an endpoint that
+             * cannot resolve it and silently did nothing, so it is withheld
+             * rather than disabled - there is nothing to clear in an empty draft.
+             */
+            onClearChat={clearChat.request}
+            onToggleSearch={conversation?.isDraft ? undefined : () => {
+              if (state.showSearch) {
+                state.closeSearch();
+              } else {
+                state.openSearch();
+              }
+            }}
+            onOpenDetails={() => state.setShowDetails(true)}
+            profileOnly={!canSend}
+          />
+        }
+      />
+      {clearChat.dialog}
+    </>
   );
 }

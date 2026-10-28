@@ -255,3 +255,135 @@ describe('unused presence handlers are gone (A9)', () => {
     expect(proto.handlePresenceGetStatus).toBeUndefined();
   });
 });
+
+/**
+ * Removal from a group takes effect on sockets that are already open.
+ *
+ * A connected socket joins a conversation's room under both of its names (the
+ * internal id and the public one). The removal handler used to leave only the
+ * name the request happened to carry, so the removed member's sockets stayed
+ * in the other room and kept receiving the group's typing, presence and read
+ * events. And the "is a participant" answer was cached for 30 s, so they could
+ * keep emitting typing into the group until it expired.
+ */
+describe('group removal on live sockets', () => {
+  function buildWithSocket() {
+    const built = build();
+    const socket = socketFor(ALICE);
+    built.gateway.server = stub<RealtimeGateway['server']>({
+      to: (room: string | string[]) => ({
+        emit: jest.fn((event: string, payload: unknown) => {
+          for (const r of ([] as string[]).concat(room))
+            built.emitted.push({ room: r, event, payload });
+        }),
+      }),
+      sockets: stub<RealtimeGateway['server']['sockets']>({
+        adapter: stub<RealtimeGateway['server']['sockets']['adapter']>({
+          rooms: new Map([[ALICE, new Set([socket.id])]]),
+        }),
+        sockets: new Map([[socket.id, socket]]),
+      }),
+    });
+    return { ...built, socket };
+  }
+
+  const removal = (conversationId: string) => ({
+    type: 'group:member_removed',
+    timestamp: new Date().toISOString(),
+    data: {
+      conversationId,
+      publicId: 'p1',
+      internalId: 'c1',
+      targetUserId: ALICE,
+    },
+    targetUserIds: [ALICE],
+  });
+
+  it('leaves both room names, whichever one the request used', async () => {
+    const { gateway, socket } = buildWithSocket();
+    gateway['handleDomainEvent'](removal('p1'));
+    expect(socket.leave).toHaveBeenCalledWith('conv_p1');
+    expect(socket.leave).toHaveBeenCalledWith('conv_c1');
+    await Promise.resolve();
+  });
+
+  it('stops their typing reaching the group at once, not when a cached "yes" expires', async () => {
+    const { gateway, emitted, findFirst, socket } = buildWithSocket();
+    await gateway.handleTypingStart(socket, { conversationId: 'p1' });
+    expect(emitted).toHaveLength(2);
+
+    findFirst.mockResolvedValue(null); // the removal has committed
+    gateway['handleDomainEvent'](removal('p1'));
+    emitted.length = 0;
+    await gateway.handleTypingStart(socket, { conversationId: 'p1' });
+    expect(emitted).toEqual([]);
+  });
+});
+
+/**
+ * A message brings a hidden conversation back for its members. Their sockets
+ * skipped its rooms at connect (only visible conversations are joined), so
+ * until they reconnected they missed its typing, read and presence events. The
+ * send path announces who it revived and the gateway joins them now.
+ */
+describe('a revived conversation on live sockets', () => {
+  function buildWithSocket() {
+    const built = build();
+    const socket = socketFor(ALICE);
+    const other = socketFor(MALLORY);
+    built.gateway.server = stub<RealtimeGateway['server']>({
+      to: (room: string | string[]) => ({
+        emit: jest.fn((event: string, payload: unknown) => {
+          for (const r of ([] as string[]).concat(room))
+            built.emitted.push({ room: r, event, payload });
+        }),
+      }),
+      sockets: stub<RealtimeGateway['server']['sockets']>({
+        adapter: stub<RealtimeGateway['server']['sockets']['adapter']>({
+          rooms: new Map([
+            [ALICE, new Set([socket.id])],
+            [MALLORY, new Set([other.id])],
+          ]),
+        }),
+        sockets: new Map([
+          [socket.id, socket],
+          [other.id, other],
+        ]),
+      }),
+    });
+    return { ...built, socket, other };
+  }
+
+  const revived = {
+    type: 'conversation:revived',
+    timestamp: new Date().toISOString(),
+    data: {
+      conversationId: 'p1',
+      publicId: 'p1',
+      internalId: 'c1',
+      userIds: [ALICE],
+    },
+    targetUserIds: [ALICE],
+  };
+
+  it('joins both room names for the revived members, and no one else', () => {
+    const { gateway, socket, other, emitted } = buildWithSocket();
+    gateway['handleDomainEvent'](revived);
+    expect(socket.join).toHaveBeenCalledWith(['conv_c1', 'conv_p1']);
+    expect(other.join).not.toHaveBeenCalled();
+    // Server-side only: nothing is sent to any client.
+    expect(emitted).toEqual([]);
+  });
+
+  it('lets their typing through at once, not when a cached "no" expires', async () => {
+    const { gateway, emitted, findFirst, socket } = buildWithSocket();
+    findFirst.mockResolvedValue(null); // hidden: not an active participant
+    await gateway.handleTypingStart(socket, { conversationId: 'p1' });
+    expect(emitted).toEqual([]);
+
+    findFirst.mockResolvedValue(CONV); // the message revived it
+    gateway['handleDomainEvent'](revived);
+    await gateway.handleTypingStart(socket, { conversationId: 'p1' });
+    expect(rooms(emitted)).toEqual(['conv_c1', 'conv_p1']);
+  });
+});

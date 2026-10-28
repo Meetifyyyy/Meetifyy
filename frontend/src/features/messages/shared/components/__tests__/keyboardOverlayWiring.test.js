@@ -89,6 +89,19 @@ describe('Messages chat with an overlaying keyboard', () => {
     );
   });
 
+  it('resets per conversation BEFORE the initial scroll, so a cached chat keeps following the keyboard', () => {
+    // React runs plain effects after layout effects. As a plain effect, the
+    // reset undid the initial scroll of a chat that opened from cache, and the
+    // keyboard observer then bailed out on `hasScrolledInitialRef` until the
+    // next message: the newest messages went behind the keyboard.
+    const src = read('src/features/messages/shared/components/ChatMessageList.jsx');
+    const reset = src.indexOf('useLayoutEffect(() => {\n    hasScrolledInitialRef.current = false;');
+    const initialScroll = src.indexOf('// ── SCENARIO 1: Initial load for this conversation');
+    expect(reset).toBeGreaterThan(-1);
+    expect(initialScroll).toBeGreaterThan(reset);
+    expect(src).not.toMatch(/useEffect\(\(\) => \{\n {4}hasScrolledInitialRef\.current = false;/);
+  });
+
   it('gives the thread the panned height back at its top, with scroll anchoring off for the observer', () => {
     const list = squash(read('src/features/messages/shared/components/ChatMessageList.module.css'));
     expect(list).toContain(':global(.chat-pans-keyboard) .msgChatBody { overflow-anchor: none; }');
@@ -99,12 +112,14 @@ describe('Messages chat with an overlaying keyboard', () => {
     expect(read('src/features/messages/shared/components/ChatMessageList.jsx')).toMatch(/observer\.observe\(container\);/);
   });
 
-  it('stands the invite sheet on the keyboard, Android only', () => {
+  it('stands the invite sheet on the keyboard: the share sheet\'s frame, which the shared slide moves', () => {
+    // A fixed scrim padded by --kb-inset and a sheet capped above it is what
+    // useKeyboardInset finds and slides with the keyboard (keyboardSheetRise).
     const base = 'src/features/messages/shared/components/modals/';
-    expect(read(`${base}InviteModal.jsx`)).toMatch(/data-keyboard-overlay=\{KEYBOARD_OVERLAYS_PAGE \? '' : undefined\}/);
-    expect(squash(read(`${base}InviteModal.module.css`))).toMatch(
-      /:global\(html\[data-keyboard-open\]\) \.\w+\[data-keyboard-overlay\] \{ padding-bottom: [^;]*--kb-inset/,
-    );
+    expect(read(`${base}InviteModal.jsx`)).toMatch(/from '@shared\/components\/share\/ShareSheet\.module\.css'/);
+    const css = squash(read('src/shared/components/share/ShareSheet.module.css'));
+    expect(css).toMatch(/\.backdrop \{ position: fixed; inset: 0;[^}]*padding-bottom: var\(--kb-inset, 0px\); \}/);
+    expect(css).toContain('height: min(78dvh, calc(100dvh - var(--kb-inset, 0px)');
   });
 
   it('lets the keyboard slide over the new-message sheet without re-laying it out, Android only', () => {

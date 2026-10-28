@@ -9,13 +9,17 @@
  *
  * NOT persisted to IndexedDB (active chat state should never be stale across sessions).
  */
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { messagesApi } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
 import { derivePreviewText } from '@features/messages/shared/utils/cacheUtils';
+import { refreshUnreadSummary } from '@features/messages/shared/utils/unreadSummary';
 
 // ── Query keys ───────────────────────────────────────────────────────────────
+/** How many conversations the inbox loads. */
+export const CONVERSATION_LIST_PAGE = 50;
+
 export const MESSAGE_KEYS = {
   conversations: ['conversations'],
   history: (convId) => ['messages', convId],
@@ -38,10 +42,16 @@ let _convCacheResult = [];
 
 export function useConversations() {
   const { currentUser, isLoggedIn } = useAuth();
+  const queryClient = useQueryClient();
 
   const { data: rawConversations = EMPTY_CONVERSATIONS, isLoading, error } = useQuery({
     queryKey: MESSAGE_KEYS.conversations,
-    queryFn: () => messagesApi.getConversations(50, 0),
+    queryFn: async () => {
+      const list = await messagesApi.getConversations(CONVERSATION_LIST_PAGE, 0);
+      // Rows may have dropped out of the page since the badge's summary was read.
+      refreshUnreadSummary(queryClient);
+      return list;
+    },
     // Signed in, not merely "a profile is cached". The cached profile is there
     // from the first render of a cold start, so this used to fire while the
     // session was still being restored — before any credential was in hand —

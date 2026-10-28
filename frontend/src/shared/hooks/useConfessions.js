@@ -500,36 +500,6 @@ export function useCreateConfession() {
   );
 }
 
-/**
- * Relate / un-relate, applied optimistically and rolled back on failure; the
- * server's counts replace the guess when it answers.
- */
-export function useRelateConfession() {
-  const queryClient = useQueryClient();
-  return useGuardedMutation(
-    useMutation({
-      mutationFn: ({ id, relate }) => (relate ? confessionsApi.relate(id) : confessionsApi.unrelate(id)),
-      onMutate: async ({ id, relate }) => {
-        await queryClient.cancelQueries({ queryKey: CONFESSION_KEYS.feed });
-        const previous = queryClient.getQueryData(CONFESSION_KEYS.feed);
-        patchFeed(queryClient, id, (c) => ({
-          ...c,
-          relatedByMe: relate,
-          relateCount: Math.max(0, (c.relateCount ?? 0) + (relate === c.relatedByMe ? 0 : relate ? 1 : -1)),
-        }));
-        return { previous };
-      },
-      onError: (_err, _vars, ctx) => {
-        if (ctx?.previous) queryClient.setQueryData(CONFESSION_KEYS.feed, ctx.previous);
-      },
-      onSuccess: (data, { id }) => {
-        if (!data || typeof data.relateCount !== 'number') return;
-        patchFeed(queryClient, id, (c) => ({ ...c, relateCount: data.relateCount, relatedByMe: Boolean(data.relatedByMe) }));
-      },
-    }),
-  );
-}
-
 export function useDeleteConfession() {
   const queryClient = useQueryClient();
   return useGuardedMutation(

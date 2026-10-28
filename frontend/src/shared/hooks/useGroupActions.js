@@ -1,15 +1,18 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { messagesApi, groupApi, communitiesApi } from '../api/apiClient';
+import { messagesApi, groupApi } from '../api/apiClient';
 import { useAuth } from '../context/AuthContext';
 import { showToast } from '../utils/toast';
-import { applyGroupRoleChange, removeGroupJoinRequest } from '../../features/messages/shared/utils/cacheUtils';
+import { applyGroupRoleChange, matchesConversationId, removeGroupJoinRequest } from '../../features/messages/shared/utils/cacheUtils';
 import { scheduleConversationWrite } from '../utils/conversationWriteQueue';
 
 /**
- * The group-chat / conversation admin actions `useData` used to define inline.
+ * The group-chat / conversation admin actions.
  *
- * Extracted verbatim -- same optimistic cache writes, same rollbacks, same
- * toasts and invalidations, carried over from the former `useData` mega-hook.
+ * Group ids here are always the server's (public or internal). The `c_`
+ * branches that routed some of these calls to the communities API are gone:
+ * nothing has produced a `c_` conversation id since community group chats
+ * were removed, and had one arrived, its settings would have been written to
+ * a community.
  */
 export const JOIN_REQUEST_INELIGIBLE = 'JOIN_REQUEST_INELIGIBLE';
 export const JOIN_REQUEST_INELIGIBLE_MESSAGE =
@@ -18,6 +21,47 @@ export const JOIN_REQUEST_INELIGIBLE_MESSAGE =
 export function useGroupActions() {
   const queryClient = useQueryClient();
   const { currentUser } = useAuth();
+
+  /** Writes fields onto a group's list row and its details, optimistically. */
+  const patchGroup = (convId, fields) => {
+    queryClient.setQueryData(['conversations'], (old) =>
+      Array.isArray(old) ? old.map((c) => (matchesConversationId(c, convId) ? { ...c, ...fields } : c)) : old,
+    );
+    queryClient.setQueriesData({ queryKey: ['groupDetails'] }, (old) =>
+      old && matchesConversationId(old, convId) ? { ...old, ...fields } : old,
+    );
+  };
+
+  /** The current values of some of a group's fields, to put back on failure. */
+  const readGroupFields = (convId, keys) => {
+    const details = queryClient
+      .getQueriesData({ queryKey: ['groupDetails'] })
+      .map(([, data]) => data)
+      .find((data) => data && matchesConversationId(data, convId));
+    const list = queryClient.getQueryData(['conversations']);
+    const row = Array.isArray(list) ? list.find((c) => matchesConversationId(c, convId)) : null;
+    return Object.fromEntries(keys.map((k) => [k, details?.[k] ?? row?.[k]]));
+  };
+
+  /**
+   * A settings write: shown at once, and put back if the server refuses it.
+   * The page used to keep showing a value the server never saved (a failed
+   * call was an unhandled rejection), until the next refetch flipped it back.
+   *
+   * @returns {Promise<boolean>} whether the server saved it
+   */
+  const saveGroupFields = async (convId, fields, call) => {
+    const previous = readGroupFields(convId, Object.keys(fields));
+    patchGroup(convId, fields);
+    try {
+      await call();
+      return true;
+    } catch {
+      patchGroup(convId, previous);
+      showToast("Couldn't save that setting", 'error');
+      return false;
+    }
+  };
   // Neither the processed conversation list nor updateMessagesCache is used in
   // here -- every reference below is to the ['conversations'] query key, not to
   // the array -- so this hook deliberately does not subscribe to either.
@@ -114,10 +158,6 @@ export function useGroupActions() {
     if (Object.keys(apiPayload).length === 0) return;
 
     try {
-      if (String(convId).startsWith('c_')) {
-        const actualId = convId.replace('c_', '');
-        return await communitiesApi.updateGroupInfo(actualId, apiPayload);
-      }
       return await groupApi.updateGroupInfo(convId, apiPayload);
     } catch (err) {
       if (avatarKey !== undefined && previousState) {
@@ -160,14 +200,6 @@ export function useGroupActions() {
         return c;
       });
     });
-    if (String(convId).startsWith('c_')) {
-      const actualId = convId.replace('c_', '');
-      return communitiesApi.removeGroupMember(actualId, memberId).then(() => {
-        queryClient.invalidateQueries({ queryKey: ['communities'] });
-        queryClient.invalidateQueries({ queryKey: ['conversations'] });
-        queryClient.invalidateQueries({ queryKey: ['groupDetails'] });
-      });
-    }
     await groupApi.removeMember(convId, memberId);
     queryClient.invalidateQueries({ queryKey: ['conversations'] });
     queryClient.invalidateQueries({ queryKey: ['group-chats'] });
@@ -181,47 +213,17 @@ export function useGroupActions() {
   };
 
   const leaveGroup = async (convId) => {
-    if (String(convId).startsWith('c_')) {
-      const actualId = convId.replace('c_', '');
-      return communitiesApi.leave(actualId).then(() => queryClient.invalidateQueries({ queryKey: ['communities'] }));
-    }
     await groupApi.leaveGroup(convId);
     queryClient.invalidateQueries({ queryKey: ['conversations'] });
   };
-  const updateGroupSettings = async (convId, data) => {
-    queryClient.setQueryData(['conversations'], (old) => {
-      if (!Array.isArray(old)) return old;
-      return old.map(c => (String(c.id) === String(convId) || String(c.publicId) === String(convId) || String(c.internalId) === String(convId)) ? { ...c, ...data } : c);
-    });
-    queryClient.setQueriesData({ queryKey: ['groupDetails'] }, (old) => {
-      if (!old) return old;
-      const match = String(old.id) === String(convId) || String(old.publicId) === String(convId) || String(old.internalId) === String(convId);
-      return match ? { ...old, ...data } : old;
-    });
-    if (String(convId).startsWith('c_')) {
-      const actualId = String(convId).replace('c_', '');
-      return communitiesApi.updateGroupInfo(actualId, data);
-    }
-    await groupApi.updateSettings(convId, data);
-  };
+  /** Admin settings (who can join). @returns {Promise<boolean>} */
+  const updateGroupSettings = (convId, data) =>
+    saveGroupFields(convId, data, () => groupApi.updateSettings(convId, data));
 
-  const updateGroupEditPermission = async (convId, permission) => {
-    const updateObj = { editGroupPermission: permission };
-    queryClient.setQueryData(['conversations'], (old) => {
-      if (!Array.isArray(old)) return old;
-      return old.map(c => (String(c.id) === String(convId) || String(c.publicId) === String(convId) || String(c.internalId) === String(convId)) ? { ...c, ...updateObj } : c);
-    });
-    queryClient.setQueriesData({ queryKey: ['groupDetails'] }, (old) => {
-      if (!old) return old;
-      const match = String(old.id) === String(convId) || String(old.publicId) === String(convId) || String(old.internalId) === String(convId);
-      return match ? { ...old, ...updateObj } : old;
-    });
-    if (String(convId).startsWith('c_')) {
-      const actualId = String(convId).replace('c_', '');
-      return communitiesApi.updateGroupInfo(actualId, updateObj);
-    }
-    await groupApi.updatePermissions(convId, permission);
-  };
+  /** Who can edit the group's name, photo and description. @returns {Promise<boolean>} */
+  const updateGroupEditPermission = (convId, permission) =>
+    saveGroupFields(convId, { editGroupPermission: permission }, () =>
+      groupApi.updatePermissions(convId, permission));
 
   const changeGroupOwner = async (convId, targetUserId) => {
     queryClient.setQueryData(['conversations'], (old) => {
@@ -314,10 +316,24 @@ export function useGroupActions() {
     return true;
   };
 
+  /**
+   * The row goes at once; if the server refuses, the list is refetched (it
+   * puts the request back) and the admin is told. A failure used to be an
+   * unhandled rejection with no word to the admin.
+   *
+   * @returns {Promise<boolean>}
+   */
   const declineGroupJoinRequest = async (convId, targetUserId) => {
-    await groupApi.declineJoinRequest(convId, targetUserId);
-    queryClient.invalidateQueries({ queryKey: ['conversations'] });
-    queryClient.invalidateQueries({ queryKey: ['groupDetails'] });
+    removeGroupJoinRequest(queryClient, convId, targetUserId);
+    try {
+      await groupApi.declineJoinRequest(convId, targetUserId);
+      return true;
+    } catch {
+      showToast("Couldn't decline the request", 'error');
+      return false;
+    } finally {
+      queryClient.invalidateQueries({ queryKey: ['groupDetails'] });
+    }
   };
 
   return {

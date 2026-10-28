@@ -2,6 +2,9 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
 import {
   appendMessageToCache,
+  updateMessageInCache,
+  snapshotMessages,
+  restoreMessages,
   purgeConversationFromCaches,
   applyGroupRoleChange,
   derivePreviewText,
@@ -181,7 +184,10 @@ describe('derivePreviewText', () => {
   it('names media when there is no text', () => {
     expect(derivePreviewText({ lastMessage: { mediaUrl: 'x', mediaType: 'image' } })).toBe('Photo');
     expect(derivePreviewText({ lastMessage: { mediaUrl: 'x', mediaType: 'video' } })).toBe('Video');
-    expect(derivePreviewText({ lastMessage: { mediaUrl: 'x', mediaType: 'audio' } })).toBe('Audio');
+    // A voice note, as the server's preview names it (message-preview.ts).
+    expect(derivePreviewText({ lastMessage: { mediaUrl: 'x', mediaType: 'audio' } })).toBe('Voice message');
+    expect(derivePreviewText({ lastMessage: { inviteData: { type: 'postShare' } } })).toBe('Shared a post');
+    expect(derivePreviewText({ lastMessage: { state: 'UNSENT' } })).toBe('This message was unsent');
   });
 
   it('tolerates a missing conversation', () => {
@@ -204,5 +210,39 @@ describe('removeGroupJoinRequest', () => {
     expect(list[0].pendingRequests).toEqual([{ userId: 'u2' }]);
     expect(list[1].pendingRequests).toEqual(['u1']);
     expect(qc.getQueryData(['groupDetails', 'g1']).pendingRequests).toEqual(['u3']);
+  });
+});
+
+describe('unsending a message in the cache', () => {
+  const quoted = { id: 'm1', text: 'secret plans', senderName: 'Ana', mediaUrl: 'chat/x.webp' };
+  const seed = () =>
+    qc.setQueryData(['messages', 'c1'], history([
+      { ...msg('m1', 'secret plans'), mediaUrl: 'chat/x.webp' },
+      { ...msg('m2', 'agreed'), replyTo: quoted },
+      { ...msg('m3', 'unrelated'), replyTo: { id: 'm0', text: 'older' } },
+    ]));
+
+  it('takes the quote out of every reply to it, and leaves other replies alone', () => {
+    seed();
+    updateMessageInCache(qc, 'c1', 'm1', { state: 'UNSENT', isUnsent: true });
+    const [m1, m2, m3] = qc.getQueryData(['messages', 'c1']).pages[0].messages;
+    expect(m1).toMatchObject({ isUnsent: true, text: 'This message was unsent', mediaUrl: null });
+    expect(m2.text).toBe('agreed');
+    expect(m2.replyTo).toMatchObject({ id: 'm1', senderName: 'Ana', text: '', mediaUrl: null, isUnsent: true });
+    expect(m3.replyTo.text).toBe('older');
+  });
+
+  it('a refused unsend puts back exactly the rows it changed, keeping what arrived since', () => {
+    seed();
+    const snapshot = snapshotMessages(qc, 'c1', ['m1']);
+    updateMessageInCache(qc, 'c1', 'm1', { state: 'UNSENT', isUnsent: true });
+    appendMessageToCache(qc, 'c1', msg('m4', 'arrived meanwhile'));
+    restoreMessages(qc, 'c1', snapshot);
+    const byId = Object.fromEntries(
+      qc.getQueryData(['messages', 'c1']).pages[0].messages.map((m) => [m.id, m]),
+    );
+    expect(byId.m1.text).toBe('secret plans');
+    expect(byId.m2.replyTo.text).toBe('secret plans');
+    expect(byId.m4.text).toBe('arrived meanwhile');
   });
 });

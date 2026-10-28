@@ -246,10 +246,6 @@ export function CloseIcon({ className = '' }) {
   return <Svg className={className}><path d="M6 6l12 12M18 6 6 18" /></Svg>;
 }
 
-export function ChevronDownIcon({ className = '' }) {
-  return <Svg className={className}><path d="m6 9 6 6 6-6" /></Svg>;
-}
-
 export function ChevronRightIcon({ className = '' }) {
   return <Svg className={className}><path d="m9 6 6 6-6 6" /></Svg>;
 }
@@ -285,17 +281,6 @@ export function LocateIcon({ className = '' }) {
       <circle cx="12" cy="12" r="6.5" />
       <circle cx="12" cy="12" r="2" fill="currentColor" stroke="none" />
       <path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3" />
-    </Svg>
-  );
-}
-
-export function PeopleIcon({ className = '' }) {
-  return (
-    <Svg className={className}>
-      <circle cx="9" cy="8.5" r="3.5" />
-      <path d="M2.5 19.5a6.5 6.5 0 0 1 13 0" />
-      <path d="M15.5 5.2a3.5 3.5 0 0 1 0 6.6" />
-      <path d="M18 14a6.5 6.5 0 0 1 3.5 5.5" />
     </Svg>
   );
 }

@@ -63,7 +63,8 @@
   padding: 2rem 1rem calc(1rem + env(safe-area-inset-bottom, 0px)) 1rem;
   display: flex;
   flex-direction: column;
-  gap: 2rem;
+  /* Between the page's blocks; 2rem left wide empty bands on every page. */
+  gap: 1.25rem;
   scrollbar-width: none;
   -ms-overflow-style: none;
   min-width: 0;
@@ -235,12 +236,11 @@
   box-sizing: border-box;
 }
 
+/* Section headings in sentence case ("Members", "Gallery"), not capitals. */
 .sectionTitle {
-  font-size: 0.78rem;
-  font-weight: 700;
+  font-size: 0.85rem;
+  font-weight: 600;
   color: var(--color-text-light);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
   margin: 0;
 }
 
@@ -653,11 +653,9 @@
 }
 
 .fieldLabel {
-  font-size: 0.8rem;
-  font-weight: 700;
+  font-size: 0.85rem;
+  font-weight: 600;
   color: var(--color-text-light);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
   margin-bottom: 0.25rem;
 }
 
@@ -836,11 +834,9 @@
 }
 
 .galleryTitle {
-  font-size: 0.78rem;
-  font-weight: 700;
+  font-size: 0.85rem;
+  font-weight: 600;
   color: var(--color-text-light);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
   margin: 0;
 }
 
@@ -1050,7 +1046,6 @@
   align-items: center;
   justify-content: center;
   padding: 0 4px;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
 }
 
 .actionIconLabel {

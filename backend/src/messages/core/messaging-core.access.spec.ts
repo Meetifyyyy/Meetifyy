@@ -179,6 +179,20 @@ describe('MessagingCoreService — conversation access', () => {
       expect(where.createdAt?.lte).toEqual(leftAt);
     });
 
+    it("gives a former member the group's roster neither as members nor as a count", async () => {
+      const current = await service.getConversationHistory(CONV, ME);
+      expect(current.participants.map((p) => p.userId)).toContain('other-1');
+
+      members[0] = {
+        userId: ME,
+        leftAt: new Date('2026-01-01T00:00:00Z'),
+        clearedAt: null,
+      };
+      const former = await service.getConversationHistory(CONV, ME);
+      expect(former.isMember).toBe(false);
+      expect(former.participants).toEqual([]);
+    });
+
     it('does not serve an Instant Match thread through the DM/group path', async () => {
       prisma.conversation.findUnique.mockResolvedValue({
         id: CONV,

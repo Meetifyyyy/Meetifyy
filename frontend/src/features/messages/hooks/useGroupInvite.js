@@ -6,6 +6,7 @@ import { useAuth } from '@shared/context/AuthContext';
 import { openVerificationModal } from '@shared/stores/verificationModalStore';
 import { isMessagingEligibleStatus } from '@shared/utils/messagingEligibility';
 import { useGuardedMutation } from '@shared/hooks/useGuardedMutation';
+import { seedJoinedGroup } from '@features/messages/shared/utils/groupMembership';
 
 /** What `join` resolves with when the live-selfie check stopped it client side. */
 export const JOIN_NEEDS_VERIFICATION = 'VERIFICATION_REQUIRED';
@@ -121,14 +122,23 @@ export function useJoinGroup() {
         queryClient.invalidateQueries({ queryKey: INVITE_KEYS.preview(result.publicId) });
       }
       if (result?.status === 'JOINED') {
+        const ids = [...new Set([groupId, result.publicId, result.internalId].filter(Boolean).map(String))];
+        // In the list at once, so opening it does not wait for the refetch
+        // below (and does not show the invite again while it does).
+        const preview = ids
+          .map((id) => queryClient.getQueryData(INVITE_KEYS.preview(id)))
+          .find(Boolean);
+        seedJoinedGroup(queryClient, result, preview);
         queryClient.invalidateQueries({ queryKey: MESSAGE_KEYS.conversations });
-        queryClient.invalidateQueries({ queryKey: ['groupDetails'] });
-        // The history query was very likely rejected while the user was still
-        // an outsider; clear it so the chat loads instead of showing not-found.
-        queryClient.invalidateQueries({ queryKey: MESSAGE_KEYS.history(groupId) });
-        if (result?.publicId) {
-          queryClient.invalidateQueries({ queryKey: MESSAGE_KEYS.history(result.publicId) });
-        }
+        ids.forEach((id) => {
+          // Only this group's details: the rest are unchanged.
+          queryClient.invalidateQueries({ queryKey: ['groupDetails', id], exact: true });
+          // The history query was very likely rejected while the user was
+          // still an outsider. Reset rather than invalidated: an invalidated
+          // query keeps its error while it refetches, and the chat screen
+          // reads that error as "not a conversation you can open".
+          queryClient.resetQueries({ queryKey: MESSAGE_KEYS.history(id), exact: true });
+        });
       }
     },
   }), 'action');

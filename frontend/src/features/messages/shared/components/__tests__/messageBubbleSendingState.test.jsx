@@ -14,7 +14,7 @@ vi.mock('@shared/hooks/useSignedMediaSrc', () => ({
 import MessageBubble from '../MessageBubble';
 
 /**
- * "Sending…" turns into "Not delivered" when a message is neither queued in the
+ * "Sending…" turns into "Not sent" when a message is neither queued in the
  * outbox nor confirmed and has been "sending" for over 5 seconds. A media send
  * is not queued until its upload has finished, so a long upload must not be
  * read as a failure while it is still going up.
@@ -41,7 +41,7 @@ describe('a message still going out', () => {
       payload: { localPreviewUrl: 'blob:http://x/1', mediaType: 'video' },
     }));
     expect(screen.getByText('Sending…')).toBeTruthy();
-    expect(screen.queryByText(/Not delivered/)).toBeNull();
+    expect(screen.queryByText(/Not sent/)).toBeNull();
   });
 
   it('a queued message stays "Sending…"', () => {
@@ -49,13 +49,13 @@ describe('a message still going out', () => {
     expect(screen.getByText('Sending…')).toBeTruthy();
   });
 
-  it('a message that is not queued, not uploading and was sent over 5 seconds ago is Not delivered', () => {
+  it('a message that is not queued, not uploading and was sent over 5 seconds ago is Not sent', () => {
     renderBubble(mine());
-    expect(screen.getByText(/Not delivered/)).toBeTruthy();
+    expect(screen.getByText(/Not sent/)).toBeTruthy();
   });
 
-  it('a failed upload is still Not delivered', () => {
+  it('a failed upload is still Not sent', () => {
     renderBubble(mine({ uploadStatus: 'failed', status: 'failed' }));
-    expect(screen.getByText(/Not delivered/)).toBeTruthy();
+    expect(screen.getByText(/Not sent/)).toBeTruthy();
   });
 });

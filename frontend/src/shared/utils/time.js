@@ -54,24 +54,3 @@ export function parseTimeString(timeStr) {
   return Date.now() - 2 * 60 * 60 * 1000;
 }
 
-export function getRelativeDateLabel(dateString) {
-  if (!dateString) return '';
-  const date = new Date(dateString);
-  const now = new Date();
-  
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-  const target = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  
-  if (target.getTime() === today.getTime()) {
-    return 'Today';
-  } else if (target.getTime() === tomorrow.getTime()) {
-    return 'Tomorrow';
-  } else {
-    const options = { day: 'numeric', month: 'short' };
-    if (target.getFullYear() !== today.getFullYear()) {
-      options.year = 'numeric';
-    }
-    return date.toLocaleDateString('en-US', options);
-  }
-}

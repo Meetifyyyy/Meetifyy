@@ -15,7 +15,7 @@ import MuteAlertsModal from '../modals/MuteAlertsModal';
 
 afterEach(cleanup);
 
-const open = () => fireEvent.click(screen.getByTitle('More Options'));
+const open = () => fireEvent.click(screen.getByTitle('More options'));
 const itemNames = () => screen.getAllByRole('menuitem').map((el) => el.textContent.trim());
 
 const REMOVED = [/pin/i, /contact info/i, /group info/i, /mute/i, /block/i];

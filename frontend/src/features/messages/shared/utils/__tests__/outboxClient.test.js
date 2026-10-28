@@ -449,7 +449,9 @@ describe('a failure never flips a delivered message back', () => {
     const patch = call[2];
     expect(patch({ id: 'c1', status: 'sent' })).toBeNull();
     expect(patch({ id: 'c1', status: 'read' })).toBeNull();
-    expect(patch({ id: 'c1', status: 'sending' })).toEqual({ status: 'failed', queued: false });
-    expect(patch(null)).toEqual({ status: 'failed', queued: false });
+    // A refusal ('REJECTED' ack) is recorded as one, so the bubble can say so.
+    const failed = { status: 'failed', queued: false, failReason: 'refused' };
+    expect(patch({ id: 'c1', status: 'sending' })).toEqual(failed);
+    expect(patch(null)).toEqual(failed);
   });
 });

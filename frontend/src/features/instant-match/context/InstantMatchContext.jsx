@@ -39,13 +39,6 @@ export const InstantMatchContext = createContext(null);
  */
 const InstantMatchQueueContext = createContext(null);
 
-const EMPTY_STATS = Object.freeze({ count: 0, sameActivity: 0, avgWaitSecs: 0 });
-
-/** Live queue counts on their own, so reading them wakes nothing else. */
-export function useInstantMatchQueueStats() {
-  return useContext(InstantMatchQueueContext) ?? EMPTY_STATS;
-}
-
 /** See the listener in InstantMatchProvider. Dispatch it to open the chat. */
 export const INSTANT_MATCH_OPEN_CHAT_EVENT = 'instant-match:open-chat';
 

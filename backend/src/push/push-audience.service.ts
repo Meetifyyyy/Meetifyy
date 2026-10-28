@@ -8,6 +8,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { roleCan } from '../communities/moderator-permissions';
 import { isJsonObject } from '../common/utils/json.util';
 import {
+  GroupJoinRequestPushInput,
+  GroupRemovedPushInput,
   MessagePushInput,
   NotificationPushInput,
   categoryForType,
@@ -364,6 +366,105 @@ export class PushAudienceService {
         unread: participant.unreadCount,
       },
       dedupeKey: `m:${conversation.id}:${participant.unreadCount}`,
+    };
+  }
+
+  /**
+   * The push for someone removed from a group, or null.
+   *
+   * Re-checked at send time like every other push: the person must still be
+   * out because of THIS removal (`leftAt` unchanged: re-added since, or
+   * removed again later, and this one is stale), the conversation must still
+   * be a group, and they must want message notifications (the channel it
+   * arrives on).
+   */
+  async forGroupRemoval(
+    recipientId: string,
+    conversationId: string,
+    removedAt: string,
+  ): Promise<GroupRemovedPushInput | null> {
+    const participant = await this.prisma.conversationParticipant.findUnique({
+      where: { userId_conversationId: { userId: recipientId, conversationId } },
+      select: {
+        leftAt: true,
+        isMuted: true,
+        conversation: {
+          select: { id: true, publicId: true, name: true, type: true },
+        },
+      },
+    });
+    if (!participant?.leftAt) return null;
+    // Muted means no alerts from this group, this one included.
+    if (participant.isMuted) return null;
+    if (participant.leftAt.getTime() !== new Date(removedAt).getTime())
+      return null;
+    const conversation = participant.conversation;
+    if (conversation.type !== 'GROUP') return null;
+    if (!(await this.recipientWants(recipientId, 'messages'))) return null;
+    return {
+      routeId: conversation.publicId || conversation.id,
+      conversationId: conversation.id,
+      groupName: conversation.name,
+    };
+  }
+
+  /**
+   * A new request to join, for one of the group's reviewers. Dropped if it is
+   * no longer worth a push by send time: the request was answered or expired,
+   * the recipient is no longer an owner or admin there, the group has ended,
+   * the requester is gone, or either has blocked the other.
+   */
+  async forGroupJoinRequest(
+    recipientId: string,
+    conversationId: string,
+    requesterId: string,
+  ): Promise<GroupJoinRequestPushInput | null> {
+    const [request, reviewer, requester] = await Promise.all([
+      this.prisma.conversationJoinRequest.findUnique({
+        where: {
+          conversationId_userId: { conversationId, userId: requesterId },
+        },
+        select: {
+          status: true,
+          expiresAt: true,
+          conversation: {
+            select: {
+              id: true,
+              publicId: true,
+              name: true,
+              type: true,
+              status: true,
+            },
+          },
+        },
+      }),
+      this.prisma.conversationParticipant.findUnique({
+        where: {
+          userId_conversationId: { userId: recipientId, conversationId },
+        },
+        select: { role: true, leftAt: true, deletedAt: true, isMuted: true },
+      }),
+      this.liveActor(requesterId),
+    ]);
+    if (!request || request.status !== 'PENDING') return null;
+    if (request.expiresAt && request.expiresAt <= new Date()) return null;
+    const conversation = request.conversation;
+    if (conversation.type !== 'GROUP') return null;
+    if ((conversation.status || 'ACTIVE').toUpperCase() !== 'ACTIVE') {
+      return null;
+    }
+    if (!reviewer || reviewer.leftAt || reviewer.deletedAt) return null;
+    if (reviewer.role !== 'OWNER' && reviewer.role !== 'ADMIN') return null;
+    // An admin who muted the group gets no alerts from it, requests included.
+    if (reviewer.isMuted) return null;
+    if (!requester) return null;
+    if (await this.blockedEitherWay(recipientId, requesterId)) return null;
+    if (!(await this.recipientWants(recipientId, 'messages'))) return null;
+    return {
+      routeId: conversation.publicId || conversation.id,
+      conversationId: conversation.id,
+      groupName: conversation.name,
+      requesterName: requester.displayName || requester.username,
     };
   }
 }

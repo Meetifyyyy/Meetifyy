@@ -29,6 +29,10 @@ import {
 } from '@features/messages/hooks/useGroupInvite';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { checkIsMe, getMsgTimestamp } from '../utils/cacheUtils';
+import { describeSendFailure } from '../utils/sendFailure';
+import MediaUnavailable from './MediaUnavailable';
+import { mediaCache } from '@shared/utils/MediaCacheManager';
+import { isOnline } from '@shared/lib/networkStatus';
 import { getMediaUrl } from '@shared/api/apiClient';
 import { normalizeBodyText, truncateBodyText } from '@shared/utils/bodyText';
 
@@ -178,6 +182,16 @@ const OPEN_MEDIA_BUTTON_STYLE = {
  * re-signs and remounts the <img> (keyed by `attempt`) so the browser really
  * does ask again.
  */
+/**
+ * The kind of failure for media that could not be shown: final when the
+ * server declined to sign it, otherwise the network ('offline') or a failed
+ * load, both worth trying again.
+ */
+function transientOrFinal(value, fallback) {
+  if (mediaCache.wasDeclined(value)) return 'unavailable';
+  return isOnline() ? fallback : 'offline';
+}
+
 function ImageWithSkeleton(props) {
   return <SignedChatImage key={`${props.src || 'none'}|${props.fallbackSrc || ''}`} {...props} />;
 }
@@ -195,12 +209,14 @@ function SignedChatImage({ src, fallbackSrc, alt, className, onClick, isStandalo
   const active = sources[sourceIndex];
   const { src: signed, failed, refresh, attempt } = useSignedMediaSrc(active);
   const [loaded, setLoaded] = useState(() => Boolean(signed && loadedImageUrls.has(signed)));
-  const [imgFailed, setImgFailed] = useState(false);
+  // Why it cannot be shown (MediaUnavailable): 'offline' and 'load' are worth
+  // another try, 'unavailable' (the server declined to sign it) is final.
+  const [failure, setFailure] = useState(null);
   const retriedRef = useRef(false);
   const onErrorRef = useRef(onErrorChange);
   onErrorRef.current = onErrorChange;
   const aspect = (width && height) ? (width / height) : 1;
-  const error = !src || imgFailed;
+  const error = !src || Boolean(failure);
 
   const lastIndex = sources.length - 1;
   /** Moves to the next source; false when there is none left. */
@@ -212,10 +228,10 @@ function SignedChatImage({ src, fallbackSrc, alt, className, onClick, isStandalo
     return true;
   }, [sourceIndex, lastIndex]);
 
-  // The server declined to sign this source: try the next one, else give up.
+  // No signed URL for this source: try the next one, else say why.
   useEffect(() => {
-    if (failed && !advance()) setImgFailed(true);
-  }, [failed, advance]);
+    if (failed && !advance()) setFailure(transientOrFinal(active, 'load'));
+  }, [failed, advance, active]);
 
   // Already decoded earlier in the session: no skeleton once the URL is in hand.
   useEffect(() => {
@@ -234,8 +250,18 @@ function SignedChatImage({ src, fallbackSrc, alt, className, onClick, isStandalo
       refresh();
       return;
     }
-    if (!advance()) setImgFailed(true);
+    if (!advance()) setFailure(transientOrFinal(active, 'load'));
   };
+
+  // Retry (a tap, or the connection coming back): from the first source, with
+  // a fresh signature, inside the same box.
+  const retry = useCallback(() => {
+    retriedRef.current = false;
+    setLoaded(false);
+    setFailure(null);
+    setSourceIndex(0);
+    refresh();
+  }, [refresh]);
 
   const handleImageLoad = () => {
     setLoaded(true);
@@ -245,14 +271,13 @@ function SignedChatImage({ src, fallbackSrc, alt, className, onClick, isStandalo
 
   if (error) {
     return (
-      <div className={`${styles.msgMediaErrorCard} ${isStandalone ? styles.msgMediaErrorStandalone : ''}`}>
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.5 }}>
-          <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-          <circle cx="8.5" cy="8.5" r="1.5" />
-          <polyline points="21 15 16 10 5 21" />
-        </svg>
-        <span style={{ fontSize: '0.72rem', opacity: 0.6, marginTop: '4px' }}>Unavailable</span>
-      </div>
+      <MediaUnavailable
+        kind="image"
+        failure={src ? failure : 'unavailable'}
+        aspect={aspect}
+        isStandalone={isStandalone}
+        onRetry={src ? retry : undefined}
+      />
     );
   }
 
@@ -317,11 +342,11 @@ export function VideoPlayerWithOverlay({ src, poster = null, placeholder = null,
   const { src: resolvedSrc, pending, failed, refresh, attempt } = useSignedMediaSrc(src);
   // A missing poster is cosmetic, so it has no error state of its own.
   const { src: resolvedPoster } = useSignedMediaSrc(poster || '');
-  const [videoError, setVideoError] = useState(false);
+  const [videoFailure, setVideoFailure] = useState(null);
   const reloadedRef = useRef(false);
 
   useEffect(() => {
-    setVideoError(false);
+    setVideoFailure(null);
     reloadedRef.current = false;
   }, [src]);
 
@@ -362,31 +387,24 @@ export function VideoPlayerWithOverlay({ src, poster = null, placeholder = null,
       refresh();
       return;
     }
-    setVideoError(true);
+    setVideoFailure(transientOrFinal(src, 'load'));
   };
 
-  const handleRetry = (e) => {
-    e.stopPropagation();
+  const handleRetry = useCallback(() => {
     reloadedRef.current = false;
-    setVideoError(false);
+    setVideoFailure(null);
     refresh();
-  };
+  }, [refresh]);
 
-  if (!src || failed || videoError) {
+  if (!src || failed || videoFailure) {
     return (
-      <div className={`${styles.msgMediaErrorCard} ${!isInline ? styles.msgMediaErrorStandalone : ''}`}>
-        <AlertCircle size={24} style={{ opacity: 0.5 }} />
-        <span style={{ fontSize: '0.72rem', opacity: 0.6, marginTop: '4px' }}>Video unavailable</span>
-        {src && (
-          <button
-            type="button"
-            onClick={handleRetry}
-            style={{ marginTop: '6px', padding: '2px 10px', fontSize: '0.72rem', borderRadius: '999px', border: '1px solid currentColor', background: 'transparent', color: 'inherit', opacity: 0.8, cursor: 'pointer' }}
-          >
-            Retry
-          </button>
-        )}
-      </div>
+      <MediaUnavailable
+        kind="video"
+        failure={!src ? 'unavailable' : videoFailure || transientOrFinal(src, 'load')}
+        aspect={aspect}
+        isStandalone={!isInline}
+        onRetry={src ? handleRetry : undefined}
+      />
     );
   }
 
@@ -995,9 +1013,10 @@ const MessageBubble = memo(function MessageBubble({
   const hasText = !!(messageText && String(messageText).trim().length > 0);
   const timeText = getDisplayClockTime(msg);
 
-  // The "Sending…" / "Not delivered" / "Sent" line under a message of your own.
+  // The "Sending…" / "Not sent" / "Sent" line under a message of your own.
   // Failed and queued ones always show it; otherwise only the latest message.
   const hasStatusLine = Boolean(isMe && (isFailedMsg || isLatestMessage || msg.queued));
+  const failure = describeSendFailure(msg.failReason);
 
   let innerContent = null;
 
@@ -1249,7 +1268,19 @@ const MessageBubble = memo(function MessageBubble({
             return (
               <div className={styles.msgTextTimeWrap}>
                 <div className={styles.msgTextContent}>
-                  <RichText content={displayedText} className={styles.msgText} highlight={searchQuery} />
+                  {/* @mentions the server verified when the message was sent,
+                      and links, each marked so they read as such in both
+                      bubble colours (ChatMessageList.module.css). Nothing that
+                      merely looks like a handle is styled. */}
+                  <RichText
+                    content={displayedText}
+                    className={styles.msgText}
+                    highlight={searchQuery}
+                    mentions={msg.mentions || msg.payload?.mentions || []}
+                    verifiedMentionsOnly
+                    linkClassName={styles.msgLink}
+                    mentionClassName={styles.msgMention}
+                  />
                   {needsTruncation && (
                     <button
                       type="button"
@@ -1300,7 +1331,7 @@ const MessageBubble = memo(function MessageBubble({
          that open with a label - a group member's name, "You replied to ..." -
          apart. See ChatMessageList.module.css (--msg-gap-run). */
       data-run={continuesRun ? 'continue' : undefined}
-      /* This row ends in a status line ("Sending…", "Not delivered", "Sent").
+      /* This row ends in a status line ("Sending…", "Not sent", "Sent").
          That line belongs to it, so the row below keeps a full gap under it
          rather than closing up against the line. */
       data-status-line={hasStatusLine ? '' : undefined}
@@ -1383,7 +1414,10 @@ const MessageBubble = memo(function MessageBubble({
           {hasStatusLine && (
             <div className={`${styles.msgStatusLabel} ${isFailedMsg ? styles.msgStatusLabelFailed : ''}`}>
               {/* Failed status is always shown — never hidden even if not the latest message */}
-              {isFailedMsg && (onRetrySend && !isUploadFailed ? (
+              {/* Says why when the server said (sendFailure.js), and offers a
+                  retry only where one can succeed: being out of the group or
+                  blocked is not changed by trying again. */}
+              {isFailedMsg && (onRetrySend && !isUploadFailed && failure.retryable ? (
                 // Re-sends the exact message the outbox kept, under the same
                 // clientId, so one that landed after all is not duplicated.
                 // A failed upload has its own retry on the media overlay.
@@ -1395,13 +1429,13 @@ const MessageBubble = memo(function MessageBubble({
                     void onRetrySend(msg.clientId || msg.tempId);
                   }}
                 >
-                  <AlertCircle size={13} style={{ color: '#ef4444' }} />
-                  <span>Not delivered · Tap to retry</span>
+                  <AlertCircle size={13} style={{ color: '#ef4444' }} aria-hidden="true" />
+                  <span>{failure.label} · Tap to retry</span>
                 </button>
               ) : (
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                  <AlertCircle size={13} style={{ color: '#ef4444' }} />
-                  <span>Not delivered</span>
+                <span role="status" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  <AlertCircle size={13} style={{ color: '#ef4444' }} aria-hidden="true" />
+                  <span>{failure.label}</span>
                 </span>
               ))}
               {/* Normal delivery status: only shown on the latest message */}

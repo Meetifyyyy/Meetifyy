@@ -3,12 +3,13 @@ import { useQueryClient } from '@tanstack/react-query';
 import { messagesApi, dmApi, groupApi, usersApi } from '../api/apiClient';
 import { useAuth } from '../context/AuthContext';
 import { showToast } from '../utils/toast';
-import { useConversations } from './useMessages';
+import { useConversations, CONVERSATION_LIST_PAGE } from './useMessages';
 import { processAndUploadImage, uploadFileDirect } from '../utils/mediaPipeline';
 import { checkUploadFile } from '../constants/mediaLimits';
 import { purgeConversationFromCaches, matchesConversationId, getConversationAliases, appendMessageToCache } from '../../features/messages/shared/utils/cacheUtils';
 import { invalidateConversationMedia } from '../../features/messages/shared/utils/conversationMediaCache';
 import { idbDeleteConversationMessages } from '../../features/messages/shared/utils/idbMessages';
+import { dropFromUnreadSummary } from '../../features/messages/shared/utils/unreadSummary';
 import { scheduleConversationWrite } from '../utils/conversationWriteQueue';
 import { createSubmissionKey } from '../lib/idempotencyKey';
 
@@ -326,12 +327,18 @@ export function useMessageActions() {
     // that the optimistic removal was permanent-looking on failure until a
     // refetch happened to run, and the invalidate alone could not restore a
     // conversation the server still had while the list query was fresh.
-    const snapshot = (queryClient.getQueryData(['conversations']) || [])
-      .find(c => matchesConversationId(c, convId));
+    const held = queryClient.getQueryData(['conversations']) || [];
+    const snapshot = held.find(c => matchesConversationId(c, convId));
     const aliases = purgeConversationFromCaches(queryClient, convId, conversations);
+    dropFromUnreadSummary(queryClient, aliases);
     idbDeleteConversationMessages(aliases).catch(() => {});
     try {
       await messagesApi.deleteConversation(convId);
+      // A full page had more behind it: refill it, so the next conversation
+      // (and the badge's count for the rest) comes into view.
+      if (held.length >= CONVERSATION_LIST_PAGE) {
+        queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      }
     } catch (e) {
       if (snapshot) {
         queryClient.setQueryData(['conversations'], (old) => {
@@ -356,18 +363,22 @@ export function useMessageActions() {
    * The list row itself stays — that is the whole difference between Clear and
    * Delete — but its preview is blanked so the row does not keep advertising a
    * message the user can no longer open.
+   *
+   * Applied only once the server has cleared it. It used to empty the chat
+   * first and put it back on failure, so a slow or failed request showed an
+   * empty chat that then refilled. The confirmation dialog shows the request
+   * in progress instead, and a failure leaves the chat exactly as it was.
+   * Throws on failure; the caller says so and offers the retry.
    */
   const clearChat = async (convId) => {
+    await messagesApi.clearChat(convId);
+
     const conv = (conversations || []).find(c => matchesConversationId(c, convId));
     const aliases = new Set([String(convId), ...getConversationAliases(conv)]);
-
-    const previousMessages = new Map();
     aliases.forEach((alias) => {
-      previousMessages.set(alias, queryClient.getQueryData(['messages', alias]));
       queryClient.setQueryData(['messages', alias], { pages: [], pageParams: [] });
     });
-    const previousRow = (queryClient.getQueryData(['conversations']) || [])
-      .find(c => matchesConversationId(c, convId));
+    dropFromUnreadSummary(queryClient, [...aliases]);
 
     // `lastMessage` must be nulled, not just the flat `lastMsg`/`lastMessageText`
     // aliases. useMessages derives the row preview by falling through
@@ -391,24 +402,9 @@ export function useMessageActions() {
     });
 
     idbDeleteConversationMessages([...aliases]).catch(() => {});
-
-    try {
-      await messagesApi.clearChat(convId);
-      // Everything before the clear is gone for this viewer, gallery included.
-      invalidateConversationMedia(queryClient);
-    } catch (e) {
-      previousMessages.forEach((data, alias) => {
-        if (data) queryClient.setQueryData(['messages', alias], data);
-      });
-      if (previousRow) {
-        queryClient.setQueryData(['conversations'], (old) => {
-          if (!Array.isArray(old)) return old;
-          return old.map(c => matchesConversationId(c, convId) ? previousRow : c);
-        });
-      }
-      queryClient.invalidateQueries({ queryKey: ['messages', String(convId)] });
-      showToast("Couldn't clear chat", 'error');
-    }
+    // Everything before the clear is gone for this viewer, gallery included.
+    invalidateConversationMedia(queryClient);
+    return true;
   };
   /**
    * Block state for a DM that has no conversation row yet.

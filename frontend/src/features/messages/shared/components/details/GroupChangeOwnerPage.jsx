@@ -1,83 +1,107 @@
+/**
+ * Transfer ownership: the owner picks another member to take over.
+ *
+ * Members come from the group's own details (name, handle and photo, as the
+ * server sent them). They used to be looked up in a users map that held only
+ * people the app happened to have loaded, and anyone it did not hold was
+ * skipped without a word, so a group with members could show "No other
+ * members available". A member whose account was deleted is listed but
+ * cannot be chosen.
+ */
 import styles from './ChatDetailsPanel.module.css';
-import { ArrowLeft } from '@shared/components/icons';
+import own from './GroupChangeOwnerPage.module.css';
+import { ArrowLeft, Users, UserPlus } from '@shared/components/icons';
 import Avatar from '@shared/components/avatar/Avatar';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
 
+const memberId = (m) => m?.userId || m?.id;
+const memberName = (m) => m?.displayName || m?.name || m?.username || 'This member';
+
 export default function GroupChangeOwnerPage({
-  conversation,
-  users,
-  memberIds,
+  members = [],
+  ownerId,
   onBack,
+  onInvite,
   targetUserId,
   showConfirm,
-  confirmType,
-  onSetConfirmTarget,
+  onChoose,
   onCancelConfirm,
-  onConfirmAction
+  onConfirmAction,
 }) {
+  const candidates = members.filter((m) => memberId(m) && String(memberId(m)) !== String(ownerId));
+  const target = candidates.find((m) => String(memberId(m)) === String(targetUserId));
+
   return (
     <div className={styles.container}>
       <div className={styles.header}>
-        <button 
-          type="button" 
-          className={styles.backBtn} 
-          onClick={onBack} 
-          title="Back"
-        >
+        <button type="button" className={styles.backBtn} onClick={onBack} aria-label="Back">
           <ArrowLeft size={20} />
         </button>
-        <h2 className={styles.headerTitle}>Change Owner</h2>
+        <h2 className={styles.headerTitle}>Transfer ownership</h2>
         <div style={{ width: '40px' }} />
       </div>
-      
-      <div className={styles.scrollBody} style={{ padding: '0 1rem' }}>
-        <p style={{ margin: '1rem 0', color: '#888', fontSize: '0.9rem' }}>
-          Select a new owner from the group members. They will have full control over the group settings.
-        </p>
-        <div className={styles.section} style={{ padding: '0 1rem', marginTop: '0' }}>
-          <div className={styles.memberList}>
-            {memberIds.map(uid => {
-              const userObj = Object.values(users).find(u => u.id === uid);
-              if (!userObj || uid === conversation.ownerId) return null;
-              
-              return (
-                <div key={uid} className={`${styles.memberItem} ${styles.noHover}`}>
-                  <div style={{ display: 'flex', alignItems: 'center', flex: 1, gap: '12px' }}>
-                    <Avatar src={userObj.avatar} name={userObj.name} size="38px" />
-                    <div className={styles.memberMeta}>
-                      <span className={styles.memberName}>{userObj.displayName || userObj.name}</span>
-                      <span className={styles.memberUsername}>@{userObj.username}</span>
-                    </div>
-                  </div>
-                  <div className={styles.memberRight}>
-                    <button 
-                      className={styles.settingsBtn} 
-                      style={{ padding: '10px 16px', fontSize: '0.85rem', width: 'auto', marginBottom: 0, fontWeight: 'bold' }}
-                      onClick={() => onSetConfirmTarget(uid)}
+
+      <div className={`${styles.scrollBody} ${own.body}`}>
+        <div className={own.content}>
+        {candidates.length > 0 ? (
+          <>
+            <p className={own.intro}>
+              The new owner gets full control of the group, including its settings and members. You stay in the group as an admin.
+            </p>
+            <ul className={own.list}>
+              {candidates.map((m) => {
+                const id = memberId(m);
+                const unavailable = Boolean(m.isDeleted || m.profileAvailable === false);
+                return (
+                  <li key={id} className={own.row}>
+                    <Avatar src={m.avatar} name={memberName(m)} size="40px" />
+                    <span className={own.meta}>
+                      <span className={own.name}>{memberName(m)}</span>
+                      {m.username && !unavailable && <span className={own.handle}>@{m.username}</span>}
+                    </span>
+                    <button
+                      type="button"
+                      className={own.choose}
+                      onClick={() => onChoose(id)}
+                      disabled={unavailable}
                     >
-                      Make Owner
+                      Make owner
                     </button>
-                  </div>
-                </div>
-              );
-            })}
-            {memberIds.filter(uid => uid !== conversation.ownerId).length === 0 && (
-              <p className={styles.sectionValue} style={{ textAlign: 'center', marginTop: '2rem' }}>
-                No other members available.
-              </p>
+                  </li>
+                );
+              })}
+            </ul>
+          </>
+        ) : (
+          <div className={own.empty}>
+            <span className={own.emptyIcon} aria-hidden="true">
+              <Users size={28} />
+            </span>
+            <h3 className={own.emptyTitle}>No one to transfer to yet</h3>
+            <p className={own.emptyText}>
+              Ownership can only pass to another member of this group. Invite someone, and once they join you can make them the owner.
+            </p>
+            {onInvite && (
+              <button type="button" className={own.emptyAction} onClick={onInvite}>
+                <UserPlus size={18} />
+                Invite people
+              </button>
             )}
           </div>
+        )}
         </div>
       </div>
+
       <ConfirmModal
-        title="Transfer Ownership"
-        desc={`${(Object.values(users).find(u => u.id === targetUserId)?.displayName || Object.values(users).find(u => u.id === targetUserId)?.name || 'This member')} will become the new group owner.`}
-        visible={showConfirm && confirmType === 'changeOwner'}
+        title="Transfer ownership"
+        desc={`${memberName(target)} will become the owner of this group. You will stay in the group as an admin.`}
+        visible={Boolean(showConfirm && target)}
         onCancel={onCancelConfirm}
         onConfirm={onConfirmAction}
         confirmText="Transfer"
         cancelText="Cancel"
-        isDestructive={true}
+        isDestructive
+        centered
       />
     </div>
   );

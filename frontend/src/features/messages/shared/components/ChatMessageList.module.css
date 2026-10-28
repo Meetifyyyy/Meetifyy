@@ -304,6 +304,69 @@
   max-width: 100%;
 }
 
+/*
+ * Links and @mentions inside a message.
+ *
+ * They used to read as plain text: the sender's own bubble set its link colour
+ * to the text colour (white on blue) with no underline, and a mention only got
+ * any colour if the mentioned account happened to be in this device's user
+ * cache. Now a link is underlined and a mention is bold in both bubbles, and
+ * on the other person's bubble both take the theme blue, at a shade that keeps
+ * 4.5:1 contrast on that bubble in each theme (#1D4ED8 on #e8e8ee is ~5.3:1;
+ * #60A5FA on #33343a is ~4.9:1). In the sender's blue bubble they stay white:
+ * blue on blue would disappear.
+ */
+.msgText .msgLink,
+.msgText .msgMention {
+  color: var(--msg-link-color, inherit);
+}
+
+.msgText .msgLink {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+/* A tag (@member, @everyone) reads as a tag in both bubbles: a soft pill in
+   the bubble's own link colour. In a sent bubble that colour is white, the same
+   as the text around it, so without the pill a tag did not stand out at all. */
+.msgText .msgMention {
+  font-weight: 600;
+  padding: 0 0.22em;
+  border-radius: 6px;
+  background: var(--msg-mention-bg, transparent);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.msgText .msgMention:hover {
+  background: var(--msg-mention-bg-hover, var(--msg-mention-bg, transparent));
+}
+
+.msgText .msgLink:hover {
+  text-decoration-thickness: 2px;
+}
+
+.msgBubbleThem {
+  --msg-link-color: #1D4ED8;
+  --msg-mention-bg: rgba(29, 78, 216, 0.1);
+  --msg-mention-bg-hover: rgba(29, 78, 216, 0.18);
+}
+
+[data-theme='dark'] .msgBubbleThem {
+  --msg-link-color: #60A5FA;
+  --msg-mention-bg: rgba(96, 165, 250, 0.16);
+  --msg-mention-bg-hover: rgba(96, 165, 250, 0.26);
+}
+
+.msgBubbleMe {
+  --msg-link-color: #FFFFFF;
+  --msg-mention-bg: rgba(255, 255, 255, 0.22);
+  --msg-mention-bg-hover: rgba(255, 255, 255, 0.32);
+}
+
 .msgTextTimeWrap {
   display: flex;
   align-items: flex-end;
@@ -788,30 +851,6 @@
 }
 
 
-
-.msgMediaErrorCard {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  width: 200px;
-  height: 140px;
-  border-radius: 12px;
-  background: rgba(0, 0, 0, 0.08);
-  border: 1px dashed var(--color-border, #e4e4e7);
-  color: var(--color-text-muted, #71717a);
-  box-sizing: border-box;
-}
-
-[data-theme='dark'] .msgMediaErrorCard {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.12);
-  color: #a1a1aa;
-}
-
-.msgMediaErrorStandalone {
-  border-radius: 16px;
-}
 
 .msgMediaImg {
   display: block;
@@ -1588,4 +1627,56 @@
     animation: none;
     background-color: rgba(129, 140, 248, 0.30);
   }
+}
+
+/*
+ * A photo or video that cannot be shown (MediaUnavailable). It is the media's
+ * own box (.msgMediaWrapper, same aspect ratio), so failing or recovering moves
+ * nothing around it. Last in the file so it wins over the wrapper's
+ * transparent background in both themes.
+ */
+.msgMediaUnavailable {
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  text-align: center;
+  background-color: rgba(0, 0, 0, 0.04);
+  color: var(--color-text-muted, #475569);
+}
+
+[data-theme='dark'] .msgMediaUnavailable {
+  background-color: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.msgBubbleMe .msgMediaUnavailable {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.msgMediaUnavailableIcon {
+  opacity: 0.6;
+}
+
+.msgMediaUnavailableText {
+  font-size: 0.75rem;
+  line-height: 1.3;
+}
+
+.msgMediaRetry {
+  margin-top: 2px;
+  min-height: 32px;
+  padding: 4px 14px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.msgMediaRetry:focus-visible {
+  outline: 2px solid var(--color-primary, #2563eb);
+  outline-offset: 2px;
 }

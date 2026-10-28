@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { IS_MOBILE_BUILD } from '@config';
 import { ensureFocusedVisible } from '@shared/utils/keyboardFocus';
 import { KEYBOARD_OVERLAYS_PAGE } from '@shared/utils/keyboardOverlay';
-import { findKeyboardSheet, sheetEdges, sheetTravel, riseSheet } from '@shared/utils/keyboardSheetRise';
+import { findKeyboardSheet, sheetEdges, sheetSlide, riseSheet } from '@shared/utils/keyboardSheetRise';
 
 /**
  * Tracks the on-screen keyboard and publishes it to CSS on <html>:
@@ -91,6 +91,16 @@ import { findKeyboardSheet, sheetEdges, sheetTravel, riseSheet } from '@shared/u
  * land. With these, both transitions start within ~5ms of the keyboard.
  */
 const TRANSITION_START_MS = { show: 40, hide: 25 };
+
+/**
+ * The same for a sheet's slide (keyboardSheetRise), which is started directly
+ * in this hook's own handler rather than by a style change. Measured on the
+ * I2208 against the keyboard, frame by frame: opening with the composer's 40ms
+ * ran exactly one frame (16-19ms) ahead of the keyboard all the way up, which
+ * left a band of page between the two; 23ms keeps them within 1% of the travel.
+ * Closing matches the composer's figure.
+ */
+const SHEET_START_MS = { show: 23, hide: 25 };
 
 /** Below this a height change is browser chrome (URL bar), not a keyboard. */
 const KEYBOARD_MIN_HEIGHT = 80;
@@ -344,6 +354,9 @@ function installOverlay(root) {
   let hideTimer = 0;
   let raf = 0;
   let focusFrame = 0;
+  // The sheet that last slid up: on close the field has often lost focus
+  // already (that is what closed the keyboard), so it is found from here.
+  let raisedSheet = null;
 
   // Never written per transition: nothing resizes for the keyboard here.
   root.style.setProperty('--kb-layout-shift', '0px');
@@ -405,10 +418,12 @@ function installOverlay(root) {
     // the frames the transition takes to start on screen. Rounded so the value
     // only changes when the lag really does.
     const startedAt = Number(detail.startedAt) || 0;
-    const behind = startedAt > 0
-      ? Math.max(0, Date.now() - startedAt) + TRANSITION_START_MS[visible ? 'show' : 'hide']
-      : 0;
+    const elapsed = startedAt > 0 ? Math.max(0, Date.now() - startedAt) : 0;
+    const behind = startedAt > 0 ? elapsed + TRANSITION_START_MS[visible ? 'show' : 'hide'] : 0;
     const delay = -Math.min(duration, Math.round(behind / 10) * 10);
+    const sheetDelay = startedAt > 0
+      ? -Math.min(duration, elapsed + SHEET_START_MS[visible ? 'show' : 'hide'])
+      : 0;
     if (!visible && focusFrame) {
       cancelAnimationFrame(focusFrame);
       focusFrame = 0;
@@ -416,8 +431,13 @@ function installOverlay(root) {
 
     // A dialog or sheet that makes room for the keyboard by layout would jump
     // to its final place in the frame the inset is written. Measured here, before
-    // that write, and slid from where it was afterwards (keyboardSheetRise).
-    const sheet = visible && inset !== lastInset ? findKeyboardSheet() : null;
+    // that write, and slid from where it was afterwards (keyboardSheetRise),
+    // both ways.
+    let sheet = null;
+    if (inset !== lastInset) {
+      sheet = findKeyboardSheet() || (!visible && raisedSheet?.isConnected ? raisedSheet : null);
+      raisedSheet = visible ? sheet : null;
+    }
     const sheetBefore = sheet ? sheetEdges(sheet) : null;
 
     // The one write per transition. The duration first, in the same style
@@ -439,7 +459,7 @@ function installOverlay(root) {
       else root.removeAttribute('data-keyboard-open');
     }
     if (sheet && sheetBefore) {
-      riseSheet(sheet, sheetTravel(sheetBefore, sheetEdges(sheet)), { duration, delay });
+      riseSheet(sheet, sheetSlide(sheetBefore, sheetEdges(sheet)), { duration, delay: sheetDelay });
     }
 
     if (visible) {

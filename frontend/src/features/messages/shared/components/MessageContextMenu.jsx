@@ -1,5 +1,6 @@
 import { Reply, Copy, Forward, Trash2, Undo2 } from '@shared/components/icons';
 import Menu, { MenuItem, MenuSeparator } from '@shared/components/ui/Menu';
+import { canOfferUnsend } from '../utils/unsendWindow';
 
 export const MENU_GAP = 12;
 export const MENU_EDGE_MARGIN = 12;
@@ -108,7 +109,9 @@ export default function MessageContextMenu({
         const isOwn = m.from === 'me' || (currentUser && (String(m.senderId) === String(currentUser.id) || String(m.userId) === String(currentUser.id) || String(m.fromUserId) === String(currentUser.id) || String(m.sender?.id) === String(currentUser.id)));
         if (!isOwn) return false;
         if (m.state === 'UNSENT' || m.isUnsent || m.text === 'This message was unsent') return false;
-        return true;
+        // Past the 15 minutes the server allows, it is not offered (the
+        // server's own check is what enforces it; see unsendWindow.js).
+        return canOfferUnsend(m);
       },
       onClick: () => {
         const handler = onUnsend || onUnsendRequest;

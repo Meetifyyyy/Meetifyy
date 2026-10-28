@@ -16,6 +16,7 @@ import {
 } from './idbMessages';
 import { idbEpoch } from '@shared/lib/idb';
 import { appendMessageToCache, updateMessageInCache } from './cacheUtils';
+import { sendFailureReason } from './sendFailure';
 
 // The queue this replaced kept unsent messages in localStorage with no owner.
 // Installations that still hold one may hold another account's messages, so
@@ -264,18 +265,30 @@ const isConfirmedStatus = (status) =>
   status === 'sent' || status === 'delivered' || status === 'read' || status === 'seen';
 
 /**
- * Shows "Not delivered", unless the message has meanwhile been confirmed (the
- * server's echo, or an earlier attempt that did land): a delivered message must
- * never be flipped back to failed, in the cache or on disk.
+ * Shows "Not sent", with why (sendFailure.js), unless the message has
+ * meanwhile been confirmed (the server's echo, or an earlier attempt that did
+ * land): a delivered message must never be flipped back to failed, in the
+ * cache or on disk.
+ *
+ * A refusal because the sender is no longer in the group is also news about
+ * the group: the chat's own copy of the membership is refetched, so the
+ * composer closes even if the removal event never reached this device.
  */
-function markFailed(entry, epoch) {
+function markFailed(entry, epoch, failure) {
   const qc = boundQueryClient;
-  const patch = { status: 'failed', queued: false };
+  const failReason = sendFailureReason(failure);
+  const patch = { status: 'failed', queued: false, failReason };
   const unlessConfirmed = (existing) => (isConfirmedStatus(existing?.status) ? {} : patch);
   if (qc) {
     updateMessageInCache(qc, entry.conversationId, entry.clientId, unlessConfirmed);
     if (entry.mirrorConversationId && entry.mirrorConversationId !== entry.conversationId) {
       updateMessageInCache(qc, entry.mirrorConversationId, entry.clientId, unlessConfirmed);
+    }
+    if (failReason === 'not-member') {
+      qc.invalidateQueries({ queryKey: ['conversations'] });
+      [entry.conversationId, entry.mirrorConversationId].filter(Boolean).forEach((id) => {
+        qc.invalidateQueries({ queryKey: ['messages', id], exact: true });
+      });
     }
   }
   idbPatchMessage(

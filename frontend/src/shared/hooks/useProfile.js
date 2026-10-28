@@ -5,7 +5,7 @@
  * Includes a prefetch helper for hover-intent loading on profile links.
  */
 import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { usersApi } from '@shared/api/apiClient';
 import { idbGet, idbSet, idbEpoch } from '@shared/lib/idb';
 import { useAuth } from '@shared/context/AuthContext';
@@ -219,39 +219,3 @@ export function useDirectory({ search = '', course = 'All', branch = 'All', year
   };
 }
 
-/**
- * Prefetch a profile on hover intent — fires before the user clicks.
- */
-export function usePrefetchProfile() {
-  const queryClient = useQueryClient();
-  return useCallback((username) => {
-    if (!username || username === 'unknown') return;
-    queryClient.prefetchQuery({
-      queryKey: PROFILE_KEYS.byUsername(username),
-      queryFn: () => usersApi.getByUsername(username),
-      staleTime: 2 * 60 * 1000,
-    });
-  }, [queryClient]);
-}
-
-/**
- * Look up a cached user by ID from any in-memory query data.
- * Does NOT trigger a network request — purely reads from cache.
- */
-export function useGetUserById() {
-  const queryClient = useQueryClient();
-  return useCallback((id) => {
-    if (!id) return null;
-    // Search all queries for a matching user object
-    const all = queryClient.getQueriesData({});
-    for (const [, data] of all) {
-      if (!data) continue;
-      if (data.id === id) return data;
-      if (Array.isArray(data)) {
-        const found = data.find((u) => u?.id === id);
-        if (found) return found;
-      }
-    }
-    return null;
-  }, [queryClient]);
-}

@@ -325,7 +325,8 @@ describe('outbox safety under sign-out and storage trouble', () => {
     let h = harness({ replies: [{ ok: false, failure: null }] });
     h.state.storageFull = true;
     await h.outbox.enqueue(h.entry('m1'));
-    expect(h.onFailed).toHaveBeenCalledWith(expect.objectContaining({ clientId: 'm1' }), undefined);
+    // The last attempt's failure travels with it, so the bubble can say why.
+    expect(h.onFailed).toHaveBeenCalledWith(expect.objectContaining({ clientId: 'm1' }), undefined, null);
     h = harness({ replies: [{ ok: false, offline: true }] });
     h.state.storageFull = true;
     await h.outbox.enqueue(h.entry('m1'));
@@ -427,7 +428,7 @@ describe('outbox: a given-up entry does not strand the chat behind it', () => {
     await h.store.put(h.entry('m2'));
     await h.outbox.flush();
     expect(h.rows.get('m1').failed).toBe(true);
-    expect(h.onFailed).toHaveBeenCalledWith(expect.objectContaining({ clientId: 'm1' }), 0);
+    expect(h.onFailed).toHaveBeenCalledWith(expect.objectContaining({ clientId: 'm1' }), 0, null);
     // m1 is no longer ahead of it: m2 is not left without a timer, waiting for the next connect.
     expect(h.sent).toEqual(['m1', 'm2']);
     expect(h.onSent).toHaveBeenCalledWith(expect.objectContaining({ clientId: 'm2' }), { id: 'srv-m2' }, 0);

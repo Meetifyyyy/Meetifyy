@@ -26,7 +26,10 @@ const THEM = 'bob';
 const SENT_AT = new Date('2026-09-24T10:00:00Z');
 const THEY_READ_AT = new Date('2026-09-24T11:00:00Z');
 
-async function historyWhenTheirReceiptsAre(readReceipts: boolean) {
+async function historyWhenTheirReceiptsAre(
+  readReceipts: boolean,
+  viewerLeftAt: Date | null = null,
+) {
   const participantRow =
     (userId: string, receipts: boolean, lastReadAt: Date | null) =>
     (args: { select?: { user?: { select?: Record<string, unknown> } } }) => {
@@ -50,7 +53,7 @@ async function historyWhenTheirReceiptsAre(readReceipts: boolean) {
     conversation: {
       findUnique: jest.fn().mockResolvedValue({
         id: CONV,
-        type: 'DM',
+        type: viewerLeftAt ? 'GROUP' : 'DM',
         isInstantMatch: false,
         publicId: 'pub',
       }),
@@ -61,7 +64,7 @@ async function historyWhenTheirReceiptsAre(readReceipts: boolean) {
         userId: ME,
         lastReadAt: null,
         clearedAt: null,
-        leftAt: null,
+        leftAt: viewerLeftAt,
       }),
       findMany: jest.fn(
         (args: { select?: { user?: { select?: Record<string, unknown> } } }) =>
@@ -146,5 +149,17 @@ describe('GET /api/messages/:id — read receipts', () => {
       history.participants.find((p) => p.userId === THEM)?.lastReadAt,
     ).toEqual(THEY_READ_AT);
     expect(history.messages[0].status).toBe('read');
+  });
+
+  it("gives a former member their history but not the group's roster", async () => {
+    // Who is in the group now, and when each last read, is not theirs to see;
+    // their client also counted this list as the header's member count.
+    const history = await historyWhenTheirReceiptsAre(
+      true,
+      new Date('2026-09-24T12:00:00Z'),
+    );
+    expect(history.isMember).toBe(false);
+    expect(history.messages).toHaveLength(1);
+    expect(history.participants).toEqual([]);
   });
 });

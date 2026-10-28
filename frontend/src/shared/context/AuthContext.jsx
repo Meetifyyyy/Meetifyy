@@ -203,6 +203,15 @@ function resetClientStateForNewUser(queryClient) {
   import('../../features/messages/shared/utils/idbMessages')
     .then(({ idbClearMessages }) => idbClearMessages())
     .catch(() => {});
+  // Which messages were already counted as unread, and which membership
+  // events were already applied: the next account can share a group with
+  // this one, and must count its messages for itself.
+  import('../../features/messages/shared/utils/conversationList')
+    .then(({ resetConversationListMemory }) => resetConversationListMemory())
+    .catch(() => {});
+  import('../../features/messages/shared/utils/groupMembership')
+    .then(({ resetMembershipEventMemory }) => resetMembershipEventMemory())
+    .catch(() => {});
   // Unsent text the composers kept for this account, and photos picked for a
   // post that was never published (a separate database, which nothing used to
   // clear: the next person on the device could read them).

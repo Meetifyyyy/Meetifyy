@@ -7,7 +7,6 @@ const api = vi.hoisted(() => ({ getByUsername: vi.fn() }));
 vi.mock('@shared/api/apiClient', () => ({ usersApi: api }));
 vi.mock('@shared/lib/idb', () => ({ idbEpoch: () => 0, bumpIdbEpoch: () => {}, idbGet: vi.fn(async () => null), idbSet: vi.fn() }));
 vi.mock('@shared/context/AuthContext', () => ({ useAuth: () => ({ isLoggedIn: true }) }));
-vi.mock('../useIsVerified', () => ({ useIsVerified: () => true }));
 vi.mock('@shared/components/ui/CoverImage', () => ({ warmCover: vi.fn() }));
 
 import { useProfile } from '../useProfile';

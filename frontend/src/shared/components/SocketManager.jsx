@@ -9,10 +9,14 @@ import { parseConversationRoute } from '../utils/conversationUrl';
 import { messagesApi, getMediaUrl } from '../api/apiClient';
 import { getDefaultActivityCover } from '../utils/activityCover';
 import { useGlobalSocketSync } from '../hooks/useGlobalSocketSync';
-import { appendMessageToCache, matchesConversationId, getConversationAliases, updateConversationPreview, applyGroupRoleChange, isSystemMessage } from '../../features/messages/shared/utils/cacheUtils';
+import { appendMessageToCache, matchesConversationId, getConversationAliases, updateMessageInCache, applyGroupRoleChange, isSystemMessage } from '../../features/messages/shared/utils/cacheUtils';
 import { isInstantChat, isInstantMatchChatOpen } from '../utils/instantChatRouting';
 import { requestOpenInstantMatchChat } from '../../features/instant-match/context/InstantMatchContext';
 import { patchInviteNotification } from '@features/notifications/utils/inviteLifecycle';
+import { applyOwnMembership, applyOthersMembership } from '../../features/messages/shared/utils/groupMembership';
+import { applyMessageToConversationList, applyReadToConversationList, markUnsentInConversationList } from '../../features/messages/shared/utils/conversationList';
+import { applyOwnConversationPrefs, refreshJoinRequests } from '../../features/messages/shared/utils/conversationLiveState';
+import { messagePreviewText } from '../../features/messages/shared/utils/messagePreview';
 import { VERIFICATION_GATED_QUERY_KEYS } from '../utils/messagingEligibility';
 import { idbDelete } from '../lib/idb';
 import { applyAffiliationToUser, hasAffiliationField } from '../lib/campusAccess';
@@ -549,56 +553,36 @@ export default function SocketManager() {
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
     };
 
+    /**
+     * Someone joined or left a group — possibly the viewer.
+     *
+     * Applied through groupMembership.js, which orders every statement about
+     * a membership by the server's `membershipChangedAt`, so a repeated,
+     * replayed or late event cannot undo a newer one. For the viewer's own
+     * removal that module also drops the group's cached details, whose
+     * `myRole` is what used to keep the composer open until a restart.
+     *
+     * The refetches that follow are answered fresh: the server evicts every
+     * affected user's cached conversation list when membership changes.
+     */
     const handleGroupMemberChange = (payload) => {
       if (!payload) return;
-      const convId = payload.conversationId || payload.id || payload.publicId || payload.data?.conversationId;
-      const targetUserId = payload.targetUserId || payload.userId || payload.data?.targetUserId || payload.data?.userId;
+      const data = payload.data && typeof payload.data === 'object' ? payload.data : payload;
+      const ids = [data.conversationId, data.publicId, data.internalId, payload.id].filter(Boolean);
+      const targetUserId = data.targetUserId || data.userId;
+      if (ids.length === 0 || !targetUserId) return;
+      const removed = payload.eventType === 'remove';
+      const changedAt = data.membershipChangedAt || null;
       const isMe = String(targetUserId) === String(session?.user?.id);
-      const isRemoved = payload.eventType === 'remove' || payload.type === 'group:member_removed' || Boolean(payload.removedBy);
 
-      const convs = queryClient.getQueryData(['conversations']) || [];
-      const matchConv = convs.find(c => c.id === convId || c.publicId === convId || c.internalId === convId);
-      const isCurrentMember = matchConv ? (matchConv.isMember !== false && matchConv.myMembershipStatus !== 'KICKED') : true;
-
-      if (isCurrentMember) {
-        queryClient.invalidateQueries({ queryKey: ['groupDetails'] });
-        if (convId) {
-          queryClient.invalidateQueries({ queryKey: ['groupDetails', convId] });
-        }
+      if (isMe) {
+        // A leave is announced as a removal by the person themself.
+        const left = removed && data.removedBy != null && String(data.removedBy) === String(targetUserId);
+        applyOwnMembership(queryClient, { ids, isMember: !removed, changedAt, status: left ? 'LEFT' : undefined });
+      } else {
+        applyOthersMembership(queryClient, { ids, userId: targetUserId, joined: !removed, changedAt });
+        ids.forEach((id) => queryClient.invalidateQueries({ queryKey: ['groupDetails', id], exact: true }));
       }
-
-      queryClient.setQueryData(['conversations'], (old) => {
-        if (!Array.isArray(old)) return old;
-        return old.map((c) => {
-          const match = c.id === convId || c.publicId === convId || c.internalId === convId;
-          if (match) {
-            const count = c.memberCount || c.membersCount || 0;
-            if (isMe) {
-              return {
-                ...c,
-                isMember: !isRemoved,
-                myMembershipStatus: isRemoved ? 'KICKED' : 'MEMBER',
-                leftAt: isRemoved ? new Date().toISOString() : null,
-                memberCount: isRemoved ? Math.max(0, count - 1) : count + 1,
-                membersCount: isRemoved ? Math.max(0, count - 1) : count + 1,
-              };
-            } else {
-              // If current user is already removed from this group, freeze their member list & count
-              if (c.isMember === false || c.myMembershipStatus === 'KICKED') {
-                return c;
-              }
-              const newCount = isRemoved ? Math.max(0, count - 1) : count + 1;
-              return {
-                ...c,
-                memberCount: newCount,
-                membersCount: newCount,
-              };
-            }
-          }
-          return c;
-        });
-      });
-
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
       queryClient.invalidateQueries({ queryKey: ['group-chats'] });
     };
@@ -630,8 +614,6 @@ export default function SocketManager() {
               ...(incomingAvatar !== undefined ? { avatar: incomingAvatar, avatarKey: incomingAvatar } : {}),
               ...(payload.description !== undefined ? { description: payload.description } : {}),
               ...(payload.whoCanJoin !== undefined ? { whoCanJoin: payload.whoCanJoin } : {}),
-              ...(payload.visibility !== undefined ? { visibility: payload.visibility } : {}),
-              ...(payload.allowSharing !== undefined ? { allowSharing: payload.allowSharing } : {}),
               ...(payload.editGroupPermission !== undefined ? { editGroupPermission: payload.editGroupPermission } : {}),
               ...(payload.ownerId ? { ownerId: payload.ownerId } : {}),
             };
@@ -685,17 +667,13 @@ export default function SocketManager() {
         const incomingAvatar = payload.avatarKey !== undefined ? payload.avatarKey : payload.avatar;
         return old.map((c) => {
           if (c.id === convId || c.publicId === convId || c.internalId === convId) {
-            const lastMsg = payload.lastMessage;
             return {
               ...c,
               ...(payload.name ? { name: payload.name } : {}),
               ...(incomingAvatar !== undefined ? { avatar: incomingAvatar, avatarKey: incomingAvatar } : {}),
               ...(payload.description !== undefined ? { description: payload.description } : {}),
               ...(payload.whoCanJoin !== undefined ? { whoCanJoin: payload.whoCanJoin } : {}),
-              ...(payload.visibility !== undefined ? { visibility: payload.visibility } : {}),
-              ...(payload.allowSharing !== undefined ? { allowSharing: payload.allowSharing } : {}),
               ...(payload.editGroupPermission !== undefined ? { editGroupPermission: payload.editGroupPermission } : {}),
-              ...(lastMsg ? { lastMessage: lastMsg, updatedAt: lastMsg.createdAt } : {}),
               ...(payload.ownerId ? { ownerId: payload.ownerId } : {}),
               // Do NOT touch unreadCount here — it's managed by the message:new flow
             };
@@ -703,6 +681,19 @@ export default function SocketManager() {
           return c;
         });
       });
+
+      // The preview goes through the same forward-only rule as message:new:
+      // this event and message:new travel separately, and the one carrying the
+      // older message used to win if it landed second.
+      const lastMsg = payload.lastMessage;
+      if (lastMsg && convId) {
+        applyMessageToConversationList(queryClient, {
+          ...lastMsg,
+          conversationId: convId,
+          publicId: payload.publicId,
+          internalId: payload.internalId,
+        });
+      }
     };
 
 
@@ -766,11 +757,19 @@ export default function SocketManager() {
 
           return old;
         });
+        // Replies elsewhere in the thread that quote it lose the quote too.
+        if (payload.state === 'UNSENT' || payload.isUnsent) {
+          updateMessageInCache(queryClient, convKey, msgId, { state: 'UNSENT', isUnsent: true });
+        }
       });
 
-      const targetConvId = payload.conversationId || payload.publicId || payload.internalId;
-      if (targetConvId) {
-        updateConversationPreview(queryClient, targetConvId, payload.text || 'This message was unsent');
+      // The row shows "unsent" only if this was the message it was showing.
+      if (payload.state === 'UNSENT' || payload.isUnsent) {
+        markUnsentInConversationList(queryClient, {
+          ids: uniqueKeys,
+          messageId: msgId,
+          createdAt: payload.createdAt,
+        });
       }
     };
 
@@ -855,46 +854,24 @@ export default function SocketManager() {
         }
       }
 
-      // 1. Instant update of ['conversations'] cache so unread counts, latest snippet, and timestamps update immediately.
-      //    For messages sent by the current user (this device or another device): update preview + timestamp, but
-      //    never increment unread (sender has implicitly "read" by sending).
-      queryClient.setQueryData(['conversations'], (oldConvs) => {
-        if (!Array.isArray(oldConvs)) return oldConvs;
-
-        let found = false;
-        const updatedConvs = oldConvs.map((c) => {
-          const match =
-            matchesConversationId(c, convId) ||
-            (message.conversationId && matchesConversationId(c, message.conversationId)) ||
-            (message.publicId && matchesConversationId(c, message.publicId));
-
-          if (match) {
-            found = true;
-            const currentUnread = c.unreadCount || c.unread || 0;
-            const textSnippet = message.text || (message.mediaType === 'image' ? 'Photo' : message.mediaType === 'video' ? 'Video' : message.mediaUrl ? 'Media' : '');
-            // Own-sent messages: keep unread at current value (sender read it by sending).
-            // Other users' messages: increment unless currently viewing that chat.
-            const newUnread = isSenderSelf ? currentUnread : (isViewingCurrentChat ? currentUnread : currentUnread + 1);
-            return {
-              ...c,
-              lastMessage: message,
-              lastMsg: textSnippet,
-              updatedAt: message.createdAt || new Date().toISOString(),
-              timestamp: new Date(message.createdAt || Date.now()).getTime(),
-              unreadCount: newUnread,
-              unread: newUnread,
-            };
-          }
-          return c;
-        });
-
-        if (!found) {
-          queryClient.invalidateQueries({ queryKey: ['conversations'] });
-          return oldConvs;
-        }
-
-        return [...updatedConvs].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      // 1. The conversation's list row: preview, time and unread count, at
+      //    once (conversationList.js). Forward-only and counted once per
+      //    message, so a repeated, replayed or late event cannot double the
+      //    count or put an older message back on the row. Never counted for
+      //    the viewer's own messages (this device or another), or while they
+      //    are looking at the chat; a chat open in a hidden tab still counts,
+      //    as it does on the server until it is read.
+      const lookingAtIt = isViewingCurrentChat
+        && (typeof document === 'undefined' || document.visibilityState === 'visible');
+      // System lines ("X joined the group") are not counted: the server does
+      // not count them either, so counting here put a badge up that the next
+      // refetch took away.
+      const outcome = applyMessageToConversationList(queryClient, message, {
+        countUnread: !isSenderSelf && !lookingAtIt && !isSystemMessage(message),
       });
+      if (outcome === 'missing') {
+        queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      }
 
       // 2. Instant update of ['messages', key] query cache for all aliases.
       //    appendMessageToCache is idempotent (dedupes by id/clientId) so if this tab already
@@ -931,7 +908,7 @@ export default function SocketManager() {
           const isSystem = isSystemMessage(message);
           const groupName = targetConv?.name || 'Group';
           const groupAvatar = targetConv?.avatar || '';
-          const textSnippet = message.text || (message.mediaType === 'image' ? 'Sent a photo' : message.mediaType === 'video' ? 'Sent a video' : message.mediaUrl ? 'Sent media' : 'New message');
+          const textSnippet = messagePreviewText(message) || 'New message';
 
           toast.custom((t) => (
             <InstantNotificationCard
@@ -1082,7 +1059,25 @@ export default function SocketManager() {
       void Promise.resolve(refreshCurrentUserRef.current?.()).catch(() => {});
     };
 
+    // Read on another device (or another tab): the chat's count clears here
+    // too. `conversation:read` is sent to all of the reader's own devices by
+    // the server; the room-wide `conversation:seen` with this user as the
+    // reader covers a server from before that event. Both are idempotent.
+    const handleConversationRead = (payload) => {
+      if (!payload) return;
+      const ids = [payload.conversationId, payload.publicId, payload.internalId, payload.realConvId].filter(Boolean);
+      if (applyReadToConversationList(queryClient, { ids, readAt: payload.readAt || payload.lastReadAt })) {
+        queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      }
+    };
+    const handleOwnConversationSeen = (payload) => {
+      if (!payload || String(payload.readerId) !== String(session?.user?.id)) return;
+      handleConversationRead(payload);
+    };
+
     socket.on('notification:new', handleNewNotification);
+    socket.on('conversation:read', handleConversationRead);
+    socket.on('conversation:seen', handleOwnConversationSeen);
     socket.on('notification:updated', handleNotificationUpdated);
     socket.on('notification:count', handleNotificationCount);
     socket.on('presence:update', handlePresenceUpdate);
@@ -1103,12 +1098,19 @@ export default function SocketManager() {
     const handleGroupMemberRemoved = (data) =>
       handleGroupMemberChange({ ...(data || {}), eventType: 'remove' });
 
+    const handleOwnPrefs = (payload) => applyOwnConversationPrefs(queryClient, payload);
+    const handleJoinRequests = (payload) => refreshJoinRequests(queryClient, payload);
+
     socket.on('group:member_added', handleGroupMemberAdded);
     socket.on('group:member_removed', handleGroupMemberRemoved);
     socket.on('group:role_changed', handleGroupRoleChanged);
+    socket.on('conversation:prefs', handleOwnPrefs);
+    socket.on('group:join_requests', handleJoinRequests);
 
     return () => {
       socket.off('notification:new', handleNewNotification);
+      socket.off('conversation:read', handleConversationRead);
+      socket.off('conversation:seen', handleOwnConversationSeen);
       socket.off('notification:updated', handleNotificationUpdated);
       socket.off('notification:count', handleNotificationCount);
       socket.off('presence:update', handlePresenceUpdate);
@@ -1122,6 +1124,8 @@ export default function SocketManager() {
       socket.off('group:member_added', handleGroupMemberAdded);
       socket.off('group:member_removed', handleGroupMemberRemoved);
       socket.off('group:role_changed', handleGroupRoleChanged);
+      socket.off('conversation:prefs', handleOwnPrefs);
+      socket.off('group:join_requests', handleJoinRequests);
     };
   }, [socket, queryClient, navigate, session?.user?.id]);
 

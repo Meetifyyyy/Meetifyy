@@ -6,7 +6,6 @@ import { reauthApi } from '@shared/api/apiClient';
 import { describeReauthError } from '@shared/lib/campusAccess';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
-import { useSheetDrag } from '@shared/hooks/useSheetDrag';
 import modal from '@shared/components/modals/ConfirmModal.module.css';
 import styles from './AccountEmail.module.css';
 
@@ -49,9 +48,15 @@ export default function ReauthModal({ visible, purpose, title = "Confirm it's yo
   const [busy, setBusy] = useState(false);
   const cooldown = useResendCountdown(challenge?.resendAvailableAt);
 
-  useOverlayBack(visible, onCancel);
+  // A centred dialog on every screen size, not a bottom sheet: it holds a
+  // password field, and a sheet that could be dragged away (or slid under the
+  // keyboard) mid-check is the wrong shape for that. While a check is running
+  // nothing dismisses it — not Back (which stays on this dialog), not the
+  // backdrop — so a response cannot land on a screen that has moved on.
+  const busyRef = useRef(false);
+  busyRef.current = busy;
+  useOverlayBack(visible, onCancel, { onBack: () => busyRef.current });
   useScrollLock(visible);
-  const sheetRef = useSheetDrag(onCancel, { enabled: visible && !busy });
 
   useEffect(() => {
     live.current = true;
@@ -290,21 +295,19 @@ export default function ReauthModal({ visible, purpose, title = "Confirm it's yo
 
   return createPortal(
     <div
-      className={modal.confirmOverlay}
+      className={`${modal.confirmOverlay} ${modal.centered}`}
       ref={overlayRef}
       onClick={(e) => {
         if (e.target === overlayRef.current && !busy) onCancel?.();
       }}
     >
       <div
-        ref={sheetRef}
         className={`${modal.confirmModal} ${styles.reauthModal}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="reauth-title"
         aria-describedby="reauth-desc"
       >
-        <div className="sheet-handle" data-sheet-handle aria-hidden="true" />
         <div className={`${modal.confirmIcon} ${modal.confirmIconPrimary}`}>
           <ShieldCheck size={24} strokeWidth={2} />
         </div>

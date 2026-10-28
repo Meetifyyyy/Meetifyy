@@ -1,5 +1,6 @@
 package app.meetifyy;
 
+import android.content.Intent;
 import android.content.res.Configuration;
 import android.graphics.drawable.ColorDrawable;
 import android.os.Bundle;
@@ -8,6 +9,8 @@ import android.os.Looper;
 import android.os.Process;
 import android.os.SystemClock;
 import android.util.Log;
+import android.view.ViewGroup;
+import android.webkit.RenderProcessGoneDetail;
 import android.webkit.WebView;
 import android.view.Choreographer;
 import android.view.View;
@@ -17,6 +20,9 @@ import androidx.core.splashscreen.SplashScreen;
 import androidx.core.splashscreen.SplashScreenViewProvider;
 
 import com.getcapacitor.BridgeActivity;
+import com.getcapacitor.WebViewListener;
+
+import java.util.ArrayDeque;
 
 /**
  * Main Android entry point for Meetifyy.
@@ -54,9 +60,30 @@ public class MainActivity extends BridgeActivity {
     private String pendingFullyDrawn = null;
     /** The splash, handed over to this window and held until the page is ready (see onCreate). */
     private SplashScreenViewProvider heldSplash = null;
-    private boolean splashExitStarted = false;
+    /**
+     * The splash whose exit has started (exitSplashOncePainted). Per splash, not
+     * once per activity: the system shows one again on a warm return (see the
+     * exit listener in onCreate), and each must be taken off the page.
+     */
+    private SplashScreenViewProvider exitingSplash = null;
     private long visualStateRequestId = 0;
     private final Handler handler = new Handler(Looper.getMainLooper());
+
+    /*
+     * Recovering from a lost WebView renderer (see onRendererLost). Static: the
+     * recovery recreates this activity, and the new instance reads them.
+     */
+    private static final String WEBVIEW_TAG = "MeetifyyWebView";
+    /** A renderer lost this many times within RENDERER_LOSS_WINDOW_MS is not recovered again. */
+    private static final int MAX_RENDERER_RECOVERIES = 2;
+    private static final long RENDERER_LOSS_WINDOW_MS = 60_000L;
+    /** How long the recreated activity has to pick up the recovery (see load). */
+    private static final long RECOVERY_TTL_MS = 10_000L;
+    private static final ArrayDeque<Long> rendererLosses = new ArrayDeque<>();
+    /** When the renderer was last lost and the activity recreated for it; 0 once picked up. */
+    private static long recoveryStartedAt = 0;
+    /** The page to reopen in the recreated activity, or null for the start page. */
+    private static String restoreUrl = null;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -76,6 +103,16 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(MediaFullscreenPlugin.class);
 
         super.onCreate(savedInstanceState);
+
+        // 3b. Survive the WebView's renderer being lost (see onRendererLost).
+        if (getBridge() != null) {
+            getBridge().addWebViewListener(new WebViewListener() {
+                @Override
+                public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+                    return onRendererLost(view, detail);
+                }
+            });
+        }
 
         // 4. Apply system bars and decor background immediately
         SystemUiHelper.applySystemBars(this, resolvedTheme.isDark, null);
@@ -125,6 +162,15 @@ public class MainActivity extends BridgeActivity {
                 }
                 return;
             }
+            /*
+             * Not only at launch. On Android 12+ the system shows the splash
+             * again on a WARM return when it has no snapshot of the app to show
+             * (seen on the I2208 coming back from Chrome through Recents), and
+             * hands that one over here too. It was held forever, because the
+             * exit ran once per activity: a black (or white) screen over the
+             * live page that swallowed every tap. The page is already painted
+             * then, so it is revealed as soon as the WebView has drawn.
+             */
             heldSplash = provider;
             pinSplashIcon(provider);
             if (isDebuggable()) Log.i("MeetifyyLaunch", "splash handed over at +" + sinceProcessStart() + "ms");
@@ -355,8 +401,8 @@ public class MainActivity extends BridgeActivity {
      * on for long.
      */
     private void exitSplashOncePainted(SplashScreenViewProvider provider) {
-        if (splashExitStarted) return;
-        splashExitStarted = true;
+        if (exitingSplash == provider) return;
+        exitingSplash = provider;
         final WebView webView = getBridge() != null ? getBridge().getWebView() : null;
         if (webView == null) {
             fadeSplashOut(provider);
@@ -410,9 +456,12 @@ public class MainActivity extends BridgeActivity {
             return;
         }
         final View splashView = provider.getView();
-        notifySplashExiting();
+        // The launch's splash tells the page (its opening screen waits for it);
+        // a later one, on a warm return, only has to leave.
+        final boolean launch = !splashRevealing;
+        if (launch) notifySplashExiting();
         splashRevealing = true;
-        if (isDebuggable()) Log.i("MeetifyyLaunch", "splash reveal starts at +" + sinceProcessStart() + "ms");
+        if (isDebuggable()) Log.i("MeetifyyLaunch", (launch ? "splash" : "warm-start splash") + " reveal starts at +" + sinceProcessStart() + "ms");
         if (pendingFullyDrawn != null) {
             final String what = pendingFullyDrawn;
             pendingFullyDrawn = null;
@@ -420,7 +469,7 @@ public class MainActivity extends BridgeActivity {
         }
         if (splashView == null) {
             provider.remove();
-            notifySplashExited();
+            if (launch) notifySplashExited();
             return;
         }
         View icon = provider.getIconView();
@@ -443,7 +492,7 @@ public class MainActivity extends BridgeActivity {
             .withLayer()
             .withEndAction(() -> {
                 provider.remove();
-                notifySplashExited();
+                if (launch) notifySplashExited();
             })
             .start();
     }
@@ -599,6 +648,124 @@ public class MainActivity extends BridgeActivity {
         // No-op when unchanged (the common case: it remembers what it last
         // handed the system), so this costs a preference read per onStop.
         SystemUiHelper.syncSystemNightMode(this, chosen ? theme : "system");
+    }
+
+    /**
+     * The WebView's renderer process is gone, and with it the page.
+     *
+     * Nothing handled this before, and WebView's default is to end the app:
+     * "Render process's crash wasn't handled by all associated webviews,
+     * triggering application crash". The common case is not a bug at all: while
+     * the user is in another app (Chrome, opening a link), the system reclaims
+     * the renderer for memory, the app dies with it, and the way back is a cold
+     * start that loses the screen they were on.
+     *
+     * A WebView whose renderer is gone cannot be used again, and Capacitor's
+     * bridge cannot be given a new one, so the activity is recreated: a new
+     * bridge, a new WebView, the page loaded again. It happens at once, in the
+     * background if that is where the app is, so the page is ready when the
+     * user returns.
+     *
+     * Where the system reclaimed the renderer, the page reopens where it was
+     * (same origin only). Where the renderer CRASHED, it reopens at the start:
+     * reloading the page that crashed it can crash it again. Repeated losses
+     * are not recovered forever: past MAX_RENDERER_RECOVERIES within
+     * RENDERER_LOSS_WINDOW_MS the default applies and the process ends.
+     *
+     * @return true when the loss is handled here
+     */
+    private boolean onRendererLost(WebView view, RenderProcessGoneDetail detail) {
+        // Only the WebView on screen is recovered (and counted). Any other has
+        // nothing to show and is only put away.
+        final WebView current = getBridge() != null ? getBridge().getWebView() : null;
+        if (view != current || isFinishing() || isDestroyed()) {
+            discardWebView(view);
+            return true;
+        }
+        final long now = SystemClock.uptimeMillis();
+        while (!rendererLosses.isEmpty() && now - rendererLosses.peekFirst() > RENDERER_LOSS_WINDOW_MS) {
+            rendererLosses.pollFirst();
+        }
+        final boolean crashed = detail != null && detail.didCrash();
+        if (rendererLosses.size() >= MAX_RENDERER_RECOVERIES) {
+            Log.w(WEBVIEW_TAG, "renderer lost " + (rendererLosses.size() + 1) + " times within a minute; not recovering");
+            return false;
+        }
+        rendererLosses.addLast(now);
+        Log.w(WEBVIEW_TAG, "renderer " + (crashed ? "crashed" : "reclaimed by the system") + "; recreating the page");
+
+        // A second loss in the window reopens at the start too, whatever caused it.
+        restoreUrl = !crashed && rendererLosses.size() == 1 ? sameOriginUrl(view) : null;
+        recoveryStartedAt = now;
+        if (isDebuggable()) Log.i(WEBVIEW_TAG, restoreUrl != null ? "reopening the page it was on" : "reopening at the start");
+
+        discardWebView(view);
+        handler.removeCallbacksAndMessages(null);
+        recreate();
+        return true;
+    }
+
+    /**
+     * Out of the window and destroyed, here and now (as Android's own sample
+     * for this callback does). Not left to Capacitor: it destroys its WebView
+     * when the activity's window detaches, and recreate() keeps the window, so
+     * the dead WebView outlived its activity. It then shared the next renderer
+     * with the new one and reported that renderer's loss a second time
+     * (measured on the I2208: two reports 6 ms apart, the second of which
+     * discarded the page to reopen). A destroyed WebView ignores later calls,
+     * so the old bridge's plugins can still touch it while they shut down.
+     */
+    private static void discardWebView(WebView view) {
+        if (view == null) return;
+        final ViewGroup parent = view.getParent() instanceof ViewGroup ? (ViewGroup) view.getParent() : null;
+        if (parent != null) parent.removeView(view);
+        view.destroy();
+    }
+
+    /**
+     * The page on screen when the renderer went: the committed entry of the
+     * WebView's history (the app's own routes are entries too), not getUrl(),
+     * which reports a navigation still in progress. Only if it is the app's own.
+     */
+    private String sameOriginUrl(WebView view) {
+        try {
+            final android.webkit.WebHistoryItem item = view.copyBackForwardList().getCurrentItem();
+            final String url = item != null ? item.getUrl() : null;
+            final String app = getBridge() != null ? getBridge().getAppUrl() : null;
+            if (url == null || app == null) return null;
+            final android.net.Uri page = android.net.Uri.parse(url);
+            final android.net.Uri base = android.net.Uri.parse(app);
+            final boolean same = page.getScheme() != null && page.getScheme().equals(base.getScheme())
+                && page.getAuthority() != null && page.getAuthority().equals(base.getAuthority());
+            return same ? url : null;
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    /**
+     * The activity recreated after a renderer loss (onRendererLost).
+     *
+     * Its intent is still the one that first launched it, and the bridge reads
+     * that intent and replays it to every plugin as it loads: a deep link
+     * opened an hour ago, or a notification tap, would fire again and take the
+     * user away from where they were. It starts from a plain launch instead.
+     * Then, once the bridge has started loading the start page, the page the
+     * user was on replaces it, before anything of the first has been fetched.
+     */
+    @Override
+    protected void load() {
+        final boolean recovering = recoveryStartedAt != 0
+            && SystemClock.uptimeMillis() - recoveryStartedAt <= RECOVERY_TTL_MS;
+        final String url = recovering ? restoreUrl : null;
+        recoveryStartedAt = 0;
+        restoreUrl = null;
+        if (recovering) {
+            setIntent(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setClass(this, MainActivity.class));
+        }
+        super.load();
+        final WebView webView = getBridge() != null ? getBridge().getWebView() : null;
+        if (url != null && webView != null) webView.loadUrl(url);
     }
 
     @Override

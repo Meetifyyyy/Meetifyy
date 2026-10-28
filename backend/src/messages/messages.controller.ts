@@ -10,8 +10,8 @@ import {
   Query,
   Delete,
   BadRequestException,
+  Optional,
 } from '@nestjs/common';
-import { inviteSummary } from './core/invite-data';
 import { requestedUserIds } from './core/requested-user-ids';
 import type { AuthenticatedRequest } from '../common/types/authenticated-request';
 import { MessagesService } from './messages.service';
@@ -21,9 +21,20 @@ import { DomainEventService } from '../events/domain-event.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationFactory } from '../notifications/notification.factory';
 import { SendMessageDto } from './core/dto/send-message.dto';
-import { emitMessageNew } from './message-alert.util';
+import { emitMessageNew, publicMessage } from './message-alert.util';
 import { UpdateGroupSettingsDto } from './dto/update-group-settings.dto';
 import { Idempotent } from '../common/decorators/idempotent.decorator';
+import { detach } from '../common/utils/detach.util';
+import { announceUnsent } from './unsend-announce.util';
+import {
+  announceJoinRequested,
+  announceJoined,
+  announceRequestApproved,
+  announceRequestDeclined,
+  GroupAnnouncer,
+} from './group-join-announce.util';
+import { previewOf } from './core/message-preview';
+import { PushDispatcherService } from '../push/push-dispatcher.service';
 
 @Controller('api/messages')
 export class MessagesController {
@@ -32,6 +43,8 @@ export class MessagesController {
     private readonly domainEventService: DomainEventService,
     private readonly notificationsService: NotificationsService,
     private readonly notificationFactory: NotificationFactory,
+    // Optional so a build without push (and tests) construct without it.
+    @Optional() private readonly pushDispatcher?: PushDispatcherService,
   ) {}
 
   @Delete('msg/:messageId/for-me')
@@ -52,37 +65,9 @@ export class MessagesController {
   ) {
     const userId = req.user?.id;
     const result = await this.messagesService.unsendMessage(messageId, userId);
-    if (result.success && result.conversationId) {
-      const pubId = result.publicId || result.conversationId;
-      const participantIds = result.participantIds || [];
-      setImmediate(() => {
-        void this.domainEventService.emit(
-          'message:updated',
-          {
-            id: messageId,
-            conversationId: pubId,
-            publicId: pubId,
-            internalId: result.conversationId,
-            state: 'UNSENT',
-            text: 'This message was unsent',
-            mediaUrl: null,
-            mediaType: null,
-            inviteData: null,
-            replyTo: null,
-          },
-          participantIds,
-        );
-        void this.domainEventService.emit(
-          'conversation:updated',
-          {
-            conversationId: pubId,
-            lastMessageText: 'This message was unsent',
-            updatedAt: new Date().toISOString(),
-          },
-          participantIds,
-        );
-      });
-    }
+    // Only a change is announced: unsending twice is answered with success
+    // (`changed: false`) and must not send every device the event again.
+    announceUnsent(this.domainEventService, result);
     return result;
   }
 
@@ -144,15 +129,8 @@ export class MessagesController {
             chatType: message.chatType || 'normal',
             isInstantMatch: Boolean(message.isInstantMatch),
             lastMessage: {
-              text:
-                message.text ||
-                (message.mediaUrl
-                  ? message.mediaType === 'image'
-                    ? 'Photo'
-                    : message.mediaType === 'video'
-                      ? 'Video'
-                      : 'Audio'
-                  : ''),
+              id: message.id,
+              text: previewOf(message),
               createdAt: message.createdAt,
               senderId: userId,
             },
@@ -217,6 +195,13 @@ export class MessagesController {
       eligibleOnly === 'true',
       searchTerm,
     );
+  }
+
+  // Declared before `:conversationId`, which would otherwise take the path.
+  @Get('unread-summary')
+  @UseGuards(JwtGuard)
+  getUnreadSummary(@Req() req: AuthenticatedRequest) {
+    return this.messagesService.getUnreadSummary(req.user.id);
   }
 
   @Get(':conversationId')
@@ -297,11 +282,8 @@ export class MessagesController {
         chatType: message.chatType || 'normal',
         isInstantMatch: Boolean(message.isInstantMatch),
         lastMessage: {
-          text:
-            message.text ||
-            (message.inviteData
-              ? inviteSummary(message.inviteData) || 'Group invite'
-              : ''),
+          id: message.id,
+          text: previewOf(message),
           createdAt: message.createdAt,
           senderId: userId,
         },
@@ -337,7 +319,7 @@ export class MessagesController {
       }
     });
 
-    return message;
+    return publicMessage(message);
   }
 
   @Post()
@@ -474,6 +456,20 @@ export class MessagesController {
     }
   }
 
+  /** What the join and request announcements need from this controller. */
+  private get announcer(): GroupAnnouncer {
+    return {
+      events: this.domainEventService,
+      push: this.pushDispatcher,
+      participantIds: (id) =>
+        this.messagesService.getConversationParticipantIds(id),
+      reviewerIds: (id) => this.messagesService.getGroupReviewerIds(id),
+      userHandle: (id) => this.messagesService.getUserHandle(id),
+      systemLine: (id, actorId, text) =>
+        this.broadcastSystemMessage(id, actorId, text),
+    };
+  }
+
   private async broadcastSystemMessage(
     conversationId: string,
     senderId: string,
@@ -597,10 +593,17 @@ export class MessagesController {
       `${actorHandle} added ${targetHandle} to the group`,
     );
 
+    const memberIds =
+      await this.messagesService.getConversationParticipantIds(conversationId);
     void this.domainEventService.emit(
       'group:member_added',
-      { conversationId, userId: targetUserId },
-      [targetUserId],
+      {
+        conversationId,
+        internalId: result.internalId,
+        userId: targetUserId,
+        membershipChangedAt: result.joinedAt,
+      },
+      [...new Set([targetUserId, ...memberIds])],
     );
     void this.domainEventService.emit(
       'conversation:updated',
@@ -625,48 +628,25 @@ export class MessagesController {
       userId,
       targetUserId,
     );
+    // A repeated request: already out, already announced.
+    if (!result.changed) return result;
 
-    const [targetHandle, actorHandle] = await Promise.all([
-      this.messagesService.getUserHandle(targetUserId),
-      this.messagesService.getUserHandle(userId),
-    ]);
-    const text = `${actorHandle} removed ${targetHandle} from the group`;
-    const message = await this.messagesService.createSystemMessage(
-      conversationId,
-      userId,
-      text,
-    );
+    // The removed member hears about it on their devices even with the app
+    // closed (re-checked at send time: a re-add before then cancels it).
+    // Removal only: someone who leaves knows.
+    this.pushDispatcher?.enqueueForGroupRemoval({
+      recipientId: targetUserId,
+      conversationId: result.internalId,
+      removedAt: result.leftAt,
+    });
 
-    void this.domainEventService.emit(
-      'group:member_removed',
-      {
-        conversationId,
-        targetUserId,
-        removedBy: userId,
-        message,
-      },
-      [targetUserId],
-    );
-    void this.domainEventService.emit('message:new', message, [targetUserId]);
-
-    const remainingParticipantIds =
-      await this.messagesService.getConversationParticipantIds(conversationId);
-    const others = remainingParticipantIds.filter(
-      (pId) => pId !== targetUserId,
-    );
-    if (others.length > 0) {
-      void this.domainEventService.emit('message:new', message, others);
-      void this.domainEventService.emit(
-        'group:member_removed',
-        {
-          conversationId,
-          targetUserId,
-          removedBy: userId,
-          message,
-        },
-        others,
-      );
-    }
+    this.announceDeparture(result, targetUserId, userId, async () => {
+      const [targetHandle, actorHandle] = await Promise.all([
+        this.messagesService.getUserHandle(targetUserId),
+        this.messagesService.getUserHandle(userId),
+      ]);
+      return `${actorHandle} removed ${targetHandle} from the group`;
+    });
 
     return result;
   }
@@ -683,44 +663,66 @@ export class MessagesController {
       conversationId,
       userId,
     );
+    // Already gone: a double tap must not post "X left the group" twice.
+    if (!result.changed || !result.internalId || !result.leftAt) return result;
 
-    const actorHandle = await this.messagesService.getUserHandle(userId);
-    const text = `${actorHandle} left the group`;
-    const message = await this.messagesService.createSystemMessage(
-      conversationId,
-      userId,
-      text,
-    );
-
-    void this.domainEventService.emit(
-      'group:member_removed',
+    this.announceDeparture(
       {
-        conversationId,
-        targetUserId: userId,
-        removedBy: userId,
-        message,
+        internalId: result.internalId,
+        publicId: result.publicId || result.internalId,
+        leftAt: result.leftAt,
       },
-      [userId],
+      userId,
+      userId,
+      async () =>
+        `${await this.messagesService.getUserHandle(userId)} left the group`,
     );
-
-    const remainingParticipantIds =
-      await this.messagesService.getConversationParticipantIds(conversationId);
-    const others = remainingParticipantIds.filter((pId) => pId !== userId);
-    if (others.length > 0) {
-      void this.domainEventService.emit('message:new', message, others);
-      void this.domainEventService.emit(
-        'group:member_removed',
-        {
-          conversationId,
-          targetUserId: userId,
-          removedBy: userId,
-          message,
-        },
-        others,
-      );
-    }
 
     return result;
+  }
+
+  /**
+   * The same announcement as GroupChatsController's, after the response: the
+   * membership event first, on its own, to the departed user's personal room
+   * and the members who remain; then the system line, best effort. The change
+   * itself has committed, so the caller does not wait for any of this.
+   */
+  private announceDeparture(
+    result: { internalId: string; publicId: string; leftAt: string },
+    targetUserId: string,
+    actorId: string,
+    text: () => Promise<string>,
+  ): void {
+    setImmediate(() =>
+      detach('group member removed fan-out', async () => {
+        const remainingIds = (
+          await this.messagesService.getConversationParticipantIds(
+            result.internalId,
+          )
+        ).filter((id) => id !== targetUserId);
+        void this.domainEventService.emit(
+          'group:member_removed',
+          {
+            conversationId: result.publicId,
+            publicId: result.publicId,
+            internalId: result.internalId,
+            targetUserId,
+            removedBy: actorId,
+            membershipChangedAt: result.leftAt,
+          },
+          [targetUserId, ...remainingIds],
+        );
+        const message = await this.messagesService.createSystemMessage(
+          result.internalId,
+          actorId,
+          await text(),
+        );
+        void this.domainEventService.emit('message:new', message, [
+          targetUserId,
+          ...remainingIds,
+        ]);
+      }),
+    );
   }
 
   @Patch(':id/settings')
@@ -869,21 +871,15 @@ export class MessagesController {
     @Param('targetUserId') targetUserId: string,
   ) {
     const userId = req.user?.id;
-    const targetHandle = await this.messagesService.getUserHandle(targetUserId);
+    // The service also drops every affected cache before it returns.
     const result = await this.messagesService.acceptGroupJoinRequest(
       conversationId,
       userId,
       targetUserId,
     );
-    const actorHandle = await this.messagesService.getUserHandle(userId);
-    const text = `${actorHandle} approved ${targetHandle}'s request to join`;
-    await this.broadcastSystemMessage(conversationId, userId, text);
-
-    void this.domainEventService.emit(
-      'group:member_added',
-      { conversationId, userId: targetUserId },
-      [targetUserId],
-    );
+    if (result.changed) {
+      announceRequestApproved(this.announcer, result, userId, targetUserId);
+    }
     return result;
   }
 
@@ -895,11 +891,14 @@ export class MessagesController {
     @Param('targetUserId') targetUserId: string,
   ) {
     const userId = req.user?.id;
-    return this.messagesService.declineGroupJoinRequest(
+    const result = await this.messagesService.declineGroupJoinRequest(
       conversationId,
       userId,
       targetUserId,
     );
+    if (result.changed)
+      announceRequestDeclined(this.announcer, result.internalId);
+    return result;
   }
 
   @Post(':id/join')
@@ -914,13 +913,18 @@ export class MessagesController {
       conversationId,
       userId,
     );
-    if (result.status === 'JOINED' && !result.alreadyMember) {
-      const userHandle = await this.messagesService.getUserHandle(userId);
-      await this.broadcastSystemMessage(
-        conversationId,
-        userId,
-        `${userHandle} joined the group`,
-      );
+    if (result.status === 'PENDING') {
+      if (result.newRequest)
+        announceJoinRequested(this.announcer, result, userId);
+      return result;
+    }
+    if (!result.alreadyMember) {
+      // Before replying, so the joiner's list refetch is not answered from a
+      // cache that predates the join; the announcements after it.
+      await this.messagesService
+        .evictMembershipCaches(result.internalId, [userId])
+        .catch(() => {});
+      announceJoined(this.announcer, result, userId);
     }
     return result;
   }

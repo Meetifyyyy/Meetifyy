@@ -6,6 +6,8 @@ import { config } from '../config';
 import { RedisService } from '../redis/redis.service';
 import { categoryForType } from './push-payload';
 import {
+  GroupJoinRequestPushJob,
+  GroupRemovedPushJob,
   MessagePushJob,
   NotificationPushJob,
   PUSH_JOB,
@@ -110,9 +112,18 @@ export class PushDispatcherService {
   }
 
   /**
-   * One push per recipient and conversation per burst. The job id makes every
-   * message in the debounce window collapse into the job already waiting; the
-   * worker then reads the recipient's unread count for the text.
+   * The first message of a burst is pushed at once; the rest of the burst
+   * collapses into one push per MESSAGE_DEBOUNCE_MS window.
+   *
+   * Every message push used to wait out the debounce, so even a single
+   * message reached the phone at least three seconds late. And the burst was
+   * collapsed onto one job id, which BullMQ also refuses while that job is
+   * RUNNING, so a message landing during the send was never pushed at all.
+   * Now a burst opens with an immediate job (Redis SET NX marks the window),
+   * and later messages join a delayed job named for their window, so a new
+   * window always gets a job of its own. The worker reads the unread count at
+   * send time, and its per-device dedupe key includes that count, so a delayed
+   * job with nothing new since the immediate one sends nothing.
    */
   enqueueForMessage(job: MessagePushJob | null | undefined): void {
     try {
@@ -123,21 +134,105 @@ export class PushDispatcherService {
         job.recipientId === job.senderId
       )
         return;
+      void this.enqueueMessage(job).catch((err) =>
+        this.logger.warn(`push enqueue failed: ${String(err)}`),
+      );
+    } catch (err) {
+      this.logger.warn(`push enqueue threw: ${String(err)}`);
+    }
+  }
+
+  /**
+   * "You were removed from <group>", for a member an admin removed (not for
+   * someone who left). After the removal has committed; never awaited and
+   * never throws, like the others. One job per removal: the id carries the
+   * removal's time, so a retried request cannot push twice and a later
+   * removal after a re-add pushes again.
+   */
+  enqueueForGroupRemoval(job: GroupRemovedPushJob | null | undefined): void {
+    try {
+      if (!job || !this.active) return;
+      if (!job.recipientId || !job.conversationId || !job.removedAt) return;
       void this.queue
-        .add(PUSH_JOB.message, job, {
-          jobId: `m_${job.recipientId}_${job.conversationId}`,
-          delay: MESSAGE_DEBOUNCE_MS,
+        .add(PUSH_JOB.groupRemoved, job, {
+          jobId: `gr_${job.recipientId}_${job.conversationId}_${new Date(job.removedAt).getTime()}`,
           attempts: 5,
           backoff: { type: 'exponential', delay: 2_000 },
-          // Removed either way so the next burst can enqueue under the same id.
-          removeOnComplete: true,
-          removeOnFail: true,
+          removeOnComplete: { age: 3_600, count: 1_000 },
+          removeOnFail: { age: 24 * 3_600, count: 1_000 },
         })
         .catch((err) =>
           this.logger.warn(`push enqueue failed: ${String(err)}`),
         );
     } catch (err) {
       this.logger.warn(`push enqueue threw: ${String(err)}`);
+    }
+  }
+
+  /**
+   * A new request to join, for one of the group's owner and admins. The
+   * controller enqueues only a request the admins have not seen (a re-tap
+   * renews it silently); the id, per reviewer, group and requester in a
+   * ten-minute window, absorbs two submits racing past that check, while the
+   * same person asking again later (after a decline) pushes again.
+   */
+  enqueueForGroupJoinRequest(
+    job: GroupJoinRequestPushJob | null | undefined,
+  ): void {
+    try {
+      if (!job || !this.active) return;
+      if (!job.recipientId || !job.conversationId || !job.requesterId) return;
+      void this.queue
+        .add(PUSH_JOB.groupJoinRequest, job, {
+          jobId: `jr_${job.recipientId}_${job.conversationId}_${job.requesterId}_${Math.floor(Date.now() / 600_000)}`,
+          attempts: 5,
+          backoff: { type: 'exponential', delay: 2_000 },
+          removeOnComplete: { age: 3_600, count: 1_000 },
+          removeOnFail: { age: 24 * 3_600, count: 1_000 },
+        })
+        .catch((err) =>
+          this.logger.warn(`push enqueue failed: ${String(err)}`),
+        );
+    } catch (err) {
+      this.logger.warn(`push enqueue threw: ${String(err)}`);
+    }
+  }
+
+  private async enqueueMessage(job: MessagePushJob): Promise<void> {
+    const base = `m_${job.recipientId}_${job.conversationId}`;
+    const now = Date.now();
+    const opensBurst = await this.opensBurst(job);
+    await this.queue.add(PUSH_JOB.message, job, {
+      jobId: opensBurst
+        ? `${base}_lead_${now}`
+        : `${base}_${Math.floor(now / MESSAGE_DEBOUNCE_MS)}`,
+      delay: opensBurst ? 0 : MESSAGE_DEBOUNCE_MS,
+      attempts: 5,
+      backoff: { type: 'exponential', delay: 2_000 },
+      removeOnComplete: true,
+      removeOnFail: true,
+    });
+  }
+
+  /**
+   * True for the first message to this recipient in this conversation within
+   * MESSAGE_DEBOUNCE_MS. Without Redis (or on an error) false: the message
+   * then takes the delayed, collapsing path, which is the older behaviour.
+   */
+  private async opensBurst(job: MessagePushJob): Promise<boolean> {
+    const redis = this.redisService.getClient();
+    if (!redis) return false;
+    try {
+      const set = await redis.set(
+        `push:mburst:${job.recipientId}:${job.conversationId}`,
+        '1',
+        'PX',
+        MESSAGE_DEBOUNCE_MS,
+        'NX',
+      );
+      return set === 'OK';
+    } catch {
+      return false;
     }
   }
 }

@@ -1,6 +1,5 @@
 import {
   Injectable,
-  NotFoundException,
   ForbiddenException,
   BadRequestException,
   OnModuleInit,
@@ -8,11 +7,7 @@ import {
   Logger,
   Optional,
 } from '@nestjs/common';
-import {
-  inviteSummary,
-  storableInviteData,
-  withInviteExpiry,
-} from './core/invite-data';
+import { storableInviteData, withInviteExpiry } from './core/invite-data';
 import {
   arrayOrEmpty,
   payloadFields,
@@ -29,9 +24,19 @@ import {
   type Conversation,
 } from '@prisma/client';
 import {
-  assertGroupConversation,
-  isActiveParticipant,
+  assertGroupAuthority,
+  groupAsSeenBy,
+  membershipChangedAt,
+  notAMemberError,
 } from './core/group-membership';
+import { previewText } from './core/message-preview';
+import {
+  everyoneSpan,
+  mentionNotifyIds,
+  peopleMentions,
+  storedMentions,
+} from './core/message-mentions';
+import { resolveViewerPreviews, viewerUpdatedAt } from './core/viewer-preview';
 import Redis from 'ioredis';
 import { PrismaService } from '../prisma/prisma.service';
 import { traceBackground } from '../observability/background-trace';
@@ -85,7 +90,9 @@ import {
 import {
   conversationListCacheKey,
   conversationListFirstPageKeys,
+  groupDetailsVersionKey,
 } from './conversation-list-cache';
+import { announceRevived, revivedMemberIds } from './core/conversation-revive';
 
 /** The questions MessagesService asks the Instant Match domain. Kept small so
  *  the coupling between the two stays visible: may this user write into this
@@ -96,6 +103,22 @@ export interface InstantMatchChatGuard {
    *  caller is one of its two participants. */
   canReadChat(userId: string, conversationId: string): Promise<boolean>;
 }
+
+/** One conversation that raises the message badge (see getUnreadSummary). */
+export interface UnreadSummaryEntry {
+  /** The public id, as the conversation list names it. */
+  id: string;
+  internalId: string;
+  isGroup: boolean;
+  unread: number;
+}
+
+export interface UnreadSummary {
+  conversations: UnreadSummaryEntry[];
+}
+
+/** More than anyone has unread at once; bounds the response. */
+const UNREAD_SUMMARY_MAX = 500;
 
 /**
  * The message row formatMessageResponse reads: the smallest shape its three
@@ -258,6 +281,22 @@ export class MessagesService
       this.logger.warn(
         `Conversation-cache eviction failed for ${userId}: ${(err as Error)?.message}`,
       );
+    }
+  }
+
+  /**
+   * Retires the group's cached details (GroupChatsService getGroupDetails),
+   * which every member's roster is read from. Membership changed through this
+   * service's routes used to leave them for up to the 15s TTL.
+   */
+  protected override async invalidateGroupDetailsVersion(
+    realConvId: string,
+  ): Promise<void> {
+    if (!this.redis) return;
+    try {
+      await this.redis.incr(groupDetailsVersionKey(realConvId));
+    } catch {
+      // A stale roster for at most the cache's TTL beats failing the change.
     }
   }
 
@@ -469,10 +508,18 @@ export class MessagesService
         type: true,
         isInstantMatch: true,
         participants: {
-          where: { deletedAt: null, leftAt: null },
+          // `deletedAt` is deliberately NOT filtered, as in
+          // MessagingCoreService.sendMessage: someone who deleted (hid) the
+          // chat is still in it. Filtering them out here, on the path almost
+          // every message takes, meant they got no message, no unread count
+          // and no push, and the chat never came back for them. `leftAt` is
+          // different: that person really is gone.
+          where: { leftAt: null },
           select: {
             userId: true,
             isMuted: true,
+            // Who has it hidden: they join its rooms as it comes back.
+            deletedAt: true,
             // Lifecycle state of each member, for the unavailable-recipient
             // gate below (same rule as MessagingCoreService.sendMessage).
             user: { select: { accountStatus: true, deletedAt: true } },
@@ -587,9 +634,7 @@ export class MessagesService
       (p) => p.userId === senderId,
     );
     if (!senderParticipant) {
-      throw new ForbiddenException(
-        'You are no longer a member of this conversation',
-      );
+      throw notAMemberError();
     }
 
     // Unavailable-recipient gate. This override does not call
@@ -697,17 +742,22 @@ export class MessagesService
         : ('CHAT' as const);
     const participantIdSet = new Set(conv.participants.map((p) => p.userId));
 
-    // Re-derive the true mention set from the actual message text, then
-    // restrict it to real conversation participants — mentioning someone
-    // outside the conversation must never leak a notification to a user with
-    // no access to this thread.
-    const sanitizedMentions = (
-      await this.mentionsService.sanitize(
-        payload.text || '',
-        payload.mentions,
-        senderId,
-      )
-    ).filter((m) => participantIdSet.has(m.userId));
+    // Mentions are a group feature (core/message-mentions.ts): re-derived from
+    // the text, members only, `@everyone` only where the text says it.
+    const isGroupChat = conv.type === 'GROUP';
+    const everyone = isGroupChat
+      ? everyoneSpan(payload.text || '', payload.mentions)
+      : null;
+    const namedMentions = isGroupChat
+      ? (
+          await this.mentionsService.sanitize(
+            payload.text || '',
+            peopleMentions(payload.mentions),
+            senderId,
+          )
+        ).filter((m) => participantIdSet.has(m.userId))
+      : [];
+    const sanitizedMentions = storedMentions(namedMentions, everyone);
 
     // 2. Resolve replyToId safely
     let validatedReplyToId: string | null = null;
@@ -782,46 +832,88 @@ export class MessagesService
         data: {
           updatedAt: new Date(),
           lastMessageId: msg.id,
-          lastMessageText:
-            payload.text ||
-            inviteSummary(initialInviteData) ||
-            (payload.mediaUrl
-              ? payload.mediaType === 'image'
-                ? 'Photo'
-                : payload.mediaType === 'video'
-                  ? 'Video'
-                  : 'Audio'
-              : ''),
+          // Same table as the REST path (message-preview.ts).
+          lastMessageText: previewText({
+            type,
+            payload: {
+              text: payload.text,
+              mediaUrl: payload.mediaUrl,
+              mediaType: payload.mediaType,
+              inviteData: initialInviteData,
+            },
+          }),
           lastMessageType: type,
           lastMessageAt: msg.createdAt,
           lastMessageSenderId: senderId,
         },
       });
 
+      // The sender's membership, re-read now that the conversation row is
+      // locked. A removal takes the same lock first (markParticipantLeft), so
+      // one that committed while this send was in flight is seen here and the
+      // message is rolled back instead of landing from a removed member.
+      const stillMember = await tx.conversationParticipant.count({
+        where: { conversationId: realConvId, userId: senderId, leftAt: null },
+      });
+      if (stillMember === 0) throw notAMemberError();
+
       await tx.conversationParticipant.updateMany({
         where: {
           conversationId: realConvId,
           userId: { not: senderId },
           leftAt: null,
-          deletedAt: null,
         },
         data: { unreadCount: { increment: 1 } },
+      });
+
+      // New activity brings the chat back for anyone who had deleted it,
+      // sender included (the same revive as the REST path); `clearedAt` stays,
+      // so it returns without the old messages.
+      await tx.conversationParticipant.updateMany({
+        where: {
+          conversationId: realConvId,
+          leftAt: null,
+          deletedAt: { not: null },
+        },
+        data: { deletedAt: null },
       });
 
       return msg;
     });
 
+    announceRevived(
+      this.domainEventService,
+      {
+        conversationId: conv.publicId || conversationId,
+        publicId: conv.publicId,
+        internalId: realConvId,
+      },
+      revivedMemberIds(conv.participants),
+    );
+
     // Fire-and-forget: must never add latency to message delivery, and a
     // notification failure must never roll back the already-committed message.
+    // Notified: the tagged members (or everyone), never anyone who muted it.
+    const mentionTargets = mentionNotifyIds({
+      named: namedMentions.map((m) => m.userId),
+      everyone: Boolean(everyone),
+      recipientIds,
+      unmutedRecipientIds,
+    });
     if (
-      sanitizedMentions.length > 0 &&
+      mentionTargets.length > 0 &&
       message.sender &&
       message.state !== 'UNSENT'
     ) {
       const pubId = conv.publicId || conversationId;
       this.mentionsService
         .persistAndNotify({
-          mentions: sanitizedMentions,
+          mentions: mentionTargets.map((userId) => ({
+            userId,
+            username: '',
+            start: 0,
+            end: 0,
+          })),
           sourceType: MentionSource.MESSAGE,
           sourceId: message.id,
           actor: message.sender,
@@ -831,6 +923,8 @@ export class MessagesService
           extraMetadata: {
             conversationId: pubId,
             internalConversationId: realConvId,
+            // Lets an unsend find and clear this notification's quote.
+            messageId: message.id,
           },
         })
         .catch((err) =>
@@ -1191,6 +1285,7 @@ export class MessagesService
                 lastReadAt: true,
                 clearedAt: true,
                 leftAt: true,
+                joinedAt: true,
               },
             })
           : Promise.resolve(null),
@@ -1230,6 +1325,8 @@ export class MessagesService
           messages: [],
           canSendMessages: false,
           targetUserUnavailable: false,
+          isMember: false,
+          membershipChangedAt: null,
           participants: [],
           nextCursor: null,
         };
@@ -1457,15 +1554,28 @@ export class MessagesService
       otherLiveParticipants.length === 1 &&
       isUnavailableUser(otherLiveParticipants[0].user);
 
+    // A former member keeps their history up to when they left, read-only.
+    const isMember = !participant?.leftAt;
+
     return {
       messages: messagesMapped,
-      canSendMessages: canSendMessages && !targetUserUnavailable,
+      canSendMessages: canSendMessages && !targetUserUnavailable && isMember,
       targetUserUnavailable,
-      participants: participants.map((p) => ({
-        userId: p.userId,
-        lastReadAt:
-          p.user?.settings?.readReceipts !== false ? p.lastReadAt : null,
-      })),
+      // The viewer's membership as the server has it now. A client whose list
+      // or details cache says otherwise is behind; it keeps whichever copy has
+      // the later `membershipChangedAt`.
+      isMember,
+      membershipChangedAt: membershipChangedAt(participant),
+      // Not to a former member: the roster (who is in the group now, and when
+      // each last read) is the group's, not theirs any more. Their client
+      // counted it as the member count in the chat's header.
+      participants: isMember
+        ? participants.map((p) => ({
+            userId: p.userId,
+            lastReadAt:
+              p.user?.settings?.readReceipts !== false ? p.lastReadAt : null,
+          }))
+        : [],
       nextCursor,
     };
   }
@@ -1597,6 +1707,40 @@ export class MessagesService
    *   rest by typing. Isolation, verification and block filters all still
    *   apply -- this narrows the eligible set, it never widens it.
    */
+  /**
+   * Every conversation that raises the viewer's message badge: unread, not
+   * muted, and still theirs (not hidden, not left). The inbox loads one page
+   * of the list, so a badge summed from that page dropped every unread chat
+   * further down; the client adds these for the rows it has not loaded.
+   * The same rules as the list's own count (a left group counts nothing).
+   */
+  async getUnreadSummary(userId: string): Promise<UnreadSummary> {
+    const rows = await this.prisma.conversationParticipant.findMany({
+      where: {
+        userId,
+        deletedAt: null,
+        leftAt: null,
+        isMuted: false,
+        unreadCount: { gt: 0 },
+        conversation: { type: { in: ['DM', 'GROUP'] } },
+      },
+      orderBy: { conversation: { updatedAt: 'desc' } },
+      take: UNREAD_SUMMARY_MAX,
+      select: {
+        unreadCount: true,
+        conversation: { select: { id: true, publicId: true, type: true } },
+      },
+    });
+    return {
+      conversations: rows.map((r) => ({
+        id: r.conversation.publicId || r.conversation.id,
+        internalId: r.conversation.id,
+        isGroup: r.conversation.type === 'GROUP',
+        unread: r.unreadCount,
+      })),
+    };
+  }
+
   async getUserConversations(
     userId: string,
     limit: number = 20,
@@ -1770,6 +1914,9 @@ export class MessagesService
           unreadCount: true,
           groupUpdatesActive: true,
           leftAt: true,
+          leftGroupName: true,
+          leftGroupAvatarKey: true,
+          joinedAt: true,
           conversation: {
             select: {
               id: true,
@@ -1813,6 +1960,20 @@ export class MessagesService
     const dmConvIds = participants
       .filter((p) => p.conversation.type === 'DM')
       .map((p) => p.conversation.id);
+    // The viewer's own preview for rows whose shared one is not theirs to see
+    // (a group they left, a latest message they deleted for themselves). In
+    // parallel with the DM partner lookup below.
+    const viewerPreviewsPromise = resolveViewerPreviews(
+      this.prisma,
+      userId,
+      participants.map((p) => ({
+        conversationId: p.conversation.id,
+        leftAt: p.leftAt,
+        clearedAt: p.clearedAt,
+        lastMessageId: p.conversation.lastMessageId,
+        lastMessageAt: p.conversation.lastMessageAt,
+      })),
+    );
     const dmOtherParticipants =
       dmConvIds.length > 0
         ? await this.prisma.conversationParticipant.findMany({
@@ -1849,6 +2010,8 @@ export class MessagesService
             },
           })
         : [];
+
+    const viewerPreviews = await viewerPreviewsPromise;
 
     type DmPartner = NonNullable<(typeof dmOtherParticipants)[number]['user']>;
     const targetUserByConvId = new Map<string, DmPartner>();
@@ -1932,7 +2095,14 @@ export class MessagesService
         : false;
       // `|| conv.isGroup` was here: no such column exists, so it never mattered.
       const isGroupConv = conv.type === 'GROUP';
-      const groupAvatar = conv.avatarKey || null;
+      const seenGroup = isGroupConv
+        ? groupAsSeenBy(p, {
+            name: conv.name,
+            avatarKey: conv.avatarKey,
+            description: conv.description,
+            memberCount: conv._count?.participants || 0,
+          })
+        : null;
 
       const userPresence = otherUser ? presenceMap.get(otherUser.id) : null;
       let canSeeOnline = false;
@@ -1961,33 +2131,43 @@ export class MessagesService
       }
 
       const pubId = conv.publicId || conv.id;
-      const unreadCount = p.unreadCount || 0;
+      // A group the viewer is no longer in counts nothing: they cannot open
+      // what arrived, and unread from before they left could never be cleared.
+      const unreadCount = p.leftAt ? 0 : p.unreadCount || 0;
 
-      // The last-message preview lives on the Conversation row and is therefore
-      // shared by both participants — but Clear and Delete are per-user. Left
+      // The preview this viewer may see: the shared one, or their own where
+      // that is not theirs (viewer-preview.ts). Clear is per-user too: left
       // unguarded, a user who cleared the chat still saw the other person's
-      // last message sitting in their list row, quoting content that no longer
-      // exists for them anywhere else. Hide any preview at or before this
-      // user's own cutoff; the next message they actually receive is after it
-      // and shows normally.
-      const cutoff = p.clearedAt;
-      const previewCleared = Boolean(
-        cutoff &&
-        conv.lastMessageAt &&
-        new Date(conv.lastMessageAt) <= new Date(cutoff),
-      );
-
-      const resolvedLastMsg =
-        conv.lastMessageAt && !previewCleared
+      // last message sitting in their list row, quoting content that no
+      // longer exists for them anywhere else. Anything at or before this
+      // user's own cutoff is hidden; the next message they actually receive
+      // is after it and shows normally.
+      const visible = viewerPreviews.has(conv.id)
+        ? viewerPreviews.get(conv.id)
+        : conv.lastMessageAt
           ? {
               id: conv.lastMessageId || null,
               createdAt: conv.lastMessageAt,
               senderId: conv.lastMessageSenderId || '',
-              senderName: conv.lastMessageSenderId === userId ? 'You' : '',
               text: conv.lastMessageText || '',
               type: conv.lastMessageType
                 ? conv.lastMessageType.toLowerCase()
                 : 'chat',
+            }
+          : null;
+      const previewCleared = Boolean(
+        visible && p.clearedAt && visible.createdAt <= p.clearedAt,
+      );
+
+      const resolvedLastMsg =
+        visible && !previewCleared
+          ? {
+              id: visible.id,
+              createdAt: visible.createdAt,
+              senderId: visible.senderId,
+              senderName: visible.senderId === userId ? 'You' : '',
+              text: visible.text,
+              type: visible.type,
               mediaUrl: null,
               mediaType: null,
             }
@@ -1999,20 +2179,25 @@ export class MessagesService
         internalId: conv.id,
         type: conv.type,
         isMember: p.leftAt == null,
+        membershipChangedAt: membershipChangedAt(p),
         ownerId: conv.ownerId || null,
         isGroup: isGroupConv,
-        name: isGroupConv
-          ? conv.name || 'Group'
+        name: seenGroup
+          ? seenGroup.name
           : conv.name || presentUserName(otherUser) || 'Chat',
-        avatar: isGroupConv
-          ? groupAvatar
+        avatar: seenGroup
+          ? seenGroup.avatar
           : conv.avatarKey || presentUserAvatar(otherUser) || null,
-        description: conv.description || null,
+        description: seenGroup
+          ? seenGroup.description
+          : conv.description || null,
         status: conv.status || 'ACTIVE',
         isInstantMatch: conv.isInstantMatch || false,
         expiresAt: conv.expiresAt || null,
         createdAt: conv.createdAt,
-        updatedAt: conv.updatedAt,
+        // Frozen at the moment a former member left, so the row neither dates
+        // nor sorts itself by activity they can no longer see.
+        updatedAt: viewerUpdatedAt(conv.updatedAt, p.leftAt),
         whoCanJoin: conv.whoCanJoin || 'ANYONE',
         visibility: conv.visibility || 'PUBLIC',
         allowSharing: conv.allowSharing !== false,
@@ -2023,7 +2208,7 @@ export class MessagesService
         members: [],
         // The `memberCount` column was also read here as a fallback, but this
         // query never selects it, so the count has always been `_count`.
-        memberCount: isGroupConv ? conv._count?.participants || 0 : 0,
+        memberCount: seenGroup ? seenGroup.memberCount : 0,
         pinned: p.isPinned || false,
         pinnedAt: p.pinnedAt || null,
         muted: p.isMuted || false,
@@ -2039,7 +2224,7 @@ export class MessagesService
         // by the one policy the backend enforces with. The client mirrors it
         // to disable the composer; it is not the enforcement itself.
         canSendMessages: isGroupConv
-          ? viewerEligible
+          ? viewerEligible && !p.leftAt
           : !targetUnavailable &&
             viewerEligible &&
             (!enforcingVerification ||
@@ -2296,7 +2481,7 @@ export class MessagesService
       }),
     ]);
 
-    if (!participant) {
+    if (!participant || participant.leftAt) {
       throw new ForbiddenException('Not a member of this conversation');
     }
 
@@ -2362,232 +2547,6 @@ export class MessagesService
     );
 
     return updated;
-  }
-
-  async addGroupMember(
-    conversationId: string,
-    requesterId: string,
-    targetUserId: string,
-  ) {
-    const realConvId = await this.resolveConversationId(conversationId);
-    await assertGroupConversation(this.prisma, realConvId);
-    const participant = await this.prisma.conversationParticipant.findUnique({
-      where: {
-        userId_conversationId: {
-          userId: requesterId,
-          conversationId: realConvId,
-        },
-      },
-    });
-    // An active member: a row alone is not enough, since removing or leaving
-    // keeps it (with `leftAt` set) — and the upsert below clears `leftAt`, so
-    // a removed member could otherwise add themselves straight back.
-    if (!isActiveParticipant(participant)) {
-      throw new ForbiddenException('Not a member of this conversation');
-    }
-
-    // Both sides of an add must be eligible: the member doing the adding, and
-    // the account being pulled in. Same neutral wording as the block refusal
-    // above, so the caller learns nothing about the target's status.
-    await this.verificationAccess.assertUsersEligible(
-      [requesterId, targetUserId],
-      requesterId,
-    );
-
-    // Block enforcement: don't let a member pull someone they've blocked (or who
-    // blocked them) into a shared group.
-    if (await this.blocksService.isBlocked(requesterId, targetUserId)) {
-      // Neutral by design. The earlier wording named the block relationship
-      // outright and so disclosed it to the caller. The reason is withheld
-      // here, exactly as it is on every other blocked surface.
-      throw new ForbiddenException(
-        'This user is not available to add to the group.',
-      );
-    }
-
-    // Someone already in the group is left exactly as they are. The upsert
-    // resets the role to MEMBER, so "adding" the owner or an admin used to
-    // demote them.
-    const existing = await this.prisma.conversationParticipant.findUnique({
-      where: {
-        userId_conversationId: {
-          userId: targetUserId,
-          conversationId: realConvId,
-        },
-      },
-      select: { leftAt: true, deletedAt: true },
-    });
-    if (isActiveParticipant(existing)) {
-      return { success: true, alreadyMember: true };
-    }
-
-    await this.prisma.conversationParticipant.upsert({
-      where: {
-        userId_conversationId: {
-          userId: targetUserId,
-          conversationId: realConvId,
-        },
-      },
-      update: {
-        leftAt: null,
-        deletedAt: null,
-        joinedAt: new Date(),
-        role: 'MEMBER',
-      },
-      create: {
-        userId: targetUserId,
-        conversationId: realConvId,
-        role: 'MEMBER',
-      },
-    });
-
-    this.invalidateUserConversationsCache([targetUserId]).catch(() => {});
-    return { success: true, alreadyMember: false };
-  }
-
-  async removeGroupMember(
-    conversationId: string,
-    requesterId: string,
-    targetUserId: string,
-  ) {
-    const realConvId = await this.resolveConversationId(conversationId);
-    await assertGroupConversation(this.prisma, realConvId);
-    const requester = await this.prisma.conversationParticipant.findUnique({
-      where: {
-        userId_conversationId: {
-          userId: requesterId,
-          conversationId: realConvId,
-        },
-      },
-    });
-    if (
-      !requester ||
-      (requester.role !== 'OWNER' && requester.role !== 'ADMIN')
-    ) {
-      throw new ForbiddenException('Only group admins can remove members');
-    }
-
-    const target = await this.prisma.conversationParticipant.findUnique({
-      where: {
-        userId_conversationId: {
-          userId: targetUserId,
-          conversationId: realConvId,
-        },
-      },
-    });
-
-    if (!target || target.leftAt || target.deletedAt) {
-      throw new NotFoundException('Member not found in group');
-    }
-
-    if (target.role === 'OWNER') {
-      throw new ForbiddenException('Cannot remove the group owner');
-    }
-
-    if (requester.role === 'ADMIN' && target.role === 'ADMIN') {
-      throw new ForbiddenException(
-        'Admins cannot remove other admins. Only the owner can remove admins.',
-      );
-    }
-
-    await this.prisma.conversationParticipant.update({
-      where: {
-        userId_conversationId: {
-          userId: targetUserId,
-          conversationId: realConvId,
-        },
-      },
-      data: { leftAt: new Date() },
-    });
-
-    this.invalidateUserConversationsCache([targetUserId]).catch(() => {});
-    return { success: true };
-  }
-
-  async leaveGroup(conversationId: string, userId: string) {
-    const realConvId = await this.resolveConversationId(conversationId);
-    await assertGroupConversation(this.prisma, realConvId);
-    const participant = await this.prisma.conversationParticipant.findUnique({
-      where: { userId_conversationId: { userId, conversationId: realConvId } },
-    });
-
-    if (!participant || participant.leftAt || participant.deletedAt) {
-      return { success: true };
-    }
-
-    await this.prisma.conversationParticipant.update({
-      where: { userId_conversationId: { userId, conversationId: realConvId } },
-      data: { leftAt: new Date() },
-    });
-
-    this.invalidateUserConversationsCache([userId]).catch(() => {});
-
-    if (participant.role === 'OWNER') {
-      // Transfer to oldest admin first
-      const oldestAdmin = await this.prisma.conversationParticipant.findFirst({
-        where: {
-          conversationId: realConvId,
-          deletedAt: null,
-          leftAt: null,
-          role: 'ADMIN',
-        },
-        orderBy: { joinedAt: 'asc' },
-      });
-
-      if (oldestAdmin) {
-        await this.prisma.$transaction([
-          this.prisma.conversationParticipant.update({
-            where: {
-              userId_conversationId: {
-                userId: oldestAdmin.userId,
-                conversationId: realConvId,
-              },
-            },
-            data: { role: 'OWNER' },
-          }),
-          this.prisma.conversation.update({
-            where: { id: realConvId },
-            data: { ownerId: oldestAdmin.userId },
-          }),
-        ]);
-      } else {
-        const oldestMember =
-          await this.prisma.conversationParticipant.findFirst({
-            where: {
-              conversationId: realConvId,
-              deletedAt: null,
-              leftAt: null,
-              userId: { not: userId },
-            },
-            orderBy: { joinedAt: 'asc' },
-          });
-
-        if (oldestMember) {
-          await this.prisma.$transaction([
-            this.prisma.conversationParticipant.update({
-              where: {
-                userId_conversationId: {
-                  userId: oldestMember.userId,
-                  conversationId: realConvId,
-                },
-              },
-              data: { role: 'OWNER' },
-            }),
-            this.prisma.conversation.update({
-              where: { id: realConvId },
-              data: { ownerId: oldestMember.userId },
-            }),
-          ]);
-        } else {
-          await this.prisma.conversation.update({
-            where: { id: realConvId },
-            data: { status: 'Closed' },
-          });
-        }
-      }
-    }
-
-    return { success: true };
   }
 
   async createInstantMatchConversation(
@@ -2697,14 +2656,11 @@ export class MessagesService
     const settingsData = pickGroupSettings(data);
 
     if (Object.keys(settingsData).length > 0) {
-      if (
-        !participant ||
-        (participant.role !== 'OWNER' && participant.role !== 'ADMIN')
-      ) {
-        throw new ForbiddenException(
-          'Only group admins can update these settings',
-        );
-      }
+      assertGroupAuthority(
+        participant,
+        ['OWNER', 'ADMIN'],
+        'Only group admins can update these settings',
+      );
       await this.prisma.conversation.update({
         where: { id: realConvId },
         data: settingsData,
@@ -2722,12 +2678,11 @@ export class MessagesService
     const participant = await this.prisma.conversationParticipant.findUnique({
       where: { userId_conversationId: { userId, conversationId: realConvId } },
     });
-    if (
-      !participant ||
-      (participant.role !== 'OWNER' && participant.role !== 'ADMIN')
-    ) {
-      throw new ForbiddenException('Only group admins can update settings');
-    }
+    assertGroupAuthority(
+      participant,
+      ['OWNER', 'ADMIN'],
+      'Only group admins can update settings',
+    );
     await this.prisma.conversation.update({
       where: { id: realConvId },
       data: { editGroupPermission: permission },
@@ -2735,116 +2690,9 @@ export class MessagesService
     return { success: true };
   }
 
-  // changeGroupOwner / promoteToAdmin / demoteFromAdmin / endGroup are inherited
-  // from MessagingCoreService (single source of truth, with target validation).
-
-  async acceptGroupJoinRequest(
-    conversationId: string,
-    userId: string,
-    targetUserId: string,
-  ) {
-    const realConvId = await this.resolveConversationId(conversationId);
-    const participant = await this.prisma.conversationParticipant.findUnique({
-      where: { userId_conversationId: { userId, conversationId: realConvId } },
-    });
-    if (
-      !participant ||
-      (participant.role !== 'OWNER' && participant.role !== 'ADMIN')
-    ) {
-      throw new ForbiddenException('Only group admins can accept requests');
-    }
-
-    const joinRequest = await this.prisma.conversationJoinRequest.findUnique({
-      where: {
-        conversationId_userId: {
-          conversationId: realConvId,
-          userId: targetUserId,
-        },
-      },
-    });
-
-    if (!joinRequest) {
-      throw new NotFoundException('Join request not found');
-    }
-
-    if (joinRequest.expiresAt && joinRequest.expiresAt < new Date()) {
-      await this.prisma.conversationJoinRequest.delete({
-        where: {
-          conversationId_userId: {
-            conversationId: realConvId,
-            userId: targetUserId,
-          },
-        },
-      });
-      throw new BadRequestException('Join request has expired');
-    }
-
-    // Approving adds a member: the approver and the requester must both pass
-    // the selfie gate, exactly as for addMember.
-    await this.assertMayJoinGroup(userId);
-    await this.assertJoinRequesterEligible(realConvId, targetUserId);
-
-    await this.prisma.$transaction([
-      this.prisma.conversationJoinRequest.delete({
-        where: {
-          conversationId_userId: {
-            conversationId: realConvId,
-            userId: targetUserId,
-          },
-        },
-      }),
-      this.prisma.conversationParticipant.upsert({
-        where: {
-          userId_conversationId: {
-            userId: targetUserId,
-            conversationId: realConvId,
-          },
-        },
-        update: {
-          leftAt: null,
-          deletedAt: null,
-          joinedAt: new Date(),
-          role: 'MEMBER',
-        },
-        create: {
-          userId: targetUserId,
-          conversationId: realConvId,
-          role: 'MEMBER',
-        },
-      }),
-    ]);
-    return { success: true };
-  }
-
-  async declineGroupJoinRequest(
-    conversationId: string,
-    userId: string,
-    targetUserId: string,
-  ) {
-    const realConvId = await this.resolveConversationId(conversationId);
-    const participant = await this.prisma.conversationParticipant.findUnique({
-      where: { userId_conversationId: { userId, conversationId: realConvId } },
-    });
-    if (
-      !participant ||
-      (participant.role !== 'OWNER' && participant.role !== 'ADMIN')
-    ) {
-      throw new ForbiddenException('Only group admins can decline requests');
-    }
-
-    await this.prisma.conversationJoinRequest
-      .delete({
-        where: {
-          conversationId_userId: {
-            conversationId: realConvId,
-            userId: targetUserId,
-          },
-        },
-      })
-      .catch(() => {});
-
-    return { success: true };
-  }
+  // changeGroupOwner / promoteToAdmin / demoteFromAdmin / endGroup and the
+  // join-request decisions (acceptGroupJoinRequest / declineGroupJoinRequest)
+  // are inherited from MessagingCoreService (single source of truth).
 
   async getUserHandle(userId: string): Promise<string> {
     if (!userId) return '@user';

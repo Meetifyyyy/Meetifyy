@@ -6,13 +6,15 @@ import { processAndUploadImage, processAndUploadVideo, uploadFileDirect, getImag
 import { showToast } from '@shared/utils/toast';
 import { useAuth } from '@shared/context/AuthContext';
 import { useConversations } from '@shared/hooks/useMessages';
-import { appendMessageToCache, updateMessageInCache, updateConversationPreview, matchesConversationId, getConversationAliases, compareMessages, checkIsMe, withConversationUnreadCleared } from '../utils/cacheUtils';
+import { appendMessageToCache, updateMessageInCache, matchesConversationId, getConversationAliases, compareMessages, checkIsMe, withConversationUnreadCleared } from '../utils/cacheUtils';
+import { applyMessageToConversationList, markUnsentInConversationList } from '../utils/conversationList';
 
 import { idbGetMessages, idbOutboxAll, idbSaveMessages, idbPatchMessage, idbDeleteMessage, idbMessagesEpoch, migrateHistoricalFailedMessages } from '../utils/idbMessages';
 import { outbox } from '../utils/outboxClient';
 import { restorableOutboxMessages } from '../utils/outboxRestore';
 import { newIdempotencyKey } from '@shared/lib/idempotencyKey';
 import { useOnlineStatus } from '@shared/lib/networkStatus';
+import { dropFromUnreadSummary } from '../utils/unreadSummary';
 
 
 // Throttles upload-progress writes so a fast XHR can't flood React state.
@@ -408,6 +410,8 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
 
     queryClient.setQueryData(['conversations'], (oldConvs) =>
       withConversationUnreadCleared(oldConvs, activeChatId));
+    // Opened from search, a chat the list has not loaded clears from the badge too.
+    dropFromUnreadSummary(queryClient, [activeChatId]);
 
     // Single authoritative path: socket if connected, HTTP fallback only if not.
     // Never fire both — the backend writes on either event.
@@ -621,8 +625,9 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
     // The chat on screen: an optimistic message has to show up even if this is
     // the very first message in a brand-new conversation with no history yet.
     appendMessageToCache(queryClient, targetConvId, tempMessage, { createIfMissing: true });
-    const previewSnippet = payloadText || (explicitInviteData ? (explicitInviteData.groupName ? `Group invite: ${explicitInviteData.groupName}` : 'Group invite') : mediaType ? (mediaType === 'image' ? 'Photo' : mediaType === 'video' ? 'Video' : 'Audio') : mediaUrl ? 'Media' : '');
-    updateConversationPreview(queryClient, targetConvId, previewSnippet, tempMessage.createdAt, 0);
+    // The list row shows it at once (conversationList.js); the server's copy,
+    // matched by clientId, replaces it without moving the row again.
+    applyMessageToConversationList(queryClient, { ...tempMessage, conversationId: targetConvId });
     idbSaveMessages(targetConvId, [tempMessage], idbEpochAtSend);
 
     let finalMediaUrl = mediaUrl;
@@ -835,7 +840,7 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
     };
     // Set BEFORE the outbox can finish: a sent or failed outcome clears it, and
     // setting it afterwards would resurrect "Sending…" on a delivered message.
-    // `queued` is what keeps the bubble on "Sending…" rather than "Not delivered".
+    // `queued` is what keeps the bubble on "Sending…" rather than "Not sent".
     updateMessageInCache(queryClient, targetConvId, clientId, { queued: true });
     idbPatchMessage(targetConvId, clientId, { queued: true }, idbEpochAtSend).catch(() => {});
     await outbox.enqueue(outboxEntry, idbEpochAtSend);
@@ -1022,13 +1027,9 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
         idbSaveMessages(key, [msg]).catch(console.warn);
       });
 
-      updateConversationPreview(
-        queryClient,
-        convId || activeChatId,
-        msg.text || msg.payload?.text,
-        msg.createdAt,
-        0
-      );
+      // Preview and order only; the unread count is SocketManager's (it is
+      // not counted while this chat is on screen).
+      applyMessageToConversationList(queryClient, { ...msg, conversationId: convId || activeChatId });
 
       if (!isMyMsg) {
         if (msg.id && socket?.connected) {
@@ -1111,8 +1112,10 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
       });
 
       if (isUnsent) {
-        allCandidateIds.forEach((key) => {
-          updateConversationPreview(queryClient, key, 'This message was unsent');
+        markUnsentInConversationList(queryClient, {
+          ids: allCandidateIds,
+          messageId: msgId,
+          createdAt: payload.createdAt,
         });
       }
     };

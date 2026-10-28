@@ -286,3 +286,165 @@ describe('PushAudienceService.forMessage', () => {
     expect(await audience.forMessage('author', 'conv-1', 'liker')).toBeNull();
   });
 });
+
+describe('PushAudienceService.forGroupRemoval', () => {
+  const REMOVED_AT = '2026-10-28T10:00:00.000Z';
+  const removed = (over: Record<string, unknown> = {}) => ({
+    leftAt: new Date(REMOVED_AT),
+    conversation: {
+      id: 'conv-1',
+      publicId: 'pub-1',
+      name: 'Hostel B',
+      type: 'GROUP',
+    },
+    ...over,
+  });
+
+  it('tells the member they were removed, routed by the public id', async () => {
+    const { audience, prisma } = build();
+    prisma.conversationParticipant.findUnique.mockResolvedValue(removed());
+    expect(
+      await audience.forGroupRemoval('author', 'conv-1', REMOVED_AT),
+    ).toEqual({
+      routeId: 'pub-1',
+      conversationId: 'conv-1',
+      groupName: 'Hostel B',
+    });
+  });
+
+  it('suppresses once they are back in, or were removed again since (that removal pushes its own)', async () => {
+    const { audience, prisma } = build();
+    prisma.conversationParticipant.findUnique.mockResolvedValueOnce(
+      removed({ leftAt: null }),
+    );
+    expect(
+      await audience.forGroupRemoval('author', 'conv-1', REMOVED_AT),
+    ).toBeNull();
+    prisma.conversationParticipant.findUnique.mockResolvedValueOnce(
+      removed({ leftAt: new Date('2026-10-28T11:00:00.000Z') }),
+    );
+    expect(
+      await audience.forGroupRemoval('author', 'conv-1', REMOVED_AT),
+    ).toBeNull();
+  });
+
+  it('suppresses it when the member had muted the group', async () => {
+    const { audience, prisma } = build();
+    prisma.conversationParticipant.findUnique.mockResolvedValueOnce(
+      removed({ isMuted: true }),
+    );
+    expect(
+      await audience.forGroupRemoval('author', 'conv-1', REMOVED_AT),
+    ).toBeNull();
+  });
+
+  it('suppresses a non-participant, a non-group and a switched-off category', async () => {
+    const { audience, prisma, users } = build();
+    prisma.conversationParticipant.findUnique.mockResolvedValueOnce(null);
+    expect(
+      await audience.forGroupRemoval('author', 'conv-1', REMOVED_AT),
+    ).toBeNull();
+    prisma.conversationParticipant.findUnique.mockResolvedValueOnce(
+      removed({
+        conversation: { ...removed().conversation, type: 'DM' },
+      }),
+    );
+    expect(
+      await audience.forGroupRemoval('author', 'conv-1', REMOVED_AT),
+    ).toBeNull();
+    users.author = activeUser({ notificationPrefs: { pushMessages: false } });
+    prisma.conversationParticipant.findUnique.mockResolvedValueOnce(removed());
+    expect(
+      await audience.forGroupRemoval('author', 'conv-1', REMOVED_AT),
+    ).toBeNull();
+  });
+});
+
+describe('PushAudienceService.forGroupJoinRequest', () => {
+  const pending = (over: Record<string, unknown> = {}) => ({
+    status: 'PENDING',
+    expiresAt: null,
+    conversation: {
+      id: 'conv-1',
+      publicId: 'pub-1',
+      name: 'Hostel B',
+      type: 'GROUP',
+      status: 'ACTIVE',
+    },
+    ...over,
+  });
+  const reviewer = (over: Record<string, unknown> = {}) => ({
+    role: 'ADMIN',
+    leftAt: null,
+    deletedAt: null,
+    isMuted: false,
+    ...over,
+  });
+  const setup = () => {
+    const built = build();
+    const requests = { findUnique: jest.fn().mockResolvedValue(pending()) };
+    Object.assign(built.prisma, { conversationJoinRequest: requests });
+    built.prisma.conversationParticipant.findUnique.mockResolvedValue(
+      reviewer(),
+    );
+    return { ...built, requests };
+  };
+
+  it('names the requester and the group for a pending request', async () => {
+    const { audience } = setup();
+    expect(
+      await audience.forGroupJoinRequest('author', 'conv-1', 'liker'),
+    ).toEqual({
+      routeId: 'pub-1',
+      conversationId: 'conv-1',
+      groupName: 'Hostel B',
+      requesterName: 'Aarav',
+    });
+  });
+
+  it('suppresses an answered or expired request, or a group that ended', async () => {
+    const { audience, requests } = setup();
+    requests.findUnique.mockResolvedValueOnce(null);
+    expect(
+      await audience.forGroupJoinRequest('author', 'conv-1', 'liker'),
+    ).toBeNull();
+    requests.findUnique.mockResolvedValueOnce(
+      pending({ expiresAt: new Date(Date.now() - 1000) }),
+    );
+    expect(
+      await audience.forGroupJoinRequest('author', 'conv-1', 'liker'),
+    ).toBeNull();
+    requests.findUnique.mockResolvedValueOnce(
+      pending({
+        conversation: { ...pending().conversation, status: 'Closed' },
+      }),
+    );
+    expect(
+      await audience.forGroupJoinRequest('author', 'conv-1', 'liker'),
+    ).toBeNull();
+  });
+
+  it('suppresses a recipient no longer an admin, or one who muted the group', async () => {
+    const { audience, prisma } = setup();
+    prisma.conversationParticipant.findUnique.mockResolvedValueOnce(
+      reviewer({ role: 'MEMBER' }),
+    );
+    expect(
+      await audience.forGroupJoinRequest('author', 'conv-1', 'liker'),
+    ).toBeNull();
+    prisma.conversationParticipant.findUnique.mockResolvedValueOnce(
+      reviewer({ isMuted: true }),
+    );
+    expect(
+      await audience.forGroupJoinRequest('author', 'conv-1', 'liker'),
+    ).toBeNull();
+  });
+
+  it('suppresses a request from someone either side has blocked', async () => {
+    const { audience, prisma } = setup();
+    prisma.block.findFirst.mockResolvedValueOnce({ blockerId: 'author' });
+    expect(
+      await audience.forGroupJoinRequest('author', 'conv-1', 'liker'),
+    ).toBeNull();
+  });
+});

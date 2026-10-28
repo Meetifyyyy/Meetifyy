@@ -93,7 +93,3 @@ export function writeLegalPendingHint(pending, storage = globalThis.localStorage
   }
 }
 
-/** True when an API error is the consent gate refusing the request. */
-export function isLegalAckRequired(error) {
-  return error?.code === LEGAL_ACK_REQUIRED_CODE;
-}

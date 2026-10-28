@@ -4,7 +4,7 @@
  * ONE RULE PER KIND OF ACTION
  *
  *   - Messages: queued. They have a durable outbox with retry and visible
- *     "Sending…" / "Not delivered" states (features/messages/shared/utils/outbox),
+ *     "Sending…" / "Not sent" states (features/messages/shared/utils/outbox),
  *     so going offline loses nothing and the person can see where it stands.
  *   - Creates (post, comment, activity, community, event, support request):
  *     REFUSED while offline, with a message, and the form or draft is left

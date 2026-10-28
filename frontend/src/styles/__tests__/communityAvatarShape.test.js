@@ -26,7 +26,6 @@ const COMMUNITY_AVATAR_RULES = [
   ['features/communities/components/modals/CreateCommunityModal.module.css', '.cropperWrapper'],
   ['features/communities/components/modals/CreateCommunityModal.module.css', '.letterAvatar'],
   ['features/communities/components/home/HomeCommunities.module.css', '.ghostAvatar'],
-  ['features/search/components/SearchResultCards.module.css', '.avatar.communityAvatar'],
 ];
 
 describe('community avatars are rounded squares', () => {

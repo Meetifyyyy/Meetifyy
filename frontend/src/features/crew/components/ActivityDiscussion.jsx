@@ -275,34 +275,4 @@ export const ActivityDiscussion = memo(function ActivityDiscussion({
   return panelContent;
 });
 
-/**
- * Desktop launcher: a "Discussion" button that opens a small floating,
- * overlapping window. The panel only mounts (and joins the socket room) while
- * open.
- */
-export function ActivityDiscussionFloating({ activityId }) {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <>
-      {!open && (
-        <button
-          className={styles.launcherBtn}
-          onClick={() => setOpen(true)}
-        >
-          <MessageCircle size={18} />
-          <span>Discussion</span>
-        </button>
-      )}
-      {open && (
-        <ActivityDiscussion
-          activityId={activityId}
-          variant="floating"
-          onClose={() => setOpen(false)}
-        />
-      )}
-    </>
-  );
-}
-
 export default ActivityDiscussion;

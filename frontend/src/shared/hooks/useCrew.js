@@ -6,9 +6,8 @@
  * Cross-session IndexedDB persistence for instant first render.
  */
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import { activitiesApi } from '@shared/api/apiClient';
-import { createSubmissionKey } from '@shared/lib/idempotencyKey';
 import { idbGet, idbSet, idbDelete, idbEpoch } from '@shared/lib/idb';
 import { useAuth } from '@shared/context/AuthContext';
 import { mapActivity } from '@shared/utils/mapActivity';
@@ -377,51 +376,6 @@ export function useJoinActivity() {
   return useGuardedMutation(mutation, 'action');
 }
 
-export function useLeaveActivity() {
-  const queryClient = useQueryClient();
-  const mutation = useMutation({
-    mutationFn: (id) => activitiesApi.leave(id),
-    onSuccess: (data, id) => {
-      idbDelete('activities', 'all_page1');
-      queryClient.invalidateQueries({ queryKey: ['activities'], refetchType: 'active' });
-      queryClient.invalidateQueries({ queryKey: ['activity'], refetchType: 'active' });
-      if (id) queryClient.invalidateQueries({ queryKey: CREW_KEYS.byId(id), refetchType: 'active' });
-    },
-  });
-  return useGuardedMutation(mutation, 'action');
-}
-
-export function useCreateActivity() {
-  const queryClient = useQueryClient();
-  // Same key across retries of one submission, so a retry after a lost
-  // response replays the first create instead of making a second activity.
-  const [submissionKey] = useState(createSubmissionKey);
-  const mutation = useMutation({
-    mutationFn: (data) => activitiesApi.create(data, { idempotencyKey: submissionKey.keyFor(data) }),
-    onSuccess: () => {
-      submissionKey.done();
-      queryClient.invalidateQueries({ queryKey: ['activities'] });
-      queryClient.invalidateQueries({ queryKey: ['activity'] });
-    },
-  });
-  return useGuardedMutation(mutation, 'activity');
-}
-
-/**
- * Prefetch an activity card on hover intent.
- */
-export function usePrefetchActivity() {
-  const queryClient = useQueryClient();
-  return useCallback((id) => {
-    if (!id) return;
-    queryClient.prefetchQuery({
-      queryKey: CREW_KEYS.byId(id),
-      queryFn: () => activitiesApi.getById(id),
-      staleTime: 2 * 60 * 1000,
-    });
-  }, [queryClient]);
-}
-
 /**
  * The mapped activity list `useData` exposed as `crewActivities`.
  *
@@ -435,32 +389,3 @@ export function useCrewActivities() {
   return useMemo(() => rawActivities.map(mapActivity), [rawActivities]);
 }
 
-/**
- * The activity write actions `useData` used to define inline.
- *
- * Extracted verbatim -- same activitiesApi calls, each followed by the same
- * ['activities'] invalidation. `endCrewActivity` remains an alias of
- * `cancelCrewActivity`, exactly as useData had it.
- */
-export function useCrewActions() {
-  const queryClient = useQueryClient();
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['activities'] });
-  const [createKey] = useState(createSubmissionKey);
-
-  const joinCrewActivity = (id) => activitiesApi.join(id).then(invalidate);
-  const leaveCrewActivity = (id) => activitiesApi.leave(id).then(invalidate);
-  const cancelCrewActivity = (id) => activitiesApi.cancelCrewActivity(id).then(invalidate);
-  const endCrewActivity = cancelCrewActivity;
-  const declineCrewInvitation = (id) => activitiesApi.declineCrewInvitation(id).then(invalidate);
-  const addCrewActivity = (data) => activitiesApi.create(data, { idempotencyKey: createKey.keyFor(data) })
-    .then((res) => { createKey.done(); invalidate(); return res; });
-
-  return {
-    joinCrewActivity,
-    leaveCrewActivity,
-    cancelCrewActivity,
-    endCrewActivity,
-    declineCrewInvitation,
-    addCrewActivity,
-  };
-}

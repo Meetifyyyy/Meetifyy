@@ -5,7 +5,9 @@ import { useAuth } from '@shared/context/AuthContext';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { useConversations } from '@shared/hooks/useMessages';
 import { useTypingIndicator } from './useTypingIndicator';
-import { removeMessageFromCache, updateMessageInCache, updateConversationPreview } from '../utils/cacheUtils';
+import { removeMessageFromCache, updateMessageInCache, snapshotMessages, restoreMessages } from '../utils/cacheUtils';
+import { markUnsentInConversationList, newestLoadedMessage, replaceDeletedPreview } from '../utils/conversationList';
+import { unsendErrorMessage } from '../utils/unsendWindow';
 import { messagesApi } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
 import { useUrlState } from '@shared/hooks/useUrlState';
@@ -129,13 +131,20 @@ export function useChatAreaState(conversation) {
     showToast(copied ? 'Copied' : 'Could not copy', copied ? 'success' : 'error');
   }, []);
 
+  // One unsend request per message at a time: a second tap while the first
+  // is on the wire would only race it.
+  const unsendingRef = useRef(new Set());
+
   const handleUnsend = useCallback(async () => {
     if (!unsendConfirmMsg) return;
-    const targetMsgId = unsendConfirmMsg.id;
+    const target = unsendConfirmMsg;
+    const targetMsgId = target.id;
     const convIds = Array.from(
       new Set([conversation?.id, conversation?.publicId, conversation?.internalId].filter(Boolean))
     );
     setUnsendConfirmMsg(null);
+    if (!targetMsgId || unsendingRef.current.has(targetMsgId)) return;
+    unsendingRef.current.add(targetMsgId);
 
     const unsentPatch = {
       state: 'UNSENT',
@@ -148,20 +157,30 @@ export function useChatAreaState(conversation) {
       replyTo: null,
     };
 
-    // Instant Optimistic Cache Update (<1ms UX feedback) across all candidate conversation keys
+    // Shown at once; the rows it touches (the message and any reply quoting
+    // it) are kept so a refusal puts back exactly those, without refetching
+    // the thread.
+    const keys = [targetMsgId, target.clientId, target.tempId];
+    const snapshots = convIds.map((cId) => [cId, snapshotMessages(queryClient, cId, keys)]);
     convIds.forEach((cId) => {
       updateMessageInCache(queryClient, cId, targetMsgId, unsentPatch);
-      updateConversationPreview(queryClient, cId, 'This message was unsent');
+    });
+    // The row says "unsent" only if this was the message it was showing.
+    markUnsentInConversationList(queryClient, {
+      ids: convIds,
+      messageId: targetMsgId,
+      createdAt: target.createdAt,
     });
 
     try {
       await messagesApi.unsendMessage(targetMsgId);
-    } catch {
-      showToast("Couldn't unsend", 'error');
-      convIds.forEach((cId) => {
-        queryClient.invalidateQueries({ queryKey: ['messages', cId] });
-      });
+    } catch (err) {
+      snapshots.forEach(([cId, snapshot]) => restoreMessages(queryClient, cId, snapshot));
+      // The list row's preview has no copy of its own to put back.
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      showToast(unsendErrorMessage(err), 'error');
+    } finally {
+      unsendingRef.current.delete(targetMsgId);
     }
   }, [unsendConfirmMsg, queryClient, conversation]);
 
@@ -178,6 +197,13 @@ export function useChatAreaState(conversation) {
 
     try {
       await messagesApi.deleteMessageForMe(msg.id);
+      // If the list row was showing it, it shows the message before it now.
+      const replacement = convIds
+        .map((cId) => newestLoadedMessage(queryClient, cId, msg.id))
+        .find(Boolean);
+      if (replaceDeletedPreview(queryClient, { ids: convIds, messageId: msg.id, replacement })) {
+        queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      }
     } catch {
       showToast("Couldn't delete message", 'error');
       convIds.forEach((cId) => {

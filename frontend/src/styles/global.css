@@ -952,26 +952,33 @@ button,
 }
 
 /*
- * Light mode: the window's scrollbar gutter shows the page background.
+ * The window's scrollbar gutter, on screens with a classic scrollbar: the same
+ * as the page around it, in both themes.
  *
- * `scrollbar-gutter: stable` reserves the gutter on <html>, so what shows
- * there is <html>'s own background, not the body's gradient. The boot script
- * in index.html sets that background inline from the theme at load (black
- * after a dark start), and it is CSP-hashed, so it is overridden here rather
- * than edited: the same fixed gradient the body paints, and a clear track.
+ * `scrollbar-gutter: stable` reserves the gutter on <html>, and the track is
+ * transparent, so what shows there is <html>'s background COLOUR: the fixed
+ * gradient image does not extend under the scrollbar. That colour was the
+ * gradient's middle (#f0f5fc, near white) while the page meets the gutter at
+ * the gradient's edge (#d1e3f8), so a pale strip ran down the right of every
+ * page in light mode; in dark mode the boot script's inline black stood in.
+ * The boot script in index.html sets <html>'s background inline and is
+ * CSP-hashed, so it is overridden here rather than edited: the gradient the
+ * body paints, over the gradient's edge colour, and no track at all.
  */
-html[data-theme="light"] {
+html[data-theme="light"],
+html[data-theme="dark"] {
   background: radial-gradient(circle at center, var(--bg-gradient-center) 0%, var(--bg-gradient-mid) 45%, var(--bg-gradient-edge) 100%) fixed !important;
-  background-color: var(--bg-gradient-mid, #f0f5fc) !important;
+  background-color: var(--bg-gradient-edge) !important;
 }
 
-html[data-theme="light"]::-webkit-scrollbar-track,
-html[data-theme="light"]::-webkit-scrollbar {
+html[data-theme]::-webkit-scrollbar-track,
+html[data-theme]::-webkit-scrollbar,
+html[data-theme]::-webkit-scrollbar-corner {
   background: transparent;
 }
 
 [data-theme="dark"] ::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.02);
+  background: transparent;
 }
 
 [data-theme="dark"] ::-webkit-scrollbar-thumb {

@@ -20,6 +20,8 @@ import GroupSettingsPage from './GroupSettingsPage';
 import GroupJoinRequestsPage from './GroupJoinRequestsPage';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { useGroupActions } from '@shared/hooks/useGroupActions';
+import { useMessageActions } from '@shared/hooks/useMessageActions';
+import { normalizeEditPermission, normalizeWhoCanJoin, EDIT_PERMISSION, WHO_CAN_JOIN } from '../../utils/groupSettings';
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
 import {
   MAX_COVERED_IMAGE_SIZE_BYTES,
@@ -31,7 +33,7 @@ import { useQuery } from '@tanstack/react-query';
 import { groupApi } from '@shared/api/apiClient';
 
 export default function ChatDetailsPanel({
-  conversation, onBack, onBlockUser, onClearChat, onSearch, onLeaveActivity,
+  conversation, onBack, onBlockUser, onClearChat, onSearch,
 }) {
   const navigate = useNavigate();
   const { currentUser } = useAuth();
@@ -41,10 +43,11 @@ export default function ChatDetailsPanel({
     removeGroupMember, changeGroupOwner, promoteToAdmin, demoteFromAdmin, endGroup,
     acceptGroupJoinRequest, declineGroupJoinRequest, togglePinConversation,
   } = useGroupActions();
+  const { toggleMuteConversation } = useMessageActions();
 
   // General States
   const [showConfirm, setShowConfirm] = useState(false);
-  const [confirmType, setConfirmType] = useState(''); // 'leaveGroup' | 'endActivity' | 'removeMember' | 'changeOwner' | 'endGroup'
+  const [confirmType, setConfirmType] = useState(''); // 'leaveGroup' | 'removeMember' | 'changeOwner' | 'endGroup'
   const [targetUserId, setTargetUserId] = useState(null);
   
   // Modal States
@@ -73,32 +76,13 @@ export default function ChatDetailsPanel({
   const [showGalleryPage, setShowGalleryPage] = useState(false);
   const [showChangeOwnerPage, setShowChangeOwnerPage] = useState(false);
   const [showRequestsPage, setShowRequestsPage] = useState(false);
-  const [groupUpdatesActive, setGroupUpdatesActive] = useState(conversation.groupUpdatesActive !== false);
-  const [whoCanJoin, setWhoCanJoin] = useState(conversation.whoCanJoin || 'ANYONE');
-  const [visibility, setVisibility] = useState(() => {
-    if (conversation.visibility) return conversation.visibility;
-    if (conversation.id && String(conversation.id).startsWith('c_')) {
-      return 'COLLEGE';
-    }
-    return 'HIDDEN';
-  });
-  const [allowSharing, setAllowSharing] = useState(conversation.allowSharing !== false);
-  const [editGroupPermission, setEditGroupPermission] = useState(conversation.editGroupPermission || 'ADMIN');
   const [showImageSearch, setShowImageSearch] = useState(false);
 
   useEffect(() => {
     setEditName(conversation.name || '');
     setEditDesc(conversation.description || '');
     setEditAvatar(conversation.avatar || conversation.avatarKey || '');
-    setWhoCanJoin(conversation.whoCanJoin || 'ANYONE');
-    setVisibility(
-      conversation.visibility ||
-      (conversation.id && String(conversation.id).startsWith('c_') ? 'COLLEGE' : 'HIDDEN')
-    );
-    setAllowSharing(conversation.allowSharing !== false);
-    setEditGroupPermission(conversation.editGroupPermission || 'ADMIN');
-    setGroupUpdatesActive(conversation.groupUpdatesActive !== false);
-  }, [conversation.id, conversation.name, conversation.description, conversation.avatar, conversation.avatarKey, conversation.whoCanJoin, conversation.visibility, conversation.allowSharing, conversation.editGroupPermission, conversation.groupUpdatesActive]);
+  }, [conversation.id, conversation.name, conversation.description, conversation.avatar, conversation.avatarKey]);
 
   useEffect(() => {
     setShowEditGroupPage(false);
@@ -141,7 +125,9 @@ export default function ChatDetailsPanel({
       if (!idToFetch) return null;
       return await groupApi.getDetails(idToFetch);
     },
-    enabled: Boolean(isGroup && (conversation?.id || conversation?.publicId)),
+    // Not for a group the viewer has left or been removed from: the server
+    // refuses it, and its old copy was dropped on purpose (groupMembership.js).
+    enabled: Boolean(isGroup && (conversation?.id || conversation?.publicId) && conversation?.isMember !== false),
     staleTime: 1000 * 60 * 5, // 5 mins
   });
 
@@ -166,7 +152,12 @@ export default function ChatDetailsPanel({
     : isOwner;
   const isMember = isGroup ? (conversation.isMember !== false && Boolean(memberMap[currentUser?.id] || conversation.isMember || isOwner || isAdmin)) : true;
   const isClosed = conversation.status === 'Closed';
-  const canEditGroupInfo = isAdmin || (editGroupPermission || '').toUpperCase() === 'EVERYONE';
+  // As the server last sent them; a change patches both caches (useGroupActions).
+  const whoCanJoin = normalizeWhoCanJoin(groupDetails?.whoCanJoin ?? conversation.whoCanJoin);
+  const editPermission = normalizeEditPermission(groupDetails?.editGroupPermission ?? conversation.editGroupPermission);
+  const canEditGroupInfo = isAdmin || editPermission === EDIT_PERMISSION.EVERYONE;
+  const isMuted = Boolean(conversation.muted ?? conversation.isMuted);
+  const pendingRequests = groupDetails?.pendingRequests ?? conversation.pendingRequests ?? [];
   const sortedParticipants = useMemo(() => {
     const rawParticipants = isGroup ? (groupDetails?.memberDetails || []) : (conversation.members || conversation.participants || []);
     return sortGroupMembers(rawParticipants, {
@@ -177,11 +168,30 @@ export default function ChatDetailsPanel({
     });
   }, [isGroup, groupDetails?.memberDetails, groupDetails?.ownerId, groupDetails?.admins, conversation.members, conversation.participants, conversation.ownerId, conversation.hostId, conversation.admins, users]);
   const memberIds = sortedParticipants.map(p => p?.userId || p?.id || (typeof p === 'string' ? p : ''));
+  /**
+   * A member as the group's own details describe them (name, handle, photo,
+   * role), with the app's users map only filling gaps. Rows used to come from
+   * that map alone, and anyone it did not hold (people the app had not loaded
+   * elsewhere, the viewer included) was skipped: "Members (3)" over one row.
+   */
+  const memberOf = (uid) => {
+    const detail = sortedParticipants.find((p) => String(p?.userId || p?.id) === String(uid)) || {};
+    const known = Object.values(users).find((u) => String(u.id) === String(uid)) || {};
+    return {
+      id: uid,
+      role: detail.role || null,
+      username: detail.username || known.username || '',
+      displayName: detail.displayName || known.displayName || known.name || detail.username || known.username || 'Member',
+      avatar: detail.avatar ?? known.avatar ?? null,
+      profileAvailable: detail.profileAvailable !== false && !detail.isDeleted,
+    };
+  };
 
   // Formatted date for group creation
-  const formattedDate = conversation.createdAt 
-    ? new Date(conversation.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
-    : 'Recently';
+  const createdAt = groupDetails?.createdAt || conversation.createdAt;
+  const formattedDate = createdAt 
+    ? new Date(createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
+    : null;
 
   // Handlers
   const handleAvatarClick = () => {
@@ -236,11 +246,6 @@ export default function ChatDetailsPanel({
     setShowConfirm(true);
   };
 
-  const handleEndActivity = () => {
-    setConfirmType('endActivity');
-    setShowConfirm(true);
-  };
-
   const handleEndGroup = () => {
     setConfirmType('endGroup');
     setShowConfirm(true);
@@ -260,7 +265,7 @@ export default function ChatDetailsPanel({
       await changeGroupOwner(conversation.id, targetUserId);
       setTargetUserId(null);
       setShowChangeOwnerPage(false);
-      showToast('Owner changed successfully');
+      showToast('Ownership transferred', 'success');
     }
   };
 
@@ -293,11 +298,9 @@ export default function ChatDetailsPanel({
   if (showRequestsPage) {
     return (
       <GroupJoinRequestsPage
-        conversation={conversation}
-        pendingRequests={conversation.pendingRequests || []}
-        users={users}
+        pendingRequests={pendingRequests}
         onAccept={(reqUserId) => acceptGroupJoinRequest(conversation.id, reqUserId)}
-        onReject={(reqUserId) => declineGroupJoinRequest(conversation.id, reqUserId)}
+        onDecline={(reqUserId) => declineGroupJoinRequest(conversation.id, reqUserId)}
         onBack={() => setShowRequestsPage(false)}
       />
     );
@@ -315,14 +318,13 @@ export default function ChatDetailsPanel({
   if (showChangeOwnerPage) {
     return (
       <GroupChangeOwnerPage
-        conversation={conversation}
-        users={users}
-        memberIds={memberIds}
+        members={sortedParticipants}
+        ownerId={groupDetails?.ownerId || conversation.ownerId}
         onBack={() => setShowChangeOwnerPage(false)}
+        onInvite={!isClosed && isMember ? () => { setShowChangeOwnerPage(false); setShowSettingsPage(false); setShowInviteModal(true); } : undefined}
         targetUserId={targetUserId}
-        showConfirm={showConfirm}
-        confirmType={confirmType}
-        onSetConfirmTarget={(uid) => {
+        showConfirm={showConfirm && confirmType === 'changeOwner'}
+        onChoose={(uid) => {
           setTargetUserId(uid);
           setConfirmType('changeOwner');
           setShowConfirm(true);
@@ -413,43 +415,20 @@ export default function ChatDetailsPanel({
   if (showSettingsPage) {
     return (
       <GroupSettingsPage
-        conversation={conversation}
-        groupUpdatesActive={groupUpdatesActive}
-        setGroupUpdatesActive={setGroupUpdatesActive}
-        whoCanJoin={whoCanJoin}
-        setWhoCanJoin={setWhoCanJoin}
-        visibility={visibility}
-        setVisibility={setVisibility}
-        allowSharing={allowSharing}
-        setAllowSharing={setAllowSharing}
-        editGroupPermission={editGroupPermission}
-        setEditGroupPermission={setEditGroupPermission}
         isAdmin={isAdmin}
         isOwner={isOwner}
         isMember={isMember}
         isClosed={isClosed}
         canEditGroupInfo={canEditGroupInfo}
-        isGroup={isGroup}
-        users={users}
-        memberIds={memberIds}
-        targetUserId={targetUserId}
-        showConfirm={showConfirm}
-        confirmType={confirmType}
-        updateGroupSettings={updateGroupSettings}
-        updateGroupEditPermission={updateGroupEditPermission}
+        whoCanJoin={whoCanJoin}
+        editPermission={editPermission}
+        isMuted={isMuted}
+        onToggleMute={() => toggleMuteConversation(conversation.id, isMuted)}
+        onChangeWhoCanJoin={(value) => updateGroupSettings(conversation.id, { whoCanJoin: value })}
+        onChangeEditPermission={(value) => updateGroupEditPermission(conversation.id, value)}
         onBack={() => setShowSettingsPage(false)}
         onGoToEdit={() => setShowEditGroupPage(true)}
         onGoToChangeOwner={() => setShowChangeOwnerPage(true)}
-        onSetConfirmTarget={(uid, type) => {
-          setTargetUserId(uid);
-          setConfirmType(type);
-          setShowConfirm(true);
-        }}
-        onCancelConfirm={() => setShowConfirm(false)}
-        onConfirmAction={handleConfirmAction}
-        handleLeaveGroup={handleLeaveGroup}
-        handleEndActivity={handleEndActivity}
-        handleEndGroup={handleEndGroup}
       />
     );
   }
@@ -462,7 +441,7 @@ export default function ChatDetailsPanel({
           <ArrowLeft size={20} />
         </button>
         <h2 className={styles.headerTitle}>
-          {isOneOnOne ? 'Chat Details' : 'Group Info'}
+          {isOneOnOne ? 'Chat details' : 'Group info'}
         </h2>
         <div className={styles.headerRight}>
           {!isOneOnOne && (
@@ -490,7 +469,7 @@ export default function ChatDetailsPanel({
                   onSelect={() => { onClearChat?.(); onBack(); }}
                   onClose={menu.close}
                 >
-                  Clear chat history
+                  Clear chat
                 </MenuItem>
               </Menu>
             </div>
@@ -512,7 +491,7 @@ export default function ChatDetailsPanel({
               className={`${isGroup && canEditGroupInfo && !isClosed && isMember ? styles.avatarWrapperClickable : ''}`}
             >
               {isGroup && canEditGroupInfo && !isClosed && isMember && (
-                <div className={styles.avatarOverlay}>Change Photo</div>
+                <div className={styles.avatarOverlay}>Change photo</div>
               )}
             </Avatar>
           </div>
@@ -531,7 +510,7 @@ export default function ChatDetailsPanel({
                     type="button"
                     className={styles.actionIconButton}
                     onClick={() => navigate(`/profile/${targetUser.username}`, { state: { from: window.location.pathname } })}
-                    title="View Profile"
+                    title="View profile"
                   >
                     <User size={24} />
                   </button>
@@ -545,7 +524,7 @@ export default function ChatDetailsPanel({
                     onClick={() => {
                       if (onSearch) onSearch();
                     }}
-                    title="Search Messages"
+                    title="Search messages"
                   >
                     <Search size={24} />
                   </button>
@@ -567,7 +546,7 @@ export default function ChatDetailsPanel({
                         onBlockUser(targetId, Boolean(conversation.isBlockedByMe));
                       }
                     }}
-                    title={conversation.isBlockedByMe ? "Unblock Contact" : "Block Contact"}
+                    title={conversation.isBlockedByMe ? "Unblock contact" : "Block contact"}
                   >
                     <Ban size={24} />
                   </button>
@@ -580,15 +559,11 @@ export default function ChatDetailsPanel({
           )}
 
           {isGroup && (() => {
-            const isApprovalRequired = (
-              whoCanJoin === 'APPROVAL' || 
-              whoCanJoin === 'Request required' || 
-              whoCanJoin === 'APPROVAL_REQUIRED' || 
-              conversation.whoCanJoin === 'APPROVAL' || 
-              conversation.whoCanJoin === 'Request required' || 
-              conversation.whoCanJoin === 'APPROVAL_REQUIRED'
-            );
-            const pendingCount = conversation.pendingRequests?.length || 0;
+            // Owners and admins only: they review requests (and only they are
+            // sent the list). Shown while any are pending, even after joining
+            // was opened to anyone, so none is left unanswered out of sight.
+            const pendingCount = pendingRequests.length;
+            const showRequests = isAdmin && (whoCanJoin === WHO_CAN_JOIN.APPROVAL || pendingCount > 0);
 
             return (
               <div className={styles.actionButtonsRow}>
@@ -613,20 +588,20 @@ export default function ChatDetailsPanel({
                     onClick={() => {
                       if (onSearch) onSearch();
                     }}
-                    title="Search Messages"
+                    title="Search messages"
                   >
                     <Search size={24} />
                   </button>
                   <span className={styles.actionIconLabel}>Search</span>
                 </div>
 
-                {!isClosed && isMember && isApprovalRequired && (
+                {!isClosed && isMember && showRequests && (
                   <div className={styles.actionIconContainer}>
                     <button
                       type="button"
                       className={styles.actionIconButton}
                       onClick={() => setShowRequestsPage(true)}
-                      title="Join Requests"
+                      title="Join requests"
                       style={{ position: 'relative' }}
                     >
                       <UserCheck size={24} />
@@ -691,13 +666,12 @@ export default function ChatDetailsPanel({
                 type="button"
                 className={styles.settingsBtn}
                 onClick={() => setShowSettingsPage(true)}
-                style={{ marginBottom: '1.25rem' }}
               >
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '6px' }}>
                   <circle cx="12" cy="12" r="3" />
                   <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06-.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
                 </svg>
-                <span>Group Settings</span>
+                <span>Group settings</span>
               </button>
             )}
 
@@ -705,12 +679,11 @@ export default function ChatDetailsPanel({
               <h3 className={styles.sectionTitle}>Members ({memberIds.length})</h3>
               <div className={styles.memberList}>
                 {memberIds.map(uid => {
-                  const userObj = Object.values(users).find(u => u.id === uid);
-                  if (!userObj) return null;
-                  
+                  const userObj = memberOf(uid);
+
                   const isMe = uid === currentUser?.id;
-                  const isUserOwner = uid === conversation.ownerId || uid === conversation.hostId;
-                  const isUserAdmin = (conversation.admins || []).includes(uid);
+                  const isUserOwner = userObj.role === 'OWNER' || uid === conversation.ownerId || uid === conversation.hostId;
+                  const isUserAdmin = userObj.role === 'ADMIN' || (conversation.admins || []).includes(uid);
                   
                   const canPromote = isOwner && !isMe && !isUserOwner && !isUserAdmin;
                   const canDemote = isOwner && !isMe && !isUserOwner && isUserAdmin;
@@ -719,19 +692,27 @@ export default function ChatDetailsPanel({
                   
                   return (
                     <div key={uid} className={styles.memberItem}>
-                      <Link to={`/profile/${userObj.username}`} className={styles.memberLink}>
-                        <Avatar 
-                          src={userObj.avatar} 
-                          name={userObj.name} 
-                          size="38px" 
-                        />
-                        <div className={styles.memberMeta}>
-                          <span className={styles.memberName}>
-                            {userObj.displayName || userObj.name} {isMe && '(You)'}
-                          </span>
-                          <span className={styles.memberUsername}>@{userObj.username}</span>
-                        </div>
-                      </Link>
+                      {(() => {
+                        const who = (
+                          <>
+                            <Avatar src={userObj.avatar} name={userObj.displayName} size="38px" />
+                            <div className={styles.memberMeta}>
+                              <span className={styles.memberName}>
+                                {userObj.displayName} {isMe && '(You)'}
+                              </span>
+                              {userObj.username && userObj.profileAvailable && (
+                                <span className={styles.memberUsername}>@{userObj.username}</span>
+                              )}
+                            </div>
+                          </>
+                        );
+                        // A deleted account has no profile to open.
+                        return userObj.username && userObj.profileAvailable ? (
+                          <Link to={`/profile/${userObj.username}`} className={styles.memberLink}>{who}</Link>
+                        ) : (
+                          <div className={styles.memberLink}>{who}</div>
+                        );
+                      })()}
 
                       <div className={styles.memberRight}>
                         {isUserOwner && <span className={styles.roleTag}>Owner</span>}
@@ -757,7 +738,7 @@ export default function ChatDetailsPanel({
                               e.stopPropagation();
                               setActiveMemberMenu(activeMemberMenu === uid ? null : uid);
                             }}
-                            title="Member Actions"
+                            title="Member actions"
                             aria-haspopup="menu"
                             aria-expanded={activeMemberMenu === uid}
                           >
@@ -832,14 +813,14 @@ export default function ChatDetailsPanel({
                     className={`${styles.actionBtn} ${styles.actionBtnDanger}`}
                     onClick={handleEndGroup}
                   >
-                    End Group
+                    End group
                   </button>
                 ) : (
                   <button 
                     className={`${styles.actionBtn} ${styles.actionBtnDanger}`}
                     onClick={handleLeaveGroup}
                   >
-                    Leave Group
+                    Leave group
                   </button>
                 )}
               </div>
@@ -848,28 +829,28 @@ export default function ChatDetailsPanel({
         )}
 
         {isGroup && (
-          <div className={styles.dateInfo}>Created on {formattedDate}</div>
+          formattedDate && <div className={styles.dateInfo}>Created on {formattedDate}</div>
         )}
       </div>
 
       <ConfirmModal
         title={
-          confirmType === 'endGroup' ? 'End Group' :
-          confirmType === 'leaveGroup' ? 'Leave Group' :
-          confirmType === 'changeOwner' ? 'Transfer Ownership' :
-          'Remove Member'
+          confirmType === 'endGroup' ? 'End group' :
+          confirmType === 'leaveGroup' ? 'Leave group' :
+          confirmType === 'changeOwner' ? 'Transfer ownership' :
+          'Remove member'
         }
         desc={
           confirmType === 'endGroup' ? 'This will close the group permanently for all members.' :
           confirmType === 'leaveGroup' ? 'You will stop receiving messages from this group.' :
-          confirmType === 'changeOwner' ? `${(Object.values(users).find(u => u.id === targetUserId)?.displayName || Object.values(users).find(u => u.id === targetUserId)?.name || 'This member')} will become the new group owner.` :
-          `${(Object.values(users).find(u => u.id === targetUserId)?.displayName || Object.values(users).find(u => u.id === targetUserId)?.name || 'This member')} will be removed from this group.`
+          confirmType === 'changeOwner' ? `${targetUserId ? memberOf(targetUserId).displayName : 'This member'} will become the new group owner.` :
+          `${targetUserId ? memberOf(targetUserId).displayName : 'This member'} will be removed from this group.`
         }
         visible={showConfirm}
         onCancel={() => setShowConfirm(false)}
         onConfirm={handleConfirmAction}
         confirmText={
-          confirmType === 'endGroup' ? 'End Group' :
+          confirmType === 'endGroup' ? 'End group' :
           confirmType === 'leaveGroup' ? 'Leave' :
           confirmType === 'changeOwner' ? 'Transfer' :
           'Remove'
@@ -879,6 +860,7 @@ export default function ChatDetailsPanel({
           'Cancel'
         }
         isDestructive={true}
+        centered
       />
       
       <InviteModal 

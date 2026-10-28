@@ -145,7 +145,7 @@ describe('PushDispatcherService', () => {
     ).not.toThrow();
   });
 
-  it('collapses a message burst into one delayed job per recipient and conversation', async () => {
+  it('pushes the first message of a burst at once', async () => {
     const { add, dispatcher } = build();
     dispatcher.enqueueForMessage({
       recipientId: 'b',
@@ -158,8 +158,111 @@ describe('PushDispatcherService', () => {
       delay: number;
       removeOnComplete: boolean;
     };
-    expect(opts.jobId).toBe('m_b_conv-1');
-    expect(opts.delay).toBeGreaterThan(0);
+    expect(opts.jobId).toMatch(/^m_b_conv-1_lead_/);
+    expect(opts.delay).toBe(0);
     expect(opts.removeOnComplete).toBe(true);
+  });
+
+  it('collapses the rest of a burst into one delayed job per window', async () => {
+    const { add, dispatcher } = build();
+    const send = () =>
+      dispatcher.enqueueForMessage({
+        recipientId: 'b',
+        conversationId: 'conv-1',
+        senderId: 'a',
+      });
+    send();
+    await flush();
+    send();
+    await flush();
+    send();
+    await flush();
+    const [lead, second, third] = add.mock.calls.map(
+      (c) => c[2] as { jobId: string; delay: number },
+    );
+    expect(lead.delay).toBe(0);
+    expect(second.delay).toBeGreaterThan(0);
+    // Same window, same id: BullMQ keeps one job for both.
+    expect(third.jobId).toBe(second.jobId);
+    expect(second.jobId).not.toBe(lead.jobId);
+  });
+
+  it('a different conversation opens its own burst', async () => {
+    const { add, dispatcher } = build();
+    dispatcher.enqueueForMessage({
+      recipientId: 'b',
+      conversationId: 'c1',
+      senderId: 'a',
+    });
+    await flush();
+    dispatcher.enqueueForMessage({
+      recipientId: 'b',
+      conversationId: 'c2',
+      senderId: 'a',
+    });
+    await flush();
+    expect(
+      add.mock.calls.map((c) => (c[2] as { delay: number }).delay),
+    ).toEqual([0, 0]);
+  });
+
+  it('a removal is one job per removal, retried, and safe to enqueue twice', async () => {
+    const { add, dispatcher } = build();
+    const job = {
+      recipientId: 'b',
+      conversationId: 'c',
+      removedAt: '2026-10-28T10:00:00.000Z',
+    };
+    dispatcher.enqueueForGroupRemoval(job);
+    dispatcher.enqueueForGroupRemoval(job);
+    dispatcher.enqueueForGroupRemoval({
+      ...job,
+      removedAt: '2026-10-28T11:00:00.000Z',
+    });
+    await flush();
+    const [first, repeat, later] = add.mock.calls;
+    expect(first[0]).toBe(PUSH_JOB.groupRemoved);
+    expect(first[1]).toEqual(job);
+    expect(repeat[2].jobId).toBe(first[2].jobId);
+    expect(later[2].jobId).not.toBe(first[2].jobId);
+    expect(first[2]).toMatchObject({ attempts: 5 });
+  });
+
+  it('a removal enqueues nothing when push is off or the job is incomplete', async () => {
+    const { add, dispatcher } = build();
+    dispatcher.enqueueForGroupRemoval(null);
+    dispatcher.enqueueForGroupRemoval({
+      recipientId: 'b',
+      conversationId: '',
+      removedAt: '2026-10-28T10:00:00.000Z',
+    });
+    restore();
+    restore = setPushConfig({ enabled: false, web: true, fcm: true });
+    const off = build();
+    off.dispatcher.enqueueForGroupRemoval({
+      recipientId: 'b',
+      conversationId: 'c',
+      removedAt: '2026-10-28T10:00:00.000Z',
+    });
+    await flush();
+    expect(add).not.toHaveBeenCalled();
+    expect(off.add).not.toHaveBeenCalled();
+  });
+
+  it('a join request is one job per admin and request, safe to enqueue twice', async () => {
+    const { add, dispatcher } = build();
+    const job = {
+      recipientId: 'admin',
+      conversationId: 'c',
+      requesterId: 'asker',
+    };
+    dispatcher.enqueueForGroupJoinRequest(job);
+    dispatcher.enqueueForGroupJoinRequest(job);
+    dispatcher.enqueueForGroupJoinRequest({ ...job, recipientId: 'owner' });
+    await flush();
+    const [first, repeat, other] = add.mock.calls;
+    expect(first[0]).toBe(PUSH_JOB.groupJoinRequest);
+    expect(repeat[2].jobId).toBe(first[2].jobId);
+    expect(other[2].jobId).not.toBe(first[2].jobId);
   });
 });
