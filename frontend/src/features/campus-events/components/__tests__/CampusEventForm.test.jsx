@@ -45,6 +45,12 @@ const pickDate = (label, iso) => {
     weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
   });
   const dialog = screen.getByRole('dialog', { name: 'Choose a date' });
+  // The calendar opens on the current month: near the end of one, a day a few
+  // days ahead is on the next, so step forward until it is there (never more
+  // than a couple of months).
+  for (let i = 0; i < 3 && !within(dialog).queryByRole('button', { name: full }); i += 1) {
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Next month' }));
+  }
   fireEvent.click(within(dialog).getByRole('button', { name: full }));
 };
 
