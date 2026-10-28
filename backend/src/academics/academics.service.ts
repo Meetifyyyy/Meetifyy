@@ -62,6 +62,8 @@ export class AcademicsService {
         domains: {
           where: { status: 'ACTIVE' },
           select: { domain: true, isPrimary: true },
+          // The primary domain first: the client's email placeholder uses it.
+          orderBy: [{ isPrimary: 'desc' }, { domain: 'asc' }],
         },
       },
       orderBy: { name: 'asc' },
