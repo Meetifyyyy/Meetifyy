@@ -70,6 +70,12 @@
     padding-top: calc(0.75rem + var(--status-bar-inset, 0px));
   }
 
+  /* Pinned under a clear status bar, the compact banner pads for it as well
+     (its own !important top padding would otherwise win over the rule above). */
+  :global(html[data-bars='transparent']) .compactHeader {
+    padding-top: calc(0.5rem + var(--status-bar-inset, 0px)) !important;
+  }
+
   .compactHeader {
     padding-top: 0.5rem !important;
     padding-bottom: 0.5rem !important;

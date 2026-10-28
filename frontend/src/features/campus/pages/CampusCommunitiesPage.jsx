@@ -5,6 +5,7 @@ import { useSmartBack } from '@shared/hooks/useSmartBack';
 import sharedStyles from '../components/skeletons/CampusShared.module.css';
 import pageStyles from './CampusCommunitiesPage.module.css';
 const styles = { ...sharedStyles, ...pageStyles };
+import CampusBannerBars from '@features/campus/components/CampusBannerBars';
 import { Plus, Search, ChevronLeft, Users } from '@shared/components/icons';
 import CommunityRow from '@features/communities/components/directory/CommunityRow';
 import CommunityRowSkeleton from '@features/communities/components/directory/CommunityRowSkeleton';
@@ -79,6 +80,7 @@ export default function CampusCommunitiesPage() {
   return (
     <main className={`centre centre-wide ${styles.hubContainer} ${pageStyles.tightHub}`}>
       <CampusAffiliationGate>
+        <CampusBannerBars />
         <div className={`${styles.headerBanner} ${styles.compactHeader}`}>
           <header className={styles.header}>
             {showSearch ? (

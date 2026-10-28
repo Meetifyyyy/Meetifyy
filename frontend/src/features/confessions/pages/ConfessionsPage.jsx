@@ -17,6 +17,7 @@ import { ChevronLeft, EyeOff, Flag, Heart, ShieldCheck } from '@shared/component
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import LazyReportModal from '@shared/components/modals/ReportModal/LazyReportModal';
 import CampusAffiliationGate from '@features/campus/components/affiliation/CampusAffiliationGate';
+import CampusBannerBars from '@features/campus/components/CampusBannerBars';
 import ConfessionsDeck from '../components/ConfessionsDeck';
 import HandleSetup from '../components/HandleSetup';
 import ConfessionCard from '../components/ConfessionCard';
@@ -124,6 +125,8 @@ function ConfessionsFlow() {
 function ConfessionsHeader({ handle, busy = false }) {
   const goBack = useSmartBack();
   return (
+    <>
+    <CampusBannerBars />
     <div className={`${sharedStyles.headerBanner} ${sharedStyles.compactHeader}`}>
       <header className={sharedStyles.header}>
         <div className={sharedStyles.headerLeftGroup}>
@@ -154,6 +157,7 @@ function ConfessionsHeader({ handle, busy = false }) {
         )}
       </header>
     </div>
+    </>
   );
 }
 

@@ -5,6 +5,7 @@ import { ChevronLeft, Search } from '@shared/components/icons';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { useAuth } from '@shared/context/AuthContext';
 
+import CampusBannerBars from '@features/campus/components/CampusBannerBars';
 import Avatar from '@shared/components/avatar/Avatar';
 import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
 import Skeleton from '@shared/components/skeletons/Skeleton';
@@ -313,6 +314,7 @@ export default function DirectoryPage() {
   return (
     <main className={`centre centre-wide ${styles.hubContainer}`}>
       <CampusAffiliationGate>
+        <CampusBannerBars />
         <div className={`${styles.headerBanner} ${styles.compactHeader}`}>
           <header className={styles.header}>
             {showSearch ? (

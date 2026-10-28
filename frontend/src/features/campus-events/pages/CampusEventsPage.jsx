@@ -8,6 +8,7 @@ import CampusEventSection from '../components/CampusEventSection';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import sharedStyles from '@features/campus/components/skeletons/CampusShared.module.css';
 import CampusAffiliationGate from '@features/campus/components/affiliation/CampusAffiliationGate';
+import CampusBannerBars from '@features/campus/components/CampusBannerBars';
 
 /**
  * Only ever opened by a campus representative, from the "+" button or a card's
@@ -59,6 +60,7 @@ export default function CampusEventsPage() {
   return (
     <main className={`centre centre-wide ${sharedStyles.hubContainer}`}>
       <CampusAffiliationGate>
+        <CampusBannerBars />
         <div className={`${sharedStyles.headerBanner} ${sharedStyles.compactHeader}`}>
           <header className={sharedStyles.header}>
             <div className={sharedStyles.headerLeftGroup}>
