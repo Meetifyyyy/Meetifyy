@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
-import { Bookmark, List, Grid } from '@shared/components/icons';
+import { Bookmark, List, Grid, ChevronLeft } from '@shared/components/icons';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { postsApi, activitiesApi } from '@shared/api/apiClient';
 import Post from '../components/post/Post';
@@ -155,10 +155,7 @@ export default function SavedPage() {
       <header className={styles.header}>
         <div className={styles.headerLeft}>
           <button className={styles.headerSquareBtn} onClick={() => goBack('/home')} title="Back">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="19" y1="12" x2="5" y2="12" />
-              <polyline points="12 19 5 12 12 5" />
-            </svg>
+            <ChevronLeft size={20} />
           </button>
           <h1 className={styles.title}>Saved</h1>
         </div>

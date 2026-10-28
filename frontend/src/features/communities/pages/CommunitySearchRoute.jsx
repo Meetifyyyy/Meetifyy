@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Search, X, Loader2, AlertCircle, Users } from '@shared/components/icons';
+import { ChevronLeft, Search, X, Loader2, AlertCircle, Users } from '@shared/components/icons';
 import { useDebouncedState } from '@shared/hooks/useDebounce';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { useExploreCommunities } from '@shared/hooks/useCommunities';
@@ -76,7 +76,7 @@ export default function CommunitySearchRoute() {
         <div className={`${searchStyles.header} ${styles.header}`} role="search">
           <div className={searchStyles.topRow}>
             <button type="button" className={searchStyles.backBtn} aria-label="Back to communities" onClick={handleBack}>
-              <ArrowLeft size={20} />
+              <ChevronLeft size={20} />
             </button>
             <div className={searchStyles.searchPill}>
               <Search size={18} className={searchStyles.searchPillIcon} aria-hidden="true" />

@@ -5,6 +5,7 @@ import LandingNavbar from '../../auth/landing/components/LandingNavbar';
 import LandingFooter from '../../auth/landing/components/LandingFooter';
 import '../../auth/landing/landing.css';
 import styles from './StaticDocLayout.module.css';
+import { ChevronLeft } from '@shared/components/icons';
 
 export default function StaticDocLayout({
   badge,
@@ -129,11 +130,7 @@ function AppTopBar({ title }) {
         aria-label="Go back"
         onClick={() => goBack('/settings')}
       >
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
-          stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-          <line x1="19" y1="12" x2="5" y2="12" />
-          <polyline points="12 19 5 12 12 5" />
-        </svg>
+        <ChevronLeft size={20} />
       </button>
       <span className={styles.appTopBarTitle}>{title}</span>
       <span className={styles.appBackBtn} aria-hidden="true" />

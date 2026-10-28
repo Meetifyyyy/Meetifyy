@@ -1,5 +1,6 @@
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import styles from './PageHeader.module.css';
+import { ChevronLeft } from '@shared/components/icons';
 
 export default function PageHeader({
   title,
@@ -27,10 +28,7 @@ export default function PageHeader({
               onClick={() => goBack(backPath)}
               aria-label="Go back"
             >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="19" y1="12" x2="5" y2="12" />
-                <polyline points="12 19 5 12 12 5" />
-              </svg>
+              <ChevronLeft size={20} />
             </button>
           )}
           <h1 className={`${styles.mobileTitle} ${(title === 'Messages' || title === 'Crew' || title === 'Communities' || title === 'Search' || title === 'Notifications') ? styles.changaFont : ''}`}>{title}</h1>

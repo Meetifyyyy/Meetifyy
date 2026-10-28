@@ -73,7 +73,7 @@ const POSTS_PAGE_SIZE = 15;
 const PENDING_LOCAL_POSTS = [];
 import ReportModal from '@shared/components/modals/ReportModal/LazyReportModal';
 import ModeratorWelcomeModal from '../moderation/ModeratorWelcomeModal';
-import { NotificationOff, NotificationOn, MoreVertical, Share2, Users, Settings, Flag, LogOut } from '@shared/components/icons';
+import { NotificationOff, NotificationOn, MoreVertical, Share2, Users, Settings, Flag, LogOut, ChevronLeft } from '@shared/components/icons';
 import Menu, { MenuItem, useMenu } from '@shared/components/ui/Menu';
 
 function formatCount(n) {
@@ -1208,10 +1208,7 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
           onClick={onBack}
           aria-label="Go back"
         >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="19" y1="12" x2="5" y2="12"></line>
-            <polyline points="12 19 5 12 12 5"></polyline>
-          </svg>
+          <ChevronLeft size={20} />
         </button>
         {!IS_MOBILE_BUILD && (
           <div style={{ position: 'relative' }}>
@@ -1473,10 +1470,7 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
               onClick={handleCloseMobileAbout}
               aria-label="Go back"
             >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="19" y1="12" x2="5" y2="12"></line>
-                <polyline points="12 19 5 12 12 5"></polyline>
-              </svg>
+              <ChevronLeft size={20} />
             </button>
             <h3 className={styles.mobileAboutTitle}>{comm.name}</h3>
           </div>

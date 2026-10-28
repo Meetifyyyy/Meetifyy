@@ -12,7 +12,7 @@ import ShareActivityModal from '../components/modals/ShareActivityModal';
 import InviteFriendsModal from '@shared/components/modals/InviteFriendsModal';
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import styles from './ActivityDetailPage.module.css';
-import { Bookmark, UserPlus, CircleXIcon } from '@shared/components/icons';
+import { Bookmark, UserPlus, CircleXIcon, ChevronLeft } from '@shared/components/icons';
 import { showToast } from '@shared/utils/toast';
 import { useSavedActivitiesStore } from '@shared/stores/savedActivitiesStore';
 import { useJoinActivity } from '../hooks/useJoinActivity';
@@ -519,10 +519,7 @@ export default function ActivityDetailPage() {
         <div className={styles.topBar}>
           <div className={styles.headerLeft}>
             <button className={styles.backBtn} onClick={() => goBack('/crew')} aria-label="Go back">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                <line x1="19" y1="12" x2="5" y2="12" />
-                <polyline points="12 19 5 12 12 5" />
-              </svg>
+              <ChevronLeft size={20} style={{ flexShrink: 0 }} />
             </button>
           </div>
 

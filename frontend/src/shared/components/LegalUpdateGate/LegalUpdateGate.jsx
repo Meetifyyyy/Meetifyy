@@ -7,7 +7,7 @@ import { useScrollLock } from '@shared/hooks/useScrollLock';
 import { IS_MOBILE_BUILD } from '@config';
 import {
   AlertCircle,
-  ArrowLeft,
+  ChevronLeft,
   Loader2,
 } from '@shared/components/icons';
 import {
@@ -442,7 +442,7 @@ export default function LegalUpdateGate({ children }) {
                 onClick={() => setReading(null)}
                 aria-label="Back to the summary"
               >
-                <ArrowLeft size={18} aria-hidden="true" />
+                <ChevronLeft size={18} aria-hidden="true" />
               </button>
               <h2 id="legal-reader-title" className={styles.readerTitle}>
                 {readingDoc.title}

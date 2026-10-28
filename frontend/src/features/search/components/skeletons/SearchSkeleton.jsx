@@ -1,4 +1,4 @@
-import { Search, ArrowLeft } from '@shared/components/icons';
+import { Search, ChevronLeft } from '@shared/components/icons';
 import PageLayout from '@layout/PageLayout';
 import Skeleton from '@shared/components/skeletons/Skeleton';
 import styles from '@features/search/pages/SearchResultsRoute.module.css';
@@ -20,7 +20,7 @@ export default function SearchSkeleton() {
         <div className={styles.header} role="search">
           <div className={styles.topRow}>
             <button className={styles.backBtn} aria-label="Go back" tabIndex={-1}>
-              <ArrowLeft size={20} />
+              <ChevronLeft size={20} />
             </button>
             <div className={styles.searchPill}>
               <Search size={18} className={styles.searchPillIcon} aria-hidden="true" />

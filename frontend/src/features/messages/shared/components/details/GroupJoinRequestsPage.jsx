@@ -15,7 +15,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import Avatar from '@shared/components/avatar/Avatar';
-import { Check, X, UserCheck, ArrowLeft } from '@shared/components/icons';
+import { Check, X, UserCheck, ChevronLeft } from '@shared/components/icons';
 import { timeAgo } from '@shared/utils/time';
 import sharedStyles from './ChatDetailsPanel.module.css';
 import styles from './GroupJoinRequestsPage.module.css';
@@ -54,7 +54,7 @@ export default function GroupJoinRequestsPage({ pendingRequests = [], onAccept, 
     <div className={sharedStyles.container}>
       <div className={sharedStyles.header}>
         <button type="button" className={sharedStyles.backBtn} onClick={onBack} aria-label="Back">
-          <ArrowLeft size={20} />
+          <ChevronLeft size={20} />
         </button>
         <h2 className={sharedStyles.headerTitle}>Join requests</h2>
         <div style={{ width: '40px' }} />

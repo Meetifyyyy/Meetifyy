@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect, useRef, useCallback, memo } from 'react';
 import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { useUrlState } from '@shared/hooks/useUrlState';
-import { Search, Clock, X, RefreshCw, AlertCircle, ArrowLeft, Loader2, Users, Activity, Globe2, FileText } from '@shared/components/icons';
+import { Search, Clock, X, RefreshCw, AlertCircle, ChevronLeft, Loader2, Users, Activity, Globe2, FileText } from '@shared/components/icons';
 import { useGlobalSearch } from '@features/search/hooks/useGlobalSearch';
 import { useDelayedFlag } from '@features/search/hooks/useDelayedFlag';
 import Avatar from '@shared/components/avatar/Avatar';
@@ -372,7 +372,7 @@ export default function SearchResultsRoute() {
               aria-label="Go back"
               onClick={() => goBack('/home')}
             >
-              <ArrowLeft size={20} />
+              <ChevronLeft size={20} />
             </button>
             <div className={styles.searchPill}>
               <Search size={18} className={styles.searchPillIcon} aria-hidden="true" />

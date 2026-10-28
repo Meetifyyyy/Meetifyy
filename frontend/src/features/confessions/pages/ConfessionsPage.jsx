@@ -13,7 +13,7 @@ import {
 } from '@shared/hooks/useConfessions';
 import { SHARE_KIND } from '@shared/lib/share/content';
 import { showToast } from '@shared/utils/toast';
-import { ArrowLeft, EyeOff, Flag, Heart, ShieldCheck } from '@shared/components/icons';
+import { ChevronLeft, EyeOff, Flag, Heart, ShieldCheck } from '@shared/components/icons';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import LazyReportModal from '@shared/components/modals/ReportModal/LazyReportModal';
 import CampusAffiliationGate from '@features/campus/components/affiliation/CampusAffiliationGate';
@@ -134,7 +134,7 @@ function ConfessionsHeader({ handle, busy = false }) {
             title="Back to Campus"
             aria-label="Back to Campus"
           >
-            <ArrowLeft size={20} />
+            <ChevronLeft size={20} />
           </button>
           <h1 className={sharedStyles.collegeTitle} style={{ margin: 0 }}>Confessions</h1>
         </div>

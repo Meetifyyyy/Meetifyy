@@ -1,5 +1,5 @@
 import { useState, useCallback, lazy, Suspense } from 'react';
-import { ArrowLeft, CalendarPlus } from '@shared/components/icons';
+import { ChevronLeft, CalendarPlus } from '@shared/components/icons';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { useAuth } from '@shared/context/AuthContext';
 import { showToast } from '@shared/utils/toast';
@@ -63,7 +63,7 @@ export default function CampusEventsPage() {
           <header className={sharedStyles.header}>
             <div className={sharedStyles.headerLeftGroup}>
               <button className={sharedStyles.headerSquareBtn} onClick={() => goBack('/campus')} title="Back">
-                <ArrowLeft size={20} />
+                <ChevronLeft size={20} />
               </button>
               <h1 className={sharedStyles.collegeTitle} style={{ margin: 0 }}>Events</h1>
             </div>

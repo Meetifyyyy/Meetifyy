@@ -18,6 +18,7 @@ import { useMediaQuery } from '@shared/hooks/useMediaQuery';
 import { getCommentLimitState, COMMENT_MAX_CHARS } from '@shared/utils/textLimit';
 import { useComposerDraft } from '@shared/hooks/useComposerDraft';
 import { draftOwner, saveDraft } from '@shared/lib/drafts';
+import { ChevronLeft } from '@shared/components/icons';
 
 /**
  * Flat comment list -> nested tree, reusing every node object that did not
@@ -377,7 +378,7 @@ export default function PostView({ post, onBack, autoFocusComment = false }) {
       {/* Top Bar — always renders instantly, never gated on post data */}
       <div className={styles.postViewTopbar}>
         <button onClick={onBack} className={styles.postBackBtn}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" /></svg>
+          <ChevronLeft size={20} />
         </button>
         <h2 className={styles.postViewTitle}>Post</h2>
       </div>

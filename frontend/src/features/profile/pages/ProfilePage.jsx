@@ -100,7 +100,7 @@ import CoverImage, { warmCover } from '@shared/components/ui/CoverImage';
 import CoverEditorSheet from '../components/CoverEditorSheet';
 import BlurredCover from '@shared/components/ui/BlurredCover';
 import CollapsingHeader from '@shared/components/CollapsingHeader/CollapsingHeader';
-import { Bookmark, MoreVertical, Settings, Share2, Flag } from '@shared/components/icons';
+import { Bookmark, MoreVertical, Settings, Share2, Flag, ChevronLeft } from '@shared/components/icons';
 import Menu, { MenuItem, useMenu } from '@shared/components/ui/Menu';
 import ActionDot from '@shared/components/ActionDot';
 import { useProfileActionNeeded } from '@shared/hooks/useProfileActionNeeded';
@@ -611,10 +611,7 @@ export default function ProfilePage() {
                 </>
               )}
               <button className={s.mobileBackBtn} onClick={() => goBack('/home')} aria-label="Go back">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="19" y1="12" x2="5" y2="12" />
-                  <polyline points="12 19 5 12 12 5" />
-                </svg>
+                <ChevronLeft size={20} />
               </button>
               {!IS_MOBILE_BUILD && (
                 <div className={s.menuWrap}>

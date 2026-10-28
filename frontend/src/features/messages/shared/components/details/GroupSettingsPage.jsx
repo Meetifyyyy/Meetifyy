@@ -21,7 +21,7 @@
  * once and is put back if the server refuses it (useGroupActions).
  */
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, ChevronRight } from '@shared/components/icons';
+import { ChevronLeft, ChevronRight } from '@shared/components/icons';
 import sharedStyles from './ChatDetailsPanel.module.css';
 import styles from './GroupSettingsPage.module.css';
 import { EDIT_PERMISSION, WHO_CAN_JOIN } from '../../utils/groupSettings';
@@ -129,7 +129,7 @@ export default function GroupSettingsPage({
     <div className={sharedStyles.container}>
       <div className={sharedStyles.header}>
         <button type="button" className={sharedStyles.backBtn} onClick={onBack} aria-label="Back">
-          <ArrowLeft size={20} />
+          <ChevronLeft size={20} />
         </button>
         <h2 className={sharedStyles.headerTitle}>Group settings</h2>
         <div style={{ width: '40px' }} />

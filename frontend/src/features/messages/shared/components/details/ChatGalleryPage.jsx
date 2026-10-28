@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import sharedStyles from './ChatDetailsPanel.module.css';
 import styles from './ChatGalleryPage.module.css';
-import { Image as ImageIcon, ArrowLeft } from '@shared/components/icons';
+import { Image as ImageIcon, ChevronLeft } from '@shared/components/icons';
 import { useMediaViewerActions } from '@shared/context/MediaViewerContext';
 import { useElementSize } from '@shared/hooks/useElementSize';
 import MediaThumb from '@shared/components/media/MediaThumb';
@@ -129,7 +129,7 @@ export default function ChatGalleryPage({ conversationId, onBack }) {
           title="Back"
           aria-label="Back"
         >
-          <ArrowLeft size={20} />
+          <ChevronLeft size={20} />
         </button>
         <h2 className={sharedStyles.headerTitle}>Gallery</h2>
         <div style={{ width: '40px' }} />

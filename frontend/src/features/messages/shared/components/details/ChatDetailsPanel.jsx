@@ -6,7 +6,7 @@ import Avatar from '@shared/components/avatar/Avatar';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import styles from './ChatDetailsPanel.module.css';
 import { useAcademicSummary } from '@shared/academics/useAcademicSummary';
-import { Pin, Trash2, User, Search, Ban, UserPlus, UserCheck, UserX, Shield, Flag, ArrowLeft, MoreVertical } from '@shared/components/icons';
+import { Pin, Trash2, User, Search, Ban, UserPlus, UserCheck, UserX, Shield, Flag, ChevronLeft, MoreVertical } from '@shared/components/icons';
 import Menu, { MenuItem, useMenu } from '@shared/components/ui/Menu';
 import InviteModal from '../modals/InviteModal';
 import ReportModal from '@shared/components/modals/ReportModal/LazyReportModal';
@@ -438,7 +438,7 @@ export default function ChatDetailsPanel({
       {/* Header */}
       <div className={styles.header}>
         <button className={styles.backBtn} onClick={onBack} title="Back to Chat">
-          <ArrowLeft size={20} />
+          <ChevronLeft size={20} />
         </button>
         <h2 className={styles.headerTitle}>
           {isOneOnOne ? 'Chat details' : 'Group info'}

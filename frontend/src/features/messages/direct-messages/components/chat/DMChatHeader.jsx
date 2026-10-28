@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, MoreVertical, Search, Trash2, User } from '@shared/components/icons';
+import { ChevronLeft, MoreVertical, Search, Trash2, User } from '@shared/components/icons';
 import Menu, { MenuItem, useMenu } from '@shared/components/ui/Menu';
 import Avatar from '@shared/components/avatar/Avatar';
 import Skeleton from '@shared/components/skeletons/Skeleton';
@@ -45,7 +45,7 @@ export default function DMChatHeader({
   return (
     <div className={styles.msgChatHeader} onClick={onOpenDetails}>
       <button className={styles.msgBackBtn} onClick={(e) => { e.stopPropagation(); onBack(); }} aria-label="Back">
-        <ArrowLeft size={20} />
+        <ChevronLeft size={20} />
       </button>
 
       <div className={`${styles.msgChatUser} ${styles.msgChatUserClickable}`}>

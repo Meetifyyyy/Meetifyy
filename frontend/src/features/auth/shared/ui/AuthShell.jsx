@@ -1,6 +1,6 @@
 import { createContext, Fragment, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { ArrowLeft, Check } from '@shared/components/icons';
+import { ChevronLeft, Check } from '@shared/components/icons';
 import { useSystemBars } from '@shared/hooks/useSystemBars';
 import { useKeyboardRoom } from '@shared/hooks/useKeyboardRoom';
 import { KEYBOARD_OVERLAYS_PAGE } from '@shared/utils/keyboardOverlay';
@@ -455,7 +455,7 @@ function AuthShellMaster({
               onClick={() => backRef.current?.()}
               aria-label="Go back"
             >
-              <ArrowLeft size={18} />
+              <ChevronLeft size={18} />
             </button>
           ) : null}
           {hasBack && isSignup && Number.isInteger(story.progressCurrent) && story.progressTotal > 0 ? (
@@ -506,7 +506,7 @@ function AuthShellMaster({
             />
           </Link>
           <Link to="/" className={s.exitLink} aria-label="Back to site">
-            <ArrowLeft size={15} className={s.exitLinkIcon} />
+            <ChevronLeft size={15} className={s.exitLinkIcon} />
             <span>Back</span>
           </Link>
         </div>

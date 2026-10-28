@@ -1,4 +1,4 @@
-import { ArrowLeft, MoreVertical, Search, LogOut, Trash2 } from '@shared/components/icons';
+import { ChevronLeft, MoreVertical, Search, LogOut, Trash2 } from '@shared/components/icons';
 import Menu, { MenuItem, useMenu } from '@shared/components/ui/Menu';
 import { useAuth } from '@shared/context/AuthContext';
 import Avatar from '@shared/components/avatar/Avatar';
@@ -50,7 +50,7 @@ export default function GroupChatHeader({
   return (
     <div className={styles.msgChatHeader} onClick={onOpenDetails}>
       <button className={styles.msgBackBtn} onClick={(e) => { e.stopPropagation(); onBack(); }} aria-label="Back">
-        <ArrowLeft size={20} />
+        <ChevronLeft size={20} />
       </button>
 
       <div className={`${styles.msgChatUser} ${styles.msgChatUserClickable}`}>

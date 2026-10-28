@@ -1,4 +1,4 @@
-import { ArrowLeft } from '@shared/components/icons';
+import { ChevronLeft } from '@shared/components/icons';
 import sharedStyles from './ChatDetailsPanel.module.css';
 import styles from './GroupEditPage.module.css';
 import Avatar from '@shared/components/avatar/Avatar';
@@ -36,7 +36,7 @@ export default function GroupEditPage({
           onClick={onBack} 
           title="Back"
         >
-          <ArrowLeft size={20} />
+          <ChevronLeft size={20} />
         </button>
         <h2 className={sharedStyles.headerTitle}>Edit group</h2>
         <button 

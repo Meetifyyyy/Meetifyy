@@ -8,7 +8,6 @@ import {
   AlertCircleIcon,
   ArrowDown01Icon,
   ArrowLeft01Icon,
-  ArrowLeft02Icon,
   ArrowRight01Icon,
   ArrowRight02Icon,
   ArrowTurnForwardIcon,
@@ -165,7 +164,6 @@ const GLYPHS = {
   ChevronUp: ArrowUp01Icon,
   ChevronLeft: ArrowLeft01Icon,
   ChevronRight: ArrowRight01Icon,
-  ArrowLeft: ArrowLeft02Icon,
   ArrowRight: ArrowRight02Icon,
   ChevronsUpDown: UnfoldMoreIcon,
 
@@ -335,7 +333,6 @@ export const ChevronDown = /*#__PURE__*/ icon(GLYPHS.ChevronDown, 'ChevronDown')
 export const ChevronUp = /*#__PURE__*/ icon(GLYPHS.ChevronUp, 'ChevronUp');
 export const ChevronLeft = /*#__PURE__*/ icon(GLYPHS.ChevronLeft, 'ChevronLeft', { strokeWidth: 2.25 });
 export const ChevronRight = /*#__PURE__*/ icon(GLYPHS.ChevronRight, 'ChevronRight', { strokeWidth: 2.25 });
-export const ArrowLeft = /*#__PURE__*/ icon(GLYPHS.ArrowLeft, 'ArrowLeft', { strokeWidth: 2.25 });
 export const ArrowRight = /*#__PURE__*/ icon(GLYPHS.ArrowRight, 'ArrowRight', { strokeWidth: 2.25 });
 export const ChevronsUpDown = /*#__PURE__*/ icon(GLYPHS.ChevronsUpDown, 'ChevronsUpDown');
 export const X = /*#__PURE__*/ icon(GLYPHS.X, 'X');

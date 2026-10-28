@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 import { IS_MOBILE_BUILD } from '@config';
-import { ArrowLeft } from '@shared/components/icons';
+import { ChevronLeft } from '@shared/components/icons';
 import { useCollapsingHeader } from '@shared/hooks/useCollapsingHeader';
 import styles from './CollapsingHeader.module.css';
 
@@ -59,8 +59,8 @@ export default function CollapsingHeader({
         aria-label="Go back"
       >
         {/* Two glyphs cross-fade so the icon reads on the cover and on the theme. */}
-        <ArrowLeft size={20} className={styles.iconOnCover} />
-        <ArrowLeft size={20} className={styles.iconOnSurface} />
+        <ChevronLeft size={20} className={styles.iconOnCover} />
+        <ChevronLeft size={20} className={styles.iconOnSurface} />
       </button>
       <div className={styles.titles}>
         <div className={styles.titleStack}>

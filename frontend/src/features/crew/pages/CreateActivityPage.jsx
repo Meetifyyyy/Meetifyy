@@ -24,6 +24,7 @@ import {
   ChevronsUpDown,
   Eye,
   Loader2,
+  ChevronLeft,
 } from '@shared/components/icons';
 import { useQueryClient } from '@tanstack/react-query';
 import { activitiesApi } from '@shared/api/apiClient';
@@ -969,10 +970,7 @@ export default function CreateActivityPage() {
         <header className={styles.topBar}>
           <div className={styles.headerLeft}>
             <button className={styles.backBtn} onClick={() => goBack(returnTo)} aria-label="Go back">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                <line x1="19" y1="12" x2="5" y2="12" />
-                <polyline points="12 19 5 12 12 5" />
-              </svg>
+              <ChevronLeft size={20} style={{ flexShrink: 0 }} />
             </button>
             <span className={styles.headerTitle}>New activity</span>
           </div>

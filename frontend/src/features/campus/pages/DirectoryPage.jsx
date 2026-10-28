@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useEffect, useCallback, memo } from 'react';
 import { usePageTransition } from '@shared/hooks/usePageTransition';
 import { CENTRE_EFFECT } from '@shared/lib/navigation/centreTransition';
-import { ArrowLeft, Search } from '@shared/components/icons';
+import { ChevronLeft, Search } from '@shared/components/icons';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { useAuth } from '@shared/context/AuthContext';
 
@@ -318,7 +318,7 @@ export default function DirectoryPage() {
             {showSearch ? (
               <div className={styles.searchBar}>
                 <button className={styles.headerSquareBtn} onClick={() => { setShowSearch(false); setSearchQuery(""); }} title="Close Search">
-                  <ArrowLeft size={20} />
+                  <ChevronLeft size={20} />
                 </button>
                 <div className={styles.searchInputWrap}>
                   <input
@@ -335,7 +335,7 @@ export default function DirectoryPage() {
               <>
                 <div className={styles.headerLeftGroup}>
                   <button className={styles.headerSquareBtn} onClick={() => goBack('/campus')} title="Back to Campus">
-                    <ArrowLeft size={20} />
+                    <ChevronLeft size={20} />
                   </button>
                   <h1 className={styles.collegeTitle} style={{ margin: 0 }}>Student Directory</h1>
                 </div>

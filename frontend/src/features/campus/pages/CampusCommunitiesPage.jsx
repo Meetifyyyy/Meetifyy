@@ -5,7 +5,7 @@ import { useSmartBack } from '@shared/hooks/useSmartBack';
 import sharedStyles from '../components/skeletons/CampusShared.module.css';
 import pageStyles from './CampusCommunitiesPage.module.css';
 const styles = { ...sharedStyles, ...pageStyles };
-import { Plus, Search, ArrowLeft, Users } from '@shared/components/icons';
+import { Plus, Search, ChevronLeft, Users } from '@shared/components/icons';
 import CommunityRow from '@features/communities/components/directory/CommunityRow';
 import CommunityRowSkeleton from '@features/communities/components/directory/CommunityRowSkeleton';
 import listStyles from '@features/communities/components/directory/CommunityList.module.css';
@@ -84,7 +84,7 @@ export default function CampusCommunitiesPage() {
             {showSearch ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', width: '100%', minHeight: '42px' }}>
                 <button className={styles.headerSquareBtn} onClick={() => { setShowSearch(false); setSearchQuery(""); }} title="Close Search">
-                  <ArrowLeft size={20} />
+                  <ChevronLeft size={20} />
                 </button>
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', background: 'transparent', borderRadius: '12px', padding: '0', border: 'none' }}>
                   <input
@@ -102,7 +102,7 @@ export default function CampusCommunitiesPage() {
               <>
                 <div className={styles.headerLeftGroup}>
                   <button className={styles.headerSquareBtn} onClick={() => goBack('/campus')} title="Back to Campus">
-                    <ArrowLeft size={20} />
+                    <ChevronLeft size={20} />
                   </button>
                   <h1 className={styles.collegeTitle} style={{ margin: 0 }}>
                     <span className={styles.desktopTitle}>Campus Communities</span>

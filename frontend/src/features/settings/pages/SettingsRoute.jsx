@@ -28,6 +28,7 @@ import {
   User, GraduationCap, Shield, Bell, HelpCircle, LogOut,
   ChevronRight, ChevronDown, Check, Ban,
   LockKeyhole, Cookie, Sparkles, Eye, Devices, Mail, Smartphone,
+  ChevronLeft,
 } from '@shared/components/icons';
 import wordmark from '@assets/images/meetifyy_wordmark.svg';
 import PasswordToggle, { usePasswordVisibility } from '@shared/components/forms/PasswordToggle';
@@ -1534,11 +1535,7 @@ export default function SettingsRoute() {
           aria-label="Go back"
           onClick={goUp}
         >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
-            stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="19" y1="12" x2="5" y2="12" />
-            <polyline points="12 19 5 12 12 5" />
-          </svg>
+          <ChevronLeft size={20} />
         </button>
 
         <span className={styles.topBarTitle}>

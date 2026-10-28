@@ -12,7 +12,7 @@ import SupportRequestModal from './hub/SupportRequestModal';
 import { HELP_VIEWS, viewFromParams } from './hub/helpHub';
 import {
   AlertCircle,
-  ArrowLeft,
+  ChevronLeft,
   ArrowRight,
   Bell,
   CalendarDays,
@@ -86,7 +86,7 @@ function HelpSubPage({ view, onOpen }) {
   return (
     <StaticDocLayout badge="Help Centre" title={VIEW_TITLES[view]} noHeroCard leftAlign>
       <Link to="/help-and-support" className={styles.backLink}>
-        <ArrowLeft size={15} aria-hidden="true" />
+        <ChevronLeft size={15} aria-hidden="true" />
         Help &amp; Support
       </Link>
       <div className={styles.viewBody}>

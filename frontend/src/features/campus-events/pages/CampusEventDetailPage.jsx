@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
-import { ExternalLink } from '@shared/components/icons';
+import { ExternalLink, ChevronLeft } from '@shared/components/icons';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { getMediaUrl } from '@shared/api/apiClient';
 import { useCampusEvent } from '@shared/hooks/useCampusEvents';
@@ -45,10 +45,7 @@ export default function CampusEventDetailPage() {
         <div className={styles.page}>
           <div className={styles.topbar}>
             <button className={styles.backBtn} onClick={back} aria-label="Back">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                <line x1="19" y1="12" x2="5" y2="12" />
-                <polyline points="12 19 5 12 12 5" />
-              </svg>
+              <ChevronLeft size={20} style={{ flexShrink: 0 }} />
             </button>
           </div>
           <div className={styles.scrollBody}>
@@ -97,10 +94,7 @@ export default function CampusEventDetailPage() {
       <div className={styles.page}>
         <div className={styles.topbar}>
           <button className={styles.backBtn} onClick={back} aria-label="Back">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-              <line x1="19" y1="12" x2="5" y2="12" />
-              <polyline points="12 19 5 12 12 5" />
-            </svg>
+            <ChevronLeft size={20} style={{ flexShrink: 0 }} />
           </button>
 
           {isSafeRegistrationUrl(event.registrationUrl) && (

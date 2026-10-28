@@ -10,7 +10,7 @@
  */
 import styles from './ChatDetailsPanel.module.css';
 import own from './GroupChangeOwnerPage.module.css';
-import { ArrowLeft, Users, UserPlus } from '@shared/components/icons';
+import { ChevronLeft, Users, UserPlus } from '@shared/components/icons';
 import Avatar from '@shared/components/avatar/Avatar';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
 
@@ -35,7 +35,7 @@ export default function GroupChangeOwnerPage({
     <div className={styles.container}>
       <div className={styles.header}>
         <button type="button" className={styles.backBtn} onClick={onBack} aria-label="Back">
-          <ArrowLeft size={20} />
+          <ChevronLeft size={20} />
         </button>
         <h2 className={styles.headerTitle}>Transfer ownership</h2>
         <div style={{ width: '40px' }} />
