@@ -2,12 +2,13 @@ import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { campusAffiliationApi } from '@shared/api/apiClient';
 import { Plus, RefreshCw, School, Search, WifiOff } from '@shared/components/icons';
+import CampusHero from './CampusHero';
 import CollegeLogo from './CollegeLogo';
 import { RequestCollegeCard, RequestCollegeDialog } from './RequestCollege';
 import styles from './CampusAffiliation.module.css';
 
-/** Name-bar widths for the loading rows, varied so they read as a list. */
-const SKELETON_WIDTHS = ['58%', '44%', '66%', '50%', '62%', '40%'];
+/** Name-bar widths for the loading cards, varied so they read as a set. */
+const SKELETON_WIDTHS = ['64%', '48%', '72%', '56%', '68%', '44%'];
 
 /** Above this many colleges a search box is worth its space. */
 const SEARCH_THRESHOLD = 8;
@@ -19,7 +20,8 @@ export const COLLEGES_QUERY_KEY = ['academics', 'colleges'];
  * (GET /api/academics/colleges); only the email step proves membership.
  *
  * It fills the screen it is given (CampusJoinFlow's `.screen`): a heading and
- * the search field at the top, the colleges as full-width rows, and the
+ * the search field at the top, the colleges as a grid of square cards (logo,
+ * name beneath), and the
  * "can't find yours?" request pinned to the bottom edge when the list is short.
  * `onCancel` is set only when someone is changing a college they already have.
  */
@@ -62,14 +64,9 @@ export default function CollegePicker({ onSelect, onCancel = null }) {
 
   return (
     <div className={styles.picker}>
-      <div className={styles.pickerHead}>
-        <h1 className={styles.pickerTitle}>Find your college</h1>
-        <p className={styles.pickerLead}>
-          Pick your college, then confirm it with your college email to see the people, events and
-          communities on your campus.
-        </p>
-
-        {colleges.length > SEARCH_THRESHOLD && (
+      <CampusHero />
+      {colleges.length > SEARCH_THRESHOLD && (
+        <div className={styles.pickerHead}>
           <label className={styles.search}>
             <Search size={16} aria-hidden="true" />
             <input
@@ -81,14 +78,14 @@ export default function CollegePicker({ onSelect, onCancel = null }) {
               autoComplete="off"
             />
           </label>
-        )}
-      </div>
+        </div>
+      )}
 
       <div className={styles.pickerBody}>
         {isLoading ? (
-          <ul className={styles.rows} aria-busy="true" aria-label="Loading colleges">
+          <ul className={styles.grid} aria-busy="true" aria-label="Loading colleges">
             {SKELETON_WIDTHS.map((width, i) => (
-              <li key={i} className={styles.skeletonRow}>
+              <li key={i} className={styles.skeletonCell}>
                 <span className={styles.skeletonLogo} />
                 <span className={styles.skeletonLine} style={{ width }} />
               </li>
@@ -115,11 +112,11 @@ export default function CollegePicker({ onSelect, onCancel = null }) {
             action={
               <button type="button" className={styles.primaryBtn} onClick={() => setRequesting(true)}>
                 <Plus size={16} aria-hidden="true" />
-                <span>Request your college</span>
+                <span>Add your campus</span>
               </button>
             }
           >
-            Campus opens one college at a time. Request yours and we&apos;ll let you know when it&apos;s added.
+            Add yours and we&apos;ll let you know when it opens.
           </PickerState>
         ) : visible.length === 0 ? (
           <PickerState
@@ -128,19 +125,19 @@ export default function CollegePicker({ onSelect, onCancel = null }) {
             action={
               <button type="button" className={styles.secondaryBtn} onClick={() => setRequesting(true)}>
                 <Plus size={16} aria-hidden="true" />
-                <span>Request this college</span>
+                <span>Add your campus</span>
               </button>
             }
           >
-            Check the spelling, or request it and we&apos;ll add it.
+            Check the spelling, or add it.
           </PickerState>
         ) : (
-          <ul className={styles.rows}>
+          <ul className={styles.grid}>
             {visible.map((college) => (
-              <li key={college.id}>
-                <button type="button" className={styles.collegeRow} onClick={() => onSelect(college)}>
-                  <CollegeLogo name={college.name} logoUrl={college.logoUrl} className={styles.rowLogo} />
-                  <span className={styles.collegeName}>{college.name}</span>
+              <li key={college.id} className={styles.gridItem}>
+                <button type="button" className={styles.collegeCard} onClick={() => onSelect(college)}>
+                  <CollegeLogo name={college.name} logoUrl={college.logoUrl} className={styles.cardLogo} />
+                  <span className={styles.cardName}>{college.name}</span>
                 </button>
               </li>
             ))}

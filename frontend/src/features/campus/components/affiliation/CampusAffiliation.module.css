@@ -58,7 +58,35 @@
   /* Phone: fill the screen under the status bar; the navigation's own room is
      the bottom padding, so the footer rests just above it. */
   min-height: calc(100dvh - var(--status-bar-inset, 0px));
-  padding: 0.5rem 0 calc(var(--bottom-nav-clearance, 0px) + 1rem);
+  /* The only room under the content: the page itself adds none on this screen
+     (CampusShared's .hubJoin), so the footer rests just above the navigation. */
+  padding: 0 0 calc(var(--bottom-nav-clearance, 0px) + 0.5rem);
+}
+
+/* The status bar is clear while the picker shows (the hero runs under it), and
+   #root then adds no inset padding of its own, so the screen is the whole
+   viewport. */
+:global(html[data-bars='transparent']) .screen {
+  min-height: 100dvh;
+}
+
+/* The picker's wrapper: transparent to the layout, so the picker still fills the
+   screen as it did when it was the screen's own child. */
+.pickLayer {
+  display: flex;
+  flex-direction: column;
+  flex: 1 0 auto;
+}
+
+.pickHidden {
+  display: none;
+}
+
+/* Dark theme on a phone: pure black, to match the page behind it. */
+@media (max-width: 768px) {
+  :global([data-theme="dark"]) .screen {
+    background: #000000;
+  }
 }
 
 .screenBody {
@@ -122,6 +150,9 @@
 
 /* ── Picker ── */
 .picker {
+  /* One spacing across the picker: between the cards across and down, under
+     the search field, and at the screen's edges. */
+  --pick-gap: 0.75rem;
   display: flex;
   flex-direction: column;
   /* Never shrinks below its content: the screen scrolls instead. */
@@ -129,19 +160,79 @@
 }
 
 .pickerHead {
+  position: relative;
+  z-index: 2;
   flex-shrink: 0;
-  padding: 1.25rem 1rem 0.75rem;
+  /* Up over the picture's lower edge, which is transparent: the field is 54px
+     tall and sits in its last ~56px. */
+  margin-top: -3.5rem;
+  padding: 0 var(--pick-gap) var(--pick-gap);
 }
 
-.pickerTitle {
-  margin: 0;
-  /* Changa One ships one weight: 700 here made the browser fake a bold. Normal
-     matches the Crew, Messages and Communities titles. */
-  font-family: "Changa One", cursive;
-  font-size: 1.65rem;
-  font-weight: normal;
-  line-height: 1.2;
-  color: var(--color-text-main, #0f172a);
+/* ── Hero ──
+   The "Find your campus" picture (the words are in the artwork) across the top
+   of the screen, about a third of a phone's height, running up under the status
+   bar. The picture carries its own soft, transparent lower edge, so the page
+   colour (white, or black in the dark theme) shows through it by itself: there
+   is no mask, overlay, filter or fade in CSS, and the whole height is always
+   shown so that edge is never cut.
+   Measured on the artwork (1350 x 668, aspect 2.02): the lettering is 16% to
+   84% of the width and 16% to 61% of the height. The rules that follow:
+
+     1. B, the box's whole height including the status bar's, is never less than
+        the picture's own height at the box's width (0.495 x width), so the
+        bottom edge is always in view.
+     2. Otherwise B is 36% of the screen's height, but never more than 67vw: a
+        box that short and that wide still shows 74% of the picture's width, the
+        lettering with a little air either side. `object-fit: cover` crops the
+        SIDES, so a narrower phone gets a shorter band, never a cut word.
+     3. The picture starts at the very top of the box, under the status bar; the
+        lettering starts 16% down it (about 40px on a phone), clear of it.
+     4. From 769px the picture covers the whole width of the box beside the
+        sidebar, at its own shape (rule 1 sets the height).
+   The search field sits over the picture's soft lower edge (see `.pickerHead`). */
+.heroFrame {
+  container-type: inline-size;
+  width: 100%;
+  flex-shrink: 0;
+}
+
+.hero {
+  /* The fallback first (a browser without container units drops the next line). */
+  --hero-w: 100vw;
+  --hero-w: 100cqw;
+  --hero-b: max(
+    min(67vw, calc(clamp(210px, 36dvh, 440px) + var(--status-bar-inset, 0px))),
+    calc(var(--hero-w) * 0.495)
+  );
+  position: relative;
+  width: 100%;
+  height: var(--hero-b);
+  overflow: hidden;
+}
+
+.heroImg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  object-position: 50% 0;
+  user-select: none;
+  pointer-events: none;
+}
+
+.heroSr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .pickerLead {
@@ -162,7 +253,7 @@
    and just after the last row when it is long. */
 .pickerFoot {
   margin-top: auto;
-  padding: 1.25rem 1rem 0;
+  padding: var(--pick-gap) var(--pick-gap) 0;
 }
 
 .picker .note {
@@ -171,12 +262,7 @@
 
 @media (min-width: 769px) {
   .pickerHead {
-    position: sticky;
-    top: 0;
-    z-index: 10;
-    padding: 1.5rem 1.75rem 0.75rem;
-    /* Opaque: the rows scroll underneath it. */
-    background: var(--color-bg-white, #ffffff);
+    padding: 0 1.75rem var(--pick-gap);
   }
 
   .pickerFoot {
@@ -192,17 +278,42 @@
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  padding: 0 0.9rem;
-  height: 46px;
-  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
-  border-radius: var(--radius-lg, 16px);
-  background: var(--color-bg-soft, #f8fafc);
+  padding: 0 1.1rem;
+  height: 54px;
+  box-sizing: border-box;
+  border: none;
+  border-radius: 27px;
   color: var(--color-text-light, #64748b);
-  transition: border-color 0.15s ease;
+  /* Liquid glass, the recipe the login screen's back button uses: a top-lit
+     translucent fill, a highlight along the top edge, a faint shade along the
+     bottom, a small contact shadow, and a blur of whatever is behind it (here
+     the picture's lower edge). */
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.62) 0%, rgba(255, 255, 255, 0.34) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    inset 0 -1px 0 rgba(15, 23, 42, 0.07),
+    0 1px 2px rgba(15, 23, 42, 0.1),
+    0 8px 20px -8px rgba(15, 23, 42, 0.28);
+  -webkit-backdrop-filter: blur(14px) saturate(1.6);
+  backdrop-filter: blur(14px) saturate(1.6);
 }
 
-.search:focus-within {
-  border-color: var(--color-primary, #2563eb);
+:global([data-theme="dark"]) .search {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.07) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.3),
+    0 8px 20px -8px rgba(0, 0, 0, 0.6);
+}
+
+.search svg {
+  color: var(--color-text-main, #0f172a);
+  opacity: 0.7;
+}
+
+.search input::placeholder {
+  color: var(--color-text-main, #0f172a);
+  opacity: 0.65;
 }
 
 .search input {
@@ -215,88 +326,117 @@
   color: var(--color-text-main, #0f172a);
 }
 
-/* One tap target per college, the full width of the list. No dividers and no
-   arrow: the rows are separated by space, and a soft rounded fill shows the
-   press (and the hover on a mouse). */
-.rows {
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+/* The colleges: square cards in a grid, the logo large and the name under it.
+   As many columns as fit at least 148px (two on a phone, more on a tablet or a
+   desktop box), every cell the same size, never wider than the screen. */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 148px), 1fr));
+  gap: var(--pick-gap);
   margin: 0;
-  padding: 0 0.5rem;
+  padding: 0 var(--pick-gap);
   list-style: none;
 }
 
-.collegeRow {
+.gridItem {
+  min-width: 0;
+  min-height: 0;
+}
+
+.collegeCard {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 0.9rem;
+  justify-content: center;
+  gap: 0.7rem;
   width: 100%;
-  min-height: 72px;
-  padding: 0.6rem 0.5rem;
+  aspect-ratio: 1 / 1;
+  padding: 0.75rem 0.6rem;
   box-sizing: border-box;
-  border: none;
-  border-radius: var(--radius-lg, 16px);
-  background: transparent;
+  /* A square is a square: a long name is clamped, it does not stretch its row. */
+  overflow: hidden;
+  border: 0.5px solid rgba(15, 23, 42, 0.22);
+  border-radius: 28px;
   color: var(--color-text-main, #0f172a);
+  /* The same liquid glass as the search field: a top-lit translucent fill, a
+     highlight along the top edge, a faint shade along the bottom, a small
+     contact shadow, no border. (No backdrop blur here: the cards sit on a flat
+     page colour, where a blur changes nothing, and a blur on every card is
+     recomputed on every frame of a scroll.) On the light theme's white page
+     the fill is tinted slightly so the glass can be seen. */
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.95) 0%, rgba(236, 240, 246, 0.8) 100%);
+  /* Light theme: a hairline border (half a pixel, a touch darker so it still
+     shows) instead of a shadow. */
+  box-shadow: none;
   font: inherit;
-  text-align: left;
+  text-align: center;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  transition: background-color 0.15s ease;
+  transition: filter 0.15s ease, transform 0.15s ease;
 }
 
-.collegeRow:active {
-  background: var(--color-bg-soft, #f1f5f9);
+.collegeCard:active {
+  transform: scale(0.97);
+  filter: brightness(0.97);
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .collegeRow:hover {
-    background: var(--color-bg-soft, #f1f5f9);
+  .collegeCard:hover {
+    filter: brightness(0.98);
   }
 }
 
-.collegeRow:focus-visible {
+.collegeCard:focus-visible {
   outline: 2px solid var(--color-primary, #2563eb);
-  outline-offset: -2px;
+  outline-offset: 2px;
 }
 
-:global([data-theme="dark"]) .collegeRow:active {
-  background: rgba(255, 255, 255, 0.06);
+:global([data-theme="dark"]) .collegeCard {
+  border-color: transparent;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.07) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.3),
+    0 4px 10px -6px rgba(0, 0, 0, 0.35);
 }
 
-@media (hover: hover) and (pointer: fine) {
-  :global([data-theme="dark"]) .collegeRow:hover {
-    background: rgba(255, 255, 255, 0.06);
-  }
+:global([data-theme="dark"]) .collegeCard:active,
+:global([data-theme="dark"]) .collegeCard:hover {
+  filter: brightness(1.15);
 }
 
-.collegeName {
-  flex: 1;
-  min-width: 0;
-  font-size: 1.05rem;
+.cardName {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 0.88rem;
   font-weight: 600;
   line-height: 1.3;
   overflow-wrap: anywhere;
 }
 
-@media (min-width: 769px) {
-  .rows {
-    margin: 0.25rem 0 0;
-    padding: 0 1.25rem;
-  }
-
-  .collegeRow {
-    padding: 0.6rem 0.5rem;
-  }
+/* Scoped to the card so it outranks `.logo` (declared later, same weight). */
+.collegeCard .cardLogo {
+  width: clamp(64px, 52%, 92px);
+  height: auto;
+  aspect-ratio: 1 / 1;
+  /* As round as the card it sits in. The same fraction of the side as the card
+     (16.5%) came out at 13px against the card's 28px, which looks far less
+     round, so the corners are 28% of the side (about 22px on a 78px logo). */
+  border-radius: 28%;
+  font-size: 1.35rem;
 }
 
-/* Scoped to the row so it outranks `.logo` (declared later, same weight),
-   which had kept row logos at its 40px default. */
-.collegeRow .rowLogo {
-  width: 48px;
-  height: 48px;
+@media (min-width: 769px) {
+  .picker {
+    --pick-gap: 1rem;
+  }
+
+  .grid {
+    padding: 0 1.75rem;
+  }
 }
 
 .logo {
@@ -394,16 +534,27 @@
   }
 }
 
-/* A loaded row's exact footprint (72px, a 48px logo, a name), drawn as a logo
-   square and a name bar. The space around the shapes is what separates the
-   rows, as it does in the real list, so nothing jumps when it arrives. */
-.skeletonRow {
+/* A loaded card's footprint: the same square, a logo block and a name bar, so
+   nothing jumps when the list arrives. */
+.skeletonCell {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 0.9rem;
-  min-height: 72px;
-  padding: 0.6rem 0.5rem;
+  justify-content: center;
+  gap: 0.7rem;
+  aspect-ratio: 1 / 1;
+  padding: 0.85rem 0.7rem;
   box-sizing: border-box;
+  border: 0.5px solid rgba(15, 23, 42, 0.22);
+  border-radius: 28px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.95) 0%, rgba(236, 240, 246, 0.8) 100%);
+  box-shadow: none;
+}
+
+:global([data-theme="dark"]) .skeletonCell {
+  border-color: transparent;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.05) 100%);
+  box-shadow: 0 4px 10px -6px rgba(0, 0, 0, 0.35);
 }
 
 .skeletonLogo,
@@ -415,14 +566,14 @@
 }
 
 .skeletonLogo {
-  width: 48px;
-  height: 48px;
-  border-radius: var(--radius-md, 12px);
+  width: clamp(64px, 52%, 92px);
+  aspect-ratio: 1 / 1;
+  border-radius: 28%;
 }
 
 .skeletonLine {
-  height: 14px;
-  max-width: 260px;
+  height: 12px;
+  max-width: 100%;
   border-radius: 999px;
 }
 
@@ -453,24 +604,6 @@
 }
 
 /* ── Verify screen ── */
-.selected {
-  display: flex;
-  align-items: center;
-  gap: 0.85rem;
-  margin-bottom: 1.25rem;
-}
-
-.selectedName {
-  flex: 1;
-  min-width: 0;
-  margin: 0;
-  font-size: 1.25rem;
-  font-weight: 700;
-  line-height: 1.25;
-  color: var(--color-text-main, #0f172a);
-  overflow-wrap: anywhere;
-}
-
 .linkBtn {
   padding: 0;
   border: none;
@@ -592,6 +725,253 @@
   color: var(--color-text-light, #64748b);
 }
 
+/* ── Verify screen ──
+   Back arrow, the college's logo and name centred, why we ask, the email field,
+   its action. A phone gets it as a screen of its own (below); from 769px it
+   sits centred inside the box, in one readable column. */
+.verify {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.verifyTop {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  flex-shrink: 0;
+}
+
+.backBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--color-bg-soft, #f1f5f9);
+  color: var(--color-text-main, #0f172a);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.backBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.backBtn:focus-visible {
+  outline: 2px solid var(--color-primary, #2563eb);
+  outline-offset: 2px;
+}
+
+:global([data-theme="dark"]) .backBtn {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.verifyBody {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 420px;
+  margin: 0 auto;
+  padding-top: 0.5rem;
+  box-sizing: border-box;
+}
+
+.verifyHero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.85rem;
+  margin-bottom: 1.75rem;
+  text-align: center;
+}
+
+/* Scoped so it outranks `.logo`, declared further up with the same weight. */
+.verifyHero .heroLogo {
+  width: 104px;
+  height: 104px;
+  border-radius: 26px;
+  font-size: 1.9rem;
+}
+
+.verifyName {
+  margin: 0;
+  max-width: 100%;
+  font-size: 1.3rem;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--color-text-main, #0f172a);
+  overflow-wrap: anywhere;
+}
+
+.verifyTitle {
+  margin: 0 0 0.4rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.3;
+  text-align: center;
+  color: var(--color-text-main, #0f172a);
+}
+
+.verifyLead {
+  margin: 0 0 1.25rem;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  text-align: center;
+  color: var(--color-text-muted, #64748b);
+}
+
+.verify .sentTo {
+  text-align: center;
+}
+
+.verify .actions .primaryBtn {
+  width: 100%;
+  justify-content: center;
+}
+
+/* The form on this screen, set apart from the rest of the app's fields: a
+   tall pill for the address, a one-line hint under it with the domain it has to
+   end in, and a bold full-width button close below (the error line takes no
+   room until it has something to say). */
+.verify .field {
+  gap: 0.5rem;
+  margin-bottom: 0;
+}
+
+.verify .label {
+  padding-left: 0.25rem;
+  font-size: 0.8rem;
+  color: var(--color-text-muted, #64748b);
+}
+
+.verify .input {
+  height: 58px;
+  padding: 0 1.25rem;
+  border-radius: 29px;
+}
+
+.fieldHint {
+  padding-left: 1.25rem;
+  font-size: 0.78rem;
+  line-height: 1.3;
+  color: var(--color-text-muted, #64748b);
+}
+
+.verify .error {
+  min-height: 0;
+  margin: 0.5rem 0 0 0.25rem;
+}
+
+.verify .meta {
+  margin: 0.75rem 0.25rem 0;
+}
+
+.verify .actions {
+  margin-top: 1.25rem;
+}
+
+.verify .actions .primaryBtn {
+  height: 56px;
+  border-radius: 28px;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+/* Not ready yet: a softer blue, the label still solid white (fading the whole
+   button faded the label too and left it grey on blue). */
+.verify .actions .primaryBtn:disabled {
+  opacity: 1;
+  background: rgba(var(--color-primary-rgb, 37, 99, 235), 0.45);
+  color: #ffffff;
+}
+
+.verifyTitle {
+  margin-bottom: 0.3rem;
+}
+
+.verifyLead {
+  margin-bottom: 1.5rem;
+}
+
+/* The phone's verify screen: fixed over everything, edge to edge, in from the
+   right. Its scroll area is the whole screen, padded for the status bar, the
+   home indicator and (via --kb-inset, the app-wide keyboard value) the
+   keyboard, so the field and the button can always be scrolled into view. */
+/* The phone's verify screen: a fixed layer over everything, edge to edge, in
+   from the right. It is the scroll area and carries the room for the status
+   bar, the home indicator and (via --kb-inset, the app-wide keyboard value) the
+   keyboard. Its children are the back button and the form block; the form block
+   is centred in what is left under the back button, so when the keyboard takes
+   room the block moves up, and the app's keyboard slide (the layer's direct
+   child that holds the focused field) glides it with the keyboard instead of
+   jumping. The back button does not move. */
+.verifyScreen {
+  position: fixed;
+  inset: 0;
+  z-index: 2050;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  padding:
+    calc(max(env(safe-area-inset-top, 0px), var(--status-bar-inset, 0px)) + 0.5rem)
+    1.25rem
+    calc(max(env(safe-area-inset-bottom, 0px), var(--navigation-bar-inset, 0px), var(--kb-inset, 0px)) + 1.25rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--color-bg-white, #ffffff);
+  will-change: transform;
+}
+
+:global([data-theme="dark"]) .verifyScreen {
+  background: #000000;
+}
+
+.verifyScreen .verifyBody {
+  margin-block: auto;
+  padding-bottom: 2rem;
+}
+
+.slideIn {
+  animation: verifySlideIn 300ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+.slideOut {
+  animation: verifySlideOut 300ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+@keyframes verifySlideIn {
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
+}
+
+@keyframes verifySlideOut {
+  from { transform: translateX(0); }
+  to   { transform: translateX(100%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slideIn,
+  .slideOut { animation: none; }
+}
+
+@media (min-width: 769px) {
+  .verifyBody {
+    padding-top: 1rem;
+  }
+
+  /* The arrow lines up with the form's column, not the box's edge. */
+  .verify .verifyTop {
+    width: 100%;
+    max-width: 420px;
+    margin: 0 auto;
+  }
+}
+
 /* ── Request a college (card + dialog) ── */
 /* The "can't find yours?" row: a quiet strip, text on the left and one
    secondary action on the right. */
@@ -599,11 +979,22 @@
   display: flex;
   align-items: center;
   gap: 0.85rem;
-  flex-wrap: wrap;
-  padding: 0.95rem 1rem;
-  border: 1px solid var(--color-border-light, rgba(0, 0, 0, 0.08));
-  border-radius: var(--radius-lg, 16px);
+  padding: 0.9rem 0.9rem 0.9rem 1.25rem;
+  border: 0.5px solid rgba(15, 23, 42, 0.22);
+  border-radius: 28px;
+  /* Light theme: a flat, solid fill with the hairline border (no glass); the
+     dark theme below keeps the glass. */
   background: var(--color-bg-soft, #f8fafc);
+  box-shadow: none;
+}
+
+:global([data-theme="dark"]) .requestCard {
+  border-color: transparent;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.07) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.3),
+    0 4px 10px -6px rgba(0, 0, 0, 0.35);
 }
 
 .requestCardCompact {
@@ -613,7 +1004,7 @@
 }
 
 .requestText {
-  flex: 1 1 200px;
+  flex: 1 1 0;
   min-width: 0;
 }
 
@@ -625,17 +1016,45 @@
 }
 
 .requestBody {
-  margin: 0.2rem 0 0;
-  font-size: 0.82rem;
-  line-height: 1.45;
+  margin: 0.15rem 0 0;
+  font-size: 0.76rem;
+  line-height: 1.35;
   color: var(--color-text-muted, #64748b);
 }
 
+/* The action is a solid pill in the primary colour with white text, so it
+   reads on the glass in both themes. */
 .requestCard .secondaryBtn {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
   flex-shrink: 0;
+  height: 44px;
+  padding: 0 1rem;
+  border: none;
+  border-radius: 22px;
+  background: var(--color-primary, #2563eb);
+  color: #ffffff;
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: none;
+  transition: filter 0.15s ease;
+}
+
+/* Hover and press darken the same blue; the text stays white (the shared
+   secondary button's own hover would swap both colours). */
+@media (hover: hover) and (pointer: fine) {
+  .requestCard .secondaryBtn:hover:not(:disabled) {
+    background: var(--color-primary, #2563eb);
+    color: #ffffff;
+    filter: brightness(0.9);
+  }
+}
+
+.requestCard .secondaryBtn:active:not(:disabled) {
+  background: var(--color-primary, #2563eb);
+  color: #ffffff;
+  filter: brightness(0.82);
 }
 
 /* ── Request dialog ──
@@ -663,12 +1082,12 @@
   display: flex;
   flex-direction: column;
   width: 100%;
-  max-width: 480px;
+  max-width: 520px;
   max-height: calc(100dvh - max(env(safe-area-inset-top, 0px), var(--status-bar-inset, 0px)) - var(--kb-inset, 0px) - 0.75rem);
   box-sizing: border-box;
   overflow: hidden;
   background: var(--color-bg-white, #ffffff);
-  border-radius: 24px 24px 0 0;
+  border-radius: 32px 32px 0 0;
   box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.18);
   animation: sheetRise 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -686,7 +1105,7 @@
 
   .sheet {
     max-height: calc(100dvh - 2.5rem - var(--kb-inset, 0px));
-    border-radius: var(--radius-xl, 20px);
+    border-radius: 32px;
     box-shadow: var(--shadow-lg, 0 12px 32px rgba(15, 23, 42, 0.18));
     animation: sheetPop 0.24s cubic-bezier(0.16, 1, 0.3, 1);
   }
@@ -696,11 +1115,25 @@
   }
 }
 
+/* The drag handle: a 36px bar in a full-width, 24px-tall touch target (the
+   sheet follows a finger that starts here; see useSheetDrag). */
 .sheetGrip {
+  position: relative;
   flex-shrink: 0;
+  width: 100%;
+  height: 24px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.sheetGrip::before {
+  content: '';
+  position: absolute;
+  top: 8px;
+  left: 50%;
   width: 36px;
   height: 4px;
-  margin: 8px auto 0;
+  margin-left: -18px;
   border-radius: 999px;
   background: var(--color-border, rgba(0, 0, 0, 0.14));
 }
@@ -714,9 +1147,9 @@
 .sheetHeader {
   display: flex;
   align-items: flex-start;
-  gap: 0.85rem;
+  gap: 1rem;
   flex-shrink: 0;
-  padding: 1rem 1rem 0.85rem 1.25rem;
+  padding: 0.5rem 1.25rem 1.1rem 1.5rem;
 }
 
 .sheetIcon {
@@ -724,11 +1157,8 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 40px;
-  height: 40px;
-  border-radius: var(--radius-md, 12px);
-  background: rgba(var(--color-primary-rgb, 37, 99, 235), 0.12);
-  color: var(--color-primary, #2563eb);
+  width: 56px;
+  height: 56px;
 }
 
 .sheetHeading {
@@ -738,16 +1168,16 @@
 
 .sheetTitle {
   margin: 0;
-  font-size: 1.1rem;
+  font-size: 1.3rem;
   font-weight: 700;
-  line-height: 1.3;
+  line-height: 1.25;
   color: var(--color-text-main, #0f172a);
 }
 
 .sheetSub {
-  margin: 0.25rem 0 0;
-  font-size: 0.86rem;
-  line-height: 1.5;
+  margin: 0.2rem 0 0;
+  font-size: 0.9rem;
+  line-height: 1.4;
   color: var(--color-text-muted, #64748b);
 }
 
@@ -756,11 +1186,11 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 36px;
-  height: 36px;
-  margin: -2px 0 0;
+  width: 44px;
+  height: 44px;
+  margin: 0;
   border: none;
-  border-radius: 999px;
+  border-radius: 50%;
   background: var(--color-bg-soft, #f1f5f9);
   color: var(--color-text-light, #64748b);
   cursor: pointer;
@@ -770,6 +1200,14 @@
 
 .sheetClose:hover:not(:disabled) {
   color: var(--color-text-main, #0f172a);
+}
+
+/* A phone's sheet closes by dragging it down (the handle above), by Cancel, or
+   by the system back button, so the cross is for larger screens only. */
+@media (max-width: 640px) {
+  .sheetClose {
+    display: none;
+  }
 }
 
 .sheetClose:disabled {
@@ -792,7 +1230,7 @@
 .sheetBody {
   flex: 1 1 auto;
   min-height: 0;
-  padding: 0.25rem 1.25rem 1rem;
+  padding: 0.25rem 1.5rem 1.25rem;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: none;
@@ -805,10 +1243,10 @@
 /* Who the request is from: two quiet lines, not fields. */
 .account {
   display: grid;
-  gap: 0.6rem;
-  margin: 0 0 1rem;
-  padding: 0.75rem 0.9rem;
-  border-radius: var(--radius-md, 12px);
+  gap: 0.8rem;
+  margin: 0 0 1.5rem;
+  padding: 1.1rem 1.25rem;
+  border-radius: 24px;
   background: var(--color-bg-soft, #f1f5f9);
 }
 
@@ -822,14 +1260,14 @@
 
 .accountLabel {
   flex-shrink: 0;
-  font-size: 0.78rem;
+  font-size: 0.85rem;
   color: var(--color-text-muted, #64748b);
 }
 
 .accountValue {
   margin: 0;
   min-width: 0;
-  font-size: 0.9rem;
+  font-size: 0.95rem;
   font-weight: 600;
   text-align: right;
   color: var(--color-text-main, #0f172a);
@@ -844,6 +1282,29 @@
 
 .input[aria-invalid="true"] {
   border-color: var(--color-danger, #ef4444);
+}
+
+.sheetBody .field {
+  gap: 0.5rem;
+  margin-bottom: 1.1rem;
+}
+
+.sheetBody .label {
+  padding-left: 0.25rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--color-text-muted, #64748b);
+}
+
+.sheetBody .input {
+  height: 58px;
+  padding: 0 1.25rem;
+  border-radius: 29px;
+}
+
+.sheetBody .hint {
+  padding-left: 1.25rem;
+  font-size: 0.8rem;
 }
 
 .sheetBody .input:focus {
@@ -875,9 +1336,9 @@
 /* The buttons stay in view above the keyboard while the fields scroll. */
 .sheetFoot {
   display: flex;
-  gap: 0.6rem;
+  gap: 0.75rem;
   flex-shrink: 0;
-  padding: 0.75rem 1.25rem calc(1rem + max(env(safe-area-inset-bottom, 0px), var(--navigation-bar-inset, 0px)));
+  padding: 0.9rem 1.5rem calc(1.1rem + max(env(safe-area-inset-bottom, 0px), var(--navigation-bar-inset, 0px)));
   border-top: 1px solid var(--color-border-light, rgba(0, 0, 0, 0.08));
   background: inherit;
 }
@@ -890,6 +1351,48 @@
 .sheetFoot > button {
   flex: 1 1 0;
   min-width: 0;
+  height: 56px;
+  border-radius: 28px;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+/* Cancel: a round cross, the same 56px as the main button's height. */
+.sheetFoot > .sheetCancel {
+  flex: 0 0 56px;
+  width: 56px;
+  min-width: 56px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg-soft, #f1f5f9);
+  color: var(--color-text-main, #0f172a);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+:global([data-theme="dark"]) .sheetFoot > .sheetCancel {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.sheetFoot > .sheetCancel:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sheetFoot > .sheetCancel:focus-visible {
+  outline: 2px solid var(--color-primary, #2563eb);
+  outline-offset: 2px;
+}
+
+/* The main button has no shadow (the shared primary button adds one). */
+.sheetFoot .primaryBtn,
+.sheetFoot .primaryBtn:hover:not(:disabled),
+.sheetFoot .primaryBtn:active:not(:disabled) {
+  box-shadow: none;
 }
 
 .sheetFoot .primaryBtn {
@@ -904,9 +1407,9 @@
     padding-bottom: 1rem;
   }
 
-  .sheetFoot > button {
-    flex: 0 0 auto;
-    min-width: 130px;
+  .sheetFoot > button:not(.sheetCancel) {
+    flex: 1 1 auto;
+    min-width: 160px;
   }
 }
 
@@ -947,10 +1450,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 56px;
-  height: 56px;
-  margin-bottom: 0.85rem;
-  border-radius: 999px;
+  width: 72px;
+  height: 72px;
+  margin-bottom: 1rem;
+  border-radius: 50%;
   background: rgba(34, 197, 94, 0.14);
   color: var(--color-success, #16a34a);
   animation: doneIn 0.34s cubic-bezier(0.16, 1, 0.3, 1);

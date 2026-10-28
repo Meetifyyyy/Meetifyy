@@ -1,13 +1,14 @@
 import { useCallback, useState } from 'react';
 import { REAUTH_CANCELLED, useReauth } from '@shared/components/AccountEmail/ReauthModal';
 import { withReauth } from '@shared/components/AccountEmail/withReauth';
-import { AlertCircle, Loader2 } from '@shared/components/icons';
+import { AlertCircle, ChevronLeft, Loader2 } from '@shared/components/icons';
 import OtpCodeInput, { useResendCountdown } from '@shared/components/OtpCodeInput';
 import { useCampusAffiliationActions } from '@shared/hooks/useCampusAffiliationActions';
 import { describeCampusOtpError } from '@shared/lib/campusAccess';
 import { checkEmailFormat } from '@shared/utils/emailValidation';
 import { showToast } from '@shared/utils/toast';
 import CollegeLogo from './CollegeLogo';
+import { emailPlaceholder, primaryDomain } from './collegeEmail';
 import styles from './CampusAffiliation.module.css';
 
 /**
@@ -17,12 +18,22 @@ import styles from './CampusAffiliation.module.css';
  * `pending` after a reload). Its full address is not known here, only the
  * masked one, so a resend from that state asks for the address again.
  *
+ * The screen reads top to bottom: back, the college's logo and name, why it is
+ * asked, the email field and its action. `onBack` returns to the colleges.
+ *
+ * `screen` is the phone's full-screen layer: the back button and the form are
+ * then two siblings of the layer itself (a fragment), not one card, so that the
+ * form block is the layer's direct child. That is the element the app-wide
+ * keyboard slide moves (useKeyboardInset / keyboardSheetRise: the child of the
+ * fixed layer that holds the focused field), so it glides up with the keyboard
+ * while the back button stays where it is.
+ *
  * An account's first college email needs only the code. Any later one (a
  * change, or adding one back after removing it) also needs "confirm it's
  * you": the server answers `reauth_required` and the dialog opens, then the
  * same request is retried. The server also enforces the 30-day cooldown.
  */
-export default function CollegeEmailVerify({ college, initialChallenge = null, onChangeCollege, onVerified }) {
+export default function CollegeEmailVerify({ college, initialChallenge = null, onBack, onVerified, screen = false }) {
   const { sendCode, verifyCode } = useCampusAffiliationActions();
   const reauth = useReauth('college_email_change', {
     description: "For your security, confirm it's you before changing your college email.",
@@ -97,16 +108,26 @@ export default function CollegeEmailVerify({ college, initialChallenge = null, o
 
   const busy = sending || verifying;
 
-  return (
-    <div className={styles.card}>
-      {reauth.modal}
-      <div className={styles.selected}>
-        <CollegeLogo name={college.name} logoUrl={college.logoUrl} large />
-        <p className={styles.selectedName}>{college.name}</p>
-        <button type="button" className={styles.linkBtn} onClick={onChangeCollege} disabled={busy}>
-          Change
-        </button>
-      </div>
+  const top = (
+    <div className={styles.verifyTop}>
+      <button
+        type="button"
+        className={styles.backBtn}
+        onClick={onBack}
+        disabled={busy}
+        aria-label="Back to colleges"
+      >
+        <ChevronLeft size={24} aria-hidden="true" />
+      </button>
+    </div>
+  );
+
+  const body = (
+      <div className={screen ? `${styles.verifyBody} ${styles.verify}` : styles.verifyBody}>
+        <div className={styles.verifyHero}>
+          <CollegeLogo name={college.name} logoUrl={college.logoUrl} className={styles.heroLogo} />
+          <h1 className={styles.verifyName}>{college.name}</h1>
+        </div>
 
       {!challenge ? (
         <form
@@ -116,11 +137,6 @@ export default function CollegeEmailVerify({ college, initialChallenge = null, o
           }}
           noValidate
         >
-          <h1 className={styles.title}>Confirm your college email</h1>
-          <p className={styles.lead}>
-            We&apos;ll send a 6-digit code to the email address your college gave you. It only unlocks
-            Campus: you keep signing in with your current email.
-          </p>
           <div className={styles.field}>
             <label className={styles.label} htmlFor="campus-college-email">
               College email
@@ -133,7 +149,7 @@ export default function CollegeEmailVerify({ college, initialChallenge = null, o
               autoComplete="email"
               autoCapitalize="none"
               spellCheck={false}
-              placeholder="you@college.edu"
+              placeholder={emailPlaceholder(college)}
               value={email}
               onChange={(e) => {
                 setEmail(e.target.value);
@@ -141,6 +157,9 @@ export default function CollegeEmailVerify({ college, initialChallenge = null, o
               }}
               disabled={busy}
             />
+            {primaryDomain(college) ? (
+              <span className={styles.fieldHint}>Use your @{primaryDomain(college)} address.</span>
+            ) : null}
           </div>
           <div className={styles.error} role="alert" aria-live="polite">
             {error ? (
@@ -151,7 +170,7 @@ export default function CollegeEmailVerify({ college, initialChallenge = null, o
             ) : null}
           </div>
           <div className={styles.actions}>
-            <button type="submit" className={styles.primaryBtn} disabled={busy || !email.trim()}>
+            <button type="submit" className={styles.primaryBtn} disabled={busy || !email.trim()} data-keyboard-reveal>
               {sending ? (
                 <>
                   <Loader2 size={16} className="spin" aria-hidden="true" />
@@ -171,7 +190,7 @@ export default function CollegeEmailVerify({ college, initialChallenge = null, o
           }}
           noValidate
         >
-          <h1 className={styles.title}>Enter the code</h1>
+          <h2 className={styles.verifyTitle}>Enter the code</h2>
           <p className={styles.sentTo}>
             We sent a 6-digit code to <strong>{challenge.emailMasked || 'your college email'}</strong>.
           </p>
@@ -212,7 +231,7 @@ export default function CollegeEmailVerify({ college, initialChallenge = null, o
             </button>
           </div>
           <div className={styles.actions}>
-            <button type="submit" className={styles.primaryBtn} disabled={busy || code.length !== 6}>
+            <button type="submit" className={styles.primaryBtn} disabled={busy || code.length !== 6} data-keyboard-reveal>
               {verifying ? (
                 <>
                   <Loader2 size={16} className="spin" aria-hidden="true" />
@@ -225,6 +244,24 @@ export default function CollegeEmailVerify({ college, initialChallenge = null, o
           </div>
         </form>
       )}
+      </div>
+  );
+
+  if (screen) {
+    return (
+      <>
+        {reauth.modal}
+        {top}
+        {body}
+      </>
+    );
+  }
+
+  return (
+    <div className={`${styles.card} ${styles.verify}`}>
+      {reauth.modal}
+      {top}
+      {body}
     </div>
   );
 }
