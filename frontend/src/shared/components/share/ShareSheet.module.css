@@ -181,10 +181,18 @@
 }
 
 .avatarWrap {
+  --share-avatar-size: 60px;
   position: relative;
   display: inline-flex;
   border-radius: 50%;
   transition: transform 0.16s ease, box-shadow 0.16s ease;
+}
+
+/* The selection ring follows the avatar's own outline. A group is a rounded
+   square (Avatar.module.css: 24% of its size), and a circular ring around it
+   left the corners poking out of it. */
+.avatarWrapGroup {
+  border-radius: calc(var(--share-avatar-size) * 0.24);
 }
 
 .person:active .avatarWrap {

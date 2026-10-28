@@ -18,7 +18,7 @@ import { useCallback, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import { activitiesApi } from '@shared/api/apiClient';
-import ShareModalAvatar from '@shared/components/avatar/ShareModalAvatar';
+import ShareModalAvatar, { isGroupTarget } from '@shared/components/avatar/ShareModalAvatar';
 import { Check } from '@shared/components/icons';
 import { useInvitablePeople } from '@shared/hooks/useInvitablePeople';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
@@ -157,7 +157,7 @@ export default function InviteFriendsModal({ activityId, onSendInvites, onClose 
                   disabled={blocked || statusUnknown || sending}
                   onClick={() => toggle(user.id)}
                 >
-                  <span className={styles.avatarWrap}>
+                  <span className={`${styles.avatarWrap} ${isGroupTarget(user) ? styles.avatarWrapGroup : ''}`}>
                     <ShareModalAvatar conv={user} size="60px" />
                     {isPicked && (
                       <span className={styles.check} aria-hidden="true">

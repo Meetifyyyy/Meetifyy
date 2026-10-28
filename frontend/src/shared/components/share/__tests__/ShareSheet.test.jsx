@@ -7,6 +7,7 @@ const sendMock = vi.fn();
 const conversations = [
   { id: 'c1', name: 'Asha', createdAt: 2, canSendMessages: true },
   { id: 'c2', name: 'Ravi', createdAt: 1, canSendMessages: true },
+  { id: 'g1', name: 'Crew', isGroup: true, createdAt: 0, canSendMessages: true },
 ];
 
 vi.mock('@shared/api/apiClient', () => ({
@@ -22,7 +23,10 @@ vi.mock('@shared/api/apiClient', () => ({
 vi.mock('@shared/hooks/useMessageActions', () => ({
   useMessageActions: () => ({ sendDirectMessage: (...a) => sendMock(...a) }),
 }));
-vi.mock('@shared/components/avatar/ShareModalAvatar', () => ({ default: () => <span /> }));
+vi.mock('@shared/components/avatar/ShareModalAvatar', () => ({
+  default: () => <span />,
+  isGroupTarget: (conv) => Boolean(conv?.isGroup),
+}));
 vi.mock('@shared/components/share/ShareTargets', () => ({
   default: () => <div data-testid="share-row" />,
 }));
@@ -51,6 +55,14 @@ describe('<ShareSheet>', () => {
     expect(screen.getByRole('button', { name: 'Send' })).toBeTruthy();
     fireEvent.click(screen.getByRole('option', { name: /Ravi/ }));
     expect(screen.getByRole('button', { name: 'Send to 2' })).toBeTruthy();
+  });
+
+  it('rings a group in its own rounded-square shape, not a circle', async () => {
+    renderSheet();
+    const ring = (name) => screen.getByRole('option', { name }).querySelector('[class*="avatarWrap"]');
+    fireEvent.click(await screen.findByRole('option', { name: /Crew/ }));
+    expect(ring(/Crew/).className).toMatch(/avatarWrapGroup/);
+    expect(ring(/Asha/).className).not.toMatch(/avatarWrapGroup/);
   });
 
   it('hides the app row while searching, but never the Send button', async () => {

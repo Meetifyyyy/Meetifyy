@@ -35,7 +35,7 @@ let currentUser = { id: 'me', username: 'me', displayName: 'Me' };
 vi.mock('@shared/context/AuthContext', () => ({
   useAuth: () => ({ currentUser, updateCurrentUser: vi.fn(), isLoggedIn: true }),
 }));
-vi.mock('@shared/components/avatar/ShareModalAvatar', () => ({ default: () => <span /> }));
+vi.mock('@shared/components/avatar/ShareModalAvatar', () => ({ default: () => <span />, isGroupTarget: () => false }));
 
 import InviteModal from '../InviteModal';
 

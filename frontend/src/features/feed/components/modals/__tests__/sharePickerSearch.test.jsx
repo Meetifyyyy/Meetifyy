@@ -48,6 +48,7 @@ vi.mock('@shared/hooks/useMessageActions', () => ({
 
 vi.mock('@shared/components/avatar/ShareModalAvatar', () => ({
   default: () => <span data-testid="avatar" />,
+  isGroupTarget: () => false,
 }));
 
 vi.mock('@shared/components/share/ShareTargets', () => ({ default: () => null }));

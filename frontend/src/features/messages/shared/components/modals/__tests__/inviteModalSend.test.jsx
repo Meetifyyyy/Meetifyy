@@ -28,7 +28,7 @@ vi.mock('@shared/api/apiClient', () => ({
 vi.mock('@shared/context/AuthContext', () => ({
   useAuth: () => ({ currentUser: { id: 'me', username: 'me' }, isLoggedIn: true }),
 }));
-vi.mock('@shared/components/avatar/ShareModalAvatar', () => ({ default: () => <span /> }));
+vi.mock('@shared/components/avatar/ShareModalAvatar', () => ({ default: () => <span />, isGroupTarget: () => false }));
 
 const { default: InviteModal } = await import('../InviteModal');
 

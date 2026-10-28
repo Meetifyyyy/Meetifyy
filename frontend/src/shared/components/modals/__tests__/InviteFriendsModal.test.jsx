@@ -12,7 +12,7 @@ vi.mock('@shared/api/apiClient', () => ({
 vi.mock('@shared/context/AuthContext', () => ({
   useAuth: () => ({ currentUser: { id: 'self', username: 'me' } }),
 }));
-vi.mock('@shared/components/avatar/ShareModalAvatar', () => ({ default: () => <span /> }));
+vi.mock('@shared/components/avatar/ShareModalAvatar', () => ({ default: () => <span />, isGroupTarget: () => false }));
 
 import InviteFriendsModal from '../InviteFriendsModal';
 

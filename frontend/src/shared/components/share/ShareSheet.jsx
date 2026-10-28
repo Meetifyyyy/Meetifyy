@@ -28,7 +28,7 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { IS_MOBILE_BUILD } from '@config';
-import ShareModalAvatar from '@shared/components/avatar/ShareModalAvatar';
+import ShareModalAvatar, { isGroupTarget } from '@shared/components/avatar/ShareModalAvatar';
 import ShareTargets from '@shared/components/share/ShareTargets';
 import { Check, Instagram } from '@shared/components/icons';
 import { useRecipientConversations } from '@shared/hooks/useRecipientConversations';
@@ -289,7 +289,7 @@ export default function ShareSheet({ isOpen, onClose, kind, entity, author, forw
                       onClick={() => toggle(conv.id)}
                       disabled={phase === 'sending'}
                     >
-                      <span className={styles.avatarWrap}>
+                      <span className={`${styles.avatarWrap} ${isGroupTarget(conv) ? styles.avatarWrapGroup : ''}`}>
                         <ShareModalAvatar conv={conv} size="60px" />
                         {picked && (
                           <span className={styles.check} aria-hidden="true">

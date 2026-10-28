@@ -1,14 +1,22 @@
 import Avatar from '@shared/components/avatar/Avatar';
 
+/**
+ * Whether a share target is a group, which draws as a rounded square rather
+ * than a circle. The picker rings the avatar with the same shape, so it asks.
+ */
+export function isGroupTarget(conv) {
+  return !!(
+    conv?.isGroup ||
+    conv?.type === 'GROUP' ||
+    (typeof conv?.id === 'string' && conv.id.startsWith('c_')) ||
+    conv?.isCampusGroup
+  );
+}
+
 export default function ShareModalAvatar({ conv, size = '48px' }) {
   if (!conv) return null;
 
-  const isGroup = !!(
-    conv.isGroup ||
-    conv.type === 'GROUP' ||
-    (typeof conv.id === 'string' && conv.id.startsWith('c_')) ||
-    conv.isCampusGroup
-  );
+  const isGroup = isGroupTarget(conv);
 
   const avatarSrc = conv.avatar || conv.icon || conv.coverImage || conv.avatarUrl;
 

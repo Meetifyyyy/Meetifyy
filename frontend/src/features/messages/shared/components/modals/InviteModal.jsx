@@ -28,7 +28,7 @@ import { createPortal } from 'react-dom';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { config } from '@config';
 import { dmApi, groupApi, usersApi } from '@shared/api/apiClient';
-import ShareModalAvatar from '@shared/components/avatar/ShareModalAvatar';
+import ShareModalAvatar, { isGroupTarget } from '@shared/components/avatar/ShareModalAvatar';
 import { Check } from '@shared/components/icons';
 import ShareTargets from '@shared/components/share/ShareTargets';
 import styles from '@shared/components/share/ShareSheet.module.css';
@@ -319,7 +319,7 @@ export default function InviteModal({ isOpen, onClose, group }) {
                   onClick={() => toggle(user.id)}
                   disabled={busy || Boolean(stopped)}
                 >
-                  <span className={styles.avatarWrap}>
+                  <span className={`${styles.avatarWrap} ${isGroupTarget(user) ? styles.avatarWrapGroup : ''}`}>
                     <ShareModalAvatar conv={user} size="60px" />
                     {picked && (
                       <span className={styles.check} aria-hidden="true">
