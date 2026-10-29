@@ -146,6 +146,18 @@
     width: 100%;
     max-width: 600px;
   }
+
+  /* The back arrow leaves the centred column for the box's top-left corner,
+     on the body's own padding. */
+  .screen {
+    position: relative;
+  }
+
+  .screenBody .verifyTop {
+    position: absolute;
+    top: 1.5rem;
+    left: 1.75rem;
+  }
 }
 
 /* ── Picker ── */
@@ -728,7 +740,8 @@
 /* ── Verify screen ──
    Back arrow, the college's logo and name centred, why we ask, the email field,
    its action. A phone gets it as a screen of its own (below); from 769px it
-   sits centred inside the box, in one readable column. */
+   sits centred inside the box, in one readable column, with the arrow in the
+   box's top-left corner (.screenBody .verifyTop, above). */
 .verify {
   display: flex;
   flex-direction: column;
@@ -963,13 +976,6 @@
   .verifyBody {
     padding-top: 1rem;
   }
-
-  /* The arrow lines up with the form's column, not the box's edge. */
-  .verify .verifyTop {
-    width: 100%;
-    max-width: 420px;
-    margin: 0 auto;
-  }
 }
 
 /* ── Request a college (card + dialog) ── */
@@ -1150,6 +1156,14 @@
   gap: 1rem;
   flex-shrink: 0;
   padding: 0.5rem 1.25rem 1.1rem 1.5rem;
+}
+
+/* No drag handle above it here, so the header keeps its own top space, the
+   same as its sides. */
+@media (min-width: 641px) {
+  .sheetHeader {
+    padding-top: 1.5rem;
+  }
 }
 
 .sheetIcon {

@@ -1,10 +1,9 @@
 /**
  * A graduation cap in the same 3D-style vector language as the event icons
- * (campus-events/components/Event3DIcons.jsx): a soft ground shadow, gradient
- * faces, a thin lit edge, a small specular highlight. Used for "Campus" where a
+ * (campus-events/components/Event3DIcons.jsx): gradient faces, a thin lit edge, a small specular highlight. Used for "Campus" where a
  * flat line icon would look out of place beside the app's other 3D marks.
  *
- * Gradient and filter ids are prefixed so several icons can share a page.
+ * No drop shadow: it sits flat on its sheet. Gradient ids are prefixed so several icons can share a page.
  */
 export default function Campus3DIcon({ size = 48, className = '', style }) {
   return (
@@ -19,10 +18,6 @@ export default function Campus3DIcon({ size = 48, className = '', style }) {
       aria-hidden="true"
     >
       <defs>
-        <filter id="cap3d_shadow" x="0" y="6" width="32" height="26" filterUnits="userSpaceOnUse" colorInterpolationFilters="sRGB">
-          <feDropShadow dx="0" dy="2.4" stdDeviation="1.8" floodColor="#0F172A" floodOpacity="0.22" />
-        </filter>
-
         {/* The cap's crown, under the board */}
         <linearGradient id="cap3d_crown" x1="9" y1="15" x2="23" y2="25" gradientUnits="userSpaceOnUse">
           <stop offset="0%" stopColor="#2F4FA8" />
@@ -53,7 +48,7 @@ export default function Campus3DIcon({ size = 48, className = '', style }) {
         </linearGradient>
       </defs>
 
-      <g filter="url(#cap3d_shadow)">
+      <g>
         {/* Crown */}
         <path
           d="M9 15.2V21.4C9 23.6 12.1 25.4 16 25.4C19.9 25.4 23 23.6 23 21.4V15.2L16 18.4L9 15.2Z"
