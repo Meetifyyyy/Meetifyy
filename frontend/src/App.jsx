@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo } from 'react';
+import { lazy, Suspense, useEffect, useMemo } from 'react';
 import { AuthShell, LoginPage, SignupPage } from './features/auth/routes/authRoutes';
 import { IS_DEV_BUILD, IS_MOBILE_BUILD } from '@config';
 import { isKnownAppRoute, normalisePathname } from '@config/seo';
@@ -15,7 +15,7 @@ import OfflineNotice from './shared/components/OfflineNotice';
 import PushSync from './shared/push/PushSync';
 import OverlayHistoryBridge from './shared/components/OverlayHistoryBridge';
 import LegacyPathRedirect from './shared/components/LegacyPathRedirect';
-import { setRedirectIntent, consumeRedirectIntent } from './shared/utils/redirectIntent';
+import { setRedirectIntent, peekRedirectIntent, clearRedirectIntent } from './shared/utils/redirectIntent';
 import { isSignupInProgress } from './features/auth/context/SignupContext';
 import CookieBanner, { CookiePreferencesModal } from './shared/components/CookieBanner/CookieBanner';
 // DEV PREVIEW — remove before shipping
@@ -210,6 +210,14 @@ const PUBLIC_VIEW_ROUTES = [
   },
 ];
 
+/** The signed-in redirect: navigates, then forgets the stored destination. */
+function RedirectAfterSignIn({ to }) {
+  useEffect(() => {
+    clearRedirectIntent();
+  }, []);
+  return <Navigate to={to} replace />;
+}
+
 function ProtectedRoute({ children }) {
   const { isLoggedIn, authStatus } = useAuth();
   const location = useLocation();
@@ -291,8 +299,10 @@ function PublicRoute({ children }) {
     if (location.pathname === '/signup' && isSignupInProgress()) {
       return children;
     }
-    // Land on the page the user originally asked for, if there was one.
-    return <Navigate to={consumeRedirectIntent() || '/home'} replace />;
+    // Land on the page the user originally asked for, if there was one (a
+    // group invite link, a post). Read here, cleared once the redirect has
+    // committed: clearing it while rendering lost it to a second render.
+    return <RedirectAfterSignIn to={peekRedirectIntent() || '/home'} />;
   }
   return children;
 }

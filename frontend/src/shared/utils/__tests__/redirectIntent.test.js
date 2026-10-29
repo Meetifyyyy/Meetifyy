@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { setRedirectIntent, consumeRedirectIntent, clearRedirectIntent } from '../redirectIntent';
+import { setRedirectIntent, consumeRedirectIntent, clearRedirectIntent, peekRedirectIntent } from '../redirectIntent';
 
 // The suite runs in the node environment, which has no sessionStorage.
 function installStorageStub() {
@@ -22,6 +22,20 @@ describe('redirectIntent', () => {
     setRedirectIntent('/crew/42?tab=saved');
     expect(consumeRedirectIntent()).toBe('/crew/42?tab=saved');
     expect(consumeRedirectIntent()).toBe(null);
+  });
+
+  it('can be read any number of times (a render) and is gone once cleared (after commit)', () => {
+    setRedirectIntent('/g/Abc123Def456');
+    // Two renders before the redirect commits read the same place.
+    expect(peekRedirectIntent()).toBe('/g/Abc123Def456');
+    expect(peekRedirectIntent()).toBe('/g/Abc123Def456');
+    clearRedirectIntent();
+    expect(peekRedirectIntent()).toBe(null);
+  });
+
+  it('peeking refuses off-site destinations too', () => {
+    sessionStorage.setItem('postAuthRedirect', '//evil.example.com');
+    expect(peekRedirectIntent()).toBe(null);
   });
 
   it('refuses off-site destinations so the redirect cannot be hijacked', () => {

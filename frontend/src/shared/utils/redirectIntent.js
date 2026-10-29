@@ -37,6 +37,24 @@ export function setRedirectIntent(path) {
   }
 }
 
+/**
+ * Reads the stored destination without clearing it, or null.
+ *
+ * For a render: a component that cleared it while rendering (as the signed-in
+ * redirect did) lost it whenever it rendered twice before navigating, which
+ * React does on every render in development and on any update that lands in
+ * between in production: the second render found nothing and sent the person
+ * Home. Read it here and clear it after commit (`clearRedirectIntent`).
+ */
+export function peekRedirectIntent() {
+  try {
+    const value = sessionStorage.getItem(KEY);
+    return isSafeInAppPath(value) ? value : null;
+  } catch (e) {
+    return null;
+  }
+}
+
 /** Reads and clears the stored destination. Returns null when there isn't one. */
 export function consumeRedirectIntent() {
   try {

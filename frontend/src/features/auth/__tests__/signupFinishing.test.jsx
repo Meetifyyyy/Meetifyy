@@ -23,6 +23,7 @@ vi.mock('react-router-dom', () => ({ useNavigate: () => navigate }));
 vi.mock('@shared/components/avatar/Avatar', () => ({ default: () => null }));
 
 const { default: SignupFinishing } = await import('../signup/components/SignupFinishing');
+const { setRedirectIntent, clearRedirectIntent } = await import('@shared/utils/redirectIntent');
 
 /**
  * Advances in 100ms slices, flushing promises between them, so a timer that
@@ -42,6 +43,7 @@ beforeEach(() => {
   completeSignup.mockReset();
   clearSignupData.mockReset();
   navigate.mockReset();
+  clearRedirectIntent();
 });
 
 afterEach(() => {
@@ -66,6 +68,16 @@ describe('SignupFinishing', () => {
     await advance(800);
     expect(clearSignupData).toHaveBeenCalledTimes(1);
     expect(navigate).toHaveBeenCalledWith('/home', { replace: true });
+  });
+
+  it('returns a new account to the deep link that sent them to sign up (a group invite)', async () => {
+    setRedirectIntent('/g/Abc123Def456');
+    completeSignup.mockResolvedValue(true);
+    render(<SignupFinishing avatar="" />);
+    await advance(4200);
+    expect(navigate).toHaveBeenCalledWith('/g/Abc123Def456', { replace: true });
+    // Used once: a later sign-in does not land there again.
+    expect(sessionStorage.getItem('postAuthRedirect')).toBeNull();
   });
 
   it('keeps spinning until completeSignup settles', async () => {

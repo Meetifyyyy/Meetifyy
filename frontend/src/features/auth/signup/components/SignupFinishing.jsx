@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Check } from '@shared/components/icons';
 import Avatar from '@shared/components/avatar/Avatar';
 import { useAuth } from '@shared/context/AuthContext';
+import { consumeRedirectIntent } from '@shared/utils/redirectIntent';
 import { useSignup } from '../../context/SignupContext';
 import { styles as s } from '../../shared/ui';
 
@@ -78,7 +79,10 @@ export default function SignupFinishing({ avatar }) {
       setTimeout(() => {
         if (!mountedRef.current) return;
         latest.current.clearSignupData();
-        latest.current.navigate('/home', { replace: true });
+        // A deep link that sent them to sign up (a group invite link, a post)
+        // is where they were going: signing in already returns them there,
+        // and signing up used to drop it for Home.
+        latest.current.navigate(consumeRedirectIntent() || '/home', { replace: true });
       }, DONE_HOLD_MS);
     });
   }, []);
