@@ -267,14 +267,6 @@
   margin: 0 6px 12px;
 }
 
-.viewTitle {
-  margin: 4px 6px 14px;
-  font-size: 1.2rem;
-  line-height: 1.25;
-  font-weight: 700;
-  color: var(--color-text-main);
-}
-
 .viewBody {
   margin: 0 6px 16px;
 }

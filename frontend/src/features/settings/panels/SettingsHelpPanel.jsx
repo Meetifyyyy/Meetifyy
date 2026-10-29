@@ -16,7 +16,7 @@ import {
 import Skeleton from '@shared/components/skeletons/Skeleton';
 import HelpActions from '@features/info/help/hub/HelpActions';
 import HelpFooter from '@features/info/help/hub/HelpFooter';
-import HelpView, { VIEW_TITLES } from '@features/info/help/hub/HelpView';
+import HelpView from '@features/info/help/hub/HelpView';
 import ServiceStatus from '@features/info/help/hub/ServiceStatus';
 import SupportRequestModal from '@features/info/help/hub/SupportRequestModal';
 import { HELP_VIEWS, viewFromParams } from '@features/info/help/hub/helpHub';
@@ -96,7 +96,8 @@ export default function SettingsHelpPanel() {
 function HelpSubView({ view, onOpen }) {
   return (
     <div className={`${settingsStyles.body} animate-in`}>
-      <h2 className={panelStyles.viewTitle}>{VIEW_TITLES[view]}</h2>
+      {/* The view's name is the page header's title (SettingsRoute), so it is
+          not repeated here. */}
       <div className={panelStyles.viewBody}>
         <HelpView view={view} onOpen={onOpen} />
       </div>

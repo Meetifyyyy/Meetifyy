@@ -6,7 +6,7 @@ import {
   beginDeletionCountdown,
   endDeletionCountdown,
 } from '@shared/lib/deletionHandoff';
-import { useNavigate, useParams, Navigate, Link } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams, Navigate, Link } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@shared/context/AuthContext';
 import ActionDot from '@shared/components/ActionDot';
@@ -48,6 +48,9 @@ import { dismissKeyboardThen, shouldAutoFocusSearch } from '@shared/utils/textFo
 import { isAffiliationActive } from '@shared/lib/campusAccess';
 import { clearCachedData, estimateCacheUsage } from '@shared/lib/clearCachedData';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
+import { overlayManager } from '@shared/services/OverlayManager';
+import { viewFromParams } from '@features/info/help/hub/helpHub';
+import { VIEW_TITLES as HELP_VIEW_TITLES } from '@features/info/help/hub/HelpView';
 
 // Large-device split layout only kicks in at this width — tablets and phones
 // keep the existing single-pane list/detail swap untouched.
@@ -261,6 +264,73 @@ function SettingsWelcomePanel() {
   );
 }
 
+/** "2004-03-07" as the three form fields: year, month and day without zero padding. */
+export function birthdayParts(birthday) {
+  const parts = (typeof birthday === 'string' ? birthday : '').split('-');
+  return {
+    birthYear: parts[0] || '',
+    birthMonth: parts[1] ? String(parseInt(parts[1], 10)) : '',
+    birthDay: parts[2] ? String(parseInt(parts[2], 10)) : '',
+  };
+}
+
+/** The Edit Profile form as the saved account describes it. */
+export function profileFormFromUser(user) {
+  return {
+    displayName: user?.displayName || '',
+    bio: user?.bio || '',
+    gender: user?.gender || '',
+    ...birthdayParts(user?.birthday),
+  };
+}
+
+/** The Academic Info form as the saved account describes it. */
+export function academicFromUser(user) {
+  const year = user?.passingYear ?? user?.currentYear;
+  return {
+    course: user?.course || '',
+    branch: user?.branch || '',
+    passingYear: Number.isInteger(year) ? year : null,
+  };
+}
+
+const dobPart = (v) => (v === '' || v == null ? '' : String(parseInt(v, 10)));
+
+/**
+ * Whether the Edit Profile form differs from what is saved. Compared as the
+ * server keeps it: names and bios without surrounding spaces, "07" as "7".
+ */
+export function isProfileFormDirty(form, saved) {
+  return (form.displayName || '').trim() !== (saved.displayName || '').trim()
+    || (form.bio || '').trim() !== (saved.bio || '').trim()
+    || (form.gender || '') !== (saved.gender || '')
+    || (form.birthYear || '') !== (saved.birthYear || '')
+    || dobPart(form.birthMonth) !== dobPart(saved.birthMonth)
+    || dobPart(form.birthDay) !== dobPart(saved.birthDay);
+}
+
+function sameSet(a = [], b = []) {
+  if (a.length !== b.length) return false;
+  const set = new Set(a);
+  return b.every((x) => set.has(x));
+}
+
+/**
+ * Runs `fn` once no dialog is open and the browser has left the history entry
+ * the dialog pushed. Leaving a page from a confirmation's own button otherwise
+ * races the dialog's cleanup: Back would close the (already closing) dialog
+ * instead of navigating, or step from the dialog's entry and land one short.
+ */
+function runWhenOverlaysSettled(fn, tries = 40) {
+  const state = typeof window !== 'undefined' ? window.history.state : null;
+  const onOverlayEntry = (state?.usr?.__overlayId ?? state?.__overlayId ?? null) !== null;
+  if ((!overlayManager.hasOpenOverlays() && !onOverlayEntry) || tries <= 0) {
+    fn();
+    return;
+  }
+  setTimeout(() => runWhenOverlaysSettled(fn, tries - 1), 25);
+}
+
 function CustomSelect({ value, onChange, options = [], disabled, placeholder, searchable, placement = 'bottom', id }) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -464,7 +534,17 @@ export default function SettingsRoute() {
   const navigate = useNavigate();
   const { open: openPage } = usePageTransition();
   const { panel: panelParam } = useParams();
+  const [searchParams] = useSearchParams();
   const isLargeScreen = useIsLargeScreen();
+
+  // The latest signed-in user, for work that finishes after the render that
+  // started it (a toggle's save failing, a panel re-reading its saved values).
+  const currentUserRef = useRef(currentUser);
+  const updateCurrentUserRef = useRef(updateCurrentUser);
+  useEffect(() => {
+    currentUserRef.current = currentUser;
+    updateCurrentUserRef.current = updateCurrentUser;
+  }, [currentUser, updateCurrentUser]);
 
   // One route param serves both levels: /settings/:panel is a category slug or a
   // settings panel. Keeping it as one segment means the existing route, every
@@ -476,50 +556,40 @@ export default function SettingsRoute() {
     : null;
   const isKnownPanel = SETTINGS_PANELS.includes(canonicalSlug);
   const activePanel = isKnownPanel ? canonicalSlug : null; // null = category list
+  // Help & Support's own pages (?view=requests, ?view=safety). They are a level
+  // below the hub, so the header names them and Back returns to the hub.
+  const helpView = activePanel === 'help' ? viewFromParams(searchParams) : null;
 
   // The category whose list belongs behind whatever is open. A panel shows its
   // parent's list, so the left pane on desktop keeps its context and Back has
   // somewhere to go that is not the root.
   const openCategory = activeCategory || (activePanel ? PANEL_PARENT[activePanel] : null) || null;
 
-  // On a phone each level is its own screen, so it slides in over the one it
-  // was opened from and back out on Back, exactly as Settings itself, a chat
-  // and a profile do (shared/lib/navigation/pageTransition.js); it used to
-  // swap in place with no motion. The split view keeps both levels on screen,
-  // so there it stays a plain navigation.
-  const openPanel = (next) => (isLargeScreen
-    ? navigate(`/settings/${next}`)
-    : openPage(`/settings/${next}`));
-
-  // Back and close. See useSettingsBack for why a phone pops history instead
-  // of navigating up the tree — navigating up is what used to loop.
-  const { goUp, closePanel } = useSettingsBack({
+  // Back. See useSettingsBack for why it pops history instead of navigating
+  // up the tree whenever the page behind is the right one — navigating up is
+  // what used to loop.
+  const { goUp } = useSettingsBack({
     activePanel,
     activeCategory,
+    subView: helpView,
     parentOf: (panel) => PANEL_PARENT[panel] || null,
     isLargeScreen,
   });
 
   // Account & Profile state
-  const [displayName, setDisplayName] = useState(currentUser?.displayName || '');
-  const [bio, setBio] = useState(currentUser?.bio || '');
-  const [gender, setGender] = useState(currentUser?.gender || '');
-  
+  const initialProfile = profileFormFromUser(currentUser);
+  const [displayName, setDisplayName] = useState(initialProfile.displayName);
+  const [bio, setBio] = useState(initialProfile.bio);
+  const [gender, setGender] = useState(initialProfile.gender);
+
   // Birthday state broken down like signup (Month dropdown, Day input, Year input)
-  const initialDobParts = (currentUser?.birthday || '').split('-');
-  const [birthYear, setBirthYear] = useState(initialDobParts[0] || '');
-  const [birthMonth, setBirthMonth] = useState(initialDobParts[1] ? String(parseInt(initialDobParts[1], 10)) : '');
-  const [birthDay, setBirthDay] = useState(initialDobParts[2] ? String(parseInt(initialDobParts[2], 10)) : '');
+  const [birthYear, setBirthYear] = useState(initialProfile.birthYear);
+  const [birthMonth, setBirthMonth] = useState(initialProfile.birthMonth);
+  const [birthDay, setBirthDay] = useState(initialProfile.birthDay);
   const [dobAttempted, setDobAttempted] = useState(false);
 
   // Single controlled object, same shape the signup step uses.
-  const [academic, setAcademic] = useState(() => ({
-    course: currentUser?.course || '',
-    branch: currentUser?.branch || '',
-    passingYear: Number.isInteger(currentUser?.passingYear ?? currentUser?.currentYear)
-      ? (currentUser?.passingYear ?? currentUser?.currentYear)
-      : null,
-  }));
+  const [academic, setAcademic] = useState(() => academicFromUser(currentUser));
   const [academicAttempted, setAcademicAttempted] = useState(false);
   const { courses: academicCourses } = useAcademicCatalog();
 
@@ -530,15 +600,8 @@ export default function SettingsRoute() {
   );
   const [initialPanelInterests, setInitialPanelInterests] = useState(currentUser?.interests || []);
 
-  useEffect(() => {
-    if (activePanel === 'interests') {
-      setInitialPanelInterests(selectedInterests);
-      // Re-read the saved value on opening, so a switch initialised before the
-      // account's settings arrived cannot overwrite them on the next save.
-      setShowCollegeOnProfile(currentUser?.settings?.showCollegeOnProfile !== false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally snapshot initial interests when switching to interests panel
-  }, [activePanel]);
+  // Which form's Save is in flight; the panel stays open while it is.
+  const [savingPanel, setSavingPanel] = useState(null);
 
   // Security state
   const [currentPassword, setCurrentPassword] = useState('');
@@ -549,22 +612,54 @@ export default function SettingsRoute() {
   const currentPw = usePasswordVisibility();
   const newPw = usePasswordVisibility();
   const confirmPw = usePasswordVisibility();
+  const hidePasswords = [currentPw.hide, newPw.hide, confirmPw.hide];
+  const hidePasswordsRef = useRef(hidePasswords);
+  useEffect(() => {
+    hidePasswordsRef.current = hidePasswords;
+  });
   const [passwordErrors, setPasswordErrors] = useState({});
   const [isSavingPassword, setIsSavingPassword] = useState(false);
 
-  // Reset security panel state when navigating away/back to avoid stale errors
-  // and accidentally-revealed passwords persisting across panel visits.
+  /**
+   * Opening a form shows what is saved, every time.
+   *
+   * Settings stays mounted across /settings/:panel, so a form's state outlived
+   * the panel: an edit abandoned without saving was still in the fields when
+   * the panel was opened again, looking saved until a reload put the real
+   * value back. Each form is now re-read from the account when it opens.
+   * The password fields, and anything they revealed, are simply cleared.
+   */
   useEffect(() => {
+    const user = currentUserRef.current;
+    if (activePanel === 'profile') {
+      const form = profileFormFromUser(user);
+      setDisplayName(form.displayName);
+      setBio(form.bio);
+      setGender(form.gender);
+      setBirthYear(form.birthYear);
+      setBirthMonth(form.birthMonth);
+      setBirthDay(form.birthDay);
+      setDobAttempted(false);
+    } else if (activePanel === 'academic') {
+      setAcademic(academicFromUser(user));
+      setAcademicAttempted(false);
+    } else if (activePanel === 'interests') {
+      const saved = user?.interests || [];
+      setSelectedInterests(saved);
+      // The order the pills are laid out in: saved choices first, fixed while
+      // the panel is open so a tap does not move the pill under the finger.
+      setInitialPanelInterests(saved);
+      // Re-read the saved value on opening, so a switch initialised before the
+      // account's settings arrived cannot show the wrong state.
+      setShowCollegeOnProfile(user?.settings?.showCollegeOnProfile !== false);
+    }
     if (activePanel !== 'security') {
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
       setPasswordErrors({});
-      currentPw.hide();
-      newPw.hide();
-      confirmPw.hide();
+      hidePasswordsRef.current.forEach((hide) => hide());
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally reset security inputs only when activePanel changes
   }, [activePanel]);
 
   // Privacy & notifications state
@@ -625,26 +720,18 @@ export default function SettingsRoute() {
         const user = syncRes?.user || syncRes;
         if (active) {
           if (user) {
-            setDisplayName(user.displayName || '');
-            setBio(user.bio || '');
-            setGender(user.gender || '');
+            const form = profileFormFromUser(user);
+            setDisplayName(form.displayName);
+            setBio(form.bio);
+            setGender(form.gender);
             if (user.birthday) {
-              const parts = user.birthday.split('-');
-              setBirthYear(parts[0] || '');
-              setBirthMonth(parts[1] ? String(parseInt(parts[1], 10)) : '');
-              setBirthDay(parts[2] ? String(parseInt(parts[2], 10)) : '');
+              setBirthYear(form.birthYear);
+              setBirthMonth(form.birthMonth);
+              setBirthDay(form.birthDay);
             }
-            setAcademic({
-              course: user.course || '',
-              branch: user.branch || '',
-              passingYear: Number.isInteger(user.passingYear ?? user.currentYear)
-                ? (user.passingYear ?? user.currentYear)
-                : null,
-            });
+            setAcademic(academicFromUser(user));
             setSelectedInterests(user.interests || []);
-            if (updateCurrentUser) {
-              updateCurrentUser({ ...currentUser, ...user });
-            }
+            updateCurrentUserRef.current?.({ ...currentUserRef.current, ...user });
           }
           const s = settingsRes || user?.settings || user?.preferences;
           if (s) {
@@ -660,10 +747,109 @@ export default function SettingsRoute() {
     };
     loadFreshData();
     return () => { active = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once on mount to seed fresh data without re-fetching on user updates
+    // Runs once on mount, to seed fresh data without re-fetching on user
+    // updates; what it needs from the account is read through refs.
   }, []);
 
+  /**
+   * An on/off preference saves the moment it is switched, the way the push
+   * switches beside it always have. These used to wait for a Save button the
+   * user had to find, so a switch could sit flipped on screen, unsaved, and
+   * flip back on the next reload. There is no unsaved switch any more.
+   *
+   * Optimistic: the switch moves at once, and moves back with an error if the
+   * server refuses. Only the latest change to a setting may put it back, so a
+   * slow failure cannot undo a later tap.
+   */
+  const toggleSeq = useRef({});
+  const toggleConfirmed = useRef({});
+  const saveToggle = (key, next, setLocal, { invalidate = [], errorText }) => {
+    if (!(key in toggleConfirmed.current)) toggleConfirmed.current[key] = !next;
+    const seq = (toggleSeq.current[key] || 0) + 1;
+    toggleSeq.current[key] = seq;
+    setLocal(next);
+
+    const fail = (err) => {
+      if (toggleSeq.current[key] !== seq) return;
+      const saved = toggleConfirmed.current[key];
+      setLocal(saved);
+      // updateSettings writes the account before the request and keeps it on a
+      // failure; put the saved value back so nothing else reads the refused one.
+      const user = currentUserRef.current;
+      if (user && updateCurrentUser) {
+        const settings = { ...(user.settings || {}), [key]: saved };
+        updateCurrentUser({ ...user, settings, preferences: { ...(user.preferences || {}), [key]: saved } });
+      }
+      if (err) console.error(`Failed to save ${key}:`, err);
+      showToast((err && err.message) || errorText, 'error');
+    };
+
+    Promise.resolve(updateSettings({ [key]: next }))
+      .then((ok) => {
+        // AuthContext reports a refused save as `false` rather than throwing.
+        if (ok === false) return fail(null);
+        toggleConfirmed.current[key] = next;
+        for (const queryKey of invalidate) queryClient.invalidateQueries({ queryKey });
+        return undefined;
+      })
+      .catch(fail);
+  };
+
+  // Who can see you: profiles, the campus directory (['users', 'campus', limit])
+  // and chats all show it.
+  const VISIBILITY_QUERIES = [['profile'], ['users'], ['conversations']];
+
+  /** Has the open form been edited away from what is saved? */
+  const profileDirty = isProfileFormDirty(
+    { displayName, bio, gender, birthYear, birthMonth, birthDay },
+    profileFormFromUser(currentUser),
+  );
+  const savedAcademic = academicFromUser(currentUser);
+  const academicDirty = academic.course !== savedAcademic.course
+    || academic.branch !== savedAcademic.branch
+    || academic.passingYear !== savedAcademic.passingYear;
+  const interestsDirty = !sameSet(selectedInterests, currentUser?.interests || []);
+  const passwordDirty = Boolean(currentPassword || newPassword || confirmPassword);
+  const hasUnsavedChanges = (activePanel === 'profile' && profileDirty)
+    || (activePanel === 'academic' && academicDirty)
+    || (activePanel === 'interests' && interestsDirty)
+    || (activePanel === 'security' && passwordDirty);
+
+  /**
+   * Leaving a form with unsaved edits asks first: the header's Back, and any
+   * row in the list (on the desktop split the list stays beside the form, one
+   * click from throwing the edits away). Hardware and browser Back are not
+   * intercepted; they belong to the system.
+   */
+  const [pendingLeave, setPendingLeave] = useState(null);
+  const requestLeave = (leave) => {
+    if (hasUnsavedChanges) {
+      setPendingLeave(() => leave);
+      return;
+    }
+    leave();
+  };
+
+  // On a phone each level is its own screen, so it slides in over the one it
+  // was opened from and back out on Back, exactly as Settings itself, a chat
+  // and a profile do (shared/lib/navigation/pageTransition.js); it used to
+  // swap in place with no motion. The split view keeps both levels on screen,
+  // so there it stays a plain navigation.
+  const openPanel = (next) => requestLeave(() => (isLargeScreen
+    ? navigate(`/settings/${next}`)
+    : openPage(`/settings/${next}`)));
+
+  /**
+   * Save keeps you where you are.
+   *
+   * Every branch here used to close the panel, sending the user up to its
+   * category or out to the root as if the page were done with them. The panel
+   * now stays open, shows the saved values, and says so with a toast. The
+   * request is awaited, so "saved" is only said once it is true; a refusal
+   * leaves the edits in the form to try again.
+   */
   const handleSave = async () => {
+    if (savingPanel) return;
     if (activePanel === 'profile') {
       if (displayName && displayName.trim().length > 30) {
         showToast('Name too long (max 30)', 'error');
@@ -686,29 +872,35 @@ export default function SettingsRoute() {
       // Gender is only sent when chosen: clearing it is not offered, and an
       // API that predates the field must not receive it unasked.
       const genderPatch = gender ? { gender } : {};
-      closePanel();
-      showToast('Profile updated', 'success');
-      if (updateCurrentUser) {
-        updateCurrentUser({
-          ...currentUser,
-          displayName,
-          bio,
-          birthday: finalBirthday,
-          ...genderPatch,
-          ...(gender && currentUser?.profileCompletion
-            ? { profileCompletion: { ...currentUser.profileCompletion, needsGender: false } }
-            : {}),
-        });
-      }
-      queryClient.invalidateQueries({ queryKey: ['profile'] });
-      updateProfile({ displayName, bio, birthday: finalBirthday, ...genderPatch }).catch(err => {
+      setSavingPanel('profile');
+      try {
+        await updateProfile({ displayName, bio, birthday: finalBirthday, ...genderPatch });
+        // The form now shows exactly what was stored ("07" reads back as "7").
+        const stored = birthdayParts(finalBirthday);
+        setBirthYear(stored.birthYear);
+        setBirthMonth(stored.birthMonth);
+        setBirthDay(stored.birthDay);
+        if (gender && currentUser?.profileCompletion?.needsGender && updateCurrentUser) {
+          updateCurrentUser({
+            ...currentUser,
+            displayName,
+            bio,
+            birthday: finalBirthday,
+            ...genderPatch,
+            profileCompletion: { ...currentUser.profileCompletion, needsGender: false },
+          });
+        }
+        queryClient.invalidateQueries({ queryKey: ['profile'] });
+        showToast('Profile updated', 'success');
+      } catch (err) {
         console.error('Failed to update profile:', err);
         showToast(err?.message || "Couldn't save profile", 'error');
-      });
+      } finally {
+        setSavingPanel(null);
+      }
     } else if (activePanel === 'academic') {
-      // Validate before closing: the panel stays open on an incomplete selection
-      // so the user can see which field is wrong, rather than being dropped back
-      // to the list with a toast. The server re-validates regardless.
+      // The panel stays open on an incomplete selection so the user can see
+      // which field is wrong. The server re-validates regardless.
       setAcademicAttempted(true);
       const academicError = validateAcademicSelection(academicCourses, academic);
       if (academicError) {
@@ -716,26 +908,21 @@ export default function SettingsRoute() {
         return;
       }
 
-      closePanel();
-      showToast('Academic details updated', 'success');
-      const updatedUser = {
-        ...currentUser,
-        course: academic.course,
-        branch: academic.branch,
-        passingYear: academic.passingYear,
-      };
-      if (updateCurrentUser) {
-        updateCurrentUser(updatedUser);
-      }
-      queryClient.invalidateQueries({ queryKey: ['profile'] });
-      updateProfile({
-        course: academic.course,
-        branch: academic.branch,
-        passingYear: academic.passingYear,
-      }).catch(err => {
+      setSavingPanel('academic');
+      try {
+        await updateProfile({
+          course: academic.course,
+          branch: academic.branch,
+          passingYear: academic.passingYear,
+        });
+        queryClient.invalidateQueries({ queryKey: ['profile'] });
+        showToast('Academic details updated', 'success');
+      } catch (err) {
         console.error('Failed to update academic info:', err);
         showToast(err?.message || "Couldn't save academic details", 'error');
-      });
+      } finally {
+        setSavingPanel(null);
+      }
     } else if (activePanel === 'security') {
       // Shared with signup and reset — see passwordRules. This panel used to
       // carry its own `length < 8`, which let a password over bcrypt's 72-byte
@@ -758,8 +945,8 @@ export default function SettingsRoute() {
         setNewPassword('');
         setConfirmPassword('');
         setPasswordErrors({});
+        hidePasswordsRef.current.forEach((hide) => hide());
         showToast('Password changed', 'success');
-        closePanel();
       } catch (err) {
         // Use structured error code when available (set in AuthContext changePassword)
         const isWrongPassword =
@@ -775,73 +962,18 @@ export default function SettingsRoute() {
       } finally {
         setIsSavingPassword(false);
       }
-    } else if (activePanel === 'privacy') {
-      closePanel();
-      showToast('Visibility settings saved', 'success');
-      if (updateCurrentUser) {
-        updateCurrentUser({
-          ...currentUser,
-          settings: {
-            ...(currentUser?.settings || {}),
-            privateProfile,
-            showOnlineStatus,
-            readReceipts,
-          }
-        });
-      }
-      queryClient.invalidateQueries({ queryKey: ['profile'] });
-      // Also covers the campus directory, ['users', 'campus', limit].
-      queryClient.invalidateQueries({ queryKey: ['users'] });
-      queryClient.invalidateQueries({ queryKey: ['conversations'] });
-      updateSettings({
-        privateProfile,
-        showOnlineStatus,
-        readReceipts,
-      }).catch(err => {
-        console.error('Failed to update privacy settings:', err);
-        showToast(err?.message || "Couldn't save privacy settings", 'error');
-      });
-    } else if (activePanel === 'notifications') {
-      closePanel();
-      showToast('Notification settings saved', 'success');
-      if (updateCurrentUser) {
-        updateCurrentUser({
-          ...currentUser,
-          settings: {
-            ...(currentUser?.settings || {}),
-            emailNotifs,
-          }
-        });
-      }
-      // Push is not saved here: PushNotificationsSettings owns it, so this
-      // button can never overwrite a switch that row just changed.
-      updateSettings({
-        emailNotifs,
-      }).catch(err => {
-        console.error('Failed to update notification settings:', err);
-        showToast(err?.message || "Couldn't save notification settings", 'error');
-      });
     } else if (activePanel === 'interests') {
-      closePanel();
-      showToast('Interests saved', 'success');
-      if (updateCurrentUser) {
-        updateCurrentUser({
-          ...currentUser,
-          interests: selectedInterests,
-          settings: { ...(currentUser?.settings || {}), showCollegeOnProfile },
-        });
-      }
-      queryClient.invalidateQueries({ queryKey: ['profile'] });
-      if (currentUser?.settings?.showCollegeOnProfile !== showCollegeOnProfile) {
-        updateSettings({ showCollegeOnProfile }).catch(err => {
-          console.error('Failed to update college tag setting:', err);
-          showToast(err?.message || "Couldn't save the college tag setting", 'error');
-        });
-      }
-      updateProfile({ interests: selectedInterests }).catch(err => {
+      setSavingPanel('interests');
+      try {
+        await updateProfile({ interests: selectedInterests });
+        queryClient.invalidateQueries({ queryKey: ['profile'] });
+        showToast('Interests saved', 'success');
+      } catch (err) {
         console.error('Failed to update interests:', err);
         showToast(err?.message || "Couldn't save interests", 'error');
-      });
+      } finally {
+        setSavingPanel(null);
+      }
     }
   };
 
@@ -1177,7 +1309,9 @@ export default function SettingsRoute() {
           )}
         </div>
       </div>
-      <button className={styles.saveBtn} onClick={handleSave}>Save Changes</button>
+      <button className={styles.saveBtn} onClick={handleSave} disabled={savingPanel === 'profile'}>
+        {savingPanel === 'profile' ? 'Saving…' : 'Save Changes'}
+      </button>
     </div>
   );
 
@@ -1233,7 +1367,9 @@ export default function SettingsRoute() {
           }}
         />
       </div>
-      <button className={styles.saveBtn} onClick={handleSave}>Save Academic Info</button>
+      <button className={styles.saveBtn} onClick={handleSave} disabled={savingPanel === 'academic'}>
+        {savingPanel === 'academic' ? 'Saving…' : 'Save Academic Info'}
+      </button>
     </div>
   );
 
@@ -1371,7 +1507,7 @@ export default function SettingsRoute() {
             <span className={styles.toggleDesc}>Only approved followers see your posts</span>
           </div>
           <label className={styles.toggle}>
-            <input type="checkbox" checked={privateProfile} onChange={e => setPrivateProfile(e.target.checked)} />
+            <input type="checkbox" checked={privateProfile} onChange={e => saveToggle('privateProfile', e.target.checked, setPrivateProfile, { invalidate: VISIBILITY_QUERIES, errorText: "Couldn't save privacy settings" })} />
             <span className={styles.slider} />
           </label>
         </div>
@@ -1385,7 +1521,7 @@ export default function SettingsRoute() {
             <span className={styles.toggleDesc}>Allow other users to see when you're online.</span>
           </div>
           <label className={styles.toggle}>
-            <input type="checkbox" checked={showOnlineStatus} onChange={e => setShowOnlineStatus(e.target.checked)} />
+            <input type="checkbox" checked={showOnlineStatus} onChange={e => saveToggle('showOnlineStatus', e.target.checked, setShowOnlineStatus, { invalidate: VISIBILITY_QUERIES, errorText: "Couldn't save privacy settings" })} />
             <span className={styles.slider} />
           </label>
         </div>
@@ -1398,12 +1534,11 @@ export default function SettingsRoute() {
             <span className={styles.toggleDesc}>Allow others to know when you've read their messages.</span>
           </div>
           <label className={styles.toggle}>
-            <input type="checkbox" checked={readReceipts} onChange={e => setReadReceipts(e.target.checked)} />
+            <input type="checkbox" checked={readReceipts} onChange={e => saveToggle('readReceipts', e.target.checked, setReadReceipts, { invalidate: VISIBILITY_QUERIES, errorText: "Couldn't save privacy settings" })} />
             <span className={styles.slider} />
           </label>
         </div>
       </div>
-      <button className={styles.saveBtn} onClick={handleSave}>Save Visibility Settings</button>
     </div>
   );
 
@@ -1432,15 +1567,14 @@ export default function SettingsRoute() {
             <span className={styles.toggleDesc}>Get emails for important activity</span>
           </div>
           <label className={styles.toggle}>
-            <input type="checkbox" checked={emailNotifs} onChange={e => setEmailNotifs(e.target.checked)} />
+            <input type="checkbox" checked={emailNotifs} onChange={e => saveToggle('emailNotifs', e.target.checked, setEmailNotifs, { errorText: "Couldn't save notification settings" })} />
             <span className={styles.slider} />
           </label>
         </div>
         <div className={styles.nestedDivider} />
-        {/* Saves itself as it changes; not part of the Save button below. */}
+        {/* Saves itself as it changes, like the switch above. */}
         <PushNotificationsSettings />
       </div>
-      <button className={styles.saveBtn} onClick={handleSave}>Save Notification Settings</button>
     </div>
   );
 
@@ -1462,7 +1596,7 @@ export default function SettingsRoute() {
             type="checkbox"
             role="switch"
             checked={showCollegeOnProfile}
-            onChange={(e) => setShowCollegeOnProfile(e.target.checked)}
+            onChange={(e) => saveToggle('showCollegeOnProfile', e.target.checked, setShowCollegeOnProfile, { invalidate: [['profile']], errorText: "Couldn't save the college tag setting" })}
           />
         </label>
 
@@ -1504,10 +1638,11 @@ export default function SettingsRoute() {
       <div className={styles.floatingSaveWrapper}>
         <button 
           type="button"
-          className={styles.floatingSaveBtn} 
+          className={styles.floatingSaveBtn}
           onClick={handleSave}
+          disabled={savingPanel === 'interests'}
         >
-          Save Interests
+          {savingPanel === 'interests' ? 'Saving…' : 'Save Interests'}
         </button>
       </div>
     </div>
@@ -1533,13 +1668,15 @@ export default function SettingsRoute() {
         <button
           className={styles.backBtn}
           aria-label="Go back"
-          onClick={goUp}
+          onClick={() => requestLeave(goUp)}
         >
           <ChevronLeft size={20} />
         </button>
 
         <span className={styles.topBarTitle}>
-          {activePanel
+          {helpView
+            ? HELP_VIEW_TITLES[helpView]
+            : activePanel
             ? panelTitle[activePanel]
             : activeCategory
               ? SETTINGS_TREE.find((e) => e.slug === activeCategory)?.label
@@ -1614,6 +1751,23 @@ export default function SettingsRoute() {
           confirmText={clearingCache ? 'Clearing…' : 'Clear'}
           cancelText="Cancel"
           icon={<Smartphone size={24} strokeWidth={2} />}
+        />
+      )}
+
+      {pendingLeave && (
+        <ConfirmModal
+          centered
+          isDestructive
+          title="Discard changes?"
+          desc="You have unsaved changes. If you leave now, they won't be saved."
+          confirmText="Discard"
+          cancelText="Keep editing"
+          onCancel={() => setPendingLeave(null)}
+          onConfirm={() => {
+            const leave = pendingLeave;
+            setPendingLeave(null);
+            runWhenOverlaysSettled(leave);
+          }}
         />
       )}
 
