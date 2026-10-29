@@ -139,6 +139,8 @@ export class ActivitiesController {
     @CurrentUser() user: AuthenticatedUser,
     @Query('limit') limit?: string,
     @Query('cursor') cursor?: string,
+    // `not_going` pages the "Not going" list; anything else is the attendees.
+    @Query('status') status?: string,
   ) {
     const parsed = parseInt(limit || '', 10);
     return this.activitiesService.getAttendees(
@@ -146,6 +148,7 @@ export class ActivitiesController {
       user.id,
       !isNaN(parsed) && parsed > 0 ? parsed : 30,
       cursor,
+      status === 'not_going' ? 'not_going' : 'going',
     );
   }
 
@@ -201,12 +204,16 @@ export class ActivitiesController {
     return this.activitiesService.leaveActivity(id, user.id);
   }
 
+  /**
+   * "I'm out": the caller is not going. Leaves the activity if they were in,
+   * and declines their invitation if they hold one. "I'm in" is `:id/join`.
+   */
   @Post(':id/decline')
   async declineCrewInvitation(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.activitiesService.declineCrewInvitation(id, user.id);
+    return this.activitiesService.markNotGoing(id, user.id);
   }
 
   @Post(':id/cancel')

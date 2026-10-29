@@ -103,7 +103,7 @@ const FEED_SELECT = {
   participationType: true,
   shareToCampus: true,
   visibility: true,
-  _count: { select: { members: true } },
+  _count: { select: { members: { where: { status: 'MEMBER' as const } } } },
   members: {
     where: { status: 'MEMBER' },
     take: 5,
@@ -131,6 +131,9 @@ const FEED_SELECT = {
 type FeedActivityRow = Prisma.CrewActivityGetPayload<{
   select: typeof FEED_SELECT;
 }>;
+
+/** Which of an activity's two people lists `getAttendees` pages. */
+export type AttendeeList = 'going' | 'not_going';
 
 /** The shared, viewer-independent page cached before membership is applied. */
 interface FeedBasePage {
@@ -738,7 +741,7 @@ export class ActivitiesService implements OnModuleInit {
     participationType: true,
     shareToCampus: true,
     visibility: true,
-    _count: { select: { members: true } },
+    _count: { select: { members: { where: { status: 'MEMBER' as const } } } },
     members: {
       where: { status: 'MEMBER' as const },
       take: 5,
@@ -1466,6 +1469,27 @@ export class ActivitiesService implements OnModuleInit {
   /** Attendees embedded in the detail payload; the rest load incrementally. */
   private static readonly DETAIL_MEMBER_PAGE = 30;
 
+  /** One row of the attendee / "Not going" lists. */
+  private static readonly ATTENDEE_ROW_SELECT = {
+    userId: true,
+    status: true,
+    joinedAt: true,
+    user: {
+      select: {
+        id: true,
+        username: true,
+        displayName: true,
+        avatar: true,
+        isCampusRep: true,
+        collegeId: true,
+        college: { select: { id: true, name: true } },
+        // Required by `presentMember`.
+        accountStatus: true,
+        deletedAt: true,
+      },
+    },
+  } satisfies Prisma.CrewActivityMemberSelect;
+
   async getActivityById(id: string, userId?: string) {
     const cleanId = id ? id.replace(/^(act_)+/, '') : id;
     const [activity, user, excludedUserIds, myMembership] = await Promise.all([
@@ -1477,7 +1501,11 @@ export class ActivitiesService implements OnModuleInit {
           // without limit. The first page renders the avatar stack immediately;
           // `memberCount` below stays authoritative for the count, and the full
           // list is paged in from the attendees endpoint.
+          // MEMBER rows only: "not going" (DECLINED) rows are served
+          // separately as `notGoing`, and must neither take places on this
+          // page nor count towards `memberCount`.
           members: {
+            where: { status: 'MEMBER' },
             take: ActivitiesService.DETAIL_MEMBER_PAGE,
             orderBy: { joinedAt: 'asc' },
             include: {
@@ -1497,7 +1525,9 @@ export class ActivitiesService implements OnModuleInit {
               },
             },
           },
-          _count: { select: { members: true } },
+          _count: {
+            select: { members: { where: { status: 'MEMBER' as const } } },
+          },
           // Only the caller's own invitation row is loaded: the full invitee list
           // is host-only information (see getInvitationStatuses).
           invitations: userId
@@ -1618,6 +1648,45 @@ export class ActivitiesService implements OnModuleInit {
       );
     }
 
+    // "Not going": the people who answered no. The same audience as the
+    // attendee list — anyone who may view the activity — and the same block
+    // rule: hidden from a viewer they are blocked with, never from the host.
+    const isHost = Boolean(userId && activity.creatorId === userId);
+    const notGoingWhere: Prisma.CrewActivityMemberWhereInput = {
+      activityId: cleanId,
+      status: 'DECLINED',
+      ...(!isHost && excludedUserIds.length > 0
+        ? { userId: { notIn: excludedUserIds } }
+        : {}),
+    };
+    const [notGoingRows, notGoingCount] = await Promise.all([
+      this.prisma.crewActivityMember.findMany({
+        where: notGoingWhere,
+        orderBy: [{ joinedAt: 'asc' }, { userId: 'asc' }],
+        take: ActivitiesService.DETAIL_MEMBER_PAGE,
+        select: ActivitiesService.ATTENDEE_ROW_SELECT,
+      }),
+      this.prisma.crewActivityMember.count({
+        where: { activityId: cleanId, status: 'DECLINED' },
+      }),
+    ]);
+
+    // Whether answering "I'm out" would cost this viewer the page: true when
+    // only their membership lets them see it. An invitation they decline still
+    // lets them see it (and change their mind), so it counts as declined here,
+    // not as gone. Kept in the response for older clients' warning.
+    const notGoingRemovesAccess =
+      Boolean(user) &&
+      !isHost &&
+      !this.activityAuthorizationService.canView(user, {
+        ...authTarget,
+        members: [],
+        invitations: (authTarget.invitations ?? []).map((inv) => ({
+          ...inv,
+          status: 'DECLINED',
+        })),
+      }).allowed;
+
     const { invitations: _invitations, _count, ...activityFields } = activity;
     return {
       ...activityFields,
@@ -1644,6 +1713,18 @@ export class ActivitiesService implements OnModuleInit {
         loadedMemberPageSize >= ActivitiesService.DETAIL_MEMBER_PAGE,
       isJoined: myMembership?.status === 'MEMBER',
       myStatus: myMembership?.status || null,
+      // Added alongside `members`, never in place of it: an installed app
+      // built before "I'm out" reads `members`/`memberCount` only, and those
+      // still mean exactly the people going.
+      isNotGoing: myMembership?.status === 'DECLINED',
+      notGoing: notGoingRows.map((m) => ({
+        ...m,
+        user: ActivitiesService.presentMember(m.user),
+      })),
+      notGoingCount,
+      hasMoreNotGoing:
+        notGoingRows.length >= ActivitiesService.DETAIL_MEMBER_PAGE,
+      notGoingRemovesAccess,
       isInvited: this.activityAuthorizationService.hasValidInvitation(
         user,
         activity,
@@ -1667,6 +1748,9 @@ export class ActivitiesService implements OnModuleInit {
     userId: string,
     limit = 30,
     cursor?: string,
+    // 'not_going' pages the "Not going" list (DECLINED rows) under exactly the
+    // same access, block and tombstone rules as the attendee list.
+    list: AttendeeList = 'going',
   ) {
     const take = Math.min(Math.max(limit, 1), 60);
     const cleanId = activityId
@@ -1732,7 +1816,7 @@ export class ActivitiesService implements OnModuleInit {
     const isHost = activity.creatorId === userId;
     const baseAttendeeWhere: Prisma.CrewActivityMemberWhereInput = {
       activityId: cleanId,
-      status: 'MEMBER' as const,
+      status: list === 'not_going' ? 'DECLINED' : 'MEMBER',
       ...cursorFilter,
     };
     const attendeeWhere = isHost
@@ -1747,25 +1831,7 @@ export class ActivitiesService implements OnModuleInit {
       where: attendeeWhere,
       orderBy: [{ joinedAt: 'asc' }, { userId: 'asc' }],
       take: take + 1,
-      select: {
-        userId: true,
-        status: true,
-        joinedAt: true,
-        user: {
-          select: {
-            id: true,
-            username: true,
-            displayName: true,
-            avatar: true,
-            isCampusRep: true,
-            collegeId: true,
-            college: { select: { id: true, name: true } },
-            // Required by `presentMember` below.
-            accountStatus: true,
-            deletedAt: true,
-          },
-        },
-      },
+      select: ActivitiesService.ATTENDEE_ROW_SELECT,
     });
 
     const hasMore = rows.length > take;
@@ -2070,7 +2136,13 @@ export class ActivitiesService implements OnModuleInit {
     return { success: true, ...updated };
   }
 
-  async joinActivity(activityId: string, userId: string) {
+  async joinActivity(
+    activityId: string,
+    userId: string,
+    // acceptInvitation records the answer on the invitation itself, so it
+    // turns this off rather than having the same row settled twice.
+    { syncInvitation = true }: { syncInvitation?: boolean } = {},
+  ) {
     // ── Single targeted read: only the fields we need from the activity + one membership row ──
     // No more `include: { members: true }` (which fetched ALL member rows).
     const [activityRow, user, existingMember] = await Promise.all([
@@ -2090,13 +2162,17 @@ export class ActivitiesService implements OnModuleInit {
           invitations: {
             where: { inviteeId: userId },
             select: {
+              id: true,
+              inviterId: true,
               inviteeId: true,
               status: true,
               revokedAt: true,
               expiresAt: true,
             },
           },
-          _count: { select: { members: true } },
+          _count: {
+            select: { members: { where: { status: 'MEMBER' as const } } },
+          },
         },
       }),
       this.getViewer(userId),
@@ -2163,8 +2239,15 @@ export class ActivitiesService implements OnModuleInit {
     // host notification below exactly-once at the database level: two concurrent
     // joins that both pass the membership pre-check still yield only one `true`,
     // so only one notification is created.
+    //
+    // A "not going" (DECLINED) row changing its answer to "I'm in" is the
+    // conflict path, so `inserted` is false for it. `becameMember` covers that
+    // case: the update restamps `joinedAt` with this statement's NOW() only
+    // when the row was not already MEMBER, so it reads true exactly once — a
+    // concurrent second join sees the committed MEMBER row and keeps the first
+    // one's timestamp.
     const upsertResult = await this.prisma.$queryRaw<
-      Array<{ inserted: boolean }>
+      Array<{ inserted: boolean; becameMember?: boolean }>
     >`
       WITH current_count AS (
         SELECT COUNT(*)::int AS cnt
@@ -2187,15 +2270,34 @@ export class ActivitiesService implements OnModuleInit {
           WHERE "userId" = ${userId} AND "activityId" = ${activityId} AND "status" = 'MEMBER'
         )
       )
-      ON CONFLICT ("userId", "activityId") DO UPDATE SET "status" = 'MEMBER'
-      RETURNING (xmax = 0) AS inserted
+      ON CONFLICT ("userId", "activityId") DO UPDATE SET
+        "status" = 'MEMBER',
+        "joinedAt" = CASE
+          WHEN "CrewActivityMember"."status" = 'MEMBER'
+            THEN "CrewActivityMember"."joinedAt"
+          ELSE NOW()
+        END
+      RETURNING (xmax = 0) AS inserted, ("joinedAt" = NOW()) AS "becameMember"
     `;
 
     if (!upsertResult || upsertResult.length === 0) {
       throw new ForbiddenException('Activity is full');
     }
 
-    const isNewMember = upsertResult?.[0]?.inserted === true;
+    const isNewMember =
+      upsertResult?.[0]?.inserted === true ||
+      upsertResult?.[0]?.becameMember === true;
+
+    // Joining answers an invitation the user still holds, including one they
+    // had declined: "I'm in" after "I'm out" must not leave their invite
+    // notification reading "Declined" while they are on the guest list.
+    if (syncInvitation) {
+      await this.acceptHeldInvitation(
+        activityId,
+        userId,
+        activityRow.invitations,
+      );
+    }
 
     // Await cache clearing BEFORE responding to prevent the frontend's
     // post-mutation refetch from racing and hitting stale Redis data.
@@ -2291,25 +2393,217 @@ export class ActivitiesService implements OnModuleInit {
     return { success: true };
   }
 
-  async declineCrewInvitation(activityId: string, userId: string) {
-    const invitation = await this.prisma.activityInvitation.findFirst({
-      where: {
-        activityId,
-        inviteeId: userId,
-        status: 'PENDING',
-      },
+  /**
+   * "I'm out": record the caller as not going.
+   *
+   * One answer, whatever the caller's state was before:
+   *   - going (MEMBER)       → leaves the activity, row kept as DECLINED;
+   *   - undecided / legacy PENDING → a DECLINED row is written;
+   *   - holding an invitation (PENDING, or ACCEPTED and since changed their
+   *     mind) → the invitation is declined too, its notification re-stated and
+   *     the inviter told, exactly as declining from Notifications does.
+   *
+   * The row is the host's record of the answer: it is what the "Not going"
+   * list reads. "I'm in" goes back through joinActivity, which runs the full
+   * join policy again (visibility, status, capacity) and flips the row.
+   *
+   * Declining an invitation keeps today's meaning: a declined invitation
+   * grants nothing, so on a PRIVATE activity (or another college's) this
+   * costs the caller access. The detail payload says so in advance
+   * (`notGoingRemovesAccess`) and the response repeats it (`lostAccess`).
+   */
+  async markNotGoing(
+    activityId: string,
+    userId: string,
+  ): Promise<{ success: true; lostAccess: boolean }> {
+    const cleanId = activityId
+      ? activityId.replace(/^(act_)+/, '')
+      : activityId;
+
+    const [activity, user, membership] = await Promise.all([
+      this.prisma.crewActivity.findUnique({
+        where: { id: cleanId },
+        select: {
+          id: true,
+          creatorId: true,
+          collegeId: true,
+          visibility: true,
+          status: true,
+          deletedAt: true,
+          startDate: true,
+          invitations: {
+            where: { inviteeId: userId },
+            select: {
+              id: true,
+              inviterId: true,
+              inviteeId: true,
+              status: true,
+              revokedAt: true,
+              expiresAt: true,
+            },
+          },
+        },
+      }),
+      this.getViewer(userId),
+      this.prisma.crewActivityMember.findUnique({
+        where: { userId_activityId: { userId, activityId: cleanId } },
+        select: { userId: true, status: true },
+      }),
+    ]);
+
+    if (!activity || activity.deletedAt) {
+      throw new NotFoundException('Activity not found');
+    }
+    if (await this.blocksService.isBlocked(userId, activity.creatorId)) {
+      throw new NotFoundException('Activity not found');
+    }
+    if (activity.creatorId === userId) {
+      throw new BadRequestException(
+        'The host cannot mark themselves as not going',
+      );
+    }
+    // Same gate as viewing: answering is never a way to learn that a hidden
+    // activity exists (PRIVATE answers 404, as everywhere else).
+    const authTarget = {
+      ...activity,
+      members: membership ? [membership] : [],
+    };
+    this.activityAuthorizationService.assertCanView(user, authTarget);
+
+    if (activity.status !== 'OPEN') {
+      throw new BadRequestException('This activity is no longer open');
+    }
+    if (activity.startDate && new Date(activity.startDate) <= new Date()) {
+      throw new BadRequestException('This activity has already started');
+    }
+
+    const invitation = activity.invitations.find((inv) =>
+      this.activityAuthorizationService.isValidInvitation(inv, userId),
+    );
+
+    // Idempotent: already answered no, and nothing left to settle.
+    if (membership?.status === 'DECLINED' && !invitation) {
+      return { success: true, lostAccess: false };
+    }
+
+    const wasGoing = membership?.status === 'MEMBER';
+
+    // `joinedAt` doubles as "answered at" for a DECLINED row, so the
+    // "Not going" list reads in the order people answered.
+    await this.prisma.crewActivityMember.upsert({
+      where: { userId_activityId: { userId, activityId: cleanId } },
+      create: { userId, activityId: cleanId, status: 'DECLINED' },
+      update: { status: 'DECLINED', joinedAt: new Date() },
     });
 
     if (invitation) {
-      return this.declineInvitation(invitation.id, userId);
+      // Conditional, like every other invitation answer: a cancellation or
+      // revocation that landed first wins.
+      const declined = await this.prisma.activityInvitation.updateMany({
+        where: {
+          id: invitation.id,
+          status: { in: ['PENDING', 'ACCEPTED'] },
+          revokedAt: null,
+        },
+        data: { status: 'DECLINED', respondedAt: new Date() },
+      });
+      if (declined.count > 0) {
+        await this.settleInviteNotifications(
+          cleanId,
+          'DECLINED',
+          [userId],
+          ['PENDING', 'ACCEPTED'],
+        );
+        void this.domainEventService.emit(
+          'invitation:updated',
+          {
+            invitationId: invitation.id,
+            status: 'DECLINED',
+            activityId: cleanId,
+          },
+          [invitation.inviterId, userId],
+        );
+      }
     }
 
-    await this.prisma.crewActivityMember.updateMany({
-      where: { activityId, userId, status: 'PENDING' },
-      data: { status: 'DECLINED' },
+    // Await cache clearing BEFORE responding, as join/leave do, so the
+    // client's refetch cannot read a stale feed page.
+    await this.clearActivityFeedCaches();
+
+    // Someone who was going leaves the attendee count: that is the existing
+    // memberLeft path, which also refetches any open detail page. Anyone else
+    // only changes the "Not going" list, which `activity.updated` refreshes.
+    setImmediate(() => {
+      if (wasGoing) {
+        void this.domainEventService.emit('activity.memberLeft', {
+          activityId: cleanId,
+          userId,
+        });
+      } else {
+        void this.domainEventService.emit('activity.updated', {
+          id: cleanId,
+          activityId: cleanId,
+        });
+      }
     });
-    void this.domainEventService.emit('activity.updated', { id: activityId });
-    return { success: true };
+
+    // Their declined invitation still counts for seeing it; the membership
+    // (now DECLINED) does not.
+    const lostAccess = !this.activityAuthorizationService.canView(user, {
+      ...authTarget,
+      members: [],
+      invitations: (authTarget.invitations ?? []).map((inv) => ({
+        ...inv,
+        status: 'DECLINED',
+      })),
+    }).allowed;
+
+    return { success: true, lostAccess };
+  }
+
+  /**
+   * Marks the invitation a joining user holds as ACCEPTED — a PENDING one, or
+   * one they declined and have now changed their mind about. A revoked
+   * invitation is left alone: revocation is the host's decision.
+   */
+  private async acceptHeldInvitation(
+    activityId: string,
+    userId: string,
+    invitations: Array<{
+      id: string;
+      inviterId: string;
+      status: string;
+      revokedAt: Date | null;
+    }>,
+  ): Promise<void> {
+    const held = invitations.find(
+      (inv) =>
+        !inv.revokedAt &&
+        (inv.status === 'PENDING' || inv.status === 'DECLINED'),
+    );
+    if (!held) return;
+
+    const accepted = await this.prisma.activityInvitation.updateMany({
+      where: {
+        id: held.id,
+        status: { in: ['PENDING', 'DECLINED'] },
+        revokedAt: null,
+      },
+      data: { status: 'ACCEPTED', respondedAt: new Date() },
+    });
+    if (accepted.count === 0) return;
+
+    await this.settleInviteNotifications(
+      activityId,
+      'ACCEPTED',
+      [userId],
+      ['PENDING', 'DECLINED'],
+    );
+    void this.domainEventService.emit(
+      'invitation:updated',
+      { invitationId: held.id, status: 'ACCEPTED', activityId },
+      [held.inviterId, userId],
+    );
   }
 
   async cancelCrewActivity(activityId: string, currentUserId: string) {
@@ -2396,6 +2690,10 @@ export class ActivitiesService implements OnModuleInit {
     activityId: string,
     status: 'ACCEPTED' | 'DECLINED' | 'CANCELLED' | 'EXPIRED',
     recipientIds: string[],
+    // Only an answer the recipient gives themselves widens this (changing
+    // their mind re-states their own ACCEPTED/DECLINED row); a cancellation or
+    // expiry never rewrites an answered invite.
+    onlyIfStatusIn: Array<'PENDING' | 'ACCEPTED' | 'DECLINED'> = ['PENDING'],
   ) {
     if (recipientIds.length === 0) return;
     await this.notificationsService
@@ -2404,7 +2702,7 @@ export class ActivitiesService implements OnModuleInit {
         entityId: activityId,
         recipientIds,
         status,
-        onlyIfStatusIn: ['PENDING'],
+        onlyIfStatusIn,
       })
       .catch((err) =>
         this.logger.warn(
@@ -2503,7 +2801,9 @@ export class ActivitiesService implements OnModuleInit {
         ],
       },
       include: {
-        _count: { select: { members: true } },
+        _count: {
+          select: { members: { where: { status: 'MEMBER' as const } } },
+        },
         members: {
           where: { status: 'MEMBER' },
           take: 5,
@@ -2576,7 +2876,9 @@ export class ActivitiesService implements OnModuleInit {
       include: {
         activity: {
           include: {
-            _count: { select: { members: true } },
+            _count: {
+              select: { members: { where: { status: 'MEMBER' as const } } },
+            },
             members: {
               // Only people actually in; a legacy PENDING row is not a member.
               where: { status: 'MEMBER' },
@@ -2937,8 +3239,12 @@ export class ActivitiesService implements OnModuleInit {
         },
         activity: {
           include: {
-            _count: { select: { members: true } },
+            _count: {
+              select: { members: { where: { status: 'MEMBER' as const } } },
+            },
             members: {
+              // Only people going; a "not going" row is not an attendee.
+              where: { status: 'MEMBER' },
               take: 5,
               include: {
                 user: {
@@ -3070,7 +3376,9 @@ export class ActivitiesService implements OnModuleInit {
     // invitation is never a bypass of capacity/status/visibility rules. It is
     // itself idempotent (ON CONFLICT upsert), so concurrent accepts cannot
     // create duplicate participant rows.
-    await this.joinActivity(invitation.activityId, userId);
+    await this.joinActivity(invitation.activityId, userId, {
+      syncInvitation: false,
+    });
 
     // Conditional write: a cancellation or expiry that landed while the join
     // was in flight has already moved this row off PENDING, and it must win —
@@ -3256,7 +3564,9 @@ export class ActivitiesService implements OnModuleInit {
         visibility: true,
         status: true,
         collegeId: true,
-        members: { select: { userId: true } },
+        // A "not going" (DECLINED) row is an answer, not a membership: the
+        // invite picker reports that person from their invitation instead.
+        members: { where: { status: 'MEMBER' }, select: { userId: true } },
         invitations: {
           select: { inviteeId: true, status: true, respondedAt: true },
         },

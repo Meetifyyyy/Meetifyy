@@ -15,12 +15,13 @@ import styles from './ActivityDetailPage.module.css';
 import { Bookmark, UserPlus, CircleXIcon, ChevronLeft } from '@shared/components/icons';
 import { showToast } from '@shared/utils/toast';
 import { useSavedActivitiesStore } from '@shared/stores/savedActivitiesStore';
-import { useJoinActivity } from '../hooks/useJoinActivity';
+import { useActivityRsvp, rsvpFromActivity } from '../hooks/useActivityRsvp';
+import { useNotGoingAttendees } from '../hooks/useNotGoingAttendees';
+import RsvpButtons from '../components/RsvpButtons';
 import { useActivityLifecycle } from '../hooks/useActivityLifecycle';
 import { useActivityById, useActivityAttendees } from '@shared/hooks/useCrew';
 import { useAmbientTint } from '@shared/hooks/useAmbientTint';
 import { useSystemBars } from '@shared/hooks/useSystemBars';
-import { toggleRegistry } from '@shared/utils/mutationRegistry';
 // Deferred: the discussion pulls its own message page and joins a socket room.
 // Loading it with the route made the detail page wait on a module and a request
 // that nothing above the fold needs. It mounts once the core content has
@@ -135,6 +136,68 @@ function AttendeesMore({ canExpand, total, shown, onExpand, hasNextPage, isFetch
   return null;
 }
 
+/** Host first, then the expanded pages, then anything only the embed has. */
+function mergeAttendees(embedded, fetched, { hostLeads = false } = {}) {
+  if (!fetched.length) return embedded;
+  const byId = new Map();
+  if (hostLeads) embedded.slice(0, 1).forEach(u => { if (u?.id) byId.set(String(u.id), u); });
+  fetched.forEach(u => { if (u?.id && !byId.has(String(u.id))) byId.set(String(u.id), u); });
+  embedded.forEach(u => { if (u?.id && !byId.has(String(u.id))) byId.set(String(u.id), u); });
+  return Array.from(byId.values());
+}
+
+function AttendeeRow({ person, isHost, onOpen }) {
+  return (
+    <div className={styles.attendeeRow} onClick={() => onOpen(person)}>
+      <Avatar
+        src={person.avatar}
+        name={person.displayName || person.username}
+        size="44px"
+        className={styles.attendeeAvatar}
+      />
+      <div className={styles.attendeeMeta}>
+        <div className={styles.attendeeNameRow}>
+          <span className={styles.attendeeName}>{person.displayName || person.username}</span>
+          <CollegeRepresentativeBadge isCampusRep={person.isCampusRep} user={person} size="md" />
+        </div>
+        <span className={styles.attendeeRole}>@{person.username}{isHost ? ' (Host)' : ''}</span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The Attendees card's body: "Going" (host first, then members) and
+ * "Not going". Rendered twice by the page (desktop column, phone column), so
+ * it is one component rather than two copies of the markup.
+ */
+function AttendeeGroups({ hostId, going, goingTotal, goingMore, notGoing, notGoingTotal, notGoingMore, onOpen }) {
+  return (
+    <>
+      <section className={styles.attendeeGroup} aria-label={`Going (${goingTotal})`}>
+        <h4 className={styles.attendeeGroupTitle}>Going ({goingTotal})</h4>
+        <div className={styles.attendeesList}>
+          {going.map((person) => person && (
+            <AttendeeRow key={person.id} person={person} isHost={person.id === hostId} onOpen={onOpen} />
+          ))}
+          {goingMore}
+        </div>
+      </section>
+      <section className={styles.attendeeGroup} aria-label={`Not going (${notGoingTotal})`}>
+        <h4 className={styles.attendeeGroupTitle}>Not going ({notGoingTotal})</h4>
+        <div className={styles.attendeesList}>
+          {notGoing.length === 0 && !notGoingMore ? (
+            <span className={styles.attendeeGroupEmpty}>No one yet</span>
+          ) : notGoing.map((person) => person && (
+            <AttendeeRow key={person.id} person={person} isHost={false} onOpen={onOpen} />
+          ))}
+          {notGoingMore}
+        </div>
+      </section>
+    </>
+  );
+}
+
 /* ── Main component ────────────────────────────────────────── */
 export default function ActivityDetailPage() {
   // Fixed edge to edge on a phone, over the activity's own imagery: both system
@@ -159,7 +222,7 @@ export default function ActivityDetailPage() {
   const online = useOnlineStatus();
 
   const activity = useMemo(() => {
-    // rawActivity is the authoritative server data (patched optimistically by useJoinActivity).
+    // rawActivity is the authoritative server data (patched optimistically by useActivityRsvp).
     // location.state?.activity is only used as visual scaffolding (title, cover, etc.) while
     // the network request is in-flight — it MUST NOT drive join-sensitive state, and it is
     // discarded outright once the server denies access, so navigation state can never be
@@ -219,6 +282,11 @@ export default function ActivityDetailPage() {
       return { id: pidStr, displayName: 'Participant', username: 'participant', avatar: null };
     });
 
+    const goingIds = new Set(participantIds.map(String));
+    const notGoingUsers = (Array.isArray(baseAct.notGoing) ? baseAct.notGoing : [])
+      .map(m => m?.user)
+      .filter(u => u?.id && !goingIds.has(String(u.id)));
+
     const startRaw = baseAct.startDate || baseAct.date || baseAct.createdAt;
     const startD = startRaw ? new Date(startRaw) : null;
     const endD = baseAct.endDate ? new Date(baseAct.endDate) : null;
@@ -246,7 +314,12 @@ export default function ActivityDetailPage() {
       memberCount: baseAct.memberCount,
       hasMoreMembers: Boolean(baseAct.hasMoreMembers),
       slotsNeeded: baseAct.maxMembers || 999,
-      _membersData: enrichedMembersData
+      _membersData: enrichedMembersData,
+      // "Not going" — absent from a server older than "I'm out", hence the
+      // fallbacks to an empty list.
+      _notGoingData: notGoingUsers,
+      notGoingCount: typeof baseAct.notGoingCount === 'number' ? baseAct.notGoingCount : notGoingUsers.length,
+      hasMoreNotGoing: Boolean(baseAct.hasMoreNotGoing),
     };
   }, [rawActivity, location.state, isAccessDenied]);
 
@@ -268,18 +341,42 @@ export default function ActivityDetailPage() {
   // reshuffle what is already on screen.
   const attendeeList = useMemo(() => {
     const embedded = activity?._membersData || [];
-    if (!showAllAttendees || fetchedAttendees.length === 0) return embedded;
-    const byId = new Map();
-    embedded.slice(0, 1).forEach(u => { if (u?.id) byId.set(String(u.id), u); }); // host leads
-    fetchedAttendees.forEach(u => { if (u?.id && !byId.has(String(u.id))) byId.set(String(u.id), u); });
-    embedded.forEach(u => { if (u?.id && !byId.has(String(u.id))) byId.set(String(u.id), u); });
-    return Array.from(byId.values());
+    if (!showAllAttendees) return embedded;
+    return mergeAttendees(embedded, fetchedAttendees, { hostLeads: true });
   }, [activity?._membersData, showAllAttendees, fetchedAttendees]);
 
   const canExpandAttendees =
     !showAllAttendees && Boolean(activity?.hasMoreMembers) && attendeeList.length < (activity?.slotsFilled || 0);
 
-  const { mutate: toggleJoin, isJoinPending } = useJoinActivity();
+  // "Not going" pages in the same way, on its own request.
+  const [showAllNotGoing, setShowAllNotGoing] = useState(false);
+  const {
+    people: fetchedNotGoing,
+    hasNextPage: hasMoreNotGoingPages,
+    isFetchingNextPage: isFetchingNotGoing,
+    fetchNextPage: fetchMoreNotGoing,
+  } = useNotGoingAttendees(cleanId, { enabled: showAllNotGoing });
+
+  const notGoingList = useMemo(() => {
+    const embedded = activity?._notGoingData || [];
+    if (!showAllNotGoing) return embedded;
+    const goingIds = new Set((activity?.participants || []).map(String));
+    return mergeAttendees(embedded, fetchedNotGoing).filter(u => !goingIds.has(String(u.id)));
+  }, [activity?._notGoingData, activity?.participants, showAllNotGoing, fetchedNotGoing]);
+
+  const canExpandNotGoing =
+    !showAllNotGoing && Boolean(activity?.hasMoreNotGoing) && notGoingList.length < (activity?.notGoingCount || 0);
+
+  const [showOutConfirm, setShowOutConfirm] = useState(false);
+  const { answer: sendRsvp, isPending: isRsvpPending } = useActivityRsvp(cleanId, {
+    currentUser,
+    // Declining an invitation to a private activity ends access to it: leave
+    // the page rather than let it turn into "not found" underneath the user.
+    onLostAccess: () => {
+      showToast("You're out. Ask the host if you'd like to be invited again.", 'success');
+      goBack('/crew');
+    },
+  });
 
   const endMutation = useGuardedMutation(useMutation({
     mutationFn: (actId) => activitiesApi.cancelCrewActivity(actId),
@@ -430,21 +527,13 @@ export default function ActivityDetailPage() {
     hostName, hostAvatar, hostIsCampusRep,
   } = activity;
 
-  const entityKey = `joinActivity:${activity.id}`;
-  // isJoined is read EXCLUSIVELY from rawActivity?.isJoined — the authoritative server field
-  // patched instantly by applyOptimistic on every join/leave click.
-  // We never fall back to activity.participants here because that may be built from the stale
-  // location.state?.activity snapshot, which causes a "joined → not joined" flicker after leave.
-  // When rawActivity hasn't loaded yet the default is false; it updates the moment the server
-  // responds (or immediately on optimistic patch).
-  const cacheIsJoined = rawActivity?.isJoined ?? false;
-  const isJoined = toggleRegistry.getLatestIntent(entityKey, cacheIsJoined);
-  const wasOriginallyJoined = cacheIsJoined;
-  // Purely an affordance: the button stays clickable so the user can flip intent
-  // mid-flight — useToggleMutation coalesces and the latest intent wins.
-  const isJoinBusy = isJoinPending(activity?.id);
-  const slotsFilledAdjusted = slotsFilled + (isJoined && !wasOriginallyJoined ? 1 : (!isJoined && wasOriginallyJoined ? -1 : 0));
-  const spotsLeft = slotsNeeded - slotsFilledAdjusted;
+  // The answer is read EXCLUSIVELY from rawActivity — the server's record,
+  // patched optimistically by useActivityRsvp. Never from the location.state
+  // snapshot, which would flicker the old answer back after a change.
+  const rsvp = rsvpFromActivity(rawActivity);
+  const isJoined = rsvp === 'in';
+  // memberCount is patched along with the answer, so it is already current.
+  const spotsLeft = slotsNeeded - slotsFilled;
   const isFull = spotsLeft <= 0;
   const isHost = !!(currentUser?.id && (activity.hostId === currentUser.id || activity.creatorId === currentUser.id));
   // Start/end are derived by useActivityLifecycle (declared above the early
@@ -452,15 +541,47 @@ export default function ActivityDetailPage() {
   // exact boundary, so an open page flips to "Already started!" on its own.
   const { isCancelled, hasStarted, hasEnded } = lifecycle;
 
-  const handleToggleJoin = () => {
-    if (isHost) return;
-    // Always derive next intent from registry to handle rapid clicks correctly
-    const nextIntent = toggleRegistry.getNextToggleIntent(entityKey, isJoined);
-    toggleJoin({ activityId: activity.id, isJoined: nextIntent, currentUser });
+  const handleRsvp = (choice) => {
+    if (isHost || isRsvpPending) return;
+    // Saying no to a private activity's invitation costs the page: ask first.
+    if (choice === 'out' && rawActivity?.notGoingRemovesAccess) {
+      setShowOutConfirm(true);
+      return;
+    }
+    sendRsvp(choice);
   };
 
-  const handleJoin = handleToggleJoin;
-  const handleLeave = handleToggleJoin;
+  const openProfile = (person) => navigate(`/profile/${person.username}`);
+  const attendeeGroupProps = {
+    hostId: activity.hostId,
+    going: attendeeList,
+    goingTotal: activity.slotsFilled || activity.participants?.length || 0,
+    goingMore: (
+      <AttendeesMore
+        canExpand={canExpandAttendees}
+        total={activity.slotsFilled}
+        shown={attendeeList.length}
+        onExpand={() => setShowAllAttendees(true)}
+        hasNextPage={showAllAttendees && hasMoreAttendees}
+        isFetching={isFetchingAttendees}
+        onLoadMore={fetchMoreAttendees}
+      />
+    ),
+    notGoing: notGoingList,
+    notGoingTotal: Math.max(activity.notGoingCount || 0, notGoingList.length),
+    notGoingMore: (canExpandNotGoing || (showAllNotGoing && (hasMoreNotGoingPages || isFetchingNotGoing))) ? (
+      <AttendeesMore
+        canExpand={canExpandNotGoing}
+        total={activity.notGoingCount}
+        shown={notGoingList.length}
+        onExpand={() => setShowAllNotGoing(true)}
+        hasNextPage={showAllNotGoing && hasMoreNotGoingPages}
+        isFetching={isFetchingNotGoing}
+        onLoadMore={fetchMoreNotGoing}
+      />
+    ) : null,
+    onOpen: openProfile,
+  };
 
   const handleEndActivity = () => {
     setShowEndConfirm(true);
@@ -585,46 +706,8 @@ export default function ActivityDetailPage() {
 
               {renderDesktopAttendees && (
               <div className={`${styles.attendeesSection} ${styles.desktopOnlyAttendees}`}>
-                <h3 className={styles.attendeesTitle}>Attendees ({activity.slotsFilled || activity.participants?.length || 0})</h3>
-
-                <div className={styles.attendeesList}>
-                  {/* _membersData is always ordered: host first, then other members.
-                      Both are patched atomically by patchActivity on join/leave. */}
-                  {attendeeList.map((pUser, idx) => {
-                    if (!pUser) return null;
-                    const isThisHost = pUser.id === activity.hostId;
-                    return (
-                      <div
-                        key={pUser.id}
-                        className={styles.attendeeRow}
-                        onClick={() => navigate(`/profile/${pUser.username}`)}
-                      >
-                        <Avatar
-                          src={pUser.avatar}
-                          name={pUser.displayName || pUser.username}
-                          size="44px"
-                          className={styles.attendeeAvatar}
-                        />
-                        <div className={styles.attendeeMeta}>
-                          <div className={styles.attendeeNameRow}>
-                            <span className={styles.attendeeName}>{pUser.displayName || pUser.username}</span>
-                            <CollegeRepresentativeBadge isCampusRep={pUser.isCampusRep} user={pUser} size="md" />
-                          </div>
-                          <span className={styles.attendeeRole}>@{pUser.username}{isThisHost ? ' (Host)' : ''}</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                  <AttendeesMore
-                    canExpand={canExpandAttendees}
-                    total={activity.slotsFilled}
-                    shown={attendeeList.length}
-                    onExpand={() => setShowAllAttendees(true)}
-                    hasNextPage={showAllAttendees && hasMoreAttendees}
-                    isFetching={isFetchingAttendees}
-                    onLoadMore={fetchMoreAttendees}
-                  />
-                </div>
+                <h3 className={styles.attendeesTitle}>Attendees</h3>
+                <AttendeeGroups {...attendeeGroupProps} />
               </div>
               )}
             </div>
@@ -688,44 +771,8 @@ export default function ActivityDetailPage() {
               {/* Mobile Attendees Section */}
               {renderMobileAttendees && (
               <div className={`${styles.attendeesSection} ${styles.mobileOnlyAttendees}`}>
-                <h3 className={styles.attendeesTitle}>Attendees ({activity.slotsFilled || activity.participants?.length || 0})</h3>
-
-                <div className={styles.attendeesList}>
-                  {attendeeList.map((pUser, idx) => {
-                    if (!pUser) return null;
-                    const isThisHost = pUser.id === activity.hostId;
-                    return (
-                      <div
-                        key={pUser.id}
-                        className={styles.attendeeRow}
-                        onClick={() => navigate(`/profile/${pUser.username}`)}
-                      >
-                        <Avatar
-                          src={pUser.avatar}
-                          name={pUser.displayName || pUser.username}
-                          size="44px"
-                          className={styles.attendeeAvatar}
-                        />
-                        <div className={styles.attendeeMeta}>
-                          <div className={styles.attendeeNameRow}>
-                            <span className={styles.attendeeName}>{pUser.displayName || pUser.username}</span>
-                            <CollegeRepresentativeBadge isCampusRep={pUser.isCampusRep} user={pUser} size="md" />
-                          </div>
-                          <span className={styles.attendeeRole}>@{pUser.username}{isThisHost ? ' (Host)' : ''}</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                  <AttendeesMore
-                    canExpand={canExpandAttendees}
-                    total={activity.slotsFilled}
-                    shown={attendeeList.length}
-                    onExpand={() => setShowAllAttendees(true)}
-                    hasNextPage={showAllAttendees && hasMoreAttendees}
-                    isFetching={isFetchingAttendees}
-                    onLoadMore={fetchMoreAttendees}
-                  />
-                </div>
+                <h3 className={styles.attendeesTitle}>Attendees</h3>
+                <AttendeeGroups {...attendeeGroupProps} />
               </div>
               )}
 
@@ -774,45 +821,24 @@ export default function ActivityDetailPage() {
                 <UserPlus size={18} />
                 <span>Invite Friends</span>
               </button>
-            ) : isJoined ? (
-              <button 
-                type="button"
-                className={`${styles.joinBtn} ${styles.joinedBtn}`} 
-                onClick={handleLeave}
-                aria-busy={isJoinBusy}
-                data-pending={isJoinBusy ? 'true' : undefined}
-              >
-                <span className={styles.imInContent}>
-                  <img src="/thumbs_up_3d.png" alt="" className={`${styles.thumbsEmoji} ${styles.thumbsEmojiJoined}`} />
-                  <span>I'm in</span>
-                </span>
-              </button>
-            ) : activity?.canJoin === false && activity?.joinRestrictionCode === 'COLLEGE_RESTRICTED' ? (
+            ) : !isJoined && rsvp !== 'out' && activity?.canJoin === false && activity?.joinRestrictionCode === 'COLLEGE_RESTRICTED' ? (
               <button className={`${styles.joinBtn} ${styles.endedBtn}`} disabled style={{ background: 'rgba(239, 68, 68, 0.12)', color: '#f87171', border: '1px solid rgba(239, 68, 68, 0.3)' }} title={activity.joinRestrictionReason}>
                 Restricted to College
               </button>
-            ) : activity?.canJoin === false && activity?.joinRestrictionCode === 'PRIVATE' ? (
+            ) : !isJoined && rsvp !== 'out' && activity?.canJoin === false && activity?.joinRestrictionCode === 'PRIVATE' ? (
               <button className={`${styles.joinBtn} ${styles.endedBtn}`} disabled style={{ background: 'rgba(107, 114, 128, 0.12)', color: '#9ca3af', border: '1px solid rgba(107, 114, 128, 0.3)' }} title={activity.joinRestrictionReason}>
                 Invitation Only
               </button>
             ) : (
-              <button 
-                type="button"
-                className={styles.joinBtn} 
-                onClick={handleJoin} 
-                disabled={isFull || activity?.canJoin === false}
-                aria-busy={isJoinBusy}
-                data-pending={isJoinBusy ? 'true' : undefined}
-              >
-                {isFull ? (
-                  'Activity Full'
-                ) : (
-                  <span className={styles.imInContent}>
-                    <img src="/thumbs_up_3d.png" alt="" className={`${styles.thumbsEmoji} ${isJoined ? styles.thumbsEmojiJoined : ''}`} />
-                    <span>I'm in</span>
-                  </span>
-                )}
-              </button>
+              <RsvpButtons
+                value={rsvp}
+                onChange={handleRsvp}
+                busy={isRsvpPending}
+                // Going back in runs the join rules again: a full or closed
+                // activity offers only "I'm out".
+                joinDisabled={!isJoined && (isFull || activity?.canJoin === false)}
+                joinLabel={!isJoined && isFull ? 'Activity Full' : "I'm in"}
+              />
             )}
           </div>,
           document.body
@@ -827,6 +853,16 @@ export default function ActivityDetailPage() {
             onClose={() => setShowInviteModal(false)}
           />
         )}
+        <ConfirmModal
+          title="Not going?"
+          desc="You can see this activity because you were invited. Once you're out, you won't be able to open it again unless the host invites you again."
+          visible={showOutConfirm}
+          onCancel={() => setShowOutConfirm(false)}
+          onConfirm={() => { setShowOutConfirm(false); sendRsvp('out'); }}
+          confirmText="I'm out"
+          cancelText="Keep it"
+          isDestructive={true}
+        />
         <ConfirmModal 
           title="Cancel Activity" 
           desc="This will cancel the activity and notify all participants." 

@@ -1,0 +1,164 @@
+/*
+ * "I'm in" / "I'm out" — the same glass pill and lifted 3D emoji as the page's
+ * original join button (ActivityDetailPage.module.css → .joinBtn, .thumbsEmoji),
+ * split in two. It floats over the activity's cover, so like that button it is
+ * drawn in fixed light-on-glass colours in both themes.
+ */
+.group {
+  display: flex;
+  gap: 10px;
+  pointer-events: auto;
+}
+
+.btn {
+  flex: 1 1 0;
+  min-width: 125px;
+  height: 54px;
+  min-height: 54px;
+  padding: 0 1.6rem;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: visible;
+  white-space: nowrap;
+  border-radius: 100px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(18, 18, 22, 0.75);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  transition: background 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.15s ease;
+}
+
+.btn:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.85);
+  outline-offset: 2px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .btn:not(:disabled):hover {
+    background: rgba(28, 28, 35, 0.85);
+    border-color: rgba(255, 255, 255, 0.22);
+    transform: translateY(-2px);
+  }
+}
+
+/* Going: the teal the joined "I'm in" button has always used. */
+.inSelected,
+.inSelected:not(:disabled):hover {
+  background: rgba(13, 148, 136, 0.3);
+  border-color: rgba(20, 184, 166, 0.45);
+  box-shadow: 0 10px 30px rgba(13, 148, 136, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+/* Not going: the same treatment in rose. */
+.outSelected,
+.outSelected:not(:disabled):hover {
+  background: rgba(225, 29, 72, 0.28);
+  border-color: rgba(244, 63, 94, 0.45);
+  box-shadow: 0 10px 30px rgba(225, 29, 72, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+/* While an answer is being sent both are disabled; they dim rather than
+   change colour, so the choice being made stays readable. */
+.btn:disabled {
+  cursor: default;
+}
+
+.btn[data-pending='true'] {
+  opacity: 0.82;
+}
+
+/* "I'm in" when the activity cannot be joined (full, restricted). */
+.btn:disabled:not([data-pending='true']):not(.inSelected) {
+  opacity: 0.55;
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: visible;
+  padding-top: 4px;
+}
+
+.emoji {
+  display: block;
+  width: 42px;
+  height: 42px;
+  object-fit: contain;
+  margin-top: -20px;
+  margin-bottom: -4px;
+  transform: scale(1.1);
+  transform-origin: bottom center;
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), filter 0.35s ease;
+  pointer-events: none;
+  user-select: none;
+  flex-shrink: 0;
+  filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.3));
+}
+
+.emojiLifted {
+  transform: scale(1.4) translateY(-3px);
+  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.4));
+}
+
+/* The thumbs-up turned over is the thumbs-down of the same set. Rotated about
+   its centre so it keeps the up emoji's place on the pill; the translate runs
+   in the rotated frame, so +3px lifts it just as -3px lifts the up one. */
+.emojiDown {
+  transform-origin: center;
+  transform: rotate(180deg) scale(1.1);
+}
+
+.emojiDown.emojiLifted {
+  transform: rotate(180deg) scale(1.4) translateY(3px);
+}
+
+@media (max-width: 900px) {
+  .group {
+    width: 100%;
+  }
+
+  .btn {
+    min-width: 0;
+    height: 64px;
+    min-height: 64px;
+    padding: 0 1rem;
+    font-size: 1rem;
+  }
+
+  .emoji {
+    width: 46px;
+    height: 46px;
+    margin-top: -22px;
+  }
+}
+
+/* Phones: no nested backdrop blur (see the note in ActivityDetailPage.module.css). */
+@media (pointer: coarse) {
+  .btn {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn,
+  .emoji {
+    transition: none;
+  }
+}

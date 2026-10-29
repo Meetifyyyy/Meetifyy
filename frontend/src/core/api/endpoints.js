@@ -275,6 +275,8 @@ export function createEndpoints({
     create: (data, { idempotencyKey } = {}) => apiClient.post('/api/activities', data, { idempotencyKey }),
     join: (id, { signal } = {}) => apiClient.post(`/api/activities/${id}/join`, undefined, { signal }),
     leave: (id, { signal } = {}) => apiClient.post(`/api/activities/${id}/leave`, undefined, { signal }),
+    /** "I'm out": not going. Leaves if joined; declines a held invitation. */
+    decline: (id, { signal } = {}) => apiClient.post(`/api/activities/${id}/decline`, undefined, { signal }),
     getDiscussion: (id, { before, limit = 20 } = {}) => {
       const params = new URLSearchParams();
       if (before) params.set('before', before);
@@ -291,9 +293,11 @@ export function createEndpoints({
     acceptInvitation: (invitationId) => apiClient.post(`/api/activities/invitations/${invitationId}/accept`),
     declineInvitation: (invitationId) => apiClient.post(`/api/activities/invitations/${invitationId}/decline`),
     getInvitationStatuses: (id) => apiClient.get(`/api/activities/${id}/invitations/status`),
-    getAttendees: (id, { cursor, limit = 30 } = {}) => {
+    getAttendees: (id, { cursor, limit = 30, status } = {}) => {
       const params = new URLSearchParams({ limit: String(limit) });
       if (cursor) params.set('cursor', cursor);
+      // 'not_going' pages the "Not going" list instead of the attendees.
+      if (status) params.set('status', status);
       return apiClient.get(`/api/activities/${id}/attendees?${params.toString()}`);
     },
     /** Host-only. Accepts 'PUBLIC' | 'COLLEGE_ONLY' | 'PRIVATE'. */

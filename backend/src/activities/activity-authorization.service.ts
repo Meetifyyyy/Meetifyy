@@ -109,6 +109,30 @@ export class ActivityAuthorizationService {
     return true;
   }
 
+  /**
+   * Whether the invitation still lets its invitee SEE the activity: a live one
+   * (above), or one they declined, as long as the host has not revoked it and
+   * it has not expired. Declining is an answer ("I'm out"), not a removal: the
+   * invitee keeps the page and can change their mind ("I'm in"). Viewing only:
+   * discovery, lists and every other check keep {@link isValidInvitation}.
+   */
+  isViewableInvitation(
+    invitation: InvitationAuthShape | null | undefined,
+    userId: string,
+  ): boolean {
+    if (!invitation || invitation.status !== 'DECLINED') {
+      return this.isValidInvitation(invitation, userId);
+    }
+    if (invitation.inviteeId !== userId) return false;
+    if (invitation.revokedAt) return false;
+    if (
+      invitation.expiresAt &&
+      new Date(invitation.expiresAt).getTime() <= Date.now()
+    )
+      return false;
+    return true;
+  }
+
   hasValidInvitation(
     user: UserAuthContext | null,
     activity: ActivityAuthTarget,
@@ -201,7 +225,12 @@ export class ActivityAuthorizationService {
 
     if (this.isHost(user, activity)) return ALLOW;
     if (this.isMember(user, activity)) return ALLOW;
-    if (this.hasValidInvitation(user, activity)) return ALLOW;
+    if (
+      activity.invitations?.some((inv) =>
+        this.isViewableInvitation(inv, user.id),
+      )
+    )
+      return ALLOW;
 
     if (activity.visibility === ActivityVisibility.PRIVATE) {
       return {

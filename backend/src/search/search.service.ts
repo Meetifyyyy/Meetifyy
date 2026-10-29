@@ -402,6 +402,9 @@ export class SearchService {
                 coverImage: true,
                 coverColor: true,
                 members: {
+                  // People going only: a "not going" (DECLINED) row must not
+                  // count as a filled slot or show as an attendee.
+                  where: { status: 'MEMBER' },
                   select: {
                     userId: true,
                     user: {

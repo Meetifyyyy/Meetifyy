@@ -172,13 +172,46 @@ describe('ActivityAuthorizationService', () => {
       expect(policy.canView(otherCollege, invited).allowed).toBe(false);
     });
 
-    it('rejects a declined / cancelled / expired-status invitation', () => {
-      for (const status of ['DECLINED', 'CANCELLED', 'EXPIRED']) {
+    it('rejects a cancelled / expired-status invitation', () => {
+      for (const status of ['CANCELLED', 'EXPIRED']) {
         const invited = activity('COLLEGE_ONLY', {
           invitations: [liveInvite(otherCollege.id, { status })],
         });
         expect(policy.canView(otherCollege, invited).allowed).toBe(false);
       }
+    });
+
+    // Declining is an answer ("I'm out"), not a removal: the invitee keeps
+    // the page and can change their mind. Viewing only, and only while the
+    // host has not revoked it and it has not expired.
+    it('lets a declined invitation still see the activity, and nothing more', () => {
+      const declined = activity('COLLEGE_ONLY', {
+        invitations: [liveInvite(otherCollege.id, { status: 'DECLINED' })],
+      });
+      expect(policy.canView(otherCollege, declined).allowed).toBe(true);
+      expect(policy.canDiscover(otherCollege, declined)).toBe(false);
+      expect(policy.hasValidInvitation(otherCollege, declined)).toBe(false);
+    });
+
+    it('a declined invitation the host revoked, or one past its expiry, sees nothing', () => {
+      const revoked = activity('COLLEGE_ONLY', {
+        invitations: [
+          liveInvite(otherCollege.id, {
+            status: 'DECLINED',
+            revokedAt: new Date(),
+          }),
+        ],
+      });
+      const expired = activity('COLLEGE_ONLY', {
+        invitations: [
+          liveInvite(otherCollege.id, {
+            status: 'DECLINED',
+            expiresAt: new Date(Date.now() - 1000),
+          }),
+        ],
+      });
+      expect(policy.canView(otherCollege, revoked).allowed).toBe(false);
+      expect(policy.canView(otherCollege, expired).allowed).toBe(false);
     });
 
     it('accepts an ACCEPTED invitation', () => {

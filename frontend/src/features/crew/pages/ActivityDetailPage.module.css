@@ -749,6 +749,32 @@
   gap: 1rem;
 }
 
+/* "Going" / "Not going" inside the Attendees card. */
+.attendeeGroup {
+  display: flex;
+  flex-direction: column;
+}
+
+.attendeeGroup + .attendeeGroup {
+  margin-top: 1.1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.attendeeGroupTitle {
+  margin: 0 0 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.attendeeGroupEmpty {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
 .attendeeRow {
   display: flex;
   align-items: center;

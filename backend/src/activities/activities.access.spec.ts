@@ -79,9 +79,14 @@ type PrismaFake = {
   crewActivityMember: {
     findUnique: jest.Mock;
     findMany: jest.Mock<Promise<unknown[]>, [MemberFindManyArgs]>;
+    count: jest.Mock<Promise<number>, [unknown]>;
   };
   user: { findUnique: jest.Mock };
-  activityInvitation: { count: jest.Mock; findMany: jest.Mock };
+  activityInvitation: {
+    count: jest.Mock;
+    findMany: jest.Mock;
+    updateMany: jest.Mock<Promise<{ count: number }>, [unknown]>;
+  };
   activityDiscussionMessage: { findMany: jest.Mock; create: jest.Mock };
   $queryRaw: jest.Mock<Promise<unknown>, [TemplateStringsArray, ...unknown[]]>;
 };
@@ -205,6 +210,8 @@ describe('Activity access enforcement (service level)', () => {
       crewActivityMember: {
         findUnique: jest.fn(() => Promise.resolve(null)),
         findMany: jest.fn((_args: MemberFindManyArgs) => Promise.resolve([])),
+        // The detail payload's "Not going" total.
+        count: jest.fn((_args: unknown) => Promise.resolve(0)),
       },
       user: {
         findUnique: jest.fn(({ where }: { where: { id: string } }) =>
@@ -214,6 +221,8 @@ describe('Activity access enforcement (service level)', () => {
       activityInvitation: {
         count: jest.fn(() => Promise.resolve(0)),
         findMany: jest.fn(() => Promise.resolve([])),
+        // Joining settles an invitation the joiner holds.
+        updateMany: jest.fn((_args: unknown) => Promise.resolve({ count: 1 })),
       },
       activityDiscussionMessage: {
         findMany: jest.fn(() => Promise.resolve([])),
