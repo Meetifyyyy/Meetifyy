@@ -15,6 +15,7 @@ import { useAuth } from '@shared/context/AuthContext';
 import { useGlobalSocketStore } from '@stores/useGlobalSocketStore';
 import { useAddComment } from '../../hooks/useAddComment';
 import { useMediaQuery } from '@shared/hooks/useMediaQuery';
+import { useSystemBars } from '@shared/hooks/useSystemBars';
 import { getCommentLimitState, COMMENT_MAX_CHARS } from '@shared/utils/textLimit';
 import { useComposerDraft } from '@shared/hooks/useComposerDraft';
 import { draftOwner, saveDraft } from '@shared/lib/drafts';
@@ -168,6 +169,10 @@ export default function PostView({ post, onBack, autoFocusComment = false }) {
   // Wide screens get a composer under the post; phones keep the docked bar.
   // Same boundary as the stylesheet's 768px breakpoint.
   const isWide = useMediaQuery('(min-width: 769px)') === true;
+  // On a phone the top bar runs up under the status bar (it pads itself by
+  // the inset, PostView.module.css), so the bar shows the post's own surface
+  // instead of a separate strip.
+  useSystemBars({ status: 'transparent' }, !isWide);
   // One persistent draft per post, whoever it is addressed to. The reply
   // target is deliberately not part of the key: it is a tag on this page's
   // single composer (and the comment it names may not even be loaded after a

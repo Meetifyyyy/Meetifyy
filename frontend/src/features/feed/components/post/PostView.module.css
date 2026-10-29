@@ -196,6 +196,16 @@
     padding-right: 1rem;
   }
 
+  /* In the app the status bar is transparent over this screen (PostView sets
+     it): the bar starts at the very top of the screen, pads its content clear
+     of the status bar's inset, and paints that strip in the page's own
+     surface, so nothing scrolling beneath shows through the status icons.
+     The inset is 0 on the website. */
+  .postViewTopbar {
+    padding-top: calc(0.75rem + var(--status-bar-inset, 0px));
+    background: var(--color-surface-screen);
+  }
+
   .postViewReplies {
     padding: 0 1rem 1.25rem;
   }
