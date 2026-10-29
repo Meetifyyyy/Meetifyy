@@ -43,13 +43,15 @@
                 <data android:pathPrefix="/communities/" />
                 <data android:pathPrefix="/crew/" />
                 <!--
-                    Conversations and group invites. An invite link is
-                    /inbox/(group)/(id) and a chat link /messages/(slug)/(id);
-                    without these the installed app never received either, and
-                    every invite opened in the browser instead.
+                    Conversations and group invites. A chat link is
+                    /messages/(slug)/(id), its older form /inbox/(group)/(id),
+                    and a group invite link /g/(code); without these the
+                    installed app never received them, and every invite opened
+                    in the browser instead.
                 -->
                 <data android:pathPrefix="/inbox/" />
                 <data android:pathPrefix="/messages/" />
+                <data android:pathPrefix="/g/" />
             </intent-filter>
 
         </activity>

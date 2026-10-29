@@ -6,13 +6,17 @@
  *   another device. That device used to be the only one that knew: the
  *   others kept raising alerts and counting the badge for a chat muted on
  *   the phone until their list happened to refetch.
- * - `group:join_requests` — a group's pending requests changed (a new one,
- *   or one an admin answered). Admins used to see a new request only when
- *   they reopened the group; the event carries only the group's ids (the
- *   list holds names and photos), so the group's details are refetched.
+ * - `group:join_requests` — a group's requests changed (a new one, or one an
+ *   admin answered). Admins used to see a new request only when they
+ *   reopened the group; the event carries only the group's ids (the list
+ *   holds names and photos), so the group's details and the timeline's
+ *   request lines are refetched. Only the owner and admins receive it.
+ * - `group:join_request_decided` — the viewer's own request was approved or
+ *   declined: every open preview of the group shows the answer.
  */
 import { matchesConversationId } from './cacheUtils';
 import { dropFromUnreadSummary, refreshUnreadSummary } from './unreadSummary';
+import { refreshGroupPreviews } from '../../hooks/useGroupInvite';
 
 const idsOf = (payload) =>
   [payload?.conversationId, payload?.publicId, payload?.internalId].filter(Boolean).map(String);
@@ -49,4 +53,14 @@ export function refreshJoinRequests(queryClient, payload) {
     queryKey: ['groupDetails'],
     predicate: (query) => matchesAny(query.state.data, ids) || ids.includes(String(query.queryKey[1])),
   });
+  queryClient.invalidateQueries({
+    queryKey: ['groupJoinActivity'],
+    predicate: (query) => ids.includes(String(query.queryKey[1])),
+  });
+}
+
+export function applyJoinRequestDecided(queryClient, payload) {
+  const ids = idsOf(payload);
+  if (!queryClient || ids.length === 0) return;
+  refreshGroupPreviews(queryClient, ids);
 }

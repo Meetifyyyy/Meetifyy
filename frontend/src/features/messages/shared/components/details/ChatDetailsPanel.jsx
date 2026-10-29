@@ -33,7 +33,7 @@ import { useQuery } from '@tanstack/react-query';
 import { groupApi } from '@shared/api/apiClient';
 
 export default function ChatDetailsPanel({
-  conversation, onBack, onBlockUser, onClearChat, onSearch,
+  conversation, onBack, onBlockUser, onClearChat, onSearch, initialPage = null,
 }) {
   const navigate = useNavigate();
   const { currentUser } = useAuth();
@@ -42,6 +42,7 @@ export default function ChatDetailsPanel({
     leaveGroup, updateGroupInfo, updateGroupEditPermission, updateGroupSettings,
     removeGroupMember, changeGroupOwner, promoteToAdmin, demoteFromAdmin, endGroup,
     acceptGroupJoinRequest, declineGroupJoinRequest, togglePinConversation,
+    resetInviteLinks,
   } = useGroupActions();
   const { toggleMuteConversation } = useMessageActions();
 
@@ -75,7 +76,10 @@ export default function ChatDetailsPanel({
   const [showEditGroupPage, setShowEditGroupPage] = useState(false);
   const [showGalleryPage, setShowGalleryPage] = useState(false);
   const [showChangeOwnerPage, setShowChangeOwnerPage] = useState(false);
-  const [showRequestsPage, setShowRequestsPage] = useState(false);
+  // Opened on the Join requests page by an admin's push for a request, or
+  // the Review on a request line in the timeline.
+  const [showRequestsPage, setShowRequestsPage] = useState(initialPage === 'requests');
+  const shownConversationRef = useRef(conversation.id);
   const [showImageSearch, setShowImageSearch] = useState(false);
 
   useEffect(() => {
@@ -84,7 +88,12 @@ export default function ChatDetailsPanel({
     setEditAvatar(conversation.avatar || conversation.avatarKey || '');
   }, [conversation.id, conversation.name, conversation.description, conversation.avatar, conversation.avatarKey]);
 
+  // Another conversation: back to its details' front page. Only on a change:
+  // on mount the pages already start closed (or on the page asked for), and
+  // running this then (twice, in development) closed the page asked for.
   useEffect(() => {
+    if (shownConversationRef.current === conversation.id) return;
+    shownConversationRef.current = conversation.id;
     setShowEditGroupPage(false);
     setShowSettingsPage(false);
     setShowGalleryPage(false);
@@ -426,6 +435,7 @@ export default function ChatDetailsPanel({
         onToggleMute={() => toggleMuteConversation(conversation.id, isMuted)}
         onChangeWhoCanJoin={(value) => updateGroupSettings(conversation.id, { whoCanJoin: value })}
         onChangeEditPermission={(value) => updateGroupEditPermission(conversation.id, value)}
+        onResetInviteLinks={() => resetInviteLinks(conversation.id)}
         onBack={() => setShowSettingsPage(false)}
         onGoToEdit={() => setShowEditGroupPage(true)}
         onGoToChangeOwner={() => setShowChangeOwnerPage(true)}

@@ -7,15 +7,17 @@
  * that rarely held a stranger, and fell back to a made-up "@user / Member"
  * with a profile link to a page that does not exist.
  *
- * Accept and Decline lock their row while the call is out: a second tap
+ * Approve and Reject lock their row while the call is out: a second tap
  * used to send a second call, whose "not found" read as a failure. The list
  * itself comes from the group's details, which are refetched when another
- * admin answers a request or a new one arrives (`group:join_requests`).
+ * admin answers a request or a new one arrives (`group:join_requests`). A
+ * request another admin answered first drops out with a word saying so
+ * (useGroupActions); the server lets only the first answer count.
  */
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import Avatar from '@shared/components/avatar/Avatar';
-import { Check, X, UserCheck, ChevronLeft } from '@shared/components/icons';
+import { UserCheck, ChevronLeft } from '@shared/components/icons';
 import { timeAgo } from '@shared/utils/time';
 import sharedStyles from './ChatDetailsPanel.module.css';
 import styles from './GroupJoinRequestsPage.module.css';
@@ -89,18 +91,18 @@ export default function GroupJoinRequestsPage({ pendingRequests = [], onAccept, 
                       className={styles.approveBtn}
                       onClick={() => answer(r.id, onAccept)}
                       disabled={busy}
-                      aria-label={`Accept ${r.name}`}
+                      aria-label={`Approve ${r.name}`}
                     >
-                      <Check size={18} />
+                      Approve
                     </button>
                     <button
                       type="button"
                       className={styles.rejectBtn}
                       onClick={() => answer(r.id, onDecline)}
                       disabled={busy}
-                      aria-label={`Decline ${r.name}`}
+                      aria-label={`Reject ${r.name}`}
                     >
-                      <X size={18} />
+                      Reject
                     </button>
                   </div>
                 </li>

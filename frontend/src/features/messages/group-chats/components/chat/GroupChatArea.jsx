@@ -1,4 +1,5 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { groupApi } from '@shared/api/apiClient';
 import { useChatAreaState } from '@features/messages/shared/hooks/useChatAreaState';
@@ -7,6 +8,7 @@ import { resolveComposerState } from '@shared/utils/messagingEligibility';
 import ChatAreaLayout from '@features/messages/shared/components/ChatAreaLayout';
 import { useClearChatConfirm } from '@features/messages/shared/components/modals/ClearChatModal';
 import GroupChatHeader from './GroupChatHeader';
+import { useGroupJoinActivity } from '@features/messages/hooks/useGroupJoinActivity';
 
 export default function GroupChatArea({
   conversation,
@@ -66,7 +68,39 @@ export default function GroupChatArea({
   }, [conversation, groupDetails]);
 
   const state = useChatAreaState(effectiveConv);
-  const { currentUser } = state;
+  const { currentUser, setShowDetails } = state;
+
+  // `?panel=requests`: an admin's push for a new request to join. The
+  // group's details open on its Join requests page, once: the address becomes
+  // the details' own (`?view=details`) in one replace, so Back and a refresh
+  // do not open the requests again.
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [detailsPage, setDetailsPage] = useState(null);
+  // Asked for once per opening of the details: closing them forgets it.
+  // Only on closing (open → closed): the details open through the address,
+  // a render after the request, and clearing on "not open yet" undid it.
+  const wasShowingDetails = useRef(false);
+  useEffect(() => {
+    if (wasShowingDetails.current && !state.showDetails) setDetailsPage(null);
+    wasShowingDetails.current = Boolean(state.showDetails);
+  }, [state.showDetails]);
+  const openRequests = () => {
+    setDetailsPage('requests');
+    setShowDetails(true);
+  };
+  const wantsRequests = searchParams.get('panel') === 'requests';
+  // Runs again if the inbox's own address fix-up (the slug) lands after it
+  // and brings the old query back; the result is the same each time.
+  useEffect(() => {
+    if (!wantsRequests || !convId) return;
+    setDetailsPage('requests');
+    const params = new URLSearchParams(location.search);
+    params.delete('panel');
+    params.set('view', 'details');
+    navigate({ pathname: location.pathname, search: `?${params}` }, { replace: true, state: location.state });
+  }, [wantsRequests, convId, navigate, location.pathname, location.search, location.state]);
   // Clearing is confirmed first (ClearChatModal); the menus open the dialog.
   const clearChat = useClearChatConfirm(effectiveConv, onClearChat);
 
@@ -77,6 +111,10 @@ export default function GroupChatArea({
   const hasLeft = effectiveConv?.myMembershipStatus === 'LEFT';
   const isOut = isKicked || hasLeft || effectiveConv?.isMember === false;
   const isPending = effectiveConv?.myMembershipStatus === 'PENDING';
+  // The server's word on the viewer's role, from the group's details; only
+  // the owner and admins are shown (or sent) the group's requests to join.
+  const isReviewer = !isOut && (groupDetails?.myRole === 'OWNER' || groupDetails?.myRole === 'ADMIN');
+  const joinActivity = useGroupJoinActivity(convId, { enabled: isReviewer });
   const isAdmin =
     String(effectiveConv?.ownerId || effectiveConv?.hostId || effectiveConv?.creatorId) ===
     String(currentUser?.id) || (effectiveConv?.admins || []).includes(currentUser?.id);
@@ -108,6 +146,9 @@ export default function GroupChatArea({
       <ChatAreaLayout
         {...state}
         conversation={effectiveConv}
+        detailsInitialPage={detailsPage}
+        adminUpdates={isReviewer ? joinActivity : null}
+        onReviewRequests={openRequests}
         onClearChat={clearChat.request}
         showChatOnMobile={showChatOnMobile}
         isLoading={isLoading}

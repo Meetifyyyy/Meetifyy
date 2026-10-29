@@ -1680,3 +1680,35 @@
   outline: 2px solid var(--color-primary, #2563eb);
   outline-offset: 2px;
 }
+
+/* ── A request to join, shown to the group's owner and admins only ────────
+   A system line with a Review button and a note saying who sees it. */
+.adminLine {
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.adminLineAction {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--color-primary, #6366f1);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.adminLineAction:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.adminLineStatus {
+  font-weight: 600;
+}
+
+.adminLineHint {
+  font-size: 0.68rem;
+  color: var(--color-text-muted, #a1a1aa);
+}

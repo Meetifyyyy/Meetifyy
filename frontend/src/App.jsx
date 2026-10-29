@@ -67,6 +67,7 @@ import SearchSkeleton from './features/search/components/skeletons/SearchSkeleto
 import SettingsSkeleton from './features/settings/components/skeletons/SettingsSkeleton';
 import SavedPageSkeleton from './features/feed/components/skeletons/SavedPageSkeleton';
 import MessagesRouteSkeleton from './features/messages/shared/components/skeletons/MessagesRouteSkeleton';
+import GroupInviteLinkRoute from './features/messages/pages/GroupInviteLinkRoute';
 import ActivityDetailSkeleton from './features/crew/components/ActivityDetailSkeleton';
 
 function lazyRoute(componentImport) {
@@ -562,6 +563,8 @@ export default function App({ homeElement, rootExtras = null }) {
             // for existing links but redirects, so Messages has exactly one
             // canonical URL per conversation.
             { path: '/inbox/*',                    element: <LegacyPathRedirect from="/inbox" to="/messages" /> },
+            // An invite link: opens the group preview over Messages.
+            { path: '/g/:code',                    element: <GroupInviteLinkRoute /> },
             { path: '/post/:id',                   element: withBoundary(<PostDetailRoute />, null) },
             { path: '/profile/:profileUsername?',  element: withBoundary(<ProfilePage />, <ProfilePageSkeleton />) },
             { path: '/settings',                   element: withBoundary(<SettingsRoute />, <SettingsSkeleton />), handle: { wide: true } },

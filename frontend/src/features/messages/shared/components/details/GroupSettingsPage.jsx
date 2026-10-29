@@ -14,6 +14,8 @@
  * What remains, and what enforces it:
  * - Mute alerts — per member. Muted chats get no push and no unread badge.
  * - Who can join — admins. Approval routes joins to Requests (server).
+ * - Reset invite links — admins. Revokes every link shared so far (server);
+ *   an invite through one of them then reads "Invite link no longer valid".
  * - Who can edit group info — admins. Checked in updateGroupInfo (server).
  * - Transfer ownership — the owner.
  *
@@ -22,6 +24,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight } from '@shared/components/icons';
+import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import sharedStyles from './ChatDetailsPanel.module.css';
 import styles from './GroupSettingsPage.module.css';
 import { EDIT_PERMISSION, WHO_CAN_JOIN } from '../../utils/groupSettings';
@@ -107,6 +110,7 @@ export default function GroupSettingsPage({
   onToggleMute,
   onChangeWhoCanJoin,
   onChangeEditPermission,
+  onResetInviteLinks,
   onBack,
   onGoToEdit,
   onGoToChangeOwner,
@@ -114,6 +118,7 @@ export default function GroupSettingsPage({
   // One write at a time per setting: the server is the authority, and a second
   // tap while the first is out would race it.
   const [busy, setBusy] = useState(null);
+  const [confirmReset, setConfirmReset] = useState(false);
   const [status, track] = useSaveStatus();
   const save = async (key, write) => {
     if (busy) return;
@@ -205,6 +210,20 @@ export default function GroupSettingsPage({
                   busy={busy === 'edit'}
                   onChange={(value) => save('edit', () => onChangeEditPermission(value))}
                 />
+                {isAdmin && onResetInviteLinks && (
+                  <button
+                    type="button"
+                    className={`${styles.row} ${styles.rowButton}`}
+                    onClick={() => setConfirmReset(true)}
+                    disabled={busy === 'links'}
+                    aria-busy={busy === 'links' || undefined}
+                  >
+                    <div className={styles.rowText}>
+                      <span className={styles.rowLabel}>Reset invite links</span>
+                      <span className={styles.rowHint}>Every link shared so far stops working.</span>
+                    </div>
+                  </button>
+                )}
               </div>
               {!isAdmin && <p className={styles.footnote}>Only admins can change these.</p>}
             </section>
@@ -226,6 +245,19 @@ export default function GroupSettingsPage({
           </>
         )}
       </div>
+      <ConfirmModal
+        visible={confirmReset}
+        centered
+        title="Reset invite links?"
+        description="Links already shared stop working, inside Meetifyy and out. Invites sent in chats are not affected. Anyone can be sent a new link."
+        confirmText="Reset links"
+        isDestructive
+        onCancel={() => setConfirmReset(false)}
+        onConfirm={() => {
+          setConfirmReset(false);
+          void save('links', onResetInviteLinks);
+        }}
+      />
     </div>
   );
 }

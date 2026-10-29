@@ -28,7 +28,9 @@ export function intentToRoute(intent) {
     case 'event':
       return `/campus/events/${seg(intent.id)}`;
     case 'chat':
-      return `/messages/${seg(intent.conversationId)}`;
+      return `/messages/${seg(intent.conversationId)}${intent.panel === 'requests' ? '?panel=requests' : ''}`;
+    case 'groupInvite':
+      return `/g/${seg(intent.code)}`;
     case 'settings':
       return intent.panel ? `/settings/${seg(intent.panel)}` : '/settings';
     default:

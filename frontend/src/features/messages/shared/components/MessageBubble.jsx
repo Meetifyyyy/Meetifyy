@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect, useCallback, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { showToast } from '@shared/utils/toast';
 
 import { Reply, MoreVertical, Image as ImageIcon, AlertCircle, Play } from '@shared/components/icons';
 import Avatar from '@shared/components/avatar/Avatar';
@@ -19,14 +18,9 @@ import { useConfession } from '@shared/hooks/useConfessions';
 import VoiceMessagePlayer from './VoiceMessagePlayer';
 import styles from './ChatMessageList.module.css';
 import { useJoinCommunity } from '@features/communities/hooks/useJoinCommunity';
-import {
-  useGroupInvitePreview,
-  useJoinGroup,
-  inviteErrorCode,
-  inviteErrorMessage,
-  isVerificationRequiredError,
-  JOIN_NEEDS_VERIFICATION,
-} from '@features/messages/hooks/useGroupInvite';
+import { useQueryClient } from '@tanstack/react-query';
+import { prefetchGroupPreview } from '@features/messages/hooks/useGroupInvite';
+import GroupPreviewSheet from './modals/GroupPreviewSheet';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { checkIsMe, getMsgTimestamp } from '../utils/cacheUtils';
 import { describeSendFailure } from '../utils/sendFailure';
@@ -86,7 +80,8 @@ function MessageHoverActions({ msg, isMe, onReplyTo, onContextMenu }) {
   );
 }
 
-function SystemMessageContent({ text, navigate }) {
+/** A system line's text, with each @handle a link to that profile. */
+export function SystemMessageContent({ text, navigate }) {
   if (!text) return 'System Event';
   const strText = String(text);
 
@@ -497,16 +492,6 @@ export function VideoPlayerWithOverlay({ src, poster = null, placeholder = null,
 }
 
 /**
- * Group-invite message card.
- *
- * The card is self-sufficient by design: it fetches its own invite preview and
- * owns its own join mutation. It used to depend on `conversations` and a
- * `requestToJoinGroup` callback arriving as props, but ChatMessageList never
- * passed either — so `requestToJoinGroup` was always undefined and every tap on
- * "Join Group" threw a TypeError that the catch block reported as
- * "Request failed". That was the reason invites could not be accepted at all.
- */
-/**
  * A shared confession as a chat message. While the reader may see it, the
  * card; once it is not theirs to see (deleted, taken down, another campus,
  * no campus access), a plain message in the style of "This message was
@@ -543,128 +528,53 @@ function ConfessionShareMessage({ confessionId, isMe, timeText, actions }) {
   );
 }
 
+/**
+ * Group-invite message card.
+ *
+ * Self-sufficient by design, as before (it used to depend on props the list
+ * never passed, so no invite could be accepted): it needs nothing from its
+ * parents. It no longer fetches or joins on its own. "View group" opens the
+ * group preview, which asks the server about this card and shows what it
+ * allows, so the card reads the same whether the invite is live or expired.
+ */
 function GroupInviteCard({ msg, currentUser, navigate, isMe }) {
+  const queryClient = useQueryClient();
   const { mutate: toggleJoin } = useJoinCommunity();
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const targetGroupId = msg.inviteData?.groupId || msg.inviteData?.conversationId || null;
   const isCampusGroup = Boolean(targetGroupId) && String(targetGroupId).startsWith('c_');
-
-  // Campus groups are communities, not conversations — they have their own
-  // membership model and are not backed by the conversation invite endpoint.
-  const {
-    data: preview,
-    isLoading: isPreviewLoading,
-    error: previewError,
-    refetch: refetchPreview,
-  } = useGroupInvitePreview(targetGroupId, { enabled: Boolean(targetGroupId) && !isCampusGroup });
-
-  const { join, isPending: isJoining } = useJoinGroup();
-
   const isJoinedCampus =
     isCampusGroup && (currentUser?.campusGroups || []).map(String).includes(String(targetGroupId));
 
-  // Invite messages carry their own lifetime, independent of the group's.
-  const inviteExpiresAt = msg.inviteData?.expiresAt || msg.expiresAt;
-  const isInviteExpired =
-    Boolean(msg.inviteData?.isExpired || msg.inviteData?.expired || msg.isExpired) ||
-    Boolean(inviteExpiresAt && new Date(inviteExpiresAt).getTime() <= Date.now());
+  // The card is the credential: the server checks it by its id (who it was
+  // sent to, whether its sender is still in the group, its 48 hours). Until
+  // the send is confirmed there is no id to check.
+  const isSent = Boolean(msg?.id) && !String(msg.id).startsWith('temp_')
+    && !String(msg.id).startsWith('c_temp_') && !msg?.isOptimistic;
 
-  const previewErrorCode = previewError ? inviteErrorCode(previewError) : null;
-  const groupGone = previewErrorCode === 'GROUP_NOT_FOUND';
-  const previewUnreachable = previewErrorCode === 'NETWORK' || previewErrorCode === 'UNKNOWN';
-
-  const isMember = isCampusGroup ? isJoinedCampus : Boolean(preview?.isMember);
-
-  // Server state wins. `inviteData` is only a snapshot taken when the invite was
-  // sent, so it is used solely as a fallback for display while the preview
-  // loads or when the preview could not be fetched.
-  const joinState = (() => {
-    if (isMember) return 'MEMBER';
-    if (groupGone) return 'GROUP_NOT_FOUND';
-    if (isInviteExpired) return 'INVITE_EXPIRED';
-    if (isCampusGroup) return 'CAN_JOIN';
-    if (preview?.joinState) return preview.joinState;
-    if (previewUnreachable) return 'UNAVAILABLE';
-    return 'LOADING';
-  })();
-
-  const groupName = preview?.name || msg.inviteData?.groupName || 'Group';
-  const groupAvatar = preview?.avatarKey || preview?.avatar || msg.inviteData?.groupAvatar;
+  // What the card itself knows, shown at once; the sheet reads the group live.
+  const groupName = msg.inviteData?.groupName || 'Group';
+  const groupAvatar = msg.inviteData?.groupAvatar || null;
   const groupAvatarSrc = groupAvatar ? getMediaUrl(groupAvatar) : null;
   const fromText = msg.from === 'me' ? 'you' : (msg.senderName || 'someone');
 
-  const navigateToGroup = (target) => {
-    const isInbox = window.location.pathname.startsWith('/inbox');
-    const basePath = isInbox ? '/inbox' : '/messages';
-    const conv = target || preview || { id: targetGroupId };
-    navigate(generateConversationUrl(conv, currentUser?.id, basePath));
+  // Campus groups are communities, not conversations: their own membership,
+  // and no invite preview behind them.
+  const openCampusGroup = () => {
+    if (!isJoinedCampus) toggleJoin({ communityId: targetGroupId, isJoined: true, currentUser });
+    const basePath = window.location.pathname.startsWith('/inbox') ? '/inbox' : '/messages';
+    navigate(generateConversationUrl({ id: targetGroupId }, currentUser?.id, basePath));
   };
 
-  const handleClick = async () => {
-    if (!targetGroupId || isJoining) return;
-
-    // Already in the group: the button is a shortcut into it, never a second
-    // join. This is what keeps membership from being created twice.
-    if (isMember) {
-      navigateToGroup();
-      return;
-    }
-
-    if (joinState === 'UNAVAILABLE') {
-      refetchPreview();
-      return;
-    }
-
+  // Always "View group", an expired invite included: what it allows is the
+  // preview's to say ("Invite link expired"), from the server, not the card's.
+  const { label, disabled, onClick } = (() => {
+    if (!targetGroupId) return { label: 'Invite unavailable', disabled: true, onClick: undefined };
     if (isCampusGroup) {
-      toggleJoin({ communityId: targetGroupId, isJoined: true, currentUser });
-      navigateToGroup();
-      return;
+      return { label: isJoinedCampus ? 'Open Group' : 'Join Group', disabled: false, onClick: openCampusGroup };
     }
-
-    try {
-      const result = await join(targetGroupId, preview);
-      if (result?.status === JOIN_NEEDS_VERIFICATION) return;
-      if (result?.status === 'JOINED') {
-        showToast(result.alreadyMember ? 'Already joined' : `Joined ${groupName}`, 'success');
-        // The conversation list and history caches were invalidated by the
-        // mutation, so the group is ready to open immediately.
-        navigateToGroup(result);
-      } else {
-        showToast('Join request sent', 'success');
-      }
-    } catch (err) {
-      // The verification prompt is already open for a selfie 403.
-      if (!isVerificationRequiredError(err)) showToast(inviteErrorMessage(err), 'error');
-    }
-  };
-
-  const { label, disabled, note } = (() => {
-    if (!targetGroupId) {
-      return { label: 'Invite unavailable', disabled: true, note: 'This invite is missing its group.' };
-    }
-    if (isJoining) return { label: 'Joining…', disabled: true, note: null };
-    switch (joinState) {
-      case 'MEMBER':
-        return { label: 'Open Group', disabled: false, note: 'Already joined' };
-      case 'GROUP_NOT_FOUND':
-        return { label: 'Group unavailable', disabled: true, note: 'This group no longer exists.' };
-      case 'CLOSED':
-        return { label: 'Group ended', disabled: true, note: 'This group is no longer accepting members.' };
-      case 'BLOCKED':
-        return { label: 'Unavailable', disabled: true, note: "You can't join this group." };
-      case 'INVITE_EXPIRED':
-        return { label: 'Invite expired', disabled: true, note: 'Ask for a new invite.' };
-      case 'REQUESTED':
-        return { label: 'Requested', disabled: true, note: 'Waiting for an admin to approve.' };
-      case 'APPROVAL_REQUIRED':
-        return { label: 'Request to Join', disabled: false, note: 'An admin must approve your request.' };
-      case 'UNAVAILABLE':
-        return { label: 'Retry', disabled: false, note: "Couldn't load this invite." };
-      case 'LOADING':
-        return { label: 'Join Group', disabled: true, note: null };
-      default:
-        return { label: 'Join Group', disabled: false, note: null };
-    }
+    return { label: 'View group', disabled: !isSent, onClick: () => setPreviewOpen(true) };
   })();
 
   return (
@@ -676,17 +586,28 @@ function GroupInviteCard({ msg, currentUser, navigate, isMe }) {
           <p>Group invite from {fromText}</p>
         </div>
       </div>
-      {note && <p className={styles.groupInviteNote}>{note}</p>}
       <div className={styles.groupInviteActions}>
         <button
+          type="button"
           className={styles.groupInviteBtn}
-          onClick={handleClick}
-          disabled={disabled || (isPreviewLoading && !preview && !isCampusGroup && joinState === 'LOADING')}
-          aria-busy={isJoining || undefined}
+          onClick={onClick}
+          // Started on press, so the sheet usually opens with its answer.
+          onPointerDown={!isCampusGroup && isSent
+            ? () => prefetchGroupPreview(queryClient, { groupId: targetGroupId, messageId: msg.id })
+            : undefined}
+          disabled={disabled}
         >
           {label}
         </button>
       </div>
+      {previewOpen && (
+        <GroupPreviewSheet
+          groupId={targetGroupId}
+          messageId={msg.id}
+          snapshot={{ name: groupName, avatar: groupAvatar }}
+          onClose={() => setPreviewOpen(false)}
+        />
+      )}
     </div>
   );
 }

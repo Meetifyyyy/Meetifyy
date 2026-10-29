@@ -34,7 +34,11 @@ export type Intent =
   | { t: 'saved' }
   | { t: 'profile'; username: string }
   | { t: 'post'; id: string }
-  | { t: 'chat'; conversationId: string }
+  // `panel: 'requests'` opens the group's Join requests page (an admin's push
+  // for a new request). A client older than the field opens the chat.
+  | { t: 'chat'; conversationId: string; panel?: 'requests' }
+  // An invite link, meetifyy.app/g/<code>.
+  | { t: 'groupInvite'; code: string }
   | { t: 'community'; id: string }
   | { t: 'activity'; id: string }
   | { t: 'event'; id: string }
@@ -52,7 +56,9 @@ export const Intents = {
   saved: (): Intent => ({ t: 'saved' }),
   profile: (username: string): Intent => ({ t: 'profile', username }),
   post: (id: string): Intent => ({ t: 'post', id }),
-  chat: (conversationId: string): Intent => ({ t: 'chat', conversationId }),
+  chat: (conversationId: string, panel?: 'requests'): Intent =>
+    panel ? { t: 'chat', conversationId, panel } : { t: 'chat', conversationId },
+  groupInvite: (code: string): Intent => ({ t: 'groupInvite', code }),
   community: (id: string): Intent => ({ t: 'community', id }),
   activity: (id: string): Intent => ({ t: 'activity', id }),
   event: (id: string): Intent => ({ t: 'event', id }),
@@ -62,6 +68,10 @@ export const Intents = {
 
 const isNonEmptyString = (v: unknown): v is string =>
   typeof v === 'string' && v.length > 0 && v.length <= 200;
+
+/** An invite link's code: letters and digits only, never a path. */
+const isInviteCode = (v: unknown): v is string =>
+  typeof v === 'string' && /^[0-9A-Za-z]{1,16}$/.test(v);
 
 /**
  * Validates an untrusted object into an Intent, or returns null.
@@ -86,8 +96,10 @@ export function parseIntent(raw: unknown): Intent | null {
       return isNonEmptyString(o.id) ? Intents.post(o.id) : null;
     case 'chat':
       return isNonEmptyString(o.conversationId)
-        ? Intents.chat(o.conversationId)
+        ? Intents.chat(o.conversationId, o.panel === 'requests' ? 'requests' : undefined)
         : null;
+    case 'groupInvite':
+      return isInviteCode(o.code) ? Intents.groupInvite(o.code) : null;
     case 'community':
       return isNonEmptyString(o.id) ? Intents.community(o.id) : null;
     case 'activity':
@@ -153,6 +165,9 @@ export function parseIntentFromPath(pathname: string): Intent | null {
   // `split('?')[0]` is `string | undefined`, and chaining off it is exactly the
   // unchecked access that flag exists to catch.
   const path = pathname.split('?', 1).join('').split('#', 1).join('');
+  const query = pathname.includes('?')
+    ? pathname.slice(pathname.indexOf('?') + 1).split('#', 1).join('')
+    : '';
   const seg = path.split('/').filter(Boolean);
   if (seg.length === 0) return null;
 
@@ -183,8 +198,11 @@ export function parseIntentFromPath(pathname: string): Intent | null {
     case 'messages':
     case 'inbox': {
       const id = conversationIdFromSegments(seg[1], seg[2]);
-      return id ? Intents.chat(id) : null;
+      const requests = /(?:^|&)panel=requests(?:&|$)/.test(query);
+      return id ? Intents.chat(id, requests ? 'requests' : undefined) : null;
     }
+    case 'g':
+      return isInviteCode(seg[1]) ? Intents.groupInvite(seg[1]) : null;
     case 'settings':
       return Intents.settings(seg[1]);
     default:
@@ -230,6 +248,10 @@ export function intentToPushData(intent: Intent): Record<string, string> {
       break;
     case 'chat':
       data.conversationId = intent.conversationId;
+      if (intent.panel) data.panel = intent.panel;
+      break;
+    case 'groupInvite':
+      data.code = intent.code;
       break;
     case 'settings':
       if (intent.panel) data.panel = intent.panel;

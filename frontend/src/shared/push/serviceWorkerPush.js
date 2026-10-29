@@ -32,7 +32,7 @@ export function pushPath(intent) {
     case 'activity':
       return `/crew/${seg(intent.id)}`;
     case 'chat':
-      return `/messages/${seg(intent.conversationId)}`;
+      return `/messages/${seg(intent.conversationId)}${intent.panel === 'requests' ? '?panel=requests' : ''}`;
     default:
       return '/notifications';
   }

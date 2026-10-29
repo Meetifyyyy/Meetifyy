@@ -6,6 +6,7 @@ import { useAuth } from '@shared/context/AuthContext';
 import { openVerificationModal } from '@shared/stores/verificationModalStore';
 import { isMessagingEligibleStatus } from '@shared/utils/messagingEligibility';
 import { useGuardedMutation } from '@shared/hooks/useGuardedMutation';
+import { OfflineError } from '@shared/lib/offlineGuard';
 import { seedJoinedGroup } from '@features/messages/shared/utils/groupMembership';
 
 /** What `join` resolves with when the live-selfie check stopped it client side. */
@@ -23,30 +24,76 @@ export function isVerificationRequiredError(err) {
 }
 
 /**
- * Group-invite data layer.
+ * Group-invite data layer, for the group preview (the sheet a chat's invite
+ * card opens, an invite link, and a group's address opened by someone not in
+ * it) and the join action behind its button.
  *
- * The invite card and the invite-link landing panel both need the same three
- * things — what the group is, whether this user may join it, and a join action
- * that is safe to press twice. Keeping them here means neither screen depends
- * on props being threaded down through the message list.
+ * An invite is named by what it came through: `{ code }` for an invite link,
+ * `{ messageId }` for a card in a chat, or nothing for the group's address.
+ * The server decides from it what the preview may show and whether the
+ * button may join (an expired invite shows the group but cannot), so the
+ * invite is part of the preview's cache key.
  */
 
+const inviteKey = (invite) => {
+  if (invite?.code) return `c:${invite.code}`;
+  if (invite?.messageId) return `m:${invite.messageId}`;
+  return 'none';
+};
+
 export const INVITE_KEYS = {
-  preview: (groupId) => ['groupInvite', String(groupId || '')],
+  all: ['groupInvite'],
+  preview: (groupId, invite) => ['groupInvite', String(groupId || ''), inviteKey(invite)],
+  link: (code) => ['groupInvite', 'link', String(code || '')],
 };
 
 /**
+ * Refetches every preview of the group with any of `ids` (whatever invite it
+ * was opened through). After a join or a request, an answer to one, or a
+ * failure that may mean the state moved on.
+ */
+export function refreshGroupPreviews(queryClient, ids) {
+  const wanted = (Array.isArray(ids) ? ids : [ids]).filter(Boolean).map(String);
+  if (!queryClient || wanted.length === 0) return;
+  queryClient.invalidateQueries({
+    queryKey: INVITE_KEYS.all,
+    predicate: (query) => {
+      const data = query.state.data;
+      const own = [data?.id, data?.publicId, data?.internalId].filter(Boolean).map(String);
+      return wanted.includes(String(query.queryKey[1])) || own.some((id) => wanted.includes(id));
+    },
+  });
+}
+
+/** Writes `patch` into every cached preview of the group with any of `ids`. */
+function patchGroupPreviews(queryClient, ids, patch) {
+  const wanted = ids.filter(Boolean).map(String);
+  queryClient.setQueriesData({ queryKey: INVITE_KEYS.all }, (old) => {
+    if (!old || typeof old !== 'object') return old;
+    const own = [old.id, old.publicId, old.internalId].filter(Boolean).map(String);
+    return own.some((id) => wanted.includes(id)) ? { ...old, ...patch } : old;
+  });
+}
+
+/**
  * Maps a failed request to a stable code. The server sends these as the
- * exception message; older deployments and network failures fall through to
- * a generic code so the UI always has something to switch on.
+ * response's `code` (or, for older refusals, its message); network failures
+ * and unknown answers fall through to a generic code so the UI always has
+ * something to switch on.
  */
 export function inviteErrorCode(err) {
+  if (err instanceof OfflineError) return 'NETWORK';
   const raw = String(err?.code || err?.message || '').toUpperCase();
   const known = [
     'GROUP_NOT_FOUND',
     'GROUP_CLOSED',
     'BLOCKED',
     'UNAUTHENTICATED',
+    'INVITE_REQUIRED',
+    'INVITE_EXPIRED',
+    'INVITE_REVOKED',
+    'INVITE_INVALID',
+    'REQUEST_DECLINED',
   ];
   if (known.includes(raw)) return raw;
   if (isVerificationRequiredError(err)) return 'VERIFICATION_REQUIRED';
@@ -61,11 +108,19 @@ export function inviteErrorCode(err) {
 export function inviteErrorMessage(err) {
   switch (inviteErrorCode(err)) {
     case 'GROUP_NOT_FOUND':
-      return 'This group no longer exists.';
+      return 'This group is no longer available.';
     case 'GROUP_CLOSED':
       return 'This group has ended and is no longer accepting members.';
     case 'BLOCKED':
       return "You can't join this group.";
+    case 'INVITE_REQUIRED':
+    case 'INVITE_EXPIRED':
+      return 'This invite link has expired. Ask a member for a new one.';
+    case 'INVITE_REVOKED':
+    case 'INVITE_INVALID':
+      return 'This invite link is no longer valid.';
+    case 'REQUEST_DECLINED':
+      return 'An admin declined your request. You can ask again later.';
     case 'VERIFICATION_REQUIRED':
       return JOIN_VERIFY_MESSAGE;
     case 'FORBIDDEN':
@@ -80,32 +135,52 @@ export function inviteErrorMessage(err) {
 }
 
 /**
- * Invite preview for any group, readable whether or not the user is a member.
- * `enabled: false` for a missing id keeps the hook callable unconditionally.
+ * The group preview, readable whether or not the user is in the group. Opened
+ * by a link code alone (`/g/<code>`), or by the group's id with the invite it
+ * came through. `enabled: false` keeps the hook callable unconditionally.
+ *
+ * Refetched when the window regains focus or the connection returns, so a
+ * request answered on another device, or while offline, shows its answer.
  */
-export function useGroupInvitePreview(groupId, { enabled = true } = {}) {
+export function useGroupPreview({ groupId, code, messageId } = {}, { enabled = true } = {}) {
+  const invite = code ? { code } : messageId ? { messageId } : null;
+  const byLink = Boolean(code) && !groupId;
   return useQuery({
-    queryKey: INVITE_KEYS.preview(groupId),
-    queryFn: () => groupApi.getInvitePreview(groupId),
-    enabled: Boolean(groupId) && enabled,
+    queryKey: byLink ? INVITE_KEYS.link(code) : INVITE_KEYS.preview(groupId, invite),
+    queryFn: () => (byLink ? groupApi.getInviteLinkPreview(code) : groupApi.getInvitePreview(groupId, invite || {})),
+    enabled: Boolean(groupId || code) && enabled,
     staleTime: 15 * 1000,
-    // A deleted group or a block is a settled answer — retrying just delays
-    // the error state. Only transient failures are worth a second attempt.
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    // A deleted group, an invalid link or a block is a settled answer:
+    // retrying only delays the error state. Only transient failures retry.
     retry: (failureCount, err) => {
-      const code = inviteErrorCode(err);
-      if (code === 'NETWORK' || code === 'UNKNOWN') return failureCount < 2;
+      const errCode = inviteErrorCode(err);
+      if (errCode === 'NETWORK' || errCode === 'UNKNOWN') return failureCount < 2;
       return false;
     },
   });
 }
 
+/** Prefetches a preview (the invite card does this on pointer-down). */
+export function prefetchGroupPreview(queryClient, { groupId, messageId }) {
+  if (!queryClient || !groupId) return;
+  const invite = messageId ? { messageId } : null;
+  void queryClient.prefetchQuery({
+    queryKey: INVITE_KEYS.preview(groupId, invite),
+    queryFn: () => groupApi.getInvitePreview(groupId, invite || {}),
+    staleTime: 15 * 1000,
+  });
+}
+
 /**
- * Join (or request to join) a group.
+ * Join (or ask to join) a group through an invite.
  *
- * The request itself is idempotent server-side, so a double-tap cannot create
- * a second membership; `isPending` is still surfaced so the button can lock.
- * On a successful join the conversation list is refetched immediately, which
- * is what makes the group appear in the sidebar before the socket event lands.
+ * The server is idempotent: a second tap cannot make a second membership or a
+ * second request, and a request that already waits is answered as waiting.
+ * `isPending` is surfaced so the button locks while the call is out. A call
+ * that timed out after the server acted is safe to repeat for the same
+ * reason; the preview is refetched after every failure so it shows the truth.
  */
 export function useJoinGroup() {
   const queryClient = useQueryClient();
@@ -113,21 +188,21 @@ export function useJoinGroup() {
   const verificationStatus = currentUser?.verificationStatus;
 
   const mutation = useGuardedMutation(useMutation({
-    mutationFn: (groupId) => groupApi.joinGroup(groupId),
-    onSuccess: (result, groupId) => {
-      // Refresh the preview so the card flips to its joined/requested state
-      // even if the user never leaves the screen.
-      queryClient.invalidateQueries({ queryKey: INVITE_KEYS.preview(groupId) });
-      if (result?.publicId && String(result.publicId) !== String(groupId)) {
-        queryClient.invalidateQueries({ queryKey: INVITE_KEYS.preview(result.publicId) });
+    mutationFn: ({ groupId, invite }) => groupApi.joinGroup(groupId, invite || {}),
+    onSuccess: (result, { groupId }) => {
+      const ids = [...new Set([groupId, result?.publicId, result?.internalId].filter(Boolean).map(String))];
+      if (result?.status === 'PENDING') {
+        // The button reads "Request pending" at once, not after a refetch.
+        patchGroupPreviews(queryClient, ids, { joinState: 'REQUESTED', hasPendingRequest: true });
       }
+      refreshGroupPreviews(queryClient, ids);
       if (result?.status === 'JOINED') {
-        const ids = [...new Set([groupId, result.publicId, result.internalId].filter(Boolean).map(String))];
         // In the list at once, so opening it does not wait for the refetch
         // below (and does not show the invite again while it does).
-        const preview = ids
-          .map((id) => queryClient.getQueryData(INVITE_KEYS.preview(id)))
-          .find(Boolean);
+        const preview = queryClient
+          .getQueriesData({ queryKey: INVITE_KEYS.all })
+          .map(([, data]) => data)
+          .find((data) => data && ids.includes(String(data.publicId)));
         seedJoinedGroup(queryClient, result, preview);
         queryClient.invalidateQueries({ queryKey: MESSAGE_KEYS.conversations });
         ids.forEach((id) => {
@@ -141,6 +216,7 @@ export function useJoinGroup() {
         });
       }
     },
+    onError: (_err, { groupId }) => refreshGroupPreviews(queryClient, [groupId]),
   }), 'action');
 
   const { mutateAsync } = mutation;
@@ -151,7 +227,7 @@ export function useJoinGroup() {
    * from a client whose status was stale opens the same prompt and rethrows.
    */
   const join = useCallback(
-    async (groupId, preview) => {
+    async (groupId, preview, invite) => {
       // The account's own status decides; the preview's optional flag only
       // stands in when there is no signed-in user object to read.
       const blocked = currentUser
@@ -162,7 +238,7 @@ export function useJoinGroup() {
         return { status: JOIN_NEEDS_VERIFICATION };
       }
       try {
-        return await mutateAsync(groupId);
+        return await mutateAsync({ groupId, invite });
       } catch (err) {
         if (isVerificationRequiredError(err)) openVerificationModal(JOIN_VERIFY_MESSAGE);
         throw err;

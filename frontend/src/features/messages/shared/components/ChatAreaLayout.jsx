@@ -70,6 +70,11 @@ export default function ChatAreaLayout({
   // Contact-details actions, supplied by the DM screen.
   onBlockUser = null,
   onClearChat = null,
+  // The details page to open on ('requests'), when something asked for it.
+  detailsInitialPage = null,
+  // A group's requests to join, for its owner and admins (GroupChatArea).
+  adminUpdates = null,
+  onReviewRequests,
 
   // Whether to show avatar next to typing bubble (groups only)
   _showTypingAvatar = false,
@@ -148,6 +153,7 @@ export default function ChatAreaLayout({
       <div className={`${styles.chatArea} ${showChatOnMobile ? styles.chatAreaVisible : ''}`}>
         <ChatDetailsPanel
           conversation={conversation}
+          initialPage={detailsInitialPage}
           onBack={closeDetails}
           onSearch={handleOpenSearch}
           onBlockUser={onBlockUser}
@@ -224,6 +230,8 @@ export default function ChatAreaLayout({
           onRetryUpload={onRetryUpload}
           onRetrySend={onRetrySend}
           onCancelUpload={onCancelUpload}
+          adminUpdates={adminUpdates}
+          onReviewRequests={onReviewRequests}
         />
       </div>
 

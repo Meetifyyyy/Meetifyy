@@ -440,6 +440,14 @@ export function createEndpoints({
     reactToMessage: (messageId, reaction) => apiClient.post(`/api/dm/${messageId}/react`, { reaction }),
   };
 
+  /** The invite fields the join and preview routes read, and nothing else. */
+  const inviteBody = (invite) => {
+    const out = {};
+    if (invite?.code) out.code = String(invite.code);
+    else if (invite?.messageId) out.messageId = String(invite.messageId);
+    return out;
+  };
+
   const groupApi = {
     getConversations: (limit, offset) => apiClient.get(`/api/group-chats?limit=${limit || 20}&offset=${offset || 0}`),
     getDetails: (conversationId) => apiClient.get(`/api/group-chats/${conversationId}/details`),
@@ -471,9 +479,22 @@ export function createEndpoints({
     demoteAdmin: (conversationId, targetUserId) => apiClient.delete(`/api/group-chats/${conversationId}/admins/${targetUserId}`),
     acceptJoinRequest: (conversationId, targetUserId) => apiClient.post(`/api/group-chats/${conversationId}/requests/${targetUserId}/accept`),
     declineJoinRequest: (conversationId, targetUserId) => apiClient.post(`/api/group-chats/${conversationId}/requests/${targetUserId}/decline`),
-    joinGroup: (conversationId) => apiClient.post(`/api/group-chats/${conversationId}/join`),
-    // Readable by non-members — this is what an invite link resolves against.
-    getInvitePreview: (conversationId) => apiClient.get(`/api/group-chats/${conversationId}/invite`),
+    // `invite` names the invite the person came through: `{ code }` for a link,
+    // `{ messageId }` for a card in a chat. Someone not in the group must send
+    // one; the server decides whether it is still usable.
+    joinGroup: (conversationId, invite = {}) =>
+      apiClient.post(`/api/group-chats/${conversationId}/join`, inviteBody(invite)),
+    // Readable by non-members. What it shows depends on the invite named.
+    getInvitePreview: (conversationId, invite = {}) => {
+      const query = new URLSearchParams(inviteBody(invite)).toString();
+      return apiClient.get(`/api/group-chats/${conversationId}/invite${query ? `?${query}` : ''}`);
+    },
+    // An invite link (meetifyy.app/g/<code>) and the group it opens.
+    getInviteLinkPreview: (code) => apiClient.get(`/api/group-invites/${encodeURIComponent(code)}`),
+    createInviteLink: (conversationId) => apiClient.post(`/api/group-chats/${conversationId}/invite-links`),
+    resetInviteLinks: (conversationId) => apiClient.post(`/api/group-chats/${conversationId}/invite-links/reset`),
+    // The "@name has requested to join" lines; the owner and admins only.
+    getJoinRequestActivity: (conversationId) => apiClient.get(`/api/group-chats/${conversationId}/join-requests/activity`),
     unsendMessage: (messageId) => apiClient.delete(`/api/group-chats/msg/${messageId}`),
     deleteMessageForMe: (messageId) => apiClient.delete(`/api/group-chats/msg/${messageId}/for-me`),
     forwardMessage: (messageId, targetConversationIds) => apiClient.post(`/api/group-chats/msg/${messageId}/forward`, { targetConversationIds }),

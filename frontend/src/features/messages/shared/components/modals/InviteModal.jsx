@@ -17,8 +17,11 @@
  * - Someone who joined in the meantime reads "In group", not a failure. A
  *   group that has ended, or that the viewer is no longer in, stops the sheet:
  *   a retry could not change either.
- * - With nobody picked, the footer offers the group's link (Copy link, Share
- *   via, …), which is the group's own address.
+ * - With nobody picked, the footer offers an invite link (Copy link, Share
+ *   via, …): meetifyy.app/g/<code>, which lasts seven days and an admin can
+ *   reset. It used to be the group's own address, which could be neither.
+ *   The server hands a member back their own link while it has a day left,
+ *   so asking for it each time the sheet opens makes no new link.
  *
  * It replaces a list with an Invite button on every row, where each tap sent
  * at once and failures came back as toasts.
@@ -38,7 +41,6 @@ import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
 import { useSheetDrag } from '@shared/hooks/useSheetDrag';
 import { selectableUsers } from '@shared/lib/conversationTargets';
-import { generateConversationUrl } from '@shared/utils/conversationUrl';
 import { publicOrigin } from '@shared/utils/publicOrigin';
 import { newForwardOperationId } from '@features/messages/shared/utils/forwardDelivery';
 
@@ -146,6 +148,14 @@ export default function InviteModal({ isOpen, onClose, group }) {
     staleTime: 10_000,
   });
   const memberIds = useMemo(() => memberIdsOf(group, details), [group, details]);
+  const inviteLink = useQuery({
+    queryKey: ['groupInviteLink', groupId],
+    queryFn: () => groupApi.createInviteLink(groupId),
+    enabled: Boolean(open && groupId),
+    // Well inside the day the server keeps handing the same link back for.
+    staleTime: 5 * 60 * 1000,
+    retry: 1,
+  });
 
   // One request per pause in typing. The term is matched by the database
   // before the limit, so a name outside the first page is still found.
@@ -231,15 +241,16 @@ export default function InviteModal({ isOpen, onClose, group }) {
     setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }, []);
 
+  const linkCode = inviteLink.data?.code;
   const linkPayload = useMemo(() => {
-    if (!group) return null;
+    if (!group || !linkCode) return null;
     const name = group.name?.trim() || 'this group';
     return {
-      url: `${publicOrigin()}${generateConversationUrl(group, currentUser?.id, '/inbox')}`,
+      url: `${publicOrigin()}/g/${encodeURIComponent(linkCode)}`,
       title: `${name} on ${config.app.name}`,
       text: `Join ${name} on ${config.app.name}.`,
     };
-  }, [group, currentUser?.id]);
+  }, [group, linkCode]);
 
   if (!open) return null;
 
@@ -364,7 +375,24 @@ export default function InviteModal({ isOpen, onClose, group }) {
                   {label}
                 </button>
               ) : (
-                !stopped && linkPayload && <ShareTargets payload={linkPayload} />
+                !stopped && (linkPayload ? (
+                  <ShareTargets payload={linkPayload} />
+                ) : (
+                  // Holds the row's place while the link is fetched, so the
+                  // sheet does not jump when it arrives.
+                  <div className={styles.linkPending} role="status">
+                    {inviteLink.isError ? (
+                      <>
+                        <span>Couldn’t get an invite link.</span>
+                        <button type="button" className={styles.linkBtn} onClick={() => inviteLink.refetch()} disabled={inviteLink.isFetching}>
+                          Retry
+                        </button>
+                      </>
+                    ) : (
+                      <span>Getting the invite link…</span>
+                    )}
+                  </div>
+                ))
               )}
             </div>
           )}

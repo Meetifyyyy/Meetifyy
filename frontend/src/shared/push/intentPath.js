@@ -19,7 +19,9 @@ export function intentPath(intent) {
     case 'activity':
       return `/crew/${seg(intent.id)}`;
     case 'chat':
-      return `/messages/${seg(intent.conversationId)}`;
+      return `/messages/${seg(intent.conversationId)}${intent.panel === 'requests' ? '?panel=requests' : ''}`;
+    case 'groupInvite':
+      return `/g/${seg(intent.code)}`;
     case 'notifications':
       return '/notifications';
     default:

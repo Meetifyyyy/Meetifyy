@@ -1,0 +1,17 @@
+/* The preview needs no more than ConfirmModal's frame; only its width is
+   its own, for a long group name and five faces. */
+.sheet {
+  width: 360px;
+}
+
+@media (max-width: 768px) {
+  .sheet {
+    width: 100%;
+  }
+}
+
+/* Focused on opening so the keyboard starts inside; the container itself is
+   not a control, so it draws no ring. */
+.sheet:focus {
+  outline: none;
+}

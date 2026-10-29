@@ -107,18 +107,18 @@ describe('join requests', () => {
   it('names each requester from the request, and labels the buttons for them', () => {
     render(<GroupJoinRequestsPage pendingRequests={requests} onAccept={vi.fn()} onDecline={vi.fn()} onBack={vi.fn()} />);
     expect(screen.getByText('Ana')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Accept Ana' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Decline Ana' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Approve Ana' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Reject Ana' })).toBeTruthy();
   });
 
   it('a row is locked while its answer is out: one call, however many taps', async () => {
     let finish;
     const onAccept = vi.fn(() => new Promise((r) => { finish = r; }));
     render(<GroupJoinRequestsPage pendingRequests={requests} onAccept={onAccept} onDecline={vi.fn()} onBack={vi.fn()} />);
-    const accept = screen.getByRole('button', { name: 'Accept Ana' });
+    const accept = screen.getByRole('button', { name: 'Approve Ana' });
     fireEvent.click(accept);
     fireEvent.click(accept);
-    fireEvent.click(screen.getByRole('button', { name: 'Decline Ana' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reject Ana' }));
     expect(onAccept).toHaveBeenCalledTimes(1);
     expect(accept.disabled).toBe(true);
     finish(true);

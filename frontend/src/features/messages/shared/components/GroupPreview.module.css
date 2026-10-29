@@ -1,0 +1,115 @@
+/* The group preview: the same column in the sheet and in the chat pane. Every
+   row has a fixed height, so the answer arriving swaps contents in place
+   rather than moving the button. */
+.preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.5rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.name {
+  composes: type-section-title from global;
+  margin: 0.4rem 0 0;
+  max-width: 100%;
+  line-height: 1.3;
+  /* Group names are user-supplied and can be a single long token. */
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Up to five overlapping faces. Fixed height whether there are five, none or
+   they are still loading. */
+.faces {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 36px;
+  margin: 0.15rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.face {
+  display: flex;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  /* The ring separates overlapping faces in the page's own colour. */
+  box-shadow: 0 0 0 2px var(--color-bg-white, #ffffff);
+  background: var(--color-bg-white, #ffffff);
+}
+
+.face + .face {
+  margin-left: -8px;
+}
+
+.faceSkeleton {
+  background: var(--color-bg-hover, rgba(0, 0, 0, 0.06));
+  animation: previewPulse 1.4s ease-in-out infinite;
+}
+
+.count {
+  margin: 0;
+  height: 1.25rem;
+  font-size: 0.85rem;
+  line-height: 1.25rem;
+  color: var(--color-text-muted, #71717a);
+}
+
+.note {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: var(--color-text-muted, #71717a);
+}
+
+.primaryBtn {
+  composes: action-btn action-btn--primary from global;
+  width: 100%;
+  margin-top: 0.6rem;
+}
+
+.secondaryBtn {
+  composes: action-btn action-btn--secondary from global;
+  width: 100%;
+  margin-top: 0.6rem;
+}
+
+.nameSkeleton {
+  display: block;
+  width: 55%;
+  height: 1.3em;
+  margin-top: 0.4rem;
+  border-radius: 6px;
+}
+
+.countSkeleton {
+  display: block;
+  width: 72px;
+  height: 1.25rem;
+  border-radius: 6px;
+}
+
+.shimmer {
+  background: var(--color-bg-hover, rgba(0, 0, 0, 0.06));
+  animation: previewPulse 1.4s ease-in-out infinite;
+}
+
+@keyframes previewPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmer,
+  .faceSkeleton {
+    animation: none;
+  }
+}

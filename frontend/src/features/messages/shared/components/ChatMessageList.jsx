@@ -41,7 +41,8 @@ function MessageListSkeleton() {
     </div>
   );
 }
-import { compareMessages, checkIsMe, isSystemMessage } from '../utils/cacheUtils';
+import { compareMessages, checkIsMe, isSystemMessage, getMsgTimestamp } from '../utils/cacheUtils';
+import AdminJoinRequestLine from './AdminJoinRequestLine';
 import { closesUpFlags } from '../utils/messageRuns';
 import { isPostReply } from './reply';
 import { createMessageHighlighter } from '../utils/messageHighlight';
@@ -198,6 +199,10 @@ export default function ChatMessageList({
   onRetrySend,
   onCancelUpload,
   onOpenEmojiPicker,
+  // Requests to join, for a group's owner and admins only (the caller passes
+  // them only to those; see AdminJoinRequestLine). Never part of `messages`.
+  adminUpdates = null,
+  onReviewRequests,
 }) {
   const bodyRef = useRef(null);
 
@@ -711,24 +716,49 @@ export default function ChatMessageList({
 
   const isGroup = Boolean(conversation?.isGroup || conversation?.type === 'GROUP');
 
+  // The admins' request lines, in time order, within the span of history that
+  // is loaded (older ones would all pile up above the first message), and
+  // never in find-in-chat results.
+  const adminRows = useMemo(() => {
+    if (!Array.isArray(adminUpdates) || adminUpdates.length === 0) return [];
+    if ((searchQuery || '').trim()) return [];
+    const oldest = sortedMessages.length > 0 ? getMsgTimestamp(sortedMessages[0]) : 0;
+    return adminUpdates
+      .map((item) => ({ item, ts: Date.parse(item?.createdAt || '') }))
+      .filter(({ ts }) => Number.isFinite(ts) && (!hasMore || ts >= oldest))
+      .sort((a, b) => a.ts - b.ts);
+  }, [adminUpdates, sortedMessages, hasMore, searchQuery]);
+
   const renderItems = useMemo(() => {
     const items = [];
 
-    if (sortedMessages.length === 0) return items;
+    if (sortedMessages.length === 0 && adminRows.length === 0) return items;
 
     let lastDateGroup = null;
+    const separate = (dateGroup, stableKey) => {
+      if (dateGroup === lastDateGroup) return;
+      items.push({
+        type: 'date_separator',
+        key: `date_sep_${dateGroup}_${stableKey}`,
+        dateGroup,
+      });
+      lastDateGroup = dateGroup;
+    };
+    let nextAdmin = 0;
+    const pushAdminRowsBefore = (ts) => {
+      while (nextAdmin < adminRows.length && adminRows[nextAdmin].ts < ts) {
+        const { item } = adminRows[nextAdmin];
+        separate(getMessageDateGroup({ createdAt: item.createdAt }), `jr_${item.id}`);
+        items.push({ type: 'admin_update', key: `jr_${item.id}_${item.createdAt}`, item });
+        nextAdmin += 1;
+      }
+    };
+
     sortedMessages.forEach((msg, i) => {
+      pushAdminRowsBefore(getMsgTimestamp(msg));
       const dateGroup = getMessageDateGroupMemoized(msg);
       const stableKey = msg.id || msg.clientId || msg.tempId || `idx_${i}`;
-
-      if (dateGroup !== lastDateGroup) {
-        items.push({
-          type: 'date_separator',
-          key: `date_sep_${dateGroup}_${stableKey}`,
-          dateGroup,
-        });
-        lastDateGroup = dateGroup;
-      }
+      separate(dateGroup, stableKey);
 
       items.push({
         type: 'message',
@@ -738,13 +768,14 @@ export default function ChatMessageList({
         isLatestMessage: i === sortedMessages.length - 1,
       });
     });
+    pushAdminRowsBefore(Infinity);
 
     // Which rows close up against the one above. A date separator between two
     // messages breaks a run (a new day starts a new one), so it is an item here
     // like any other.
     const closesUp = closesUpFlags(items, { currentUser, isGroup, isPostReply });
     return items.map((item, k) => (item.type === 'message' ? { ...item, closesUp: closesUp[k] } : item));
-  }, [sortedMessages, currentUser, isGroup]);
+  }, [sortedMessages, adminRows, currentUser, isGroup]);
 
   // The typing indicator is one more row at the bottom of the thread, so it
   // follows the same rule: it sits close to the last message when that is from
@@ -786,6 +817,10 @@ export default function ChatMessageList({
               <span className={styles.msgDateSeparatorText}>{item.dateGroup}</span>
             </div>
           );
+        }
+
+        if (item.type === 'admin_update') {
+          return <AdminJoinRequestLine key={item.key} item={item.item} onReview={onReviewRequests} />;
         }
 
         if (item.type === 'message') {

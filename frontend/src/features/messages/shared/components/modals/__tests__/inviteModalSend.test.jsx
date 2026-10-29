@@ -16,9 +16,16 @@ const startDM = vi.fn();
 const sendMessage = vi.fn();
 const getConnections = vi.fn();
 
+const { createInviteLink } = vi.hoisted(() => ({
+  createInviteLink: vi.fn(async () => ({ code: 'Abc123Def456', expiresAt: '2026-11-05T00:00:00.000Z' })),
+}));
+
 vi.mock('@shared/api/apiClient', () => ({
   usersApi: { getConnections: (...a) => getConnections(...a) },
-  groupApi: { getDetails: async () => ({ memberDetails: [] }) },
+  groupApi: {
+    getDetails: async () => ({ memberDetails: [] }),
+    createInviteLink: (...a) => createInviteLink(...a),
+  },
   dmApi: {
     sendGroupInvite: (...a) => sendGroupInvite(...a),
     startDM: (...a) => startDM(...a),
@@ -182,10 +189,21 @@ describe('Invite sheet: sending', () => {
 });
 
 describe('Invite sheet: the group link', () => {
-  it('with nobody picked, offers the group link', async () => {
+  it('with nobody picked, offers an invite link (not the group address)', async () => {
     renderModal();
     await screen.findByRole('option', { name: /Ana/ });
-    expect(screen.getByRole('button', { name: 'Copy link' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Copy link' })).toBeTruthy();
+    expect(createInviteLink).toHaveBeenCalled();
+  });
+
+  it('holds the row while the link is fetched, and offers a retry when it fails', async () => {
+    createInviteLink.mockRejectedValueOnce(new Error('down')).mockRejectedValueOnce(new Error('down'));
+    renderModal();
+    // The sheet retries once (a second after the first failure) before saying so.
+    expect(await screen.findByText('Couldn’t get an invite link.', {}, { timeout: 4000 })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Copy link' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByRole('button', { name: 'Copy link' })).toBeTruthy();
   });
 
   it('the link row gives way to the Invite button once someone is picked', async () => {

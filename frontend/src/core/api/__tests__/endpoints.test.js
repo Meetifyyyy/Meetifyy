@@ -90,7 +90,7 @@ describe('createEndpoints', () => {
     }
   });
 
-  it('exposes 231 methods in total', () => {
+  it('exposes 235 methods in total', () => {
     // A blunt guard, on purpose: this number changed to 191 when the endpoints
     // were lifted out of apiClient.js, and it is what catches a namespace being
     // dropped by a future refactor of this file. Update it deliberately when an
@@ -98,7 +98,7 @@ describe('createEndpoints', () => {
     const { transport } = stubTransport();
     const api = createEndpoints(transport);
     const total = Object.values(api).reduce((n, ns) => n + Object.keys(ns).length, 0);
-    expect(total).toBe(231); // +messagesApi.getUnreadSummary; 230 +dmApi.sendGroupInvite; 229 +confessionsApi.sync; 228 confessionsApi relate/unrelate → get/react/unreact; 227 +reauthApi (methods/withPassword/sendCode/withCode); 223 +confessionsApi (getMe/checkHandle/createProfile/list/create/relate/unrelate/remove); 215 +pushApi (getConfig/registerDevice/unregisterDevice/getPreferences/updatePreferences); 210 +usersApi.snoozeProfilePrompt; 198 + campusAffiliationApi (get/sendOtp/verify/remove/listColleges/requestCollege) + accountEmailApi (get/sendOtp/verify) + legalApi (listVersions/getVersion)
+    expect(total).toBe(235); // +groupApi getInviteLinkPreview/createInviteLink/resetInviteLinks/getJoinRequestActivity; 231 +messagesApi.getUnreadSummary; 230 +dmApi.sendGroupInvite; 229 +confessionsApi.sync; 228 confessionsApi relate/unrelate → get/react/unreact; 227 +reauthApi (methods/withPassword/sendCode/withCode); 223 +confessionsApi (getMe/checkHandle/createProfile/list/create/relate/unrelate/remove); 215 +pushApi (getConfig/registerDevice/unregisterDevice/getPreferences/updatePreferences); 210 +usersApi.snoozeProfilePrompt; 198 + campusAffiliationApi (get/sendOtp/verify/remove/listColleges/requestCollege) + accountEmailApi (get/sendOtp/verify) + legalApi (listVersions/getVersion)
   });
 
   it('is a factory, not a singleton — two calls yield independent objects', () => {

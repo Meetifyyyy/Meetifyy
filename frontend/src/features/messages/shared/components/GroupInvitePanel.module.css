@@ -1,6 +1,6 @@
-/* Invite-link landing screen. Occupies the chat pane, so it has to fill the
-   same box the chat area would — full height on desktop, full viewport column
-   on mobile where the pane is the whole screen. */
+/* A group's address, opened by someone not in it: the group preview in the
+   chat pane. It fills the same box the chat area would — full height on
+   desktop, the whole screen on mobile. The preview brings its own styles. */
 .panel {
   display: flex;
   align-items: center;
@@ -28,59 +28,6 @@
   box-sizing: border-box;
 }
 
-.title {
-  margin: 0.35rem 0 0;
-  font-size: 1.25rem;
-  font-weight: 700;
-  line-height: 1.25;
-  color: var(--color-text-main, #18181b);
-  /* Group names are user-supplied and can be a single long token. */
-  overflow-wrap: anywhere;
-}
-
-.meta {
-  margin: 0;
-  font-size: 0.82rem;
-  color: var(--color-text-muted, #71717a);
-}
-
-.description {
-  margin: 0.25rem 0 0;
-  font-size: 0.88rem;
-  line-height: 1.45;
-  color: var(--color-text-main, #18181b);
-  overflow-wrap: anywhere;
-}
-
-.subtitle {
-  margin: 0.35rem 0 0.25rem;
-  font-size: 0.9rem;
-  line-height: 1.45;
-  color: var(--color-text-muted, #71717a);
-}
-
-.primaryBtn {
-  width: 100%;
-  padding: 0.75rem 1rem;
-  border: none;
-  border-radius: 12px;
-  background: linear-gradient(135deg, var(--color-primary, #6366f1) 0%, #4f46e5 100%);
-  color: #ffffff;
-  font-size: 0.92rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: opacity 0.15s ease;
-}
-
-.primaryBtn:hover:not(:disabled) {
-  opacity: 0.94;
-}
-
-.primaryBtn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
 .secondaryBtn {
   width: 100%;
   padding: 0.6rem 1rem;
@@ -95,42 +42,6 @@
 
 .secondaryBtn:hover {
   color: var(--color-text-main, #18181b);
-}
-
-/* ── Loading placeholders ─────────────────────────────────────────────────── */
-
-.skeletonAvatar {
-  width: 80px;
-  height: 80px;
-  border-radius: 50%;
-}
-
-.skeletonLine {
-  width: 60%;
-  height: 18px;
-  border-radius: 6px;
-}
-
-.skeletonLineShort {
-  width: 40%;
-  height: 14px;
-  border-radius: 6px;
-}
-
-.shimmer {
-  background: var(--color-bg-hover, rgba(0, 0, 0, 0.06));
-  animation: invitePulse 1.4s ease-in-out infinite;
-}
-
-@keyframes invitePulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .shimmer {
-    animation: none;
-  }
 }
 
 @media (max-width: 768px) {

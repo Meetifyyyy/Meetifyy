@@ -294,10 +294,26 @@ export function useGroupActions() {
     queryClient.invalidateQueries({ queryKey: ['groupDetails'] });
   };
 
+  /**
+   * An approval another admin already made answers `changed: false`, and one
+   * they already declined answers 409: either way the row goes, and the admin
+   * is told, rather than shown a failure for something that was settled.
+   */
   const acceptGroupJoinRequest = async (convId, targetUserId) => {
     try {
-      await groupApi.acceptJoinRequest(convId, targetUserId);
+      const result = await groupApi.acceptJoinRequest(convId, targetUserId);
+      if (result && result.changed === false) {
+        removeGroupJoinRequest(queryClient, convId, targetUserId);
+        showToast('Another admin already approved this request', 'info');
+      }
     } catch (err) {
+      if (err?.status === 409 && err?.code === 'REQUEST_ALREADY_DECLINED') {
+        removeGroupJoinRequest(queryClient, convId, targetUserId);
+        showToast('Another admin already declined this request', 'info');
+        queryClient.invalidateQueries({ queryKey: ['groupDetails'] });
+        queryClient.invalidateQueries({ queryKey: ['groupJoinActivity'] });
+        return false;
+      }
       // The requester cannot join (not selfie-verified, or no longer
       // reachable). The server has removed the request already; take it off
       // the list too, and say why in words an admin can act on.
@@ -313,6 +329,7 @@ export function useGroupActions() {
     }
     queryClient.invalidateQueries({ queryKey: ['conversations'] });
     queryClient.invalidateQueries({ queryKey: ['groupDetails'] });
+    queryClient.invalidateQueries({ queryKey: ['groupJoinActivity'] });
     return true;
   };
 
@@ -326,13 +343,35 @@ export function useGroupActions() {
   const declineGroupJoinRequest = async (convId, targetUserId) => {
     removeGroupJoinRequest(queryClient, convId, targetUserId);
     try {
-      await groupApi.declineJoinRequest(convId, targetUserId);
+      const result = await groupApi.declineJoinRequest(convId, targetUserId);
+      if (result && result.changed === false) {
+        showToast('Another admin already answered this request', 'info');
+      }
       return true;
     } catch {
       showToast("Couldn't decline the request", 'error');
       return false;
     } finally {
       queryClient.invalidateQueries({ queryKey: ['groupDetails'] });
+      queryClient.invalidateQueries({ queryKey: ['groupJoinActivity'] });
+    }
+  };
+
+  /**
+   * Revokes every invite link the group has (owner and admins; the server
+   * checks). The sheet's cached link is one of them, so it is dropped and the
+   * next opening asks for a new one.
+   *
+   * @returns {Promise<boolean>}
+   */
+  const resetInviteLinks = async (convId) => {
+    try {
+      await groupApi.resetInviteLinks(convId);
+      queryClient.removeQueries({ queryKey: ['groupInviteLink'] });
+      return true;
+    } catch {
+      showToast("Couldn't reset the invite links", 'error');
+      return false;
     }
   };
 
@@ -350,5 +389,6 @@ export function useGroupActions() {
     endGroup,
     acceptGroupJoinRequest,
     declineGroupJoinRequest,
+    resetInviteLinks,
   };
 }

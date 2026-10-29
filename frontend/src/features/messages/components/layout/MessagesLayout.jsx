@@ -27,6 +27,7 @@ import DMContextMenu from '../../direct-messages/components/sidebar/DMContextMen
 import GroupContextMenu from '../../group-chats/components/sidebar/GroupContextMenu';
 
 import GroupInvitePanel from '../../shared/components/GroupInvitePanel';
+import GroupPreviewSheet from '../../shared/components/modals/GroupPreviewSheet';
 import { newerMembership } from '../../shared/utils/groupMembership';
 import NewMessageModal from '../../shared/components/modals/NewMessageModal';
 import MuteAlertsModal from '../../shared/components/modals/MuteAlertsModal';
@@ -359,9 +360,11 @@ export default function MessagesLayout() {
     if (!activeChatId || !activeConv || activeConv.isDraft) return;
     const targetPath = correctConversationUrl(activeConv, currentUser?.id, MESSAGES_BASE);
     if (location.pathname !== targetPath && targetPath !== location.pathname) {
-      navigate(targetPath, { replace: true, state: location.state });
+      // The query goes along: `?panel=requests` (an admin's push for a request
+      // to join) is read by the group's screen once the address is settled.
+      navigate(`${targetPath}${location.search}`, { replace: true, state: location.state });
     }
-  }, [activeChatId, activeConv, currentUser?.id, location.pathname, location.state, navigate]);
+  }, [activeChatId, activeConv, currentUser?.id, location.pathname, location.search, location.state, navigate]);
 
   const handleSendMessage = async (convId, text, replyTo, mentions, mediaUrl, mediaType, explicitLinkPreview, explicitInviteData, options) => {
     if (activeConv?.isDraft) {
@@ -603,6 +606,16 @@ export default function MessagesLayout() {
         })()}
 
       </div>
+
+      {/* An invite link (/g/<code>) opened: the group preview over the inbox.
+          Closing it drops the code from history, so Back does not reopen it. */}
+      {typeof location.state?.groupInvite?.code === 'string' && (
+        <GroupPreviewSheet
+          key={location.state.groupInvite.code}
+          code={location.state.groupInvite.code}
+          onClose={() => navigate(`${location.pathname}${location.search}`, { replace: true, state: null })}
+        />
+      )}
 
       {/* CONTEXT MENUS & MODALS */}
       {contextMenu && (() => {

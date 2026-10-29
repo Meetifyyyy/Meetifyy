@@ -283,6 +283,18 @@
 }
 
 /* A line above the footer's button: a failure the person can act on. */
+/* The invite sheet's link row while its link is fetched (or failed): the
+   height of the share targets it stands in for. */
+.linkPending {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 76px;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
 .notice {
   margin: 0 0 8px;
   text-align: center;

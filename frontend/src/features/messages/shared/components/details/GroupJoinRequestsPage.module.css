@@ -65,58 +65,22 @@
   gap: 0.5rem;
 }
 
+.approveBtn,
+.rejectBtn {
+  composes: action-btn from global;
+  min-height: 34px;
+  padding: 0 0.9rem;
+  font-size: 0.82rem;
+  box-shadow: none;
+}
+
 .approveBtn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  border: 1px solid rgba(16, 185, 129, 0.35);
-  background: rgba(16, 185, 129, 0.1);
-  color: #10b981;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.approveBtn:hover {
-  background: #10b981;
-  color: #ffffff;
-  border-color: #10b981;
-}
-
-@media (hover: hover) and (pointer: fine) {
-
-  .approveBtn:hover {
-  transform: scale(1.05);
-  }
+  composes: action-btn--primary from global;
+  box-shadow: none;
 }
 
 .rejectBtn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  border: 1px solid rgba(239, 68, 68, 0.35);
-  background: rgba(239, 68, 68, 0.1);
-  color: #ef4444;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.rejectBtn:hover {
-  background: #ef4444;
-  color: #ffffff;
-  border-color: #ef4444;
-}
-
-@media (hover: hover) and (pointer: fine) {
-
-  .rejectBtn:hover {
-  transform: scale(1.05);
-  }
+  composes: action-btn--secondary from global;
 }
 
 .noRequestsContainer {

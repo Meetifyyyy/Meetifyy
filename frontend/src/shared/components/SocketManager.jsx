@@ -15,7 +15,8 @@ import { requestOpenInstantMatchChat } from '../../features/instant-match/contex
 import { patchInviteNotification } from '@features/notifications/utils/inviteLifecycle';
 import { applyOwnMembership, applyOthersMembership } from '../../features/messages/shared/utils/groupMembership';
 import { applyMessageToConversationList, applyReadToConversationList, markUnsentInConversationList } from '../../features/messages/shared/utils/conversationList';
-import { applyOwnConversationPrefs, refreshJoinRequests } from '../../features/messages/shared/utils/conversationLiveState';
+import { applyOwnConversationPrefs, refreshJoinRequests, applyJoinRequestDecided } from '../../features/messages/shared/utils/conversationLiveState';
+import { refreshGroupPreviews } from '../../features/messages/hooks/useGroupInvite';
 import { messagePreviewText } from '../../features/messages/shared/utils/messagePreview';
 import { VERIFICATION_GATED_QUERY_KEYS } from '../utils/messagingEligibility';
 import { idbDelete } from '../lib/idb';
@@ -546,6 +547,11 @@ export default function SocketManager() {
       if (!convId || !targetUserId) return;
 
       applyGroupRoleChange(queryClient, convId, targetUserId, newRole);
+      // A viewer who is no longer an owner or admin keeps none of the group's
+      // requests to join on this device (the timeline's request lines).
+      if (String(targetUserId) === String(session?.user?.id) && newRole !== 'OWNER' && newRole !== 'ADMIN') {
+        queryClient.removeQueries({ queryKey: ['groupJoinActivity'] });
+      }
       // Reconcile against the server afterwards — the patch above is what makes
       // it instant, this is what makes it correct.
       queryClient.invalidateQueries({ queryKey: ['groupDetails'] });
@@ -579,6 +585,9 @@ export default function SocketManager() {
         // A leave is announced as a removal by the person themself.
         const left = removed && data.removedBy != null && String(data.removedBy) === String(targetUserId);
         applyOwnMembership(queryClient, { ids, isMember: !removed, changedAt, status: left ? 'LEFT' : undefined });
+        // An open preview of the group ("Request pending") shows the change.
+        refreshGroupPreviews(queryClient, ids);
+        if (removed) ids.forEach((id) => queryClient.removeQueries({ queryKey: ['groupJoinActivity', String(id)] }));
       } else {
         applyOthersMembership(queryClient, { ids, userId: targetUserId, joined: !removed, changedAt });
         ids.forEach((id) => queryClient.invalidateQueries({ queryKey: ['groupDetails', id], exact: true }));
@@ -1100,12 +1109,14 @@ export default function SocketManager() {
 
     const handleOwnPrefs = (payload) => applyOwnConversationPrefs(queryClient, payload);
     const handleJoinRequests = (payload) => refreshJoinRequests(queryClient, payload);
+    const handleJoinRequestDecided = (payload) => applyJoinRequestDecided(queryClient, payload);
 
     socket.on('group:member_added', handleGroupMemberAdded);
     socket.on('group:member_removed', handleGroupMemberRemoved);
     socket.on('group:role_changed', handleGroupRoleChanged);
     socket.on('conversation:prefs', handleOwnPrefs);
     socket.on('group:join_requests', handleJoinRequests);
+    socket.on('group:join_request_decided', handleJoinRequestDecided);
 
     return () => {
       socket.off('notification:new', handleNewNotification);
@@ -1126,6 +1137,7 @@ export default function SocketManager() {
       socket.off('group:role_changed', handleGroupRoleChanged);
       socket.off('conversation:prefs', handleOwnPrefs);
       socket.off('group:join_requests', handleJoinRequests);
+      socket.off('group:join_request_decided', handleJoinRequestDecided);
     };
   }, [socket, queryClient, navigate, session?.user?.id]);
 

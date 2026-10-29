@@ -322,6 +322,9 @@ export const APP_ROUTE_PATTERNS = [
   '/messages/:path*',
   '/inbox',
   '/inbox/:path*',
+  // A group invite link. Signed out, it is a page to sign in for (and come
+  // back to), like every route above.
+  '/g/:code',
 
   /**
    * Configured but currently unrouted, and listed anyway.
