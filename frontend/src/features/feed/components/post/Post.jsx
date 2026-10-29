@@ -20,111 +20,8 @@ import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import ReportModal from '@shared/components/modals/ReportModal/LazyReportModal';
 import MediaGrid from './MediaGrid';
 import { useDeletePost, DELETING_FLAG } from '../../hooks/useDeletePost';
-import { useVotePoll } from '../../hooks/useVotePoll';
+import PollCard from './PollCard';
 import { getMediaUrl } from '@shared/api/apiClient';
-
-function PollCard({ poll, postId }) {
-  const { currentUser } = useAuth();
-  const { mutate: voteInPoll, isLoading: isSubmitting } = useVotePoll();
-
-  // Derive voted state and votes from the shared poll object
-  const optionsList = Array.isArray(poll.options) ? poll.options : [];
-  const derivedVotedIndex = poll.votedOptionIndex !== undefined && poll.votedOptionIndex !== null && poll.votedOptionIndex >= 0
-    ? poll.votedOptionIndex
-    : (poll.userVotedOptionId ? optionsList.findIndex(o => (typeof o === 'object' ? o.id : null) === poll.userVotedOptionId) : -1);
-
-  const rawMyVotes = poll.selectedUsers?.[currentUser?.id] || poll.myVotes;
-  const myVotes = Array.isArray(rawMyVotes) && rawMyVotes.length > 0
-    ? rawMyVotes
-    : (derivedVotedIndex >= 0 ? [derivedVotedIndex] : []);
-
-  const hasVoted = myVotes.length > 0;
-
-  const rawVotes = Array.isArray(poll.votes) ? poll.votes : null;
-  const votes = rawVotes
-    ? rawVotes.map(v => (typeof v === 'object' && v !== null ? Number(v.votes ?? v.voteCount ?? v._count?.votes ?? 0) : Number(v) || 0))
-    : optionsList.map(opt => (typeof opt === 'object' ? Number(opt.votes ?? opt.voteCount ?? opt._count?.votes ?? 0) : 0));
-  const totalVotes = poll.totalVotes !== undefined && poll.totalVotes !== null ? poll.totalVotes : votes.reduce((a, b) => a + b, 0);
-
-  // Local state only for multi-select pre-submission selection
-  const [pendingSelection, setPendingSelection] = useState([]);
-
-  const handleVote = (idx) => {
-    if (hasVoted || isSubmitting) return;
-
-    if (poll.multiSelect) {
-      setPendingSelection((prev) =>
-        prev.includes(idx) ? prev.filter((i) => i !== idx) : [...prev, idx]
-      );
-    } else {
-      voteInPoll({ postId, indices: [idx], currentUserId: currentUser?.id });
-    }
-  };
-
-  const confirmMultiVote = () => {
-    if (pendingSelection.length === 0 || hasVoted || isSubmitting) return;
-    voteInPoll({ postId, indices: pendingSelection, currentUserId: currentUser?.id });
-    setPendingSelection([]);
-  };
-
-  const showResults = hasVoted;
-  const selected = hasVoted ? myVotes : pendingSelection;
-
-  return (
-    <div className={styles.pollCard}>
-      <div className={styles.pollCardOptions}>
-        {optionsList.map((opt, i) => {
-          const getOptionText = (o) => {
-            if (!o) return '';
-            if (typeof o === 'string') return o;
-            if (typeof o === 'number') return String(o);
-            if (typeof o === 'object') {
-              if (typeof o.text === 'string') return o.text;
-              if (typeof o.label === 'string') return o.label;
-              if (typeof o.title === 'string') return o.title;
-              if (typeof o.question === 'string') return o.question;
-              if (o.text && typeof o.text === 'object') return getOptionText(o.text);
-              if (o.label && typeof o.label === 'object') return getOptionText(o.label);
-              if (o.title && typeof o.title === 'object') return getOptionText(o.title);
-            }
-            return '';
-          };
-          const optText = getOptionText(opt);
-          const pct = showResults && totalVotes > 0 ? Math.round(((votes[i] || 0) / totalVotes) * 100) : 0;
-          const isSelected = selected.includes(i);
-
-          return (
-            <button
-              key={typeof opt === 'object' && opt.id ? opt.id : i}
-              className={`${styles.pollCardOption}${isSelected ? ` ${styles.selected}` : ''}${showResults ? ` ${styles.voted}` : ''}`}
-              onClick={() => handleVote(i)}
-              disabled={showResults || isSubmitting}
-            >
-              <div className={styles.pollOptionFill} style={{ width: showResults ? `${pct}%` : '0%' }} />
-              <span className={styles.pollOptionLabel}>
-                {poll.multiSelect && !showResults && (
-                  <span className={`${styles.pollCheckbox}${isSelected ? ` ${styles.checked}` : ''}`}>
-                    {isSelected && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5"><polyline points="20 6 9 17 4 12" /></svg>}
-                  </span>
-                )}
-                <span className={styles.pollOptionText}>{optText}</span>
-              </span>
-              {showResults && <span className={styles.pollOptionPct}>{pct}%</span>}
-            </button>
-          );
-        })}
-      </div>
-      <div className={styles.pollCardFooter}>
-        {poll.multiSelect && <span className={styles.pollMultiBadge}>Multi</span>}
-        {poll.multiSelect && !hasVoted && pendingSelection.length > 0 && (
-          <button className={styles.pollConfirmBtn} onClick={confirmMultiVote} disabled={isSubmitting}>Confirm</button>
-        )}
-        <span className={styles.pollVoteCount}>{totalVotes} {totalVotes === 1 ? 'vote' : 'votes'}</span>
-      </div>
-    </div>
-  );
-}
-
 
 function Post({ postData, onClick, onCommentClick, onDeleted, isDetailed = false, hideCommunityTag = false }) {
   const { currentUser } = useAuth();
@@ -651,7 +548,6 @@ function sameMedia(a, b) {
 function samePoll(a, b) {
   if (a === b) return true;
   if (!a || !b) return false;
-  if (a.multiSelect !== b.multiSelect) return false;
   if (a.totalVotes !== b.totalVotes) return false;
   if (a.votedOptionIndex !== b.votedOptionIndex) return false;
   if (a.userVotedOptionId !== b.userVotedOptionId) return false;

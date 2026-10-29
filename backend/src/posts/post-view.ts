@@ -12,6 +12,8 @@ import { readStoredImagePlaceholder } from '../uploads/image-placeholder.util';
 export interface PollOptionLike {
   id: string;
   text: string;
+  /** The author's order (0 first). Absent on rows a query did not select it for. */
+  position?: unknown;
   /** Int from Prisma; whatever JSON_AGG produced from the raw feed query. */
   voteCount?: unknown;
   _count?: { votes: number };
@@ -29,6 +31,26 @@ export interface PollView {
 }
 
 /**
+ * Options in the author's order: by `position`, then by id for options that
+ * share one (rows from before the column existed all have 0).
+ *
+ * They were sorted by id alone, and ids are random, so every poll was shown
+ * in an order nobody chose.
+ */
+export function sortPollOptions<T extends { id: string; position?: unknown }>(
+  options: readonly T[],
+): T[] {
+  const positionOf = (o: T) =>
+    typeof o.position === 'number' && Number.isFinite(o.position)
+      ? o.position
+      : 0;
+  return [...options].sort(
+    (a, b) =>
+      positionOf(a) - positionOf(b) || (a.id || '').localeCompare(b.id || ''),
+  );
+}
+
+/**
  * Builds a post's poll block. The read paths that use it (posts and search)
  * count votes differently (see each caller), so the count is passed in rather
  * than decided here.
@@ -40,9 +62,7 @@ export function buildPollView(
   userVotedOptionId: string | null | undefined,
   viewerId: string | undefined,
 ): PollView {
-  const sortedOptions = [...pollOptions].sort((a, b) =>
-    (a.id || '').localeCompare(b.id || ''),
-  );
+  const sortedOptions = sortPollOptions(pollOptions);
   const options = sortedOptions.map((opt) => ({
     id: opt.id,
     text: opt.text,

@@ -166,8 +166,41 @@ describe('SharedPostPreview Component', () => {
     expect(screen.getByText('Favorite programming language?')).toBeDefined();
     expect(screen.getByText('JavaScript')).toBeDefined();
     expect(screen.getByText('Python')).toBeDefined();
+    // Results are for people who have voted, as on the post itself.
+    expect(screen.queryByText('33%')).toBeNull();
+  });
+
+  it("shows a poll's results once the viewer has voted in it", () => {
+    const post = {
+      id: 'post-poll-voted',
+      authorName: 'Ishita Rao',
+      poll: {
+        question: 'Favorite programming language?',
+        options: [
+          { id: '1', text: 'JavaScript', votes: 10 },
+          { id: '2', text: 'Python', votes: 20 },
+        ],
+        totalVotes: 30,
+        userVotedOptionId: '2',
+      },
+    };
+    renderWithRouter(<SharedPostPreview post={post} />);
     expect(screen.getByText('33%')).toBeDefined();
     expect(screen.getByText('67%')).toBeDefined();
+  });
+
+  it('says how many options a poll has beyond the four it shows', () => {
+    const post = {
+      id: 'post-poll-five',
+      authorName: 'Ishita Rao',
+      poll: {
+        question: 'Pick one',
+        options: ['A', 'B', 'C', 'D', 'E'].map((text, i) => ({ id: String(i), text, votes: 0 })),
+        totalVotes: 0,
+      },
+    };
+    renderWithRouter(<SharedPostPreview post={post} />);
+    expect(screen.getByText('+1 more option')).toBeDefined();
   });
 
   it('renders poll icon on top right side and NO poll UI below media when post has both poll and media', () => {

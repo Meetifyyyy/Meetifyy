@@ -81,6 +81,17 @@ describe('PostsService — poll options validation', () => {
     expect(prisma.post.create).not.toHaveBeenCalled();
   });
 
+  it('rejects two options that are the same answer (case and spaces aside)', async () => {
+    await expect(
+      service.createPost('u1', 'Question?', undefined, undefined, {
+        options: ['Yes', ' yes ', 'No'],
+      }),
+    ).rejects.toThrow(
+      new BadRequestException('Poll options must all be different'),
+    );
+    expect(prisma.post.create).not.toHaveBeenCalled();
+  });
+
   it('allows post creation when poll options are within 100 characters', async () => {
     const option1 = 'Option 1';
     const option2 = 'A'.repeat(100);
@@ -96,10 +107,11 @@ describe('PostsService — poll options validation', () => {
     );
 
     expect(prisma.post.create).toHaveBeenCalled();
+    // Each option keeps the place the author gave it.
     expect(prisma.pollOption.createMany).toHaveBeenCalledWith({
       data: [
-        { postId: 'p1', text: option1 },
-        { postId: 'p1', text: option2 },
+        { postId: 'p1', text: option1, position: 0 },
+        { postId: 'p1', text: option2, position: 1 },
       ],
     });
     expect(result.pollOptions).toBeDefined();

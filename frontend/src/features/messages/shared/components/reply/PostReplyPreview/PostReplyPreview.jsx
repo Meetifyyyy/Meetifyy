@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { hasVotedIn, pollOptionVotes, pollPercentages } from '@features/feed/utils/pollView';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import Avatar from '@shared/components/avatar/Avatar';
@@ -365,14 +366,16 @@ export function PostReplyPreview({
               </div>
               <div className={styles.pollOptionsList}>
                 {pollData.options?.slice(0, 2).map((opt, idx) => {
-                  const pct = totalPollVotes > 0 ? Math.round(((opt.votes || 0) / totalPollVotes) * 100) : 0;
+                  // Results only for someone who has voted, as on the post itself.
+                  const showResults = totalPollVotes > 0 && hasVotedIn(pollData, myId);
+                  const pct = showResults ? pollPercentages(pollData.options.map(pollOptionVotes))[idx] : 0;
                   return (
                     <div key={opt.id || idx} className={styles.pollOptionItem}>
-                      {totalPollVotes > 0 && (
+                      {showResults && (
                         <div className={styles.pollOptionFill} style={{ width: `${pct}%` }} />
                       )}
                       <span className={styles.pollOptionText}>{opt.text}</span>
-                      {totalPollVotes > 0 && (
+                      {showResults && (
                         <span className={styles.pollOptionPct}>{pct}%</span>
                       )}
                     </div>

@@ -1,0 +1,206 @@
+/* The composer's poll editor: stacked option fields, an "Add option" row and
+   one line of status. Rows open and fold by their height (a 0fr → 1fr grid
+   row) and fade, so nothing below them jumps. */
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  animation: editorIn 0.22s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.options {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Each row's height opens from nothing, and folds back on removal. */
+.optionWrap {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition:
+    grid-template-rows 0.18s ease,
+    opacity 0.15s ease;
+  /* `backwards`, not `both`: a finished animation that kept holding 1fr would
+     override the fold below. */
+  animation: rowIn 0.22s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+}
+
+.optionWrap.leaving {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+
+.optionClip {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.option {
+  position: relative;
+  display: flex;
+  align-items: center;
+  /* The gap between rows lives inside the row, so it folds away with it. */
+  padding-bottom: 0.45rem;
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  height: 42px;
+  padding: 0 4.2rem 0 0.85rem;
+  box-sizing: border-box;
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.12));
+  border-radius: 12px;
+  background: var(--color-bg-white, #fff);
+  color: var(--color-text-main);
+  font-family: var(--font-family-sans);
+  font-size: 0.9rem;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.input::placeholder {
+  color: var(--color-text-light, #a1a1aa);
+}
+
+.input:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.15);
+}
+
+.count {
+  position: absolute;
+  right: 2.4rem;
+  top: calc(50% - 0.225rem);
+  transform: translateY(-50%);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-light, #a1a1aa);
+  pointer-events: none;
+}
+
+.count.warning {
+  color: var(--color-warning, #d97706);
+}
+
+.count.limit {
+  color: var(--color-danger, #ef4444);
+}
+
+.remove {
+  position: absolute;
+  right: 0.45rem;
+  top: calc(50% - 0.225rem);
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--color-text-light, #a1a1aa);
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.remove:hover:not(:disabled) {
+  background: var(--action-secondary-bg, rgba(0, 0, 0, 0.06));
+  color: var(--color-text-main);
+}
+
+.remove:focus-visible,
+.add:focus-visible,
+.discard:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  height: 40px;
+  border: 1px dashed var(--color-border, rgba(0, 0, 0, 0.18));
+  border-radius: 12px;
+  background: transparent;
+  color: var(--color-primary);
+  font-family: var(--font-family-sans);
+  font-size: 0.86rem;
+  font-weight: 600;
+  cursor: pointer;
+  animation: rowIn 0.22s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  transition: border-color 0.15s ease, background-color 0.15s ease, transform 0.12s ease;
+}
+
+.add:hover {
+  border-color: rgba(var(--color-primary-rgb), 0.55);
+  background: rgba(var(--color-primary-rgb), 0.05);
+}
+
+.add:active {
+  transform: scale(0.985);
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 28px;
+}
+
+.hint {
+  font-size: 0.78rem;
+  color: var(--color-text-light, #a1a1aa);
+  transition: color 0.15s ease;
+}
+
+.hint.problem {
+  color: var(--color-warning, #d97706);
+}
+
+.discard {
+  flex-shrink: 0;
+  padding: 0.3rem 0.5rem;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-family: var(--font-family-sans);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.discard:hover {
+  color: var(--color-danger, #ef4444);
+  background: rgba(239, 68, 68, 0.08);
+}
+
+@keyframes editorIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes rowIn {
+  from { grid-template-rows: 0fr; opacity: 0; transform: translateY(-4px); }
+  to { grid-template-rows: 1fr; opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .editor,
+  .optionWrap,
+  .add {
+    animation: none;
+    transition: none;
+  }
+}

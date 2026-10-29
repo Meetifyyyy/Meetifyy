@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useAuth } from '@shared/context/AuthContext';
+import { hasVotedIn, pollOptionVotes, pollPercentages } from '@features/feed/utils/pollView';
 import { useNavigate } from 'react-router-dom';
 import Avatar from '@shared/components/avatar/Avatar';
 import PostPreviewSkeleton from '@shared/components/skeletons/PostPreviewSkeleton';
@@ -10,6 +12,7 @@ import { getMediaUrl } from '@shared/api/apiClient';
 
 
 export function SharedPostPreview({ post, isLoading = false, isMe = false }) {
+  const { currentUser } = useAuth();
   const navigate = useNavigate();
   const getPostById = usePostLookup();
   const usersMap = useUsersMap();
@@ -168,6 +171,9 @@ export function SharedPostPreview({ post, isLoading = false, isMe = false }) {
   };
 
   const pollData = resolvePollData();
+  const pollShowsResults = Boolean(pollData) && (pollData.totalVotes || 0) > 0
+    && hasVotedIn(pollData, currentUser?.id);
+  const pollPcts = pollData ? pollPercentages((pollData.options || []).map(pollOptionVotes)) : [];
 
   const rawDate = livePost?.createdAt || post.createdAt || post.timestamp || livePost?.timestamp;
   const formatExactDateTime = (ts) => {
@@ -379,18 +385,22 @@ export function SharedPostPreview({ post, isLoading = false, isMe = false }) {
           <div className={styles.pollOptionsList}>
             {pollData.options.slice(0, 4).map((opt, idx) => {
               const optText = getOptionText(opt);
-              const votes = typeof opt === 'object' ? (opt.votes || 0) : 0;
-              const total = pollData.totalVotes || 0;
-              const pct = total > 0 ? Math.round((votes / total) * 100) : 0;
+              // Results only for someone who has voted, as on the post itself.
+              const pct = pollShowsResults ? pollPcts[idx] : 0;
               return (
                 <div key={opt.id || idx} className={styles.pollOptionItem}>
-                  {total > 0 && <div className={styles.pollOptionFill} style={{ width: `${pct}%` }} />}
+                  {pollShowsResults && <div className={styles.pollOptionFill} style={{ width: `${pct}%` }} />}
                   <span className={styles.pollOptionText}>{optText}</span>
-                  {total > 0 && <span className={styles.pollOptionVotes}>{pct}%</span>}
+                  {pollShowsResults && <span className={styles.pollOptionVotes}>{pct}%</span>}
                 </div>
               );
             })}
           </div>
+          {pollData.options.length > 4 && (
+            <span className={styles.pollOptionText}>
+              +{pollData.options.length - 4} more {pollData.options.length - 4 === 1 ? 'option' : 'options'}
+            </span>
+          )}
         </div>
       )}
 

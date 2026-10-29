@@ -16,6 +16,7 @@ import { useComposerDraft } from '@shared/hooks/useComposerDraft';
 import { clearDraft } from '@shared/lib/drafts';
 import { ALLOWED_IMAGE_ACCEPT, ALLOWED_VIDEO_ACCEPT, validateUploadFile } from '@shared/constants/mediaLimits';
 import { useExpandFlip } from './useExpandFlip';
+import PollEditor from './PollEditor';
 
 
 
@@ -50,17 +51,34 @@ export function mediaLimitNotice({ selected, added, attachedBefore }) {
   return `Only ${added} of the ${selected} you selected ${added === 1 ? 'was' : 'were'} added. A post can have up to ${MAX_POST_MEDIA} photos and videos.`;
 }
 
-/**
- * The counter appears in the last stretch of the limit and turns amber nearer
- * the end. Both are expressed as characters remaining so they stay meaningful
- * if the cap changes; keyed to the length, they silently stopped matching it.
- */
 /** The post length ring: radius in a 24-unit box, and its circumference. */
 const RING_RADIUS = 9;
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 
-const POLL_OPTION_COUNT_VISIBLE_AT = 30;
-const POLL_OPTION_COUNT_WARNING_AT = 10;
+/** Most options a poll may have here (the API allows more; no client sends them). */
+const POLL_MAX_OPTIONS = 5;
+
+/** Each option carries its own id, so a row keeps its field when one above it goes. */
+let pollOptionSeq = 0;
+const newPollOption = () => ({ id: `opt-${(pollOptionSeq += 1)}`, text: '' });
+const freshPollOptions = () => [newPollOption(), newPollOption()];
+
+/**
+ * What stops the poll from being posted, in words, or null. Posting used to
+ * be allowed with one option filled (the API refused it) or none (the post
+ * went out with no poll, and the editor was cleared without a word).
+ */
+export function pollProblemOf(options) {
+  const filled = options.map((o) => o.text.trim()).filter(Boolean);
+  if (filled.length < 2) return 'Add at least two options';
+  const seen = new Set();
+  for (const text of filled) {
+    const key = text.toLocaleLowerCase();
+    if (seen.has(key)) return 'Each option needs to be different';
+    seen.add(key);
+  }
+  return null;
+}
 
 /**
  * `draftScope` names where this composer's text is kept between visits: the
@@ -76,8 +94,7 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit, draftScope = '
   const [isPosting, setIsPosting] = useState(false);
   const [showEmoji, setShowEmoji] = useState(false);
   const [showPoll, setShowPoll] = useState(false);
-  const [pollOptions, setPollOptions] = useState(['', '']);
-  const [pollMulti, setPollMulti] = useState(false);
+  const [pollOptions, setPollOptions] = useState(freshPollOptions);
   const [isExpanded, setIsExpanded] = useState(false);
   const [limitNotice, setLimitNotice] = useState(null);
   const { outerRef: mediaOuterRef, innerRef: mediaInnerRef } = useSmoothHeight();
@@ -155,7 +172,8 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit, draftScope = '
   const rawDraftText = typeof value === 'string' ? value : (value?.text || '');
   const textLimit = useMemo(() => getPostLimitState(normalizeBodyText(rawDraftText)), [rawDraftText]);
   const textLimitId = useId();
-  const cannotPost = isPosting || !hasContent || textLimit.isOver;
+  const cannotPost = isPosting || !hasContent || textLimit.isOver
+    || (showPoll && pollProblemOf(pollOptions) !== null);
   // The ring fills with the draft; from the warning point it shifts towards
   // the danger colour, reaching it at the limit.
   const ringFill = Math.min(1, textLimit.chars / textLimit.max);
@@ -221,8 +239,8 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit, draftScope = '
     if (getPostLimitState(text).isOver) return;
 
     if (showPoll) {
-      const opts = pollOptions.map((o) => o.trim()).filter(Boolean);
-      if (!text && opts.length < 2 && media.length === 0) return;
+      // Post is disabled until the poll is complete; this covers Enter.
+      if (pollProblemOf(pollOptions)) return;
     } else {
       if (!text && media.length === 0) return;
     }
@@ -262,11 +280,10 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit, draftScope = '
 
       if (showPoll) {
         const opts = pollOptions
-          .map((o) => o.trim().slice(0, POLL_OPTION_MAX_LENGTH))
+          .map((o) => o.text.trim().slice(0, POLL_OPTION_MAX_LENGTH))
           .filter(Boolean);
-        await onSubmit(text, { question: text || 'Poll', options: opts, multiSelect: pollMulti }, finalMedia, mentions);
-        setPollOptions(['', '']);
-        setPollMulti(false);
+        await onSubmit(text, { question: text || 'Poll', options: opts }, finalMedia, mentions);
+        setPollOptions(freshPollOptions());
         setShowPoll(false);
       } else {
         await onSubmit(text, null, finalMedia, mentions);
@@ -407,10 +424,7 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit, draftScope = '
   };
 
   const togglePoll = () => {
-    if (showPoll) {
-      setPollOptions(['', '']);
-      setPollMulti(false);
-    }
+    if (showPoll) setPollOptions(freshPollOptions());
     setShowPoll(!showPoll);
     setShowEmoji(false);
     setIsExpanded(true);
@@ -430,19 +444,23 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit, draftScope = '
     }
   };
 
+  /** Adds an empty option and returns its id (the editor focuses it). */
   const addPollOption = () => {
-    if (pollOptions.length < 5) setPollOptions([...pollOptions, '']);
+    if (pollOptions.length >= POLL_MAX_OPTIONS) return null;
+    const option = newPollOption();
+    setPollOptions((prev) => [...prev, option]);
+    return option.id;
   };
 
-  const removePollOption = (idx) => {
-    if (pollOptions.length > 2) setPollOptions(pollOptions.filter((_, i) => i !== idx));
+  const removePollOption = (id) => {
+    setPollOptions((prev) => (prev.length > 2 ? prev.filter((o) => o.id !== id) : prev));
   };
 
-  const updatePollOption = (idx, val) => {
-    const next = [...pollOptions];
-    next[idx] = val.slice(0, POLL_OPTION_MAX_LENGTH);
-    setPollOptions(next);
+  const updatePollOption = (id, val) => {
+    setPollOptions((prev) => prev.map((o) => (o.id === id ? { ...o, text: val.slice(0, POLL_OPTION_MAX_LENGTH) } : o)));
   };
+
+  const pollProblem = showPoll ? pollProblemOf(pollOptions) : null;
 
   const expandedState = isExpanded || hasContent;
   // The expand area's SIZE follows this, which lags expandedState while the
@@ -481,7 +499,7 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit, draftScope = '
       <span className={styles.composerShadow} ref={shadowRef} aria-hidden="true" />
       <div
         ref={cardRef}
-        className={`${styles.postComposer}${showPoll ? ` ${styles.hasPoll}` : ''}${expandedState ? ` ${styles.expanded}` : ''}`}
+        className={`${styles.postComposer}${expandedState ? ` ${styles.expanded}` : ''}`}
         onClick={(e) => {
           if (!expandedState) setIsExpanded(true);
           // Clicking the composer's empty area focuses the text field. But this
@@ -531,8 +549,7 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit, draftScope = '
             onClick={(e) => {
               e.stopPropagation();
               if (showPoll) {
-                setPollOptions(['', '']);
-                setPollMulti(false);
+                setPollOptions(freshPollOptions());
                 setShowPoll(false);
                 setValue({ text: '', mentions: [] });
               }
@@ -556,72 +573,16 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit, draftScope = '
           <div className={styles.composerExpandClip}>
           <div className={styles.composerExpandInner}>
           {showPoll && (
-            <div className={styles.inlinePollCreator}>
-              <div className={styles.pollOptionsList}>
-                {pollOptions.map((opt, i) => {
-                  const isLast = i === pollOptions.length - 1;
-                  const hasAdd = isLast && pollOptions.length < 5;
-                  const hasDelete = pollOptions.length > 2;
-                  const remaining = POLL_OPTION_MAX_LENGTH - opt.length;
-                  const showCount = remaining <= POLL_OPTION_COUNT_VISIBLE_AT;
-
-                  return (
-                    <div key={i} className={styles.pollOptionRow}>
-                      <div className={styles.pollOptionInputWrapper}>
-                        <input
-                          className={styles.pollOptionInput}
-                          type="text"
-                          placeholder={`Option ${i + 1}`}
-                          value={opt}
-                          maxLength={POLL_OPTION_MAX_LENGTH}
-                          onChange={(e) => updatePollOption(i, e.target.value)}
-                          style={{
-                            paddingRight: hasDelete
-                              ? (showCount ? '3.6rem' : '2.2rem')
-                              : (showCount ? '2.4rem' : '0.75rem'),
-                          }}
-                        />
-                        {showCount && (
-                          <span
-                            className={`${styles.pollOptionCharCount}${hasDelete ? ` ${styles.hasDelete}` : ''}${remaining === 0 ? ` ${styles.limit}` : remaining <= POLL_OPTION_COUNT_WARNING_AT ? ` ${styles.warning}` : ''}`}
-                            title={`${remaining} characters remaining (max ${POLL_OPTION_MAX_LENGTH})`}
-                          >
-                            {remaining}
-                          </span>
-                        )}
-                        {hasDelete && (
-                          <button className={styles.pollOptionRemove} onClick={() => removePollOption(i)} title="Remove option">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-                          </button>
-                        )}
-                      </div>
-                      <div className={styles.pollOptionActionSpace}>
-                        {hasAdd && (
-                          <button className={styles.pollOptionAdd} onClick={addPollOption} title="Add option">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              <div className={styles.pollCreatorFooter}>
-                <label className={styles.pollMultiToggle}>
-                  <div className={`${styles.pollToggleTrack}${pollMulti ? ` ${styles.on}` : ''}`} onClick={() => setPollMulti(!pollMulti)}>
-                    <div className={styles.pollToggleThumb} />
-                  </div>
-                  <span>Multiple answers</span>
-                </label>
-                <button className={styles.pollDiscardBtn} onClick={togglePoll} title="Remove poll">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="3 6 5 6 21 6" />
-                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                  </svg>
-                  Remove Poll
-                </button>
-              </div>
-            </div>
+            <PollEditor
+              options={pollOptions}
+              maxOptions={POLL_MAX_OPTIONS}
+              maxLength={POLL_OPTION_MAX_LENGTH}
+              problem={pollProblem}
+              onChange={updatePollOption}
+              onAdd={addPollOption}
+              onRemove={removePollOption}
+              onDiscard={togglePoll}
+            />
           )}
 
           {/* Always mounted, so adding the first attachment and removing the

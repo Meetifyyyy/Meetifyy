@@ -591,6 +591,18 @@ export class AccountDeletionPurgeService {
     });
     await tx.mute.deleteMany({ where: { muterId: userId } });
     await tx.mention.deleteMany({ where: { userId } });
+    // The options lose these votes too: every read path shows the stored
+    // `voteCount`, which used to keep counting a purged voter forever.
+    await tx.$executeRaw`
+      UPDATE "PollOption" o
+      SET "voteCount" = GREATEST(o."voteCount" - v.n, 0)
+      FROM (
+        SELECT "optionId", COUNT(*)::int AS n
+        FROM "PollVote" WHERE "userId" = ${userId}
+        GROUP BY "optionId"
+      ) v
+      WHERE o."id" = v."optionId"
+    `;
     await tx.pollVote.deleteMany({ where: { userId } });
     // Notifications this user received, and notifications *about* this user
     // that would otherwise render a tombstone actor in someone else's list.

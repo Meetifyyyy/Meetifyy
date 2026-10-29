@@ -142,7 +142,7 @@ export class SharePreviewService {
         pollOptions: {
           // Same ordering `PostsService` uses when it shapes a poll for the
           // app, so the card lists the options in the order a voter sees them.
-          orderBy: { id: 'asc' },
+          orderBy: [{ position: 'asc' }, { id: 'asc' }],
           take: POLL_OPTION_LIMIT,
           select: { text: true },
           // `voteCount` is deliberately NOT selected. Two reasons, and either

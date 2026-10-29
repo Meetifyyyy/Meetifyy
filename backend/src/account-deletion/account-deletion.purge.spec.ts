@@ -230,6 +230,13 @@ describe('AccountDeletionPurgeService — permanent deletion', () => {
       block: { deleteMany: record('block', 'deleteMany') },
       mute: { deleteMany: record('mute', 'deleteMany') },
       pollVote: { deleteMany: record('pollVote', 'deleteMany') },
+      // The vote counts lowered before the votes go (raw SQL).
+      $executeRaw: jest.fn((strings: TemplateStringsArray) => {
+        (calls['raw.executeRaw'] ??= []).push([
+          { data: { sql: strings.join('?') } },
+        ]);
+        return Promise.resolve(1);
+      }),
       conversationJoinRequest: {
         deleteMany: record('conversationJoinRequest', 'deleteMany'),
       },
@@ -524,6 +531,14 @@ describe('AccountDeletionPurgeService — permanent deletion', () => {
 
     it('revokes every persisted session row, not just this process memory', () => {
       expect(revokeAllForUser).toHaveBeenCalledWith(USER_ID, 'ACCOUNT_DELETED');
+    });
+
+    it('lowers the vote count of each option the voter chose, as their votes go', () => {
+      const recorded = calls['raw.executeRaw']?.[0]?.[0]?.data?.sql;
+      const sql = typeof recorded === 'string' ? recorded : '';
+      expect(sql).toMatch(/UPDATE "PollOption"/);
+      expect(sql).toMatch(/"voteCount" = GREATEST\(o\."voteCount" - v\.n, 0\)/);
+      expect(calls['pollVote.deleteMany']).toHaveLength(1);
     });
 
     it('emits user.deleted exactly once', () => {

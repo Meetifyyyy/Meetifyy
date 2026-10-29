@@ -894,6 +894,9 @@ model PollOption {
   postId    String
   text      String
   voteCount Int        @default(0)
+  /// Where the author put it: 0 for the first option. Options are always read
+  /// in this order (then by id, for rows from before the column existed).
+  position  Int        @default(0)
   post      Post       @relation(fields: [postId], references: [id], onDelete: Cascade)
   votes     PollVote[]
 

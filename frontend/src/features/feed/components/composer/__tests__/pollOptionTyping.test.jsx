@@ -172,3 +172,51 @@ describe('PostComposer — collapsed controls', () => {
     expect(actions.hasAttribute('inert')).toBe(false);
   });
 });
+
+describe('PostComposer — what a poll needs before it can be posted', () => {
+  const postButton = (container) => container.querySelector('button[title="Post"]');
+
+  it('keeps Post disabled until two different options are filled, and says why', () => {
+    const { container } = render(<PostComposer onSubmit={async () => {}} />);
+    const options = openPoll(container);
+
+    expect(postButton(container).disabled).toBe(true);
+    expect(container.textContent).toContain('Add at least two options');
+
+    fireEvent.change(options()[0], { target: { value: 'Tea' } });
+    fireEvent.change(options()[1], { target: { value: ' tea ' } });
+    expect(postButton(container).disabled).toBe(true);
+    expect(container.textContent).toContain('Each option needs to be different');
+
+    fireEvent.change(options()[1], { target: { value: 'Coffee' } });
+    expect(postButton(container).disabled).toBe(false);
+  });
+
+  it('offers no "multiple answers" switch: every poll takes one vote a person', () => {
+    const { container } = render(<PostComposer onSubmit={async () => {}} />);
+    openPoll(container);
+    expect(container.textContent).not.toMatch(/multiple answers/i);
+  });
+
+  it('removing a middle option keeps every other option as typed', async () => {
+    const { container } = render(<PostComposer onSubmit={async () => {}} />);
+    const options = openPoll(container);
+    fireEvent.click(container.querySelector('button[title="Add option"]'));
+    ['Red', 'Green', 'Blue'].forEach((v, i) => fireEvent.change(options()[i], { target: { value: v } }));
+
+    fireEvent.click(container.querySelector('button[aria-label="Remove option 2"]'));
+    await new Promise((r) => setTimeout(r, 250));
+    expect(options().map((i) => i.value)).toEqual(['Red', 'Blue']);
+  });
+
+  it('sends the options in the order they were written', async () => {
+    const onSubmit = vi.fn(async () => {});
+    const { container } = render(<PostComposer onSubmit={onSubmit} />);
+    const options = openPoll(container);
+    fireEvent.change(options()[0], { target: { value: 'Zebra' } });
+    fireEvent.change(options()[1], { target: { value: 'Apple' } });
+    fireEvent.click(postButton(container));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(onSubmit.mock.calls[0][1]).toEqual({ question: 'Poll', options: ['Zebra', 'Apple'] });
+  });
+});

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { mergePollCounts } from '@features/feed/utils/pollView';
 import { useQueryClient } from '@tanstack/react-query';
 import { useGlobalSocketStore } from '../stores/useGlobalSocketStore';
 import { applyRemoteLike } from '../utils/likeSync';
@@ -585,15 +586,13 @@ export function useGlobalSocketSync() {
           if (postId) {
             const updater = (old) => {
               if (!old) return old;
+              // The counts only. This merged the whole poll in, and older
+              // servers sent it as the VOTER sees it (their option, their
+              // myVotes), so everyone else's card showed someone else's vote
+              // as their own and could no longer be voted on.
               const updatePost = (p) => {
-                if (p.id !== postId) return p;
-                return {
-                  ...p,
-                  poll: {
-                    ...(p.poll || {}),
-                    ...(updatedPoll || {}),
-                  }
-                };
+                if (!p || p.id !== postId || !p.poll) return p;
+                return { ...p, poll: mergePollCounts(p.poll, updatedPoll) };
               };
               if (old.id === postId) return updatePost(old);
               if (Array.isArray(old)) return old.map(updatePost);

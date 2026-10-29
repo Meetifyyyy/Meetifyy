@@ -316,6 +316,287 @@
   fill: var(--color-primary);
 }
 
+.postAvatarImg {
+  composes: ui-avatar-img from global;
+}
+
+.postAvatar:hover {
+  filter: brightness(0.9);
+}
+
+.postUser {
+  flex: 1;
+  min-width: 0;
+  text-align: left !important;
+}
+
+.postName {
+  font-family: var(--font-family-display);
+  font-weight: 600;
+  font-size: 0.9375rem;
+  color: var(--color-text-main);
+  text-align: left !important;
+}
+
+.postTime {
+  font-size: 0.75rem;
+  /* The line under the author's name reads as one subtitle: handle, dot and
+     time share the app's subtitle colour and weight. */
+  color: var(--color-text-muted);
+  font-weight: 500;
+  margin-top: 1px;
+  text-align: left !important;
+}
+
+.postUsername {
+  font-weight: inherit;
+  color: inherit;
+}
+
+.postTimeDot {
+  color: inherit;
+  font-weight: inherit;
+}
+
+.postCommTag {
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 0.2rem 0.5rem;
+  border-radius: 100px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-left: auto;
+  cursor: pointer;
+  transition: opacity var(--transition-fast);
+}
+
+.postCommTag:hover {
+  opacity: 0.8;
+}
+
+.postCommTag:active {
+  transform: scale(0.96);
+  opacity: 0.7;
+}
+
+.postBody {
+  /* Not `composes: type-body`: that global class loads after this file and,
+     equally specific, won — every post was drawn at its 14px / 400 whatever
+     was set here. Its family and tracking are kept; size and weight are the
+     post's own: one for every post, whatever its length. */
+  font-family: var(--font-family-sans);
+  letter-spacing: var(--tracking-normal);
+  text-transform: none;
+  color: var(--color-text-main);
+  font-size: 1rem;
+  font-weight: 450;
+  line-height: 1.6;
+  margin-bottom: 0.5rem;
+  margin-left: 0;
+  margin-right: 0;
+  text-align: left !important;
+}
+
+
+.postMedia {
+  width: 100%;
+  box-shadow: none !important;
+}
+
+.postMedia img {
+  box-shadow: none !important;
+  filter: none;
+}
+
+/* ── Link preview card ── */
+.linkPreview {
+  display: flex;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  margin-top: 0.75rem;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  background: var(--color-bg-main);
+}
+
+.linkPreview:hover {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.08);
+}
+
+.linkPreview:active {
+  transform: scale(0.995);
+  opacity: 0.85;
+  transition: transform 0.05s ease, opacity 0.05s ease;
+}
+
+.linkPreviewImg {
+  width: 110px;
+  min-height: 90px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.linkPreviewBody {
+  padding: 0.65rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.linkPreviewSite {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  font-weight: 600;
+}
+
+.linkPreviewTitle {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--color-text-main);
+  line-height: 1.35;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.linkPreviewDesc {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  line-height: 1.4;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.postStats {
+  display: flex;
+  gap: 1.25rem;
+  font-size: 0.75rem;
+  color: var(--color-text-light);
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid var(--color-border-light);
+  margin-bottom: 0.5rem;
+}
+
+.postStats strong {
+  color: var(--color-text-main);
+  font-weight: 600;
+}
+
+.postActions {
+  display: flex;
+  gap: 0.8rem;
+  align-items: center;
+}
+
+.postActionBtn {
+  flex: 1;
+  max-width: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.5rem;
+  font-family: var(--font-family-sans);
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--color-icon-base);
+  background: none;
+  border: 1px solid var(--color-border-light);
+  border-radius: 100px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  /* Release eases out a little slower than the press, so it settles. */
+  transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+    color 0.15s ease, background-color 0.15s ease;
+}
+
+/* Hover only where there is a real pointer: on a phone a tap leaves :hover
+   stuck on the button, which filled its whole pill until the next tap
+   elsewhere. */
+@media (hover: hover) and (pointer: fine) {
+  .postActionBtn:hover {
+    background: var(--color-border-light);
+    color: var(--color-text-muted);
+  }
+
+  .postActionBtn:hover svg {
+    stroke: var(--color-primary);
+  }
+}
+
+/* The press is a shrink only, never a filled box. */
+.postActionBtn:active,
+.postActionBtn[data-pressed] {
+  transform: scale(0.92);
+  transition-duration: 0.12s;
+}
+
+.postActionBtn:focus:not(:focus-visible) {
+  outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .postActionBtn,
+  .postActionBtn:active,
+  .postActionBtn[data-pressed] {
+    transition: none;
+    transform: none;
+  }
+}
+
+.postActionBtn svg {
+  flex-shrink: 0;
+}
+
+.postActionCount {
+  font-size: 0.85rem;
+  font-weight: 600;
+  flex-shrink: 0;
+  /* Digits keep one width, so 9 → 10 does not nudge the row. */
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes likePop {
+  0% {
+    transform: scale(1);
+  }
+
+  40% {
+    transform: scale(1.35);
+    fill: var(--color-primary);
+  }
+
+  60% {
+    transform: scale(0.9);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+.liked svg {
+  animation: likePop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+  stroke: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.saved svg {
+  stroke: var(--color-primary);
+  fill: var(--color-primary);
+}
+
 /* -- Poll Card in Feed -- */
 .pollCard {
   background: transparent;

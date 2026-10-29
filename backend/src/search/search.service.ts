@@ -365,7 +365,7 @@ export class SearchService {
                   },
                 },
                 pollOptions: {
-                  orderBy: { id: 'asc' },
+                  orderBy: [{ position: 'asc' }, { id: 'asc' }],
                   include: {
                     _count: { select: { votes: true } },
                   },
@@ -511,7 +511,7 @@ export class SearchService {
           ? buildPollView(
               p.text,
               pollOptions,
-              (opt) => Number(opt._count?.votes || opt.voteCount || 0),
+              (opt) => Number(opt.voteCount ?? opt._count?.votes ?? 0),
               Array.isArray(p.pollVotes) && p.pollVotes.length > 0
                 ? p.pollVotes[0]?.optionId
                 : null,

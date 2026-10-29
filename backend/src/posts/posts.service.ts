@@ -24,6 +24,7 @@ import { isRecord } from '../common/utils/type-guards.util';
 import { errorMessage } from '../common/utils/error.util';
 import {
   buildPollView,
+  sortPollOptions,
   withMediaUrl,
   type MediaLike,
   type PollOptionLike,
@@ -490,6 +491,16 @@ export class PostsService {
           );
         }
       }
+      // Two identical options split one answer's votes between two rows.
+      const seen = new Set<string>();
+      for (const opt of pollInput) {
+        const key = pollOptionText(opt).toLocaleLowerCase();
+        if (!key) continue;
+        if (seen.has(key)) {
+          throw new BadRequestException('Poll options must all be different');
+        }
+        seen.add(key);
+      }
     }
 
     // Re-derive the true mention set from the actual text before it's ever
@@ -678,14 +689,19 @@ export class PostsService {
 
         let pollOptions: PollOption[] = [];
         if (sanitizedPollOptions.length > 0) {
+          // `position` keeps the author's order. Without it every read
+          // sorted the options by their random ids, so a poll came back
+          // shuffled from the moment it was posted.
           await tx.pollOption.createMany({
-            data: sanitizedPollOptions.map((optText: string) => ({
+            data: sanitizedPollOptions.map((optText: string, position) => ({
               postId: created.id,
               text: optText,
+              position,
             })),
           });
           pollOptions = await tx.pollOption.findMany({
             where: { postId: created.id },
+            orderBy: [{ position: 'asc' }, { id: 'asc' }],
           });
         }
         return { post: { ...created, media }, createdPollOptions: pollOptions };
@@ -1479,8 +1495,10 @@ export class PostsService {
               JSON_BUILD_OBJECT(
                 'id', po.id,
                 'text', po.text,
-                'voteCount', po."voteCount"
+                'voteCount', po."voteCount",
+                'position', po."position"
               )
+              ORDER BY po."position", po.id
             )
             FROM "PollOption" po 
             WHERE po."postId" = p.id
@@ -1713,7 +1731,7 @@ export class PostsService {
           },
         },
         pollOptions: {
-          orderBy: { id: 'asc' },
+          orderBy: [{ position: 'asc' }, { id: 'asc' }],
           include: {
             _count: {
               select: { votes: true },
@@ -2801,7 +2819,7 @@ export class PostsService {
               },
             },
             pollOptions: {
-              orderBy: { id: 'asc' },
+              orderBy: [{ position: 'asc' }, { id: 'asc' }],
               include: { _count: { select: { votes: true } } },
             },
             pollVotes: userId ? { where: { userId } } : false,
@@ -2860,7 +2878,7 @@ export class PostsService {
         ? buildPollView(
             post.text,
             pollOptions,
-            (opt) => Number(opt._count?.votes || opt.voteCount || 0),
+            (opt) => Number(opt.voteCount ?? opt._count?.votes ?? 0),
             Array.isArray(post.pollVotes) && post.pollVotes.length > 0
               ? post.pollVotes[0]?.optionId
               : null,
@@ -3032,7 +3050,7 @@ export class PostsService {
             },
             media: { orderBy: [{ order: 'asc' }, { id: 'asc' }] },
             pollOptions: {
-              orderBy: { id: 'asc' },
+              orderBy: [{ position: 'asc' }, { id: 'asc' }],
               include: { _count: { select: { votes: true } } },
             },
             pollVotes: userId ? { where: { userId } } : false,
@@ -3087,7 +3105,7 @@ export class PostsService {
         where: { id: postId },
         include: {
           pollOptions: {
-            orderBy: { id: 'asc' },
+            orderBy: [{ position: 'asc' }, { id: 'asc' }],
             include: {
               _count: { select: { votes: true } },
             },
@@ -3107,10 +3125,9 @@ export class PostsService {
       throw new NotFoundException('Poll not found for this post');
     }
 
-    // Sort options deterministically to map index reliably
-    const sortedOptions = [...pollOptions].sort((a, b) =>
-      (a.id || '').localeCompare(b.id || ''),
-    );
+    // In the author's order, as every read path returns them, so an index a
+    // client sends names the option it showed at that place.
+    const sortedOptions = sortPollOptions(pollOptions);
 
     let targetOption: (typeof sortedOptions)[number] | undefined;
     if (dto.optionId) {
@@ -3129,69 +3146,98 @@ export class PostsService {
 
     const lockKey = `toggle:pollvote:${userId}:${postId}`;
 
+    /** The poll as it stands, for this voter. */
+    const currentPoll = async (votedOptionId: string) => {
+      const fresh = await this.prisma.pollOption.findMany({
+        where: { postId },
+        orderBy: [{ position: 'asc' }, { id: 'asc' }],
+      });
+      return buildPollView(
+        post.text,
+        fresh,
+        (opt) => Number(opt.voteCount ?? 0),
+        votedOptionId,
+        userId,
+      );
+    };
+
     return this.redisService.withLock(lockKey, 3000, async () => {
-      // Check if user has already voted
+      // A vote already cast (a second tap, another device, a retry after a
+      // lost response) is answered with the poll as it is, showing the vote
+      // that counts. It used to be a 400, which the client rolled back into
+      // "not voted" although the vote stood.
       const existingVote = await this.prisma.pollVote.findUnique({
         where: { postId_userId: { postId, userId } },
+        select: { optionId: true },
       });
-
       if (existingVote) {
-        throw new BadRequestException('You have already voted in this poll');
+        return {
+          success: true,
+          changed: false,
+          postId,
+          poll: await currentPoll(existingVote.optionId),
+        };
       }
 
-      // Execute vote in transaction
-      await this.prisma.$transaction([
-        this.prisma.pollVote.create({
-          data: {
-            postId,
-            optionId: chosenOption.id,
-            userId,
+      try {
+        await this.prisma.$transaction([
+          this.prisma.pollVote.create({
+            data: {
+              postId,
+              optionId: chosenOption.id,
+              userId,
+            },
+          }),
+          this.prisma.pollOption.update({
+            where: { id: chosenOption.id },
+            data: { voteCount: { increment: 1 } },
+          }),
+        ]);
+      } catch (err) {
+        // The lock is best effort: a vote that raced past it meets the
+        // (postId, userId) unique constraint, and the first vote stands.
+        if (
+          err instanceof Prisma.PrismaClientKnownRequestError &&
+          err.code === 'P2002'
+        ) {
+          const standing = await this.prisma.pollVote.findUnique({
+            where: { postId_userId: { postId, userId } },
+            select: { optionId: true },
+          });
+          if (standing) {
+            return {
+              success: true,
+              changed: false,
+              postId,
+              poll: await currentPoll(standing.optionId),
+            };
+          }
+        }
+        throw err;
+      }
+
+      const updatedPoll = await currentPoll(chosenOption.id);
+
+      // Everyone looking at the post sees the new counts, and only the
+      // counts. This used to send the whole poll as the voter sees it (their
+      // id, their option, `myVotes`): every viewer's app merged that in and
+      // showed the poll as if THEY had voted, for the option someone else
+      // picked, and the event told every viewer who voted for what.
+      void this.domainEventService.emit(
+        'post.pollVoted',
+        {
+          postId,
+          poll: {
+            options: updatedPoll.options,
+            totalVotes: updatedPoll.totalVotes,
           },
-        }),
-        this.prisma.pollOption.update({
-          where: { id: chosenOption.id },
-          data: { voteCount: { increment: 1 } },
-        }),
-      ]);
-
-      // Fetch fresh options after vote
-      const updatedOptionsRaw = await this.prisma.pollOption.findMany({
-        where: { postId },
-        include: { _count: { select: { votes: true } } },
-      });
-      const updatedSortedOptions = [...updatedOptionsRaw].sort((a, b) =>
-        (a.id || '').localeCompare(b.id || ''),
+        },
+        [userId],
       );
-
-      const options = updatedSortedOptions.map((opt) => ({
-        id: opt.id,
-        text: opt.text,
-        votes: Number(opt.voteCount ?? opt._count?.votes ?? 0),
-      }));
-      const totalVotes = options.reduce((sum, o) => sum + o.votes, 0);
-      const userVotedIndex = options.findIndex((o) => o.id === chosenOption.id);
-      const myVotes = userVotedIndex >= 0 ? [userVotedIndex] : [];
-      const selectedUsers = { [userId]: myVotes };
-
-      const updatedPoll = {
-        question: post.text,
-        options,
-        totalVotes,
-        userVotedOptionId: chosenOption.id,
-        votedOptionIndex: userVotedIndex,
-        myVotes,
-        selectedUsers,
-      };
-
-      // Real-time broadcast
-      void this.domainEventService.emit('post.pollVoted', {
-        postId,
-        userId,
-        poll: updatedPoll,
-      });
 
       return {
         success: true,
+        changed: true,
         postId,
         poll: updatedPoll,
       };

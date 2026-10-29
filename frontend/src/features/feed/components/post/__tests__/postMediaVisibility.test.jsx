@@ -247,8 +247,8 @@ describe('post media is independent of text truncation', () => {
 
     const optEl = q.getByText(longOption);
     expect(optEl).toBeTruthy();
-    expect(optEl.className).toMatch(/pollOptionText/);
-    expect(optEl.closest('button')?.className).toMatch(/pollCardOption/);
+    expect(optEl.className).toMatch(/text/);
+    expect(optEl.closest('button')?.className).toMatch(/choice/);
   });
 
   it('keeps a link preview visible under a truncated caption', () => {
