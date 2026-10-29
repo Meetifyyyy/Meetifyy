@@ -9,6 +9,7 @@ import { PushAudienceService } from './push-audience.service';
 import {
   buildGroupJoinRequestPush,
   buildGroupRemovedPush,
+  buildGroupJoinApprovedPush,
   buildMessagePush,
   buildNotificationPush,
 } from './push-payload';
@@ -17,6 +18,7 @@ import { FcmProvider } from './providers/fcm.provider';
 import {
   GroupJoinRequestPushJob,
   GroupRemovedPushJob,
+  GroupJoinApprovedPushJob,
   MessagePushJob,
   NotificationPushJob,
   PUSH_JOB,
@@ -67,6 +69,22 @@ function asGroupRemovedJob(data: unknown): GroupRemovedPushJob | null {
         recipientId: o.recipientId,
         conversationId: o.conversationId,
         removedAt: o.removedAt,
+      }
+    : null;
+}
+
+function asGroupJoinApprovedJob(
+  data: unknown,
+): GroupJoinApprovedPushJob | null {
+  if (!data || typeof data !== 'object') return null;
+  const o = data as Record<string, unknown>;
+  return isString(o.recipientId) &&
+    isString(o.conversationId) &&
+    isString(o.approvedAt)
+    ? {
+        recipientId: o.recipientId,
+        conversationId: o.conversationId,
+        approvedAt: o.approvedAt,
       }
     : null;
 }
@@ -155,6 +173,22 @@ export class PushProcessor extends DrainingWorkerHost {
         data.recipientId,
         buildGroupRemovedPush(input),
         `gr:${data.conversationId}:${data.removedAt}`,
+      );
+      return;
+    }
+    if (job.name === PUSH_JOB.groupJoinApproved) {
+      const data = asGroupJoinApprovedJob(job.data);
+      if (!data) return;
+      const input = await this.audience.forGroupJoinApproved(
+        data.recipientId,
+        data.conversationId,
+        data.approvedAt,
+      );
+      if (!input) return;
+      await this.deliver(
+        data.recipientId,
+        buildGroupJoinApprovedPush(input),
+        `ja:${data.conversationId}:${data.approvedAt}`,
       );
       return;
     }

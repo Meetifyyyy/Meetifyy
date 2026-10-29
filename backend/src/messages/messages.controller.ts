@@ -34,6 +34,8 @@ import {
   GroupAnnouncer,
 } from './group-join-announce.util';
 import { previewOf } from './core/message-preview';
+import { JoinGroupDto } from './core/dto/join-group.dto';
+import { inviteRefFromQuery } from './core/group-invite-access';
 import { PushDispatcherService } from '../push/push-dispatcher.service';
 
 @Controller('api/messages')
@@ -897,7 +899,7 @@ export class MessagesController {
       targetUserId,
     );
     if (result.changed)
-      announceRequestDeclined(this.announcer, result.internalId);
+      announceRequestDeclined(this.announcer, result, targetUserId);
     return result;
   }
 
@@ -907,11 +909,13 @@ export class MessagesController {
   async joinGroup(
     @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
+    @Body() body: JoinGroupDto = {},
   ) {
     const userId = req.user?.id;
     const result = await this.messagesService.joinGroupByInvite(
       conversationId,
       userId,
+      { code: body?.code, messageId: body?.messageId },
     );
     if (result.status === 'PENDING') {
       if (result.newRequest)
@@ -935,9 +939,10 @@ export class MessagesController {
   async requestJoinGroup(
     @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
+    @Body() body: JoinGroupDto = {},
   ) {
     // Identical semantics to :id/join — the invite card has always posted here.
-    return this.joinGroup(req, conversationId);
+    return this.joinGroup(req, conversationId, body);
   }
 
   @Get(':id/invite')
@@ -945,10 +950,13 @@ export class MessagesController {
   async getInvitePreview(
     @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
+    @Query('code') code?: string,
+    @Query('messageId') messageId?: string,
   ) {
     return this.messagesService.getGroupInvitePreview(
       conversationId,
       req.user?.id,
+      inviteRefFromQuery(code, messageId),
     );
   }
 }

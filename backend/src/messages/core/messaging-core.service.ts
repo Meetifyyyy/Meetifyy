@@ -72,6 +72,25 @@ import {
   unsendCutoff,
   unsendWindowExpiredError,
 } from './unsend-policy';
+import {
+  assertInviteUsable,
+  INVITE_LINK_REUSE_MIN_MS,
+  INVITE_LINK_TTL_MS,
+  isInviteCodeShape,
+  JOIN_ACTIVITY_WINDOW_MS,
+  joinStateFor,
+  newInviteCode,
+  requestAlreadyDeclinedError,
+  requestDeclinedError,
+  resolveInviteAccess,
+  retryAfterDecline,
+  type GroupInvitePreview,
+  type GroupMemberPreview,
+  type InviteAccess,
+  type InviteRef,
+  type JoinRequestActivityItem,
+} from './group-invite-access';
+import { rateLimitException } from '../../common/rate-limit/rate-limit.response';
 
 function isJsonObject(value: Prisma.JsonValue): value is Prisma.JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -2551,15 +2570,82 @@ export class MessagingCoreService {
   }
 
   /**
-   * Everything the invite screen needs to decide what to render, for ANY
-   * authenticated user — member or not. This is deliberately readable by
-   * non-members: without it an invite link is a dead end, since getGroupDetails
-   * and the history endpoint both require membership.
-   *
-   * It exposes only what an invite already reveals (name, avatar, description,
-   * member count, join policy) and never the member list or any message.
+   * Up to five people in the group for the invite preview: the owner and
+   * admins first, then whoever has been in it longest. Never a deleted
+   * account, and never anyone in a block with the viewer (either way round).
    */
-  async getGroupInvitePreview(conversationId: string, userId: string) {
+  private async groupMemberPreview(
+    realConvId: string,
+    viewerId: string,
+  ): Promise<GroupMemberPreview[]> {
+    const rows = await this.prisma.conversationParticipant.findMany({
+      where: { conversationId: realConvId, leftAt: null, deletedAt: null },
+      // The enum runs MEMBER, ADMIN, OWNER, so descending puts the owner first.
+      orderBy: [{ role: 'desc' }, { joinedAt: 'asc' }],
+      // Room for a few to be dropped below and still fill five.
+      take: 12,
+      select: {
+        userId: true,
+        user: {
+          select: {
+            id: true,
+            username: true,
+            displayName: true,
+            avatar: true,
+            accountStatus: true,
+            deletedAt: true,
+          },
+        },
+      },
+    });
+    const live = rows.filter((r) => !isUnavailableUser(r.user));
+    const others = live.map((r) => r.userId).filter((id) => id !== viewerId);
+    const allowed = new Set(
+      others.length > 0
+        ? await this.blocksService.filterBlockedUsers(viewerId, others)
+        : [],
+    );
+    return live
+      .filter((r) => r.userId === viewerId || allowed.has(r.userId))
+      .slice(0, 5)
+      .map((r) => ({
+        id: r.userId,
+        username: r.user.username || '',
+        displayName: r.user.displayName || r.user.username || 'Member',
+        avatar: r.user.avatar ?? null,
+      }));
+  }
+
+  /** The invite `ref` names, for this viewer and group. */
+  private inviteAccessFor(
+    realConvId: string,
+    userId: string,
+    ref: InviteRef | null | undefined,
+  ): Promise<InviteAccess> {
+    return resolveInviteAccess(this.prisma, {
+      groupId: realConvId,
+      viewerId: userId,
+      ref,
+      resolveGroupId: (id) => this.resolveConversationId(id),
+    });
+  }
+
+  /**
+   * Everything the group preview needs to decide what to render, for ANY
+   * authenticated user, member or not: without it an invite is a dead end,
+   * since getGroupDetails and the history endpoint both require membership.
+   *
+   * It exposes what an invite reveals (name, photo, description, member
+   * count, join policy). Up to five members' names and photos are added only
+   * for someone the invite was really given to (a valid or expired invite),
+   * or who is already in the group or has asked to join; never for the
+   * group's bare address or a revoked link. Never any message.
+   */
+  async getGroupInvitePreview(
+    conversationId: string,
+    userId: string,
+    ref?: InviteRef | null,
+  ): Promise<GroupInvitePreview> {
     if (!conversationId) throw new NotFoundException('GROUP_NOT_FOUND');
 
     let realConvId: string;
@@ -2586,30 +2672,27 @@ export class MessagingCoreService {
     });
     if (!conv) throw new NotFoundException('GROUP_NOT_FOUND');
 
-    const [participant, joinRequest, liveMemberCount] = await Promise.all([
-      this.prisma.conversationParticipant.findUnique({
-        where: { userId_conversationId: { userId, conversationId: conv.id } },
-        select: { role: true, leftAt: true, deletedAt: true },
-      }),
-      this.prisma.conversationJoinRequest.findUnique({
-        where: { conversationId_userId: { conversationId: conv.id, userId } },
-        select: { status: true, expiresAt: true },
-      }),
-      this.prisma.conversationParticipant.count({
-        where: { conversationId: conv.id, leftAt: null, deletedAt: null },
-      }),
-    ]);
+    const now = new Date();
+    const [participant, joinRequest, liveMemberCount, invite] =
+      await Promise.all([
+        this.prisma.conversationParticipant.findUnique({
+          where: { userId_conversationId: { userId, conversationId: conv.id } },
+          select: { role: true, leftAt: true, deletedAt: true },
+        }),
+        this.prisma.conversationJoinRequest.findUnique({
+          where: { conversationId_userId: { conversationId: conv.id, userId } },
+          select: { status: true, decidedAt: true },
+        }),
+        this.prisma.conversationParticipant.count({
+          where: { conversationId: conv.id, leftAt: null, deletedAt: null },
+        }),
+        this.inviteAccessFor(conv.id, userId, ref),
+      ]);
 
-    const isMember = Boolean(
-      participant && !participant.leftAt && !participant.deletedAt,
-    );
+    // In the group even with the chat hidden: hiding is not leaving.
+    const isMember = Boolean(participant && !participant.leftAt);
     const whoCanJoin = this.normalizeWhoCanJoin(conv.whoCanJoin);
     const isClosed = this.isConversationClosed(conv.status);
-    const requestActive = Boolean(
-      joinRequest &&
-      String(joinRequest.status).toUpperCase() === 'PENDING' &&
-      (!joinRequest.expiresAt || joinRequest.expiresAt > new Date()),
-    );
     const isBlocked = isMember
       ? false
       : await this.isBlockedFromGroup(conv.ownerId, userId);
@@ -2620,15 +2703,21 @@ export class MessagingCoreService {
       this.verificationAccess.isEnforcementEnabled() &&
       !(await this.verificationAccess.isUserEligible(userId));
 
-    // A single reason code the client switches on, instead of re-deriving the
-    // same precedence from six separate fields.
-    let joinState: string;
-    if (isMember) joinState = 'MEMBER';
-    else if (isClosed) joinState = 'CLOSED';
-    else if (isBlocked) joinState = 'BLOCKED';
-    else if (requestActive) joinState = 'REQUESTED';
-    else if (whoCanJoin === 'APPROVAL') joinState = 'APPROVAL_REQUIRED';
-    else joinState = 'CAN_JOIN';
+    const { joinState, retryAt } = joinStateFor({
+      isMember,
+      isClosed,
+      isBlocked,
+      request: joinRequest,
+      invite: invite.status,
+      whoCanJoin,
+      now,
+    });
+    const showsMembers =
+      !isBlocked &&
+      (isMember ||
+        joinRequest?.status === 'PENDING' ||
+        invite.status === 'VALID' ||
+        invite.status === 'EXPIRED');
 
     const pubId = conv.publicId || conv.id;
     return {
@@ -2640,27 +2729,68 @@ export class MessagingCoreService {
       avatarKey: conv.avatarKey || null,
       description: conv.description || null,
       memberCount: liveMemberCount || conv.memberCount || 0,
+      memberPreview: showsMembers
+        ? await this.groupMemberPreview(conv.id, userId)
+        : [],
       whoCanJoin,
       visibility: conv.visibility || 'PUBLIC',
       status: conv.status || 'ACTIVE',
       isMember,
       myRole: isMember ? participant?.role || 'MEMBER' : null,
-      hasPendingRequest: requestActive,
+      hasPendingRequest: joinRequest?.status === 'PENDING',
       joinState,
+      retryAt: retryAt ? retryAt.toISOString() : null,
+      invite: {
+        status: invite.status,
+        expiresAt: invite.expiresAt ? invite.expiresAt.toISOString() : null,
+      },
       requiresVerification,
     };
   }
 
   /**
-   * Join (or request to join) a group. Idempotent and duplicate-safe: calling
-   * it for an existing member is a no-op that reports JOINED, and the
-   * participant row is written with an upsert keyed on (userId, conversationId)
-   * so a double-tap or a retried request can never create a second membership.
+   * The preview for an invite link's code. A code that names no link is
+   * INVITE_INVALID; so is one whose group was deleted (its links went with
+   * it), which is all a holder of the code is entitled to learn.
+   */
+  async getInviteLinkPreview(
+    code: string,
+    userId: string,
+  ): Promise<GroupInvitePreview> {
+    const link = isInviteCodeShape(code)
+      ? await this.prisma.groupInviteLink.findUnique({
+          where: { code },
+          select: { conversationId: true },
+        })
+      : null;
+    if (!link) {
+      throw new NotFoundException({
+        statusCode: 404,
+        code: 'INVITE_INVALID',
+        message: 'This invite link is not valid.',
+      });
+    }
+    return this.getGroupInvitePreview(link.conversationId, userId, { code });
+  }
+
+  /**
+   * Join (or ask to join) a group through an invite. Idempotent and
+   * duplicate-safe: an existing member gets JOINED without anything written,
+   * and the participant row is an upsert keyed on (userId, conversationId),
+   * so a double tap or a retried request can never make a second membership.
+   *
+   * Someone not in the group must name a VALID invite (`ref`); an expired,
+   * revoked or missing one is refused whatever "Who can join" says. A
+   * declined person may ask again only after REQUEST_RETRY_AFTER_MS.
    *
    * Returns { status: 'JOINED' | 'PENDING', … }; every refusal is an
    * exception carrying a stable machine-readable code.
    */
-  async joinGroupByInvite(conversationId: string, userId: string) {
+  async joinGroupByInvite(
+    conversationId: string,
+    userId: string,
+    ref?: InviteRef | null,
+  ) {
     if (!userId) throw new ForbiddenException('UNAUTHENTICATED');
     if (!conversationId) throw new NotFoundException('GROUP_NOT_FOUND');
 
@@ -2672,8 +2802,7 @@ export class MessagingCoreService {
     }
 
     // The group and this user's row in it, in one round trip: accepting an
-    // invite is a tap the person waits on, and these two reads used to run one
-    // after the other.
+    // invite is a tap the person waits on.
     const [conversation, existing] = await Promise.all([
       this.prisma.conversation.findFirst({
         where: { id: realConvId, type: 'GROUP' },
@@ -2703,9 +2832,20 @@ export class MessagingCoreService {
       internalId: conversation.id,
     };
 
-    // Already a member → succeed without touching the row. This is what makes
-    // a re-tapped invite show "Already joined" instead of an error.
-    if (existing && !existing.leftAt && !existing.deletedAt) {
+    // Already in the group → succeed without a new membership. This is what
+    // makes a re-tapped invite open the group instead of failing. A member
+    // who had hidden the chat gets it back; that is not a new join and is
+    // not announced.
+    if (existing && !existing.leftAt) {
+      if (existing.deletedAt) {
+        await this.prisma.conversationParticipant.update({
+          where: {
+            userId_conversationId: { userId, conversationId: realConvId },
+          },
+          data: { deletedAt: null },
+        });
+        await this.evictMembershipCaches(realConvId, [userId]).catch(() => {});
+      }
       return {
         status: 'JOINED' as const,
         alreadyMember: true,
@@ -2721,21 +2861,44 @@ export class MessagingCoreService {
 
     // Both joining and requesting to join are refused: a request from an
     // unverified account could never be approved (see acceptGroupJoinRequest).
-    // The two checks are independent, so they run together.
-    const [, blocked] = await Promise.all([
+    // The checks are independent, so they run together.
+    const [, blocked, invite, prior] = await Promise.all([
       this.assertMayJoinGroup(userId),
       this.isBlockedFromGroup(conversation.ownerId, userId),
+      this.inviteAccessFor(conversation.id, userId, ref),
+      this.prisma.conversationJoinRequest.findUnique({
+        where: {
+          conversationId_userId: { conversationId: conversation.id, userId },
+        },
+        select: { status: true, decidedAt: true },
+      }),
     ]);
     if (blocked) {
       throw new ForbiddenException('BLOCKED');
     }
 
     const whoCanJoin = this.normalizeWhoCanJoin(conversation.whoCanJoin);
+    const now = new Date();
+
+    // A request already waiting is answered as waiting, even once the invite
+    // it came through has expired: tapping again changes nothing.
+    if (whoCanJoin === 'APPROVAL' && prior?.status === 'PENDING') {
+      return {
+        status: 'PENDING' as const,
+        alreadyMember: false,
+        newRequest: false,
+        ...identity,
+      };
+    }
+
+    // Expiry comes before the group's "Who can join": no expired, revoked or
+    // missing invite lets anyone in or asks the admins on their behalf.
+    assertInviteUsable(invite);
 
     if (whoCanJoin === 'ANYONE') {
       // The server's time of joining, returned so the client can order this
       // membership against any event about it that arrives late.
-      const joinedAt = new Date();
+      const joinedAt = now;
       try {
         await this.prisma.conversationParticipant.upsert({
           where: {
@@ -2767,11 +2930,12 @@ export class MessagingCoreService {
         if (!isDuplicate) throw err;
       }
 
-      // A stale request row would otherwise keep showing "Requested" to admins.
+      // A request from before the group opened up is answered by the join.
       // Not waited on: the membership above is what the caller asked for.
       void this.prisma.conversationJoinRequest
-        .deleteMany({
-          where: { conversationId: conversation.id, userId },
+        .updateMany({
+          where: { conversationId: conversation.id, userId, status: 'PENDING' },
+          data: { status: 'APPROVED', decidedAt: joinedAt, decidedById: null },
         })
         .catch(() => {});
 
@@ -2784,20 +2948,12 @@ export class MessagingCoreService {
       };
     }
 
-    const now = new Date();
-    const expiresAt = new Date(now.getTime() + 48 * 60 * 60 * 1000);
-    // Whether this is a request the admins have not seen: a re-tap on a
-    // request still pending only renews it, and must not tell them again.
-    const prior = await this.prisma.conversationJoinRequest.findUnique({
-      where: {
-        conversationId_userId: { conversationId: conversation.id, userId },
-      },
-      select: { status: true, expiresAt: true },
-    });
-    const newRequest =
-      !prior ||
-      prior.status !== 'PENDING' ||
-      (prior.expiresAt !== null && prior.expiresAt <= now);
+    const retryAt = retryAfterDecline(prior, now);
+    if (retryAt) throw requestDeclinedError(retryAt);
+
+    // A new request, or a new one after an old answer: `createdAt` is when it
+    // was asked, and the old answer is cleared. No expiry: it waits for an
+    // admin. Unique on (group, user), so there is only ever one.
     await this.prisma.conversationJoinRequest.upsert({
       where: {
         conversationId_userId: { conversationId: conversation.id, userId },
@@ -2806,9 +2962,15 @@ export class MessagingCoreService {
         conversationId: conversation.id,
         userId,
         status: 'PENDING',
-        expiresAt,
+        createdAt: now,
       },
-      update: { status: 'PENDING', expiresAt },
+      update: {
+        status: 'PENDING',
+        createdAt: now,
+        expiresAt: null,
+        decidedAt: null,
+        decidedById: null,
+      },
     });
     // The admins' view of the group lists its requests.
     await this.invalidateGroupDetailsVersion(conversation.id).catch(() => {});
@@ -2816,8 +2978,8 @@ export class MessagingCoreService {
     return {
       status: 'PENDING' as const,
       alreadyMember: false,
-      newRequest,
-      expiresAt,
+      // The admins are told once per request; `prior` was not PENDING here.
+      newRequest: true,
       ...identity,
     };
   }
@@ -2828,7 +2990,6 @@ export class MessagingCoreService {
       where: {
         conversationId: realConvId,
         leftAt: null,
-        deletedAt: null,
         role: { in: ['OWNER', 'ADMIN'] },
       },
       select: { userId: true },
@@ -2836,15 +2997,28 @@ export class MessagingCoreService {
     return rows.map((r) => r.userId);
   }
 
+  /** Throws unless `userId` is the group's owner or one of its admins now. */
+  private async assertGroupReviewer(
+    realConvId: string,
+    userId: string,
+    refusal: string,
+  ): Promise<void> {
+    const participant = await this.prisma.conversationParticipant.findUnique({
+      where: { userId_conversationId: { userId, conversationId: realConvId } },
+      select: { role: true, leftAt: true },
+    });
+    assertGroupAuthority(participant, ['OWNER', 'ADMIN'], refusal);
+  }
+
   /**
    * An admin approves a request to join.
    *
-   * One copy, here: GroupChatsService and MessagesService each had their own,
-   * identical, and both let a closed group take a new member, answered a
-   * second admin's approval (or a double tap) with "Join request not found"
-   * although the person was in, and announced the approval without the
-   * group's two ids or the time of joining, so the new member's sockets joined
-   * only one of the group's rooms and their clients could not order the event.
+   * The request moves PENDING → APPROVED in the same transaction that adds
+   * the member, and only if it is still PENDING: when two admins approve at
+   * once (or one taps twice) the second write finds it already answered,
+   * changes nothing and reports `changed: false`, so the approval is
+   * announced once. A request another admin declined is not approved over
+   * that answer.
    *
    * @returns `changed: false` when the person is already in the group (an
    *   approval that already happened); nothing is announced for that.
@@ -2888,7 +3062,7 @@ export class MessagingCoreService {
             userId: targetUserId,
           },
         },
-        select: { expiresAt: true },
+        select: { status: true },
       }),
     ]);
     assertGroupAuthority(
@@ -2906,35 +3080,37 @@ export class MessagingCoreService {
       publicId: pubId,
       internalId: conv.id,
     };
-    const dropRequest = () =>
-      this.prisma.conversationJoinRequest.deleteMany({
-        where: { conversationId: realConvId, userId: targetUserId },
-      });
+    const alreadyIn = () => ({
+      success: true as const,
+      changed: false,
+      ...identity,
+      membershipChangedAt: membershipChangedAt(target),
+    });
 
-    if (isActiveParticipant(target)) {
-      await dropRequest();
-      return {
-        success: true,
-        changed: false,
-        ...identity,
-        membershipChangedAt: membershipChangedAt(target),
-      };
-    }
+    if (target && !target.leftAt) return alreadyIn();
     if (!joinRequest) throw new NotFoundException('Join request not found');
-    if (joinRequest.expiresAt && joinRequest.expiresAt < new Date()) {
-      await dropRequest();
-      throw new BadRequestException('Join request has expired');
-    }
+    if (joinRequest.status === 'REJECTED') throw requestAlreadyDeclinedError();
+    if (joinRequest.status !== 'PENDING') return alreadyIn();
 
     // Approving adds a member: the approver and the requester must both pass
-    // the selfie gate, exactly as for addMember.
+    // the selfie gate, exactly as for addMember. Neither can the owner's block
+    // be approved past.
     await this.assertMayJoinGroup(userId);
     await this.assertJoinRequesterEligible(realConvId, targetUserId);
 
     const joinedAt = new Date();
-    await this.prisma.$transaction([
-      dropRequest(),
-      this.prisma.conversationParticipant.upsert({
+    const approved = await this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.conversationJoinRequest.updateMany({
+        where: {
+          conversationId: realConvId,
+          userId: targetUserId,
+          status: 'PENDING',
+        },
+        data: { status: 'APPROVED', decidedAt: joinedAt, decidedById: userId },
+      });
+      // Answered in the meantime, by another admin or a second tap.
+      if (count === 0) return false;
+      await tx.conversationParticipant.upsert({
         where: {
           userId_conversationId: {
             userId: targetUserId,
@@ -2954,8 +3130,22 @@ export class MessagingCoreService {
           role: 'MEMBER',
           joinedAt,
         },
-      }),
-    ]);
+      });
+      return true;
+    });
+    if (!approved) {
+      const now = await this.prisma.conversationJoinRequest.findUnique({
+        where: {
+          conversationId_userId: {
+            conversationId: realConvId,
+            userId: targetUserId,
+          },
+        },
+        select: { status: true },
+      });
+      if (now?.status === 'REJECTED') throw requestAlreadyDeclinedError();
+      return alreadyIn();
+    }
     await this.evictMembershipCaches(realConvId, [targetUserId]);
     return {
       success: true,
@@ -2965,33 +3155,216 @@ export class MessagingCoreService {
     };
   }
 
-  /** An admin declines a request; `changed: false` when it was already gone. */
+  /**
+   * An admin declines a request. PENDING → REJECTED only, so a request
+   * already approved (the person is in) or already declined is left as it is
+   * and reported `changed: false`. Never touches the membership table.
+   */
   async declineGroupJoinRequest(
     conversationId: string,
     userId: string,
     targetUserId: string,
-  ): Promise<{ success: true; changed: boolean; internalId: string }> {
+  ): Promise<{
+    success: true;
+    changed: boolean;
+    internalId: string;
+    publicId: string;
+  }> {
     const realConvId = await this.resolveConversationId(conversationId);
-    const participant = await this.prisma.conversationParticipant.findUnique({
-      where: { userId_conversationId: { userId, conversationId: realConvId } },
-    });
-    assertGroupAuthority(
-      participant,
-      ['OWNER', 'ADMIN'],
+    await this.assertGroupReviewer(
+      realConvId,
+      userId,
       'Only group admins can decline requests',
     );
-    const { count } = await this.prisma.conversationJoinRequest.deleteMany({
-      where: { conversationId: realConvId, userId: targetUserId },
+    const { count } = await this.prisma.conversationJoinRequest.updateMany({
+      where: {
+        conversationId: realConvId,
+        userId: targetUserId,
+        status: 'PENDING',
+      },
+      data: { status: 'REJECTED', decidedAt: new Date(), decidedById: userId },
     });
     if (count > 0) {
       await this.invalidateGroupDetailsVersion(realConvId).catch(() => {});
     }
-    return { success: true, changed: count > 0, internalId: realConvId };
+    const conv = await this.prisma.conversation.findUnique({
+      where: { id: realConvId },
+      select: { publicId: true },
+    });
+    return {
+      success: true,
+      changed: count > 0,
+      internalId: realConvId,
+      publicId: conv?.publicId || realConvId,
+    };
+  }
+
+  /**
+   * The group's recent requests to join, for its owner and admins only: the
+   * "@name has requested to join the group" lines their timeline shows.
+   *
+   * These are not messages and never become one. A message row would reach
+   * every member through history, the chat list's preview, unread counts,
+   * read receipts, search, pushes and each device's message cache; this list
+   * is read from the requests themselves, behind the reviewer check, and is
+   * sent to no one else.
+   */
+  async getJoinRequestActivity(
+    conversationId: string,
+    userId: string,
+  ): Promise<{ items: JoinRequestActivityItem[] }> {
+    const realConvId = await this.resolveConversationId(conversationId);
+    await assertGroupConversation(this.prisma, realConvId);
+    await this.assertGroupReviewer(
+      realConvId,
+      userId,
+      'Only group admins can see join requests',
+    );
+    const since = new Date(Date.now() - JOIN_ACTIVITY_WINDOW_MS);
+    const rows = await this.prisma.conversationJoinRequest.findMany({
+      where: { conversationId: realConvId, createdAt: { gte: since } },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      select: {
+        id: true,
+        status: true,
+        createdAt: true,
+        decidedAt: true,
+        user: {
+          select: {
+            id: true,
+            username: true,
+            displayName: true,
+            avatar: true,
+            accountStatus: true,
+            deletedAt: true,
+          },
+        },
+        decidedBy: { select: { username: true } },
+      },
+    });
+    return {
+      items: rows
+        .filter((r) => !isUnavailableUser(r.user))
+        .map((r) => ({
+          id: r.id,
+          kind: 'JOIN_REQUESTED' as const,
+          status: r.status,
+          createdAt: r.createdAt.toISOString(),
+          decidedAt: r.decidedAt ? r.decidedAt.toISOString() : null,
+          decidedByUsername: r.decidedBy?.username || null,
+          user: {
+            id: r.user.id,
+            username: r.user.username || '',
+            displayName: r.user.displayName || r.user.username || 'Someone',
+            avatar: r.user.avatar ?? null,
+          },
+        })),
+    };
+  }
+
+  /**
+   * An invite link for the group, made by one of its members. A member who
+   * already has a link with a day or more left gets that one back, so the
+   * sheet that shows it can ask every time it opens.
+   */
+  async createInviteLink(
+    conversationId: string,
+    userId: string,
+  ): Promise<{ code: string; expiresAt: string }> {
+    const realConvId = await this.resolveConversationId(conversationId);
+    const [conv, participant] = await Promise.all([
+      this.prisma.conversation.findFirst({
+        where: { id: realConvId, type: 'GROUP' },
+        select: { status: true },
+      }),
+      this.prisma.conversationParticipant.findUnique({
+        where: {
+          userId_conversationId: { userId, conversationId: realConvId },
+        },
+        select: { leftAt: true },
+      }),
+    ]);
+    if (!conv) throw new NotFoundException('GROUP_NOT_FOUND');
+    if (!participant || participant.leftAt) throw notAMemberError();
+    if (this.isConversationClosed(conv.status)) {
+      throw new ForbiddenException('GROUP_CLOSED');
+    }
+
+    const now = Date.now();
+    const reusable = await this.prisma.groupInviteLink.findFirst({
+      where: {
+        conversationId: realConvId,
+        createdById: userId,
+        revokedAt: null,
+        expiresAt: { gt: new Date(now + INVITE_LINK_REUSE_MIN_MS) },
+      },
+      orderBy: { expiresAt: 'desc' },
+      select: { code: true, expiresAt: true },
+    });
+    if (reusable) {
+      return {
+        code: reusable.code,
+        expiresAt: reusable.expiresAt.toISOString(),
+      };
+    }
+
+    const decision = await this.rateLimit.consume(
+      'msg.invitelink.user',
+      userId,
+    );
+    if (!decision.allowed) throw rateLimitException(decision);
+
+    const expiresAt = new Date(now + INVITE_LINK_TTL_MS);
+    // 71 bits: a collision is not a real prospect, but a unique violation is
+    // cheap to answer with a second draw rather than a 500.
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        const link = await this.prisma.groupInviteLink.create({
+          data: {
+            code: newInviteCode(),
+            conversationId: realConvId,
+            createdById: userId,
+            expiresAt,
+          },
+          select: { code: true, expiresAt: true },
+        });
+        return { code: link.code, expiresAt: link.expiresAt.toISOString() };
+      } catch (err) {
+        const isDuplicate =
+          err instanceof Prisma.PrismaClientKnownRequestError &&
+          err.code === 'P2002';
+        if (!isDuplicate || attempt >= 2) throw err;
+      }
+    }
+  }
+
+  /** Revokes every invite link the group has. Owner and admins only. */
+  async resetInviteLinks(
+    conversationId: string,
+    userId: string,
+  ): Promise<{ success: true; revoked: number }> {
+    const realConvId = await this.resolveConversationId(conversationId);
+    await assertGroupConversation(this.prisma, realConvId);
+    await this.assertGroupReviewer(
+      realConvId,
+      userId,
+      'Only group admins can reset invite links',
+    );
+    const { count } = await this.prisma.groupInviteLink.updateMany({
+      where: { conversationId: realConvId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    return { success: true, revoked: count };
   }
 
   /** Back-compat alias — both controllers and existing callers use this name. */
-  async requestGroupJoin(conversationId: string, userId: string) {
-    return this.joinGroupByInvite(conversationId, userId);
+  async requestGroupJoin(
+    conversationId: string,
+    userId: string,
+    ref?: InviteRef | null,
+  ) {
+    return this.joinGroupByInvite(conversationId, userId, ref);
   }
 }
 

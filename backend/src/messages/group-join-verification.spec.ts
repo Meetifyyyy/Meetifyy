@@ -19,12 +19,24 @@ const CONV = 'conv-1';
 const OWNER = 'owner';
 const VERIFIED = 'verified-user';
 const UNVERIFIED = 'unverified-user';
+/** A live invite link to the group, made by its owner. */
+const LINK = { code: 'Abc123Def456' };
 
 function makePrisma(
   opts: { whoCanJoin?: string; status?: string; memberIds?: string[] } = {},
 ) {
   const members = new Set([OWNER, ...(opts.memberIds ?? [])]);
-  return {
+  const prisma = {
+    groupInviteLink: {
+      findUnique: jest.fn(() =>
+        Promise.resolve({
+          conversationId: CONV,
+          createdById: OWNER,
+          expiresAt: new Date(Date.now() + 60_000),
+          revokedAt: null,
+        }),
+      ),
+    },
     conversation: {
       findFirst: jest.fn(() =>
         Promise.resolve({
@@ -65,14 +77,22 @@ function makePrisma(
     },
     conversationJoinRequest: {
       findUnique: jest.fn(() =>
-        Promise.resolve({ status: 'PENDING', expiresAt: null }),
+        Promise.resolve({
+          status: 'PENDING',
+          expiresAt: null,
+          decidedAt: null,
+        }),
       ),
       upsert: jest.fn(() => Promise.resolve({})),
       delete: jest.fn(() => Promise.resolve({})),
-      deleteMany: jest.fn(() => Promise.resolve({ count: 0 })),
+      updateMany: jest.fn(() => Promise.resolve({ count: 1 })),
     },
-    $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
+    // Interactive: the approval runs its writes on the transaction client.
+    $transaction: jest.fn(
+      (fn: (tx: unknown) => Promise<unknown>): Promise<unknown> => fn(prisma),
+    ),
   };
+  return prisma;
 }
 
 type Ops = Pick<
@@ -113,7 +133,7 @@ describe.each(services)('%s — group join verification', (_name, proto) => {
     it('refuses an unverified user joining an open group by link', async () => {
       const prisma = makePrisma();
       await expect(
-        make(prisma).joinGroupByInvite(CONV, UNVERIFIED),
+        make(prisma).joinGroupByInvite(CONV, UNVERIFIED, LINK),
       ).rejects.toBeInstanceOf(ForbiddenException);
       expect(prisma.conversationParticipant.upsert).not.toHaveBeenCalled();
     });
@@ -121,14 +141,14 @@ describe.each(services)('%s — group join verification', (_name, proto) => {
     it('refuses an unverified user requesting to join an approval group', async () => {
       const prisma = makePrisma({ whoCanJoin: 'APPROVAL' });
       await expect(
-        make(prisma).joinGroupByInvite(CONV, UNVERIFIED),
+        make(prisma).joinGroupByInvite(CONV, UNVERIFIED, LINK),
       ).rejects.toBeInstanceOf(ForbiddenException);
       expect(prisma.conversationJoinRequest.upsert).not.toHaveBeenCalled();
     });
 
     it('lets a verified user join as before', async () => {
       const prisma = makePrisma();
-      const res = await make(prisma).joinGroupByInvite(CONV, VERIFIED);
+      const res = await make(prisma).joinGroupByInvite(CONV, VERIFIED, LINK);
       expect(res.status).toBe('JOINED');
       expect(prisma.conversationParticipant.upsert).toHaveBeenCalledTimes(1);
     });
@@ -136,7 +156,7 @@ describe.each(services)('%s — group join verification', (_name, proto) => {
     it('does not gate anyone while enforcement is off', async () => {
       access.isEnforcementEnabled.mockReturnValue(false);
       const prisma = makePrisma();
-      const res = await make(prisma).joinGroupByInvite(CONV, UNVERIFIED);
+      const res = await make(prisma).joinGroupByInvite(CONV, UNVERIFIED, LINK);
       expect(res.status).toBe('JOINED');
     });
   });

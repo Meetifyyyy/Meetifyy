@@ -360,6 +360,72 @@ describe('PushAudienceService.forGroupRemoval', () => {
   });
 });
 
+describe('PushAudienceService.forGroupJoinApproved', () => {
+  const APPROVED_AT = '2026-10-29T10:00:00.000Z';
+  const joined = (over: Record<string, unknown> = {}) => ({
+    leftAt: null,
+    joinedAt: new Date(APPROVED_AT),
+    isMuted: false,
+    conversation: {
+      id: 'conv-1',
+      publicId: 'pub-1',
+      name: 'Hostel B',
+      type: 'GROUP',
+      status: 'ACTIVE',
+    },
+    ...over,
+  });
+
+  it('tells the requester they are in, routed by the public id', async () => {
+    const { audience, prisma } = build();
+    prisma.conversationParticipant.findUnique.mockResolvedValue(joined());
+    expect(
+      await audience.forGroupJoinApproved('author', 'conv-1', APPROVED_AT),
+    ).toEqual({
+      routeId: 'pub-1',
+      conversationId: 'conv-1',
+      groupName: 'Hostel B',
+    });
+  });
+
+  it('suppresses it once they are out again, or in through a later join', async () => {
+    const { audience, prisma } = build();
+    prisma.conversationParticipant.findUnique.mockResolvedValueOnce(
+      joined({ leftAt: new Date() }),
+    );
+    expect(
+      await audience.forGroupJoinApproved('author', 'conv-1', APPROVED_AT),
+    ).toBeNull();
+    prisma.conversationParticipant.findUnique.mockResolvedValueOnce(
+      joined({ joinedAt: new Date('2026-10-29T11:00:00.000Z') }),
+    );
+    expect(
+      await audience.forGroupJoinApproved('author', 'conv-1', APPROVED_AT),
+    ).toBeNull();
+  });
+
+  it('suppresses an ended group, a muted one and a switched-off category', async () => {
+    const { audience, prisma, users } = build();
+    prisma.conversationParticipant.findUnique.mockResolvedValueOnce(
+      joined({ conversation: { ...joined().conversation, status: 'CLOSED' } }),
+    );
+    expect(
+      await audience.forGroupJoinApproved('author', 'conv-1', APPROVED_AT),
+    ).toBeNull();
+    prisma.conversationParticipant.findUnique.mockResolvedValueOnce(
+      joined({ isMuted: true }),
+    );
+    expect(
+      await audience.forGroupJoinApproved('author', 'conv-1', APPROVED_AT),
+    ).toBeNull();
+    users.author = activeUser({ notificationPrefs: { pushMessages: false } });
+    prisma.conversationParticipant.findUnique.mockResolvedValueOnce(joined());
+    expect(
+      await audience.forGroupJoinApproved('author', 'conv-1', APPROVED_AT),
+    ).toBeNull();
+  });
+});
+
 describe('PushAudienceService.forGroupJoinRequest', () => {
   const pending = (over: Record<string, unknown> = {}) => ({
     status: 'PENDING',

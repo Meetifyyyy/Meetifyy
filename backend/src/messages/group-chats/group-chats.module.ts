@@ -1,5 +1,6 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { GroupChatsController } from './group-chats.controller';
+import { GroupInvitesController } from './group-invites.controller';
 import { GroupChatsService } from './group-chats.service';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { PresenceModule } from '../../presence/presence.module';
@@ -20,7 +21,7 @@ import { PushModule } from '../../push/push.module';
     MentionsModule,
     PushModule,
   ],
-  controllers: [GroupChatsController],
+  controllers: [GroupChatsController, GroupInvitesController],
   providers: [GroupChatsService, BlocksService],
   exports: [GroupChatsService],
 })

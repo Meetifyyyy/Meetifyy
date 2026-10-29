@@ -2,6 +2,8 @@ import { NotificationEntityType, NotificationType } from '@prisma/client';
 import {
   NotificationPushInput,
   buildGroupRemovedPush,
+  buildGroupJoinApprovedPush,
+  buildGroupJoinRequestPush,
   buildMessagePush,
   buildNotificationPush,
   categoryForType,
@@ -198,6 +200,47 @@ describe('push payloads', () => {
         groupName: null,
       }).body,
     ).toBe('You were removed from a group.');
+  });
+
+  it("a join request opens the group's Join requests page; older apps open the group", () => {
+    const request = buildGroupJoinRequestPush({
+      routeId: 'pub-1',
+      conversationId: 'conv-1',
+      groupName: 'Hostel B',
+      requesterName: 'Aarav',
+    });
+    expect(request.body).toBe('Aarav asked to join Hostel B.');
+    // An app that predates `panel` reads a plain chat intent and opens the chat.
+    expect(request.intent).toEqual({
+      v: '1',
+      t: 'chat',
+      conversationId: 'pub-1',
+      panel: 'requests',
+    });
+    expect(JSON.stringify(request)).not.toContain('conv-1');
+  });
+
+  it('an approval tells the requester, opens the group, and shares its tray slot', () => {
+    const approved = buildGroupJoinApprovedPush({
+      routeId: 'pub-1',
+      conversationId: 'conv-1',
+      groupName: 'Hostel B',
+    });
+    expect(approved.body).toBe('Your request to join Hostel B was approved.');
+    expect(approved.category).toBe('messages');
+    expect(approved.intent).toEqual({
+      v: '1',
+      t: 'chat',
+      conversationId: 'pub-1',
+    });
+    expect(approved.collapseKey).toBe(
+      buildGroupRemovedPush({
+        routeId: 'pub-1',
+        conversationId: 'conv-1',
+        groupName: 'Hostel B',
+      }).collapseKey,
+    );
+    expect(JSON.stringify(approved)).not.toContain('conv-1');
   });
 
   it('carries no content, ids or tokens beyond the destination (web and FCM)', () => {

@@ -10,6 +10,7 @@ import { isJsonObject } from '../common/utils/json.util';
 import {
   GroupJoinRequestPushInput,
   GroupRemovedPushInput,
+  GroupJoinApprovedPushInput,
   MessagePushInput,
   NotificationPushInput,
   categoryForType,
@@ -400,6 +401,54 @@ export class PushAudienceService {
       return null;
     const conversation = participant.conversation;
     if (conversation.type !== 'GROUP') return null;
+    if (!(await this.recipientWants(recipientId, 'messages'))) return null;
+    return {
+      routeId: conversation.publicId || conversation.id,
+      conversationId: conversation.id,
+      groupName: conversation.name,
+    };
+  }
+
+  /**
+   * The push for someone whose request to join was approved, or null.
+   *
+   * Re-checked at send time: they must still be in the group through THIS
+   * approval (joined at the approval's time: removed and re-added since, or
+   * gone again, and this is stale), the group must not have ended, and they
+   * must want message notifications.
+   */
+  async forGroupJoinApproved(
+    recipientId: string,
+    conversationId: string,
+    approvedAt: string,
+  ): Promise<GroupJoinApprovedPushInput | null> {
+    const participant = await this.prisma.conversationParticipant.findUnique({
+      where: { userId_conversationId: { userId: recipientId, conversationId } },
+      select: {
+        leftAt: true,
+        joinedAt: true,
+        isMuted: true,
+        conversation: {
+          select: {
+            id: true,
+            publicId: true,
+            name: true,
+            type: true,
+            status: true,
+          },
+        },
+      },
+    });
+    if (!participant || participant.leftAt) return null;
+    if (participant.isMuted) return null;
+    if (participant.joinedAt.getTime() !== new Date(approvedAt).getTime()) {
+      return null;
+    }
+    const conversation = participant.conversation;
+    if (conversation.type !== 'GROUP') return null;
+    if ((conversation.status || 'ACTIVE').toUpperCase() !== 'ACTIVE') {
+      return null;
+    }
     if (!(await this.recipientWants(recipientId, 'messages'))) return null;
     return {
       routeId: conversation.publicId || conversation.id,

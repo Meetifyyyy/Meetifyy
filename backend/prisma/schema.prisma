@@ -237,7 +237,9 @@ model User {
   communityJoinRequests      CommunityJoinRequest[]
   communityMembers           CommunityMember[]
   ownedConversations         Conversation[]              @relation("ConversationOwner")
-  groupJoinRequests          ConversationJoinRequest[]
+  groupJoinRequests          ConversationJoinRequest[]   @relation("JoinRequestRequester")
+  groupJoinRequestsDecided   ConversationJoinRequest[]   @relation("JoinRequestDecider")
+  groupInviteLinks           GroupInviteLink[]
   conversationParticipants   ConversationParticipant[]
   crewActivitiesCreated      CrewActivity[]              @relation("ActivityCreator")
   crewActivities             CrewActivityMember[]
@@ -546,6 +548,7 @@ model Conversation {
   owner               User?                     @relation("ConversationOwner", fields: [ownerId], references: [id])
   pinnedMessage       Message?                  @relation("PinnedMessage", fields: [pinnedMessageId], references: [id])
   joinRequests        ConversationJoinRequest[]
+  inviteLinks         GroupInviteLink[]
   participants        ConversationParticipant[]
   messages            Message[]                 @relation("ConversationMessages")
 
@@ -1423,6 +1426,11 @@ model Announcement {
   @@index([scheduledAt])
 }
 
+/// One person's request to join a group: PENDING, then APPROVED or REJECTED.
+/// The row is kept after the answer (it is what the admins' timeline line and
+/// the requester's "Request declined" are read from). A new request reuses it:
+/// `createdAt` is when it was last asked. `expiresAt` is no longer written; a
+/// request waits until an admin answers it.
 model ConversationJoinRequest {
   id             String       @id @default(uuid())
   conversationId String
@@ -1431,12 +1439,33 @@ model ConversationJoinRequest {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   expiresAt      DateTime?
+  decidedAt      DateTime?
+  decidedById    String?
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user           User         @relation("JoinRequestRequester", fields: [userId], references: [id], onDelete: Cascade)
+  decidedBy      User?        @relation("JoinRequestDecider", fields: [decidedById], references: [id], onDelete: SetNull)
 
   @@unique([conversationId, userId])
   @@index([conversationId])
   @@index([userId])
+}
+
+/// A link that lets people outside a group see it and join (or ask to), as
+/// meetifyy.app/g/<code>. It lasts seven days, an admin's reset revokes every
+/// link the group has, and it stops working once its creator leaves the group.
+model GroupInviteLink {
+  id             String       @id @default(uuid())
+  code           String       @unique @db.VarChar(16)
+  conversationId String
+  createdById    String
+  createdAt      DateTime     @default(now())
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  createdBy      User         @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, revokedAt])
+  @@index([createdById])
 }
 
 model DeletedMessage {

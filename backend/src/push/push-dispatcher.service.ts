@@ -8,6 +8,7 @@ import { categoryForType } from './push-payload';
 import {
   GroupJoinRequestPushJob,
   GroupRemovedPushJob,
+  GroupJoinApprovedPushJob,
   MessagePushJob,
   NotificationPushJob,
   PUSH_JOB,
@@ -156,6 +157,33 @@ export class PushDispatcherService {
       void this.queue
         .add(PUSH_JOB.groupRemoved, job, {
           jobId: `gr_${job.recipientId}_${job.conversationId}_${new Date(job.removedAt).getTime()}`,
+          attempts: 5,
+          backoff: { type: 'exponential', delay: 2_000 },
+          removeOnComplete: { age: 3_600, count: 1_000 },
+          removeOnFail: { age: 24 * 3_600, count: 1_000 },
+        })
+        .catch((err) =>
+          this.logger.warn(`push enqueue failed: ${String(err)}`),
+        );
+    } catch (err) {
+      this.logger.warn(`push enqueue threw: ${String(err)}`);
+    }
+  }
+
+  /**
+   * "Your request to join <group> was approved", for the requester. One job
+   * per approval: the id carries its time, so a second admin's approval
+   * (which changes nothing) or a retried request cannot push twice.
+   */
+  enqueueForGroupJoinApproved(
+    job: GroupJoinApprovedPushJob | null | undefined,
+  ): void {
+    try {
+      if (!job || !this.active) return;
+      if (!job.recipientId || !job.conversationId || !job.approvedAt) return;
+      void this.queue
+        .add(PUSH_JOB.groupJoinApproved, job, {
+          jobId: `ja_${job.recipientId}_${job.conversationId}_${new Date(job.approvedAt).getTime()}`,
           attempts: 5,
           backoff: { type: 'exponential', delay: 2_000 },
           removeOnComplete: { age: 3_600, count: 1_000 },

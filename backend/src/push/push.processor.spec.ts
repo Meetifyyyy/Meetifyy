@@ -10,6 +10,8 @@ import { WebPushProvider } from './providers/web-push.provider';
 import { FcmProvider } from './providers/fcm.provider';
 import { PUSH_JOB, PushMessage, SendOutcome } from './push.types';
 import {
+  buildGroupJoinApprovedPush,
+  GroupJoinApprovedPushInput,
   buildGroupJoinRequestPush,
   buildGroupRemovedPush,
   buildNotificationPush,
@@ -70,6 +72,10 @@ function build(devices: Device[], outcomes: Record<string, SendOutcome[]>) {
     >(),
     forGroupJoinRequest: jest.fn<
       Promise<GroupJoinRequestPushInput | null>,
+      [string, string, string]
+    >(),
+    forGroupJoinApproved: jest.fn<
+      Promise<GroupJoinApprovedPushInput | null>,
       [string, string, string]
     >(),
   };
@@ -250,5 +256,30 @@ describe('PushProcessor.process', () => {
     expect(buildGroupJoinRequestPush(input).body).toBe(
       'Aarav asked to join Hostel B.',
     );
+  });
+
+  it('an approval is re-checked at send time and sent to the requester', async () => {
+    const { processor, audience, webSend } = build([web], {});
+    const data = {
+      recipientId: 'asker',
+      conversationId: 'conv-1',
+      approvedAt: '2026-10-29T10:00:00.000Z',
+    };
+    audience.forGroupJoinApproved.mockResolvedValueOnce(null);
+    await processor.process(job(PUSH_JOB.groupJoinApproved, data));
+    expect(webSend).not.toHaveBeenCalled();
+    expect(audience.forGroupJoinApproved).toHaveBeenCalledWith(
+      'asker',
+      'conv-1',
+      '2026-10-29T10:00:00.000Z',
+    );
+    const input: GroupJoinApprovedPushInput = {
+      routeId: 'pub-1',
+      conversationId: 'conv-1',
+      groupName: 'Hostel B',
+    };
+    audience.forGroupJoinApproved.mockResolvedValueOnce(input);
+    await processor.process(job(PUSH_JOB.groupJoinApproved, data));
+    expect(webSend.mock.calls[0][1]).toEqual(buildGroupJoinApprovedPush(input));
   });
 });

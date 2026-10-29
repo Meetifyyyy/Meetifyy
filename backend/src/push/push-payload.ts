@@ -249,8 +249,8 @@ export interface GroupJoinRequestPushInput {
 /**
  * "<Name> asked to join <group>." to the group's owner and admins. One tray
  * entry per group (a second request replaces the first), apart from the
- * group's message pushes; tapping it opens the group, whose details hold the
- * requests.
+ * group's message pushes. Tapping it opens the group's Join requests page
+ * (`panel`); a client older than that field opens the group itself.
  */
 export function buildGroupJoinRequestPush(
   g: GroupJoinRequestPushInput,
@@ -261,8 +261,36 @@ export function buildGroupJoinRequestPush(
     category: 'messages',
     title: APP_NAME,
     body: `${who} asked to join ${group}.`,
-    intent: { v: '1', t: 'chat', conversationId: g.routeId },
+    intent: { v: '1', t: 'chat', conversationId: g.routeId, panel: 'requests' },
     collapseKey: collapseKeyFor('n', `join-request:${g.conversationId}`),
+    urgency: 'normal',
+    ttlSeconds: ONE_DAY,
+  };
+}
+
+export interface GroupJoinApprovedPushInput {
+  /** The id the app routes by (public id). */
+  routeId: string;
+  /** Conversation.id, for the collapse key only. */
+  conversationId: string;
+  groupName: string | null;
+}
+
+/**
+ * "Your request to join <group> was approved." to the person who asked.
+ * Under the group's message collapse key, as the group's first entry in their
+ * tray; tapping it opens the group they are now in.
+ */
+export function buildGroupJoinApprovedPush(
+  g: GroupJoinApprovedPushInput,
+): PushMessage {
+  const name = safeName(g.groupName, 'the group');
+  return {
+    category: 'messages',
+    title: APP_NAME,
+    body: `Your request to join ${name} was approved.`,
+    intent: { v: '1', t: 'chat', conversationId: g.routeId },
+    collapseKey: collapseKeyFor('c', g.conversationId),
     urgency: 'normal',
     ttlSeconds: ONE_DAY,
   };

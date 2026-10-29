@@ -9,6 +9,7 @@ export const PUSH_JOB = {
   message: 'push-message',
   groupRemoved: 'push-group-removed',
   groupJoinRequest: 'push-group-join-request',
+  groupJoinApproved: 'push-group-join-approved',
 } as const;
 
 /**
@@ -75,7 +76,7 @@ export type PushIntentData =
   | { v: '1'; t: 'profile'; username: string }
   | { v: '1'; t: 'community'; id: string }
   | { v: '1'; t: 'activity'; id: string }
-  | { v: '1'; t: 'chat'; conversationId: string };
+  | { v: '1'; t: 'chat'; conversationId: string; panel?: 'requests' };
 
 /** One user-visible push, provider-neutral. Built only by push-payload.ts. */
 export interface PushMessage {
@@ -126,6 +127,15 @@ export interface GroupJoinRequestPushJob {
   /** Conversation.id (internal), never the public id. */
   conversationId: string;
   requesterId: string;
+}
+
+/** The requester's push when an admin approves their request to join. */
+export interface GroupJoinApprovedPushJob {
+  recipientId: string;
+  /** Conversation.id (internal), never the public id. */
+  conversationId: string;
+  /** The approval's own time (the membership's `joinedAt`). */
+  approvedAt: string;
 }
 
 export interface MessagePushJob {

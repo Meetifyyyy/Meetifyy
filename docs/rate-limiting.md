@@ -127,6 +127,7 @@ onto one action; a per-path limit is bypassed by rotating between them.
 | `msg.forward.user` | 30/min | user |
 | `msg.startconv.user` | 25/hour | user |
 | `msg.creategroup.user` | 8/hour | user |
+| `msg.invitelink.user` | 20/hour | user (only when a new invite link is made) |
 
 `MAX_FORWARD_TARGETS = 15` caps fan-out per forward, and **forwarding costs one
 point per destination** — otherwise one request reaches fifty conversations for

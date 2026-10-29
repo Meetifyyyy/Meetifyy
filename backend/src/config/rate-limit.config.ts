@@ -630,6 +630,19 @@ export const RATE_LIMIT_POLICIES = {
     message: "You've created several groups recently. Try again later.",
   },
 
+  /**
+   * New group invite links. Charged only when a link is actually created: a
+   * member who already has a link with a day or more left is handed that one
+   * back, so opening the invite sheet repeatedly costs nothing.
+   */
+  'msg.invitelink.user': {
+    points: 20,
+    duration: 3600,
+    dimension: 'user',
+    onRedisFailure: 'closed',
+    message: "You've made several invite links recently. Try again later.",
+  },
+
   // ── Realtime ───────────────────────────────────────────────────────────────
 
   /**

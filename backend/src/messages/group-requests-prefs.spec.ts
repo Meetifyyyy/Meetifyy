@@ -43,13 +43,21 @@ function core(
 }
 
 describe('declining a join request', () => {
-  it('reports the removal and refreshes the details admins read', async () => {
-    const deleteMany = jest.fn(() => Promise.resolve({ count: 1 }));
+  const conversation = {
+    findUnique: jest.fn(() => Promise.resolve({ publicId: 'pub-1' })),
+  };
+
+  it('marks it declined, keeps the row, and refreshes the details admins read', async () => {
+    const updateMany = jest.fn(() => Promise.resolve({ count: 1 }));
+    const deleteMany = jest.fn();
+    const upsert = jest.fn();
     const { service } = core({
+      conversation,
       conversationParticipant: {
         findUnique: jest.fn(() => Promise.resolve(admin)),
+        upsert,
       },
-      conversationJoinRequest: { deleteMany },
+      conversationJoinRequest: { updateMany, deleteMany },
     });
     const refresh = jest.spyOn(
       service as unknown as {
@@ -63,20 +71,32 @@ describe('declining a join request', () => {
       success: true,
       changed: true,
       internalId: CONV,
+      publicId: 'pub-1',
     });
-    expect(deleteMany).toHaveBeenCalledWith({
-      where: { conversationId: CONV, userId: 'asker' },
+    // Only a request still waiting moves, and it moves to REJECTED with who
+    // answered: a second admin's decline (or an approval) finds nothing.
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { conversationId: CONV, userId: 'asker', status: 'PENDING' },
+      data: {
+        status: 'REJECTED',
+        decidedAt: expect.any(Date) as unknown,
+        decidedById: 'admin',
+      },
     });
+    expect(deleteMany).not.toHaveBeenCalled();
+    // A decline never makes a member.
+    expect(upsert).not.toHaveBeenCalled();
     expect(refresh).toHaveBeenCalledWith(CONV);
   });
 
-  it('a request already gone is not an error, and changes nothing', async () => {
+  it('a request already answered is not an error, and changes nothing', async () => {
     const { service } = core({
+      conversation,
       conversationParticipant: {
         findUnique: jest.fn(() => Promise.resolve(admin)),
       },
       conversationJoinRequest: {
-        deleteMany: jest.fn(() => Promise.resolve({ count: 0 })),
+        updateMany: jest.fn(() => Promise.resolve({ count: 0 })),
       },
     });
     await expect(
@@ -87,19 +107,38 @@ describe('declining a join request', () => {
   });
 
   it('a member who is not an admin cannot decline', async () => {
+    const updateMany = jest.fn();
     const { service } = core({
+      conversation,
       conversationParticipant: {
         findUnique: jest.fn(() => Promise.resolve(member)),
       },
-      conversationJoinRequest: { deleteMany: jest.fn() },
+      conversationJoinRequest: { updateMany },
     });
     await expect(
       service.declineGroupJoinRequest(CONV, 'm', 'asker'),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it('an admin who has left the group cannot decline', async () => {
+    const { service } = core({
+      conversation,
+      conversationParticipant: {
+        findUnique: jest.fn(() =>
+          Promise.resolve({ ...admin, leftAt: new Date() }),
+        ),
+      },
+      conversationJoinRequest: { updateMany: jest.fn() },
+    });
+    await expect(
+      service.declineGroupJoinRequest(CONV, 'admin', 'asker'),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 });
 
 describe('requesting to join twice', () => {
+  const LINK = { code: 'Abc123Def456' };
   const prismaFor = (prior: unknown) => ({
     conversation: {
       findFirst: jest.fn(() =>
@@ -115,7 +154,25 @@ describe('requesting to join twice', () => {
       ),
     },
     conversationParticipant: {
-      findUnique: jest.fn(() => Promise.resolve(null)),
+      // The asker has no row; the link's creator (the owner) is in the group.
+      findUnique: jest.fn(
+        (args: { where: { userId_conversationId: { userId: string } } }) =>
+          Promise.resolve(
+            args.where.userId_conversationId.userId === 'owner'
+              ? { leftAt: null }
+              : null,
+          ),
+      ),
+    },
+    groupInviteLink: {
+      findUnique: jest.fn(() =>
+        Promise.resolve({
+          conversationId: CONV,
+          createdById: 'owner',
+          expiresAt: new Date(Date.now() + 60_000),
+          revokedAt: null,
+        }),
+      ),
     },
     conversationJoinRequest: {
       findUnique: jest.fn(() => Promise.resolve(prior)),
@@ -127,15 +184,37 @@ describe('requesting to join twice', () => {
     const first = await core(prismaFor(null)).service.joinGroupByInvite(
       CONV,
       'asker',
+      LINK,
     );
     expect(first).toMatchObject({ status: 'PENDING', newRequest: true });
-    const again = await core(
-      prismaFor({
-        status: 'PENDING',
-        expiresAt: new Date(Date.now() + 60_000),
-      }),
-    ).service.joinGroupByInvite(CONV, 'asker');
+    const prisma = prismaFor({ status: 'PENDING', decidedAt: null });
+    const again = await core(prisma).service.joinGroupByInvite(
+      CONV,
+      'asker',
+      LINK,
+    );
     expect(again).toMatchObject({ status: 'PENDING', newRequest: false });
+    // Nothing is written for a request already waiting.
+    expect(prisma.conversationJoinRequest.upsert).not.toHaveBeenCalled();
+  });
+
+  it('a new request has no expiry and clears any earlier answer', async () => {
+    const prisma = prismaFor({
+      status: 'REJECTED',
+      decidedAt: new Date(Date.now() - 25 * 60 * 60 * 1000),
+    });
+    await core(prisma).service.joinGroupByInvite(CONV, 'asker', LINK);
+    expect(prisma.conversationJoinRequest.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: {
+          status: 'PENDING',
+          createdAt: expect.any(Date) as unknown,
+          expiresAt: null,
+          decidedAt: null,
+          decidedById: null,
+        },
+      }),
+    );
   });
 });
 

@@ -34,6 +34,8 @@ import {
   GroupAnnouncer,
 } from '../group-join-announce.util';
 import { previewOf } from '../core/message-preview';
+import { JoinGroupDto } from '../core/dto/join-group.dto';
+import { inviteRefFromQuery } from '../core/group-invite-access';
 import { PushDispatcherService } from '../../push/push-dispatcher.service';
 
 @Controller('api/group-chats')
@@ -900,22 +902,69 @@ export class GroupChatsController {
       targetUserId,
     );
     if (result.changed)
-      announceRequestDeclined(this.announcer, result.internalId);
+      announceRequestDeclined(this.announcer, result, targetUserId);
     return result;
   }
 
-  // Readable by any authenticated user, member or not — an invite link is a
-  // dead end otherwise, since /details and the history endpoint both require
-  // membership. Returns only what the invite itself already discloses.
+  /**
+   * The group's recent requests to join, for its owner and admins only (the
+   * service refuses anyone else). Never a message: see getJoinRequestActivity.
+   */
+  @Get(':id/join-requests/activity')
+  @UseGuards(JwtGuard)
+  async getJoinRequestActivity(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') conversationId: string,
+  ) {
+    return this.groupChatsService.getJoinRequestActivity(
+      conversationId,
+      req.user?.id,
+    );
+  }
+
+  /** A member's invite link for the group (an existing one while it lasts). */
+  @Post(':id/invite-links')
+  @UseGuards(JwtGuard)
+  @VerifiedOnly()
+  async createInviteLink(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') conversationId: string,
+  ) {
+    return this.groupChatsService.createInviteLink(
+      conversationId,
+      req.user?.id,
+    );
+  }
+
+  /** Revokes every invite link the group has; owner and admins only. */
+  @Post(':id/invite-links/reset')
+  @UseGuards(JwtGuard)
+  async resetInviteLinks(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') conversationId: string,
+  ) {
+    return this.groupChatsService.resetInviteLinks(
+      conversationId,
+      req.user?.id,
+    );
+  }
+
+  // Readable by any authenticated user, member or not — an invite is a dead
+  // end otherwise, since /details and the history endpoint both require
+  // membership. `code` or `messageId` names the invite the viewer came
+  // through; what it discloses depends on that invite (getGroupInvitePreview).
   @Get(':id/invite')
   @UseGuards(JwtGuard)
   async getInvitePreview(
     @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
+    @Query('code') code?: string,
+    @Query('messageId') messageId?: string,
   ) {
     return this.groupChatsService.getGroupInvitePreview(
       conversationId,
       req.user?.id,
+      inviteRefFromQuery(code, messageId),
     );
   }
 
@@ -925,11 +974,13 @@ export class GroupChatsController {
   async joinGroup(
     @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
+    @Body() body: JoinGroupDto = {},
   ) {
     const userId = req.user?.id;
     const result = await this.groupChatsService.joinGroupByInvite(
       conversationId,
       userId,
+      { code: body?.code, messageId: body?.messageId },
     );
 
     // A re-tapped request renews it without telling the admins again.
@@ -959,8 +1010,9 @@ export class GroupChatsController {
   async requestJoin(
     @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
+    @Body() body: JoinGroupDto = {},
   ) {
-    return this.joinGroup(req, conversationId);
+    return this.joinGroup(req, conversationId, body);
   }
 
   @Delete('msg/:messageId/for-me')

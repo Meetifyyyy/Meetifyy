@@ -24,7 +24,6 @@ import { MediaCleanupService } from '../../uploads/media-cleanup.service';
 import { VerificationAccessService } from '../../common/verification/verification-access.service';
 import { RateLimitService } from '../../common/rate-limit/rate-limit.service';
 import { assertNewConversationWithinRateLimit } from '../core/message-limits';
-import { detach } from '../../common/utils/detach.util';
 import {
   UpdateGroupSettingsDto,
   pickGroupSettings,
@@ -456,21 +455,19 @@ export class GroupChatsService extends MessagingCoreService {
 
     const groupAvatar = conv.avatarKey || null;
 
-    // Pending requests, unexpired, for the owner and admins only: they are
-    // who review them. Every member used to receive the list (names, handles
-    // and photos of people who asked to join), and saw a Requests page they
-    // could not act on. The response is cached per viewer, so this holds.
-    const now = new Date();
+    // Pending requests, for the owner and admins only: they are who review
+    // them. Every member used to receive the list (names, handles and photos
+    // of people who asked to join), and saw a Requests page they could not
+    // act on. The response is cached per viewer, so this holds. A request
+    // waits until it is answered; answered ones stay as rows (the admins'
+    // timeline reads them) but are not pending.
     const canReview =
       myParticipant.role === 'OWNER' || myParticipant.role === 'ADMIN';
     const pendingJoinRequests = !canReview
       ? []
       : await this.prisma.conversationJoinRequest.findMany({
-          where: {
-            conversationId: conv.id,
-            status: 'PENDING',
-            OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
-          },
+          where: { conversationId: conv.id, status: 'PENDING' },
+          orderBy: { createdAt: 'desc' },
           include: {
             user: {
               select: {
@@ -482,21 +479,6 @@ export class GroupChatsService extends MessagingCoreService {
             },
           },
         });
-
-    // Clean up expired join requests in background
-    setImmediate(() =>
-      detach('expired join requests cleanup', async () => {
-        await this.prisma.conversationJoinRequest
-          .deleteMany({
-            where: {
-              conversationId: conv.id,
-              status: 'PENDING',
-              expiresAt: { lte: now },
-            },
-          })
-          .catch(() => {});
-      }),
-    );
 
     // Deterministic role order: OWNER (0), ADMIN (1), MEMBER (2)
     const roleRank = { OWNER: 0, ADMIN: 1, MEMBER: 2 };

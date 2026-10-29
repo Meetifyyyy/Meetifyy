@@ -158,19 +158,24 @@ describe('join and request announcements', () => {
     publicId: 'pub-1',
     internalId: 'g-1',
   };
+  /** What the admin-only and requester-only events carry: never conversationId. */
+  const ids = { publicId: 'pub-1', internalId: 'g-1' };
   let emit: jest.Mock;
   let enqueue: jest.Mock;
+  let enqueueApproved: jest.Mock;
   let systemLine: jest.Mock;
   let a: GroupAnnouncer;
 
   beforeEach(() => {
     emit = jest.fn(() => Promise.resolve());
     enqueue = jest.fn();
+    enqueueApproved = jest.fn();
     systemLine = jest.fn(() => Promise.resolve());
     a = {
       events: stub<DomainEventService>({ emit }),
       push: stub<PushDispatcherService>({
         enqueueForGroupJoinRequest: enqueue,
+        enqueueForGroupJoinApproved: enqueueApproved,
       }),
       participantIds: () => Promise.resolve(['owner', 'admin', 'm1']),
       reviewerIds: () => Promise.resolve(['owner', 'admin']),
@@ -201,14 +206,17 @@ describe('join and request announcements', () => {
     );
   });
 
-  it('a new request reaches the owner and admins: their list, and a push each', async () => {
+  it('a new request reaches the owner and admins only: their list, and a push each', async () => {
     announceJoinRequested(a, group, 'asker');
     await flush();
     await flush();
-    expect(emit).toHaveBeenCalledWith('group:join_requests', group, [
+    expect(emit).toHaveBeenCalledTimes(1);
+    expect(emit).toHaveBeenCalledWith('group:join_requests', ids, [
       'owner',
       'admin',
     ]);
+    // Not a line in the group: members learn nothing of a request.
+    expect(systemLine).not.toHaveBeenCalled();
     expect(enqueue).toHaveBeenCalledTimes(2);
     expect(enqueue).toHaveBeenCalledWith({
       recipientId: 'owner',
@@ -231,10 +239,21 @@ describe('join and request announcements', () => {
       { conversationId: 'pub-1' },
       ['asker'],
     );
-    expect(emit).toHaveBeenCalledWith('group:join_requests', group, [
+    expect(emit).toHaveBeenCalledWith('group:join_requests', ids, [
       'owner',
       'admin',
     ]);
+    // The requester's preview, and their phone.
+    expect(emit).toHaveBeenCalledWith(
+      'group:join_request_decided',
+      { ...ids, status: 'APPROVED' },
+      ['asker'],
+    );
+    expect(enqueueApproved).toHaveBeenCalledWith({
+      recipientId: 'asker',
+      conversationId: 'g-1',
+      approvedAt: 'T',
+    });
     expect(systemLine).toHaveBeenCalledWith(
       'g-1',
       'admin',
@@ -242,16 +261,29 @@ describe('join and request announcements', () => {
     );
   });
 
-  it("a decline only updates the other reviewers' lists", async () => {
-    announceRequestDeclined(a, 'g-1');
+  it("a decline updates the reviewers' lists and the requester's preview, nothing else", async () => {
+    announceRequestDeclined(a, ids, 'asker');
     await flush();
     await flush();
-    expect(emit).toHaveBeenCalledTimes(1);
+    expect(emit).toHaveBeenCalledTimes(2);
+    expect(emit).toHaveBeenCalledWith('group:join_requests', ids, [
+      'owner',
+      'admin',
+    ]);
     expect(emit).toHaveBeenCalledWith(
-      'group:join_requests',
-      { internalId: 'g-1' },
-      ['owner', 'admin'],
+      'group:join_request_decided',
+      { ...ids, status: 'REJECTED' },
+      ['asker'],
     );
     expect(systemLine).not.toHaveBeenCalled();
+    expect(enqueueApproved).not.toHaveBeenCalled();
+  });
+
+  it('a request with no reviewers left sends nothing (never the group room)', async () => {
+    a.reviewerIds = () => Promise.resolve([]);
+    announceJoinRequested(a, group, 'asker');
+    await flush();
+    await flush();
+    expect(emit).not.toHaveBeenCalled();
   });
 });

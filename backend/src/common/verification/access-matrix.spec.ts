@@ -21,6 +21,7 @@ import { CampusEventsController } from '../../campus-events/campus-events.contro
 import { DmController } from '../../messages/dm/dm.controller';
 import { MessagesController } from '../../messages/messages.controller';
 import { GroupChatsController } from '../../messages/group-chats/group-chats.controller';
+import { GroupInvitesController } from '../../messages/group-chats/group-invites.controller';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
 
 /**
@@ -278,6 +279,8 @@ describe('selfie gate route matrix', () => {
         'acceptJoinRequest',
         'joinGroup',
         'requestJoin',
+        // A link is an invite to message in the group, like a DM invite card.
+        'createInviteLink',
       ],
       [
         'getInvitePreview',
@@ -287,8 +290,11 @@ describe('selfie gate route matrix', () => {
         'promoteAdmin',
         'demoteAdmin',
         'declineJoinRequest',
+        'getJoinRequestActivity',
+        'resetInviteLinks',
       ],
     ],
+    [GroupInvitesController, [], ['getInviteLinkPreview']],
     [
       RealtimeGateway,
       [

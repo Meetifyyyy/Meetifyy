@@ -53,21 +53,50 @@ function membershipPayload(group: Joined, userId: string) {
 }
 
 /**
- * The group's pending requests changed: each reviewer's devices refetch the
- * list (it holds names and photos, so the event carries only the group).
+ * The ids an admin-only or requester-only event carries.
+ *
+ * Never `conversationId`: the gateway sends an event that has no target user
+ * to the conversation's room, i.e. to every member, when its data names a
+ * conversation. With only these two keys a missing target is dropped instead,
+ * so a request can never reach the group by mistake.
+ */
+function groupIds(group: { publicId?: string; internalId: string }) {
+  return {
+    ...(group.publicId ? { publicId: group.publicId } : {}),
+    internalId: group.internalId,
+  };
+}
+
+/**
+ * The group's requests changed: each reviewer's devices refetch the list and
+ * the timeline's request lines (they hold names and photos, so the event
+ * carries only the group). The owner and admins only.
  */
 function requestsChanged(
   events: DomainEventService,
   reviewerIds: string[],
-  group: Partial<GroupIdentity> & { internalId: string },
+  group: { publicId?: string; internalId: string },
 ): void {
   if (reviewerIds.length === 0) return;
-  const ids = {
-    ...(group.conversationId ? { conversationId: group.conversationId } : {}),
-    ...(group.publicId ? { publicId: group.publicId } : {}),
-    internalId: group.internalId,
-  };
-  void events.emit('group:join_requests', ids, reviewerIds);
+  void events.emit('group:join_requests', groupIds(group), reviewerIds);
+}
+
+/**
+ * The requester's own request was answered: their devices refresh the group
+ * preview ("Request pending" becomes the group, or "Request declined").
+ * Only to them, and without who answered.
+ */
+function requestDecided(
+  events: DomainEventService,
+  requesterId: string,
+  group: { publicId?: string; internalId: string },
+  status: 'APPROVED' | 'REJECTED',
+): void {
+  void events.emit(
+    'group:join_request_decided',
+    { ...groupIds(group), status },
+    [requesterId],
+  );
 }
 
 /** Someone joined (an open group, or an invite). */
@@ -138,6 +167,13 @@ export function announceRequestApproved(
       [targetUserId],
     );
     requestsChanged(a.events, reviewers, group);
+    requestDecided(a.events, targetUserId, group, 'APPROVED');
+    // The requester's phone, which may be in a pocket since they asked.
+    a.push?.enqueueForGroupJoinApproved({
+      recipientId: targetUserId,
+      conversationId: group.internalId,
+      approvedAt: group.membershipChangedAt ?? new Date().toISOString(),
+    });
     const [actor, target] = await Promise.all([
       a.userHandle(approverId),
       a.userHandle(targetUserId),
@@ -150,12 +186,18 @@ export function announceRequestApproved(
   });
 }
 
-/** A request was declined: only the other reviewers' lists change. */
+/**
+ * A request was declined: the reviewers' lists, and the requester's preview.
+ * Nothing reaches the group, and no push: a decline is not news to wake
+ * someone for.
+ */
 export function announceRequestDeclined(
   a: GroupAnnouncer,
-  internalId: string,
+  group: { publicId?: string; internalId: string },
+  requesterId: string,
 ): void {
   afterReply('group request declined fan-out', async () => {
-    requestsChanged(a.events, await a.reviewerIds(internalId), { internalId });
+    requestsChanged(a.events, await a.reviewerIds(group.internalId), group);
+    requestDecided(a.events, requesterId, group, 'REJECTED');
   });
 }
