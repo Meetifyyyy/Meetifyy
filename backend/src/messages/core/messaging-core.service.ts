@@ -1,3 +1,4 @@
+import type { GroupDepartureEvent } from '../group-departure-announce.util';
 import { randomUUID } from 'crypto';
 import { retryOnClientIdConflict, withClientSendLock } from './send-lock';
 import type { RedisService } from '../../redis/redis.service';
@@ -2325,6 +2326,13 @@ export class MessagingCoreService {
     conversationId: string,
     senderId: string,
     text: string,
+    /**
+     * `createdAt`: the line's own time (a departure's line is written at the
+     * departure, so the departed member's history, which ends there, keeps
+     * it). `event`: what happened, in a form the app reads (see
+     * group-departure-announce.util.ts); the text stays for older apps.
+     */
+    options: { createdAt?: Date; event?: GroupDepartureEvent } = {},
   ) {
     const realConvId = await this.resolveConversationId(conversationId);
     // The actor must belong to the conversation. A just-departed member is
@@ -2337,7 +2345,8 @@ export class MessagingCoreService {
         conversationId: realConvId,
         senderId,
         type: 'SYSTEM',
-        payload: { text },
+        payload: options.event ? { text, event: options.event } : { text },
+        ...(options.createdAt ? { createdAt: options.createdAt } : {}),
       },
       include: {
         sender: {
@@ -2384,7 +2393,7 @@ export class MessagingCoreService {
         minute: '2-digit',
       }),
       type: 'system',
-      payload: { text },
+      payload: options.event ? { text, event: options.event } : { text },
       text,
       status: 'sent',
     };

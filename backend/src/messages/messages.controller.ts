@@ -24,7 +24,6 @@ import { SendMessageDto } from './core/dto/send-message.dto';
 import { emitMessageNew, publicMessage } from './message-alert.util';
 import { UpdateGroupSettingsDto } from './dto/update-group-settings.dto';
 import { Idempotent } from '../common/decorators/idempotent.decorator';
-import { detach } from '../common/utils/detach.util';
 import { announceUnsent } from './unsend-announce.util';
 import {
   announceJoinRequested,
@@ -34,6 +33,10 @@ import {
   GroupAnnouncer,
 } from './group-join-announce.util';
 import { previewOf } from './core/message-preview';
+import {
+  announceDeparture,
+  type DepartureAnnouncer,
+} from './group-departure-announce.util';
 import { JoinGroupDto } from './core/dto/join-group.dto';
 import { inviteRefFromQuery } from './core/group-invite-access';
 import { PushDispatcherService } from '../push/push-dispatcher.service';
@@ -459,6 +462,17 @@ export class MessagesController {
   }
 
   /** What the join and request announcements need from this controller. */
+  private get departures(): DepartureAnnouncer {
+    return {
+      events: this.domainEventService,
+      participantIds: (id) =>
+        this.messagesService.getConversationParticipantIds(id),
+      userHandle: (id) => this.messagesService.getUserHandle(id),
+      systemLine: (id, actorId, text, options) =>
+        this.messagesService.createSystemMessage(id, actorId, text, options),
+    };
+  }
+
   private get announcer(): GroupAnnouncer {
     return {
       events: this.domainEventService,
@@ -642,12 +656,9 @@ export class MessagesController {
       removedAt: result.leftAt,
     });
 
-    this.announceDeparture(result, targetUserId, userId, async () => {
-      const [targetHandle, actorHandle] = await Promise.all([
-        this.messagesService.getUserHandle(targetUserId),
-        this.messagesService.getUserHandle(userId),
-      ]);
-      return `${actorHandle} removed ${targetHandle} from the group`;
+    announceDeparture(this.departures, result, {
+      actorId: userId,
+      targetUserId,
     });
 
     return result;
@@ -668,63 +679,17 @@ export class MessagesController {
     // Already gone: a double tap must not post "X left the group" twice.
     if (!result.changed || !result.internalId || !result.leftAt) return result;
 
-    this.announceDeparture(
+    announceDeparture(
+      this.departures,
       {
         internalId: result.internalId,
         publicId: result.publicId || result.internalId,
         leftAt: result.leftAt,
       },
-      userId,
-      userId,
-      async () =>
-        `${await this.messagesService.getUserHandle(userId)} left the group`,
+      { actorId: userId, targetUserId: userId },
     );
 
     return result;
-  }
-
-  /**
-   * The same announcement as GroupChatsController's, after the response: the
-   * membership event first, on its own, to the departed user's personal room
-   * and the members who remain; then the system line, best effort. The change
-   * itself has committed, so the caller does not wait for any of this.
-   */
-  private announceDeparture(
-    result: { internalId: string; publicId: string; leftAt: string },
-    targetUserId: string,
-    actorId: string,
-    text: () => Promise<string>,
-  ): void {
-    setImmediate(() =>
-      detach('group member removed fan-out', async () => {
-        const remainingIds = (
-          await this.messagesService.getConversationParticipantIds(
-            result.internalId,
-          )
-        ).filter((id) => id !== targetUserId);
-        void this.domainEventService.emit(
-          'group:member_removed',
-          {
-            conversationId: result.publicId,
-            publicId: result.publicId,
-            internalId: result.internalId,
-            targetUserId,
-            removedBy: actorId,
-            membershipChangedAt: result.leftAt,
-          },
-          [targetUserId, ...remainingIds],
-        );
-        const message = await this.messagesService.createSystemMessage(
-          result.internalId,
-          actorId,
-          await text(),
-        );
-        void this.domainEventService.emit('message:new', message, [
-          targetUserId,
-          ...remainingIds,
-        ]);
-      }),
-    );
   }
 
   @Patch(':id/settings')

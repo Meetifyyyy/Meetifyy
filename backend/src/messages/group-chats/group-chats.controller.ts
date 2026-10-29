@@ -34,6 +34,10 @@ import {
   GroupAnnouncer,
 } from '../group-join-announce.util';
 import { previewOf } from '../core/message-preview';
+import {
+  announceDeparture,
+  type DepartureAnnouncer,
+} from '../group-departure-announce.util';
 import { JoinGroupDto } from '../core/dto/join-group.dto';
 import { inviteRefFromQuery } from '../core/group-invite-access';
 import { PushDispatcherService } from '../../push/push-dispatcher.service';
@@ -313,6 +317,17 @@ export class GroupChatsController {
   }
 
   /** What the join and request announcements need from this controller. */
+  private get departures(): DepartureAnnouncer {
+    return {
+      events: this.domainEventService,
+      participantIds: (id) =>
+        this.groupChatsService.getConversationParticipantIds(id),
+      userHandle: (id) => this.groupChatsService.getUserHandle(id),
+      systemLine: (id, actorId, text, options) =>
+        this.groupChatsService.createSystemMessage(id, actorId, text, options),
+    };
+  }
+
   private get announcer(): GroupAnnouncer {
     return {
       events: this.domainEventService,
@@ -499,63 +514,6 @@ export class GroupChatsController {
     return result;
   }
 
-  /**
-   * Announces that `targetUserId` is out of the group.
-   *
-   * Runs only after the removal has committed (the caller awaited it). The
-   * membership event goes first and on its own: it used to be sent only after
-   * two handle lookups and the system message had been written, so any one of
-   * those failing meant the removed person was never told at all, and their
-   * composer stayed open. It goes to the removed user's personal room (every
-   * tab and device they have connected), not the group room they are being
-   * taken out of, and to the members who remain. The gateway removes the
-   * user's sockets from the group's rooms when it routes it.
-   *
-   * `membershipChangedAt` is the server's time of the change: a client keeps
-   * the newest it has seen, so a late or repeated event cannot undo a later
-   * re-add (or the other way round).
-   */
-  private announceDeparture(
-    result: { internalId: string; publicId: string; leftAt: string },
-    targetUserId: string,
-    actorId: string,
-    text: () => Promise<string>,
-  ) {
-    setImmediate(() =>
-      detach('group member removed fan-out', async () => {
-        const remainingIds = (
-          await this.groupChatsService.getConversationParticipantIds(
-            result.internalId,
-          )
-        ).filter((id) => id !== targetUserId);
-        void this.domainEventService.emit(
-          'group:member_removed',
-          {
-            conversationId: result.publicId,
-            publicId: result.publicId,
-            internalId: result.internalId,
-            targetUserId,
-            removedBy: actorId,
-            membershipChangedAt: result.leftAt,
-          },
-          [targetUserId, ...remainingIds],
-        );
-
-        // The "X removed Y" line, best effort. The removed user's history
-        // ends at the moment they left, so this reaches them live only.
-        const message = await this.groupChatsService.createSystemMessage(
-          result.internalId,
-          actorId,
-          await text(),
-        );
-        void this.domainEventService.emit('message:new', message, [
-          targetUserId,
-          ...remainingIds,
-        ]);
-      }),
-    );
-  }
-
   @Delete(':id/members/:targetUserId')
   @UseGuards(JwtGuard)
   async removeMember(
@@ -581,12 +539,9 @@ export class GroupChatsController {
       removedAt: result.leftAt,
     });
 
-    this.announceDeparture(result, targetUserId, userId, async () => {
-      const [actorHandle, targetHandle] = await Promise.all([
-        this.groupChatsService.getUserHandle(userId),
-        this.groupChatsService.getUserHandle(targetUserId),
-      ]);
-      return `${actorHandle} removed ${targetHandle} from the group`;
+    announceDeparture(this.departures, result, {
+      actorId: userId,
+      targetUserId,
     });
 
     return result;
@@ -611,9 +566,9 @@ export class GroupChatsController {
       publicId: result.publicId || result.internalId,
       leftAt: result.leftAt,
     };
-    this.announceDeparture(departed, userId, userId, async () => {
-      const actorHandle = await this.groupChatsService.getUserHandle(userId);
-      return `${actorHandle} left the group`;
+    announceDeparture(this.departures, departed, {
+      actorId: userId,
+      targetUserId: userId,
     });
 
     return result;

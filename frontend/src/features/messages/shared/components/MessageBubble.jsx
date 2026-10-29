@@ -7,6 +7,7 @@ import { useSignedMediaSrc } from '@shared/hooks/useSignedMediaSrc';
 import RichText from '@shared/components/mentions/RichText';
 import { generateConversationUrl } from '@shared/utils/conversationUrl';
 import { isSystemMessage } from '../utils/cacheUtils';
+import { departureLineFor } from '../utils/messagePreview';
 import { SharedPostPreview } from '../previews/SharedPostPreview';
 import { SharedProfilePreview } from '../previews/SharedProfilePreview';
 import { SharedCommunityPreview } from '../previews/SharedCommunityPreview';
@@ -825,7 +826,8 @@ const MessageBubble = memo(function MessageBubble({
   };
 
   if (isSystemMessage(msg)) {
-    const text = msg.text || msg.payload?.text || '';
+    // A departure line about the viewer says "you" ("@admin removed you").
+    const text = departureLineFor(msg, currentUser?.id) || msg.text || msg.payload?.text || '';
     return (
       <div className={styles.systemMessageContainer}>
         <div className={styles.systemMessageText}>

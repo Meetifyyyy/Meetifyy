@@ -47,6 +47,31 @@ export function previewText(message: PreviewSource): string {
 }
 
 /**
+ * The preview as `viewerId` reads it: a departure line about them says
+ * "you" ("@admin removed you from the group", "You left the group"); every
+ * other message reads as `previewText`.
+ */
+export function previewTextFor(
+  message: PreviewSource,
+  viewerId: string,
+): string {
+  if (message.state !== 'UNSENT') {
+    const event = payloadFields(payloadFields(message.payload ?? {}).event);
+    if (
+      event.kind === 'member_removed' &&
+      event.targetId === viewerId &&
+      typeof event.actorHandle === 'string'
+    ) {
+      return `${event.actorHandle} removed you from the group`;
+    }
+    if (event.kind === 'member_left' && event.actorId === viewerId) {
+      return 'You left the group';
+    }
+  }
+  return previewText(message);
+}
+
+/**
  * The preview of a message as the send paths return it (its stored payload
  * and state), for the `conversation:updated` events that patch list rows.
  */

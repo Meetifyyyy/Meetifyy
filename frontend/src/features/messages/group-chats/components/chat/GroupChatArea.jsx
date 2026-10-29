@@ -107,8 +107,24 @@ export default function GroupChatArea({
   const isBanned = effectiveConv?.myMembershipStatus === 'BANNED';
   // Out of the group: removed by an admin, left by choice, or (when this device
   // only knows the server's `isMember: false`) one of the two.
-  const isKicked = effectiveConv?.myMembershipStatus === 'KICKED';
-  const hasLeft = effectiveConv?.myMembershipStatus === 'LEFT';
+  // After a reload the live status is gone; the last departure line about the
+  // viewer (it stays in their history) still says whether they left or were
+  // removed.
+  const lastDeparture = useMemo(() => {
+    if (effectiveConv?.isMember !== false) return null;
+    const messages = Array.isArray(effectiveConv?.messages) ? effectiveConv.messages : [];
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const event = messages[i]?.payload?.event;
+      if (!event) continue;
+      if (event.kind === 'member_removed' && String(event.targetId) === String(currentUser?.id)) return 'KICKED';
+      if (event.kind === 'member_left' && String(event.actorId) === String(currentUser?.id)) return 'LEFT';
+    }
+    return null;
+  }, [effectiveConv?.isMember, effectiveConv?.messages, currentUser?.id]);
+  const isKicked = effectiveConv?.myMembershipStatus === 'KICKED'
+    || (!effectiveConv?.myMembershipStatus && lastDeparture === 'KICKED');
+  const hasLeft = effectiveConv?.myMembershipStatus === 'LEFT'
+    || (!effectiveConv?.myMembershipStatus && lastDeparture === 'LEFT');
   const isOut = isKicked || hasLeft || effectiveConv?.isMember === false;
   const isPending = effectiveConv?.myMembershipStatus === 'PENDING';
   // The server's word on the viewer's role, from the group's details; only

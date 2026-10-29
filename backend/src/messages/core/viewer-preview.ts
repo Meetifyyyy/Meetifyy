@@ -1,6 +1,6 @@
 import type { Prisma } from '@prisma/client';
 import type { PrismaService } from '../../prisma/prisma.service';
-import { previewText } from './message-preview';
+import { previewTextFor } from './message-preview';
 
 /**
  * The conversation list's preview, as one viewer may see it.
@@ -59,7 +59,9 @@ export async function resolveViewerPreviews(
   const needsOwn = rows.filter(
     (r) =>
       r.lastMessageAt &&
-      ((r.leftAt && r.lastMessageAt > r.leftAt) ||
+      // `>=`: a departed member's last line is their own departure, written
+      // at `leftAt`, and reads differently for them ("removed you").
+      ((r.leftAt && r.lastMessageAt >= r.leftAt) ||
         (r.lastMessageId && deleted.has(r.lastMessageId))),
   );
 
@@ -92,7 +94,7 @@ export async function resolveViewerPreviews(
               id: message.id,
               createdAt: message.createdAt,
               senderId: message.senderId,
-              text: previewText(message),
+              text: previewTextFor(message, viewerId),
               type: message.type.toLowerCase(),
             }
           : null,

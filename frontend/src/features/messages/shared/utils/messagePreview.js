@@ -20,10 +20,29 @@ const MEDIA_LABEL = {
   voice: 'Voice message',
 };
 
-export function messagePreviewText(message) {
+/**
+ * A group departure line as `viewerId` reads it: the person it is about sees
+ * "you" ("@admin removed you from the group", "You left the group"); anyone
+ * else, and any line without an event (older servers), gets null. Mirrors the
+ * server's previewTextFor (backend messages/core/message-preview.ts).
+ */
+export function departureLineFor(message, viewerId) {
+  const event = message?.payload?.event;
+  if (!event || typeof event !== 'object' || !viewerId) return null;
+  const me = String(viewerId);
+  if (event.kind === 'member_removed' && String(event.targetId) === me && typeof event.actorHandle === 'string') {
+    return `${event.actorHandle} removed you from the group`;
+  }
+  if (event.kind === 'member_left' && String(event.actorId) === me) return 'You left the group';
+  return null;
+}
+
+export function messagePreviewText(message, viewerId) {
   if (!message || typeof message !== 'object') return '';
   if (message.state === 'UNSENT' || message.isUnsent) return UNSENT_PREVIEW;
   const payload = message.payload && typeof message.payload === 'object' ? message.payload : {};
+  const mine = departureLineFor(message, viewerId);
+  if (mine) return mine;
   const text = String(message.text ?? payload.text ?? '').trim();
   if (text) return text;
   const invite = message.inviteData || payload.inviteData;

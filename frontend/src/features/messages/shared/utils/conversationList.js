@@ -66,7 +66,7 @@ function findRow(list, ids) {
  *   for it (the caller refetches the list); 'stale' when the row already shows
  *   something newer and there was nothing to count
  */
-export function applyMessageToConversationList(queryClient, message, { countUnread = false } = {}) {
+export function applyMessageToConversationList(queryClient, message, { countUnread = false, viewerId = null } = {}) {
   const ids = [message?.conversationId, message?.publicId, message?.internalId].filter(Boolean);
   if (!queryClient || ids.length === 0) return 'missing';
   let outcome = 'missing';
@@ -94,7 +94,7 @@ export function applyMessageToConversationList(queryClient, message, { countUnre
     const unread = Math.max(0, (row.unreadCount ?? row.unread ?? 0) + (count ? 1 : 0));
     const next = { ...row, unreadCount: unread, unread };
     if (newer) {
-      const text = messagePreviewText(message);
+      const text = messagePreviewText(message, viewerId);
       next.lastMessage = { ...message, text };
       next.lastMsg = text;
       next.lastMessageText = text;

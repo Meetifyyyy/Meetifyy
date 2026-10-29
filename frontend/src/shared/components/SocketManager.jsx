@@ -877,6 +877,7 @@ export default function SocketManager() {
       // refetch took away.
       const outcome = applyMessageToConversationList(queryClient, message, {
         countUnread: !isSenderSelf && !lookingAtIt && !isSystemMessage(message),
+        viewerId: currentUserId,
       });
       if (outcome === 'missing') {
         queryClient.invalidateQueries({ queryKey: ['conversations'] });
