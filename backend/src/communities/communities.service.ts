@@ -1485,7 +1485,12 @@ export class CommunitiesService implements OnModuleInit {
       }),
       this.prisma.community.findUnique({
         where: { id: communityId },
-        select: { ownerId: true, collegeId: true, isCampusCommunity: true },
+        select: {
+          ownerId: true,
+          collegeId: true,
+          isCampusCommunity: true,
+          name: true,
+        },
       }),
     ]);
 
@@ -1565,6 +1570,8 @@ export class CommunitiesService implements OnModuleInit {
       communityId,
       userId: joinReq.userId,
       memberCount: newMemberCount,
+      // For the applicant's "you're in" notice.
+      communityName: community?.name ?? null,
     });
     return { success: true };
   }
@@ -1585,7 +1592,7 @@ export class CommunitiesService implements OnModuleInit {
       }),
       this.prisma.community.findUnique({
         where: { id: communityId },
-        select: { ownerId: true },
+        select: { ownerId: true, name: true },
       }),
     ]);
 
@@ -1618,9 +1625,12 @@ export class CommunitiesService implements OnModuleInit {
     });
     if (moved.count === 0) return { success: true };
 
+    // The applicant is told (their Requested button resets to Request to
+    // Join, which on its own looked like the request had been lost).
     void this.domainEventService.emit('community.requestDeclined', {
       communityId,
       userId: joinReq.userId,
+      communityName: community?.name ?? null,
     });
     return { success: true };
   }
@@ -1738,6 +1748,14 @@ export class CommunitiesService implements OnModuleInit {
     ]);
     if (!creator || creator.verificationStatus !== 'VERIFIED') {
       throw new ForbiddenException('Verify your account to create communities');
+    }
+    // Asking for Campus without an active college affiliation used to fall
+    // through to an ordinary public community: the creator was promised
+    // "visible only to students in your college" and got one anyone can read.
+    if (wantsCampus && !creatorCollegeId) {
+      throw new BadRequestException(
+        'Add your college email to create a campus community.',
+      );
     }
     const finalSlug = existing ? `${slug}-${Date.now()}` : slug;
 
@@ -1923,9 +1941,13 @@ export class CommunitiesService implements OnModuleInit {
     // so every save to one failed (pending item A16).
     const updateData: Prisma.CommunityUpdateInput = {};
     if (data.name !== undefined) updateData.name = data.name;
-    // An empty description leaves it unchanged, as it always has.
+    // An empty description clears it. `undefined` would tell Prisma to leave
+    // the column alone, so erasing the text saved "successfully" and the old
+    // description came back on the next load.
     if (data.description !== undefined) {
-      updateData.description = data.description || undefined;
+      const description =
+        typeof data.description === 'string' ? data.description.trim() : '';
+      updateData.description = description || null;
     }
     if (data.isPrivate !== undefined) {
       updateData.isPrivate = Boolean(data.isPrivate);
@@ -2087,6 +2109,129 @@ export class CommunitiesService implements OnModuleInit {
       data: { moderatorNoticeAckedAt: new Date() },
     });
     return { success: true };
+  }
+
+  /**
+   * Hands the community to another member. The previous owner stays on as a
+   * moderator, so they keep moderation powers and can then leave if they want.
+   *
+   * Before this existed an owner could never leave (leaveCommunity refuses
+   * them and tells them to transfer first) and the only way out was deleting
+   * the community for everyone.
+   *
+   * Only the current `ownerId` may transfer — a stray OWNER member row is not
+   * enough. The write is conditional on that ownerId, so two transfers racing
+   * from the same owner cannot both succeed.
+   */
+  async transferOwnership(
+    communityId: string,
+    newOwnerId: string,
+    requestingUserId: string,
+  ): Promise<{ success: true; ownerId: string }> {
+    if (newOwnerId === requestingUserId) {
+      throw new BadRequestException('You already own this community');
+    }
+
+    const [community, target] = await Promise.all([
+      this.prisma.community.findUnique({
+        where: { id: communityId },
+        select: {
+          ownerId: true,
+          deletedAt: true,
+          collegeId: true,
+          isCampusCommunity: true,
+          name: true,
+        },
+      }),
+      this.prisma.communityMember.findUnique({
+        where: { userId_communityId: { userId: newOwnerId, communityId } },
+        select: {
+          role: true,
+          user: {
+            select: {
+              deletedAt: true,
+              accountStatus: true,
+              verificationStatus: true,
+            },
+          },
+        },
+      }),
+    ]);
+    if (!community || community.deletedAt) {
+      throw new NotFoundException('Community not found');
+    }
+    if (community.ownerId !== requestingUserId) {
+      throw new ForbiddenException(
+        'Only the community owner can transfer ownership',
+      );
+    }
+    if (!target || target.user.deletedAt) {
+      throw new NotFoundException('Member not found in community');
+    }
+    if (target.user.accountStatus !== 'ACTIVE') {
+      throw new BadRequestException(
+        'This member cannot take over the community right now',
+      );
+    }
+    // Owning a community is gated like creating one: a transfer must not be
+    // a way to put an unverified account in charge.
+    if (target.user.verificationStatus !== 'VERIFIED') {
+      throw new BadRequestException(
+        'Only a verified member can become the owner',
+      );
+    }
+    // A campus community stays with someone who is still at that campus.
+    if (community.isCampusCommunity && community.collegeId) {
+      const targetCollegeId = await this.resolveCollegeId(newOwnerId);
+      if (targetCollegeId !== community.collegeId) {
+        throw new BadRequestException(
+          'The new owner must have an active email from this college',
+        );
+      }
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      const moved = await tx.community.updateMany({
+        where: { id: communityId, ownerId: requestingUserId, deletedAt: null },
+        data: { ownerId: newOwnerId },
+      });
+      if (moved.count === 0) {
+        throw new ForbiddenException(
+          'Only the community owner can transfer ownership',
+        );
+      }
+      // Conditional, so a member who left a moment ago rolls the whole
+      // transfer back with a clear answer instead of a database error.
+      const promoted = await tx.communityMember.updateMany({
+        where: { userId: newOwnerId, communityId },
+        data: { role: 'OWNER' },
+      });
+      if (promoted.count === 0) {
+        throw new NotFoundException('Member not found in community');
+      }
+      // The previous owner normally has a member row; `updateMany` keeps this
+      // from failing for one created before rows were written for owners.
+      await tx.communityMember.updateMany({
+        where: { userId: requestingUserId, communityId },
+        data: { role: 'MODERATOR' },
+      });
+    });
+
+    await this.invalidateCommunityCache(
+      communityId,
+      community.collegeId ?? undefined,
+    );
+    void this.domainEventService.emit(
+      'community.ownershipTransferred',
+      {
+        communityId,
+        newOwnerId,
+        previousOwnerId: requestingUserId,
+        communityName: community.name,
+      },
+      [newOwnerId, requestingUserId],
+    );
+    return { success: true, ownerId: newOwnerId };
   }
 
   async updateMemberRole(

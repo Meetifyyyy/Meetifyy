@@ -6,6 +6,7 @@ import { applyRemoteLike } from '../utils/likeSync';
 import { postLikeKey, writePostLike } from '@features/feed/hooks/useLikePost';
 import { commentLikeKey, writeCommentLike } from '@features/feed/hooks/useLikeComment';
 import { useAuth } from '../context/AuthContext';
+import { showToast } from '../utils/toast';
 import { useConversations } from './useMessages';
 import { PROFILE_KEYS } from './useProfile';
 import { toggleRegistry } from '../utils/mutationRegistry';
@@ -48,6 +49,20 @@ function emitCatchup(socket, payload) {
       resolve(err ? null : res);
     });
   });
+}
+
+/**
+ * True the first time an event is seen. A community event addressed to one
+ * person also reaches them through the community's room when they have it
+ * open, so the same event can arrive twice; the copies share a timestamp.
+ */
+const seenEvents = new Set();
+function firstDelivery(event) {
+  const key = `${event?.type}:${event?.timestamp}:${JSON.stringify(event?.data ?? null)}`;
+  if (seenEvents.has(key)) return false;
+  seenEvents.add(key);
+  if (seenEvents.size > 200) seenEvents.delete(seenEvents.values().next().value);
+  return true;
 }
 
 export function useGlobalSocketSync() {
@@ -383,6 +398,47 @@ export function useGlobalSocketSync() {
           patchCommunityMemberRole(
             queryClient, data.communityId, data.memberId, data.newRole, currentUser?.id,
           );
+          break;
+        }
+
+        // ── Join requests and ownership ────────────────────────────────
+        // These go to the community's room as well as to the person they are
+        // about, so everyone else in the room ignores them, and the person
+        // (who may be in the room too) is told once.
+        case 'community.requestAccepted':
+        case 'community.requestDeclined': {
+          const data = event.data || event;
+          if (!data.communityId || data.userId !== currentUser.id) break;
+          if (!firstDelivery(event)) break;
+          const accepted = event.type === 'community.requestAccepted';
+          const name = typeof data.communityName === 'string' && data.communityName
+            ? data.communityName
+            : 'the community';
+          if (accepted) {
+            queryClient.invalidateQueries({ queryKey: ['community', data.communityId] });
+            showToast(`You're in! Your request to join ${name} was accepted`, 'success');
+          } else {
+            // Back to "Request to Join", with the reason it changed.
+            patchCommunityDetail(queryClient, data.communityId, { hasPendingRequest: false });
+            patchCommunityInLists(queryClient, data.communityId, { hasPendingRequest: false });
+            showToast(`Your request to join ${name} was declined`, 'info');
+          }
+          queryClient.invalidateQueries({ queryKey: ['communities'] });
+          break;
+        }
+
+        // Who owns the community changed: every viewer's controls depend on it.
+        case 'community.ownershipTransferred': {
+          const data = event.data || event;
+          if (!data.communityId) break;
+          queryClient.invalidateQueries({ queryKey: ['community', data.communityId] });
+          queryClient.invalidateQueries({ queryKey: ['communities'] });
+          if (data.newOwnerId === currentUser.id && firstDelivery(event)) {
+            const name = typeof data.communityName === 'string' && data.communityName
+              ? data.communityName
+              : 'this community';
+            showToast(`You're now the owner of ${name}`, 'success');
+          }
           break;
         }
 

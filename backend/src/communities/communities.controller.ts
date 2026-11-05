@@ -21,6 +21,7 @@ import {
   CreateCommunityDto,
   UpdateCommunityDto,
   UpdateMemberRoleDto,
+  TransferOwnershipDto,
 } from './dto/community.dto';
 import { moderatorPermissions } from './moderator-permissions';
 import { clampPageParam } from '../common/pagination.util';
@@ -223,6 +224,15 @@ export class CommunitiesController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.communitiesService.acknowledgeModeratorNotice(id, user.id);
+  }
+
+  @Post(':id/transfer-ownership')
+  async transferOwnership(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() data: TransferOwnershipDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.communitiesService.transferOwnership(id, data.userId, user.id);
   }
 
   @Patch(':id/members/:userId/role')

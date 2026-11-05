@@ -22,7 +22,10 @@ export default function JoinAction({ community }) {
   if (isCommunityMember(community, currentUser)) {
     return <span className={`${styles.btn} ${styles.settled}`}>Joined</span>;
   }
-  if (community.hasPendingRequest || request.isSuccess) {
+  // The cache is the answer once it has one: a declined request (realtime
+  // notice) sets `hasPendingRequest: false`, and this button's own success
+  // flag, which never resets, kept it reading "Requested" after the decline.
+  if (community.hasPendingRequest || (request.isSuccess && community.hasPendingRequest !== false)) {
     return <span className={`${styles.btn} ${styles.settled}`}>Requested</span>;
   }
 

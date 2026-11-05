@@ -99,12 +99,21 @@ describe('CommunitiesService.updateCommunity', () => {
     expect(data).not.toHaveProperty('avatarMediaId');
   });
 
-  it('leaves the description alone when it is sent empty, as it always has', async () => {
+  // Erasing the description must clear it: undefined would tell Prisma to
+  // leave the old text in place, which is the bug this replaced.
+  it('clears the description when it is sent empty or blank', async () => {
     const { service, update } = build();
 
-    await service.updateCommunity(ID, { name: 'X', description: '' }, OWNER);
+    await service.updateCommunity(ID, { name: 'X', description: '   ' }, OWNER);
 
-    // Prisma treats an undefined field as "leave unchanged".
+    expect(update.mock.calls[0][0].data.description).toBeNull();
+  });
+
+  it('leaves the description alone when it is not sent', async () => {
+    const { service, update } = build();
+
+    await service.updateCommunity(ID, { name: 'X' }, OWNER);
+
     expect(update.mock.calls[0][0].data.description).toBeUndefined();
   });
 });

@@ -27,6 +27,9 @@ vi.mock('@shared/utils/mediaPipeline', () => ({ processAndUploadImage }));
 vi.mock('@shared/utils/generateAvatarImage', () => ({ generateInitialAvatarFile }));
 vi.mock('@shared/hooks/useOverlayBack', () => ({ useOverlayBack: () => {} }));
 vi.mock('@shared/hooks/useScrollLock', () => ({ useScrollLock: () => {} }));
+vi.mock('@shared/hooks/useCampusAffiliation', () => ({
+  useCampusAffiliation: () => ({ isActive: false, status: 'none' }),
+}));
 vi.mock('@shared/utils/toast', () => ({ showToast: vi.fn() }));
 vi.mock('@shared/stores/verificationModalStore', () => ({ openVerificationModal: vi.fn() }));
 

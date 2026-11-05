@@ -4,6 +4,7 @@ import {
   MaxLength,
   IsBoolean,
   IsIn,
+  IsUUID,
 } from 'class-validator';
 import { COMMUNITY_DESCRIPTION_MAX } from '../community-limits';
 
@@ -99,4 +100,10 @@ export class UpdateMemberRoleDto {
     message: 'Role must be MODERATOR or MEMBER',
   })
   role!: 'MODERATOR' | 'MEMBER';
+}
+
+export class TransferOwnershipDto {
+  /** The member who becomes the owner. */
+  @IsUUID()
+  userId!: string;
 }

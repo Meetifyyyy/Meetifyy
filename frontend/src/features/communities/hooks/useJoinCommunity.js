@@ -176,7 +176,7 @@ export function useJoinCommunity() {
    */
   const mutate = useCallback((variables) => {
     if (variables?.isJoined === false && isOwner(queryClient, variables)) {
-      showToast('Transfer ownership before leaving your own community', 'error');
+      showToast('Make another member the owner first: Members, then ⋯, then Make owner', 'error');
       return;
     }
     return toggle(variables);

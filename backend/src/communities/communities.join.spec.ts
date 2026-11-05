@@ -384,12 +384,12 @@ describe('CommunitiesService — joining', () => {
       });
     });
 
-    it('never binds one to the mirror when there is no active affiliation', async () => {
+    // Asking for Campus without an active affiliation is refused, never bound
+    // to the stale mirror and never quietly created as a public community.
+    it('refuses a campus community when there is no active affiliation, and writes nothing', async () => {
       const { run, communityCreate } = create(null);
-      await run();
-      const data = communityCreate.mock.calls[0][0].data;
-      expect(data.college).toBeUndefined();
-      expect(data.isCampusCommunity).toBeUndefined();
+      await expect(run()).rejects.toBeInstanceOf(BadRequestException);
+      expect(communityCreate).not.toHaveBeenCalled();
     });
   });
 });

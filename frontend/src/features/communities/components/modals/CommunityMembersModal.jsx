@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { UserX, Ban, Flag, ShieldPlus, ShieldMinus } from '@shared/components/icons';
+import { UserX, Ban, Flag, ShieldPlus, ShieldMinus, UserCheck } from '@shared/components/icons';
+import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import { isImageUrl } from "@shared/utils/avatar";
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
@@ -32,10 +33,11 @@ import { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
  *   isTargetMod   — drives promote vs demote
  *   onRemoved     — callback after removing member
  *   onRoleChanged — callback after a promote/demote
+ *   onMakeOwner   — callback that hands ownership to this member
  */
 function MemberActionMenu({
   member, communityId, isCurrentUser, isAdmin, isOwner,
-  isTargetOwner, isTargetMod, onRemoved, onRoleChanged,
+  isTargetOwner, isTargetMod, onRemoved, onRoleChanged, onMakeOwner,
 }) {
   const [open, setOpen] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
@@ -46,6 +48,7 @@ function MemberActionMenu({
   // powers being granted; nothing changes until it is confirmed.
   const [confirmPromote, setConfirmPromote] = useState(false);
   const [confirmBlock, setConfirmBlock] = useState(false);
+  const [confirmOwner, setConfirmOwner] = useState(false);
   const btnRef = useRef(null);
 
   const toggleOpen = (e) => {
@@ -158,6 +161,31 @@ function MemberActionMenu({
     setConfirmPromote(false);
   };
 
+  // Handing over the community cannot be undone by the person doing it (only
+  // the new owner can give it back), so it always asks first.
+  const confirmMakeOwner = async () => {
+    if (roleBusy) return;
+    setRoleBusy(true);
+    try {
+      const ok = await onMakeOwner?.(member.id);
+      if (ok) showToast(`${member.name} is now the owner`, 'success');
+    } finally {
+      setRoleBusy(false);
+      setConfirmOwner(false);
+    }
+  };
+
+  const ownerModal = confirmOwner ? (
+    <ConfirmModal
+      title={`Make ${member.name} the owner?`}
+      description={`${member.name} will be able to edit and delete this community and manage its moderators. You will stay on as a moderator and can then leave.`}
+      confirmText={roleBusy ? 'Transferring…' : 'Make owner'}
+      onConfirm={confirmMakeOwner}
+      onCancel={() => setConfirmOwner(false)}
+      centered
+    />
+  ) : null;
+
   const blockModal = confirmBlock ? (
     <BlockUserModal
       name={member.name}
@@ -177,7 +205,7 @@ function MemberActionMenu({
 
   return (
     <div style={{ flexShrink: 0 }}>
-      {promoteModal}{blockModal}
+      {promoteModal}{blockModal}{ownerModal}
       <button
         ref={btnRef}
         onClick={toggleOpen}
@@ -244,6 +272,35 @@ function MemberActionMenu({
                   ? 'Saving…'
                   : isTargetMod ? 'Remove as moderator' : 'Make moderator'}
               </span>
+            </button>
+          )}
+
+          {/* Hand the community over. Owner-only, like the server rule. */}
+          {isOwner && !isTargetOwner && onMakeOwner && (
+            <button
+              onClick={() => { setOpen(false); setConfirmOwner(true); }}
+              disabled={roleBusy}
+              onMouseEnter={(e) => e.currentTarget.style.background = 'var(--color-bg-soft)'}
+              onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+              style={{
+                width: '100%',
+                textAlign: 'left',
+                padding: '0.6rem 0.75rem',
+                background: 'transparent',
+                border: 'none',
+                cursor: roleBusy ? 'default' : 'pointer',
+                fontSize: '0.85rem',
+                color: 'var(--color-text-main)',
+                fontWeight: 500,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.6rem',
+                borderRadius: 'var(--radius-md, 8px)',
+                transition: 'background 0.15s ease',
+              }}
+            >
+              <UserCheck size={16} color="var(--color-text-muted)" />
+              <span>Make owner</span>
             </button>
           )}
 
@@ -459,7 +516,15 @@ export default function CommunityMembersModal({
     }
   };
 
-  const { setMemberRole } = useCommunityActions();
+  const { setMemberRole, transferOwnership } = useCommunityActions();
+
+  // After a transfer the viewer is no longer the owner, so every action in
+  // this list is out of date: close it and let the page reload the community.
+  const handleMakeOwner = async (memberId) => {
+    const ok = await transferOwnership(communityId, memberId);
+    if (ok) onClose();
+    return ok;
+  };
 
   const handleMemberRemoved = (removedId) => {
     setMembers(prev => prev.filter(m => m.id !== removedId));
@@ -607,6 +672,7 @@ export default function CommunityMembersModal({
                     isTargetOwner={isOwner}
                     isTargetMod={isMod}
                     onRoleChanged={handleRoleChanged}
+                    onMakeOwner={handleMakeOwner}
                     onRemoved={handleMemberRemoved}
                   />
                 </div>

@@ -29,6 +29,7 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import { activitiesApi } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
+import { useCampusAffiliation } from '@shared/hooks/useCampusAffiliation';
 import { showToast } from '@shared/utils/toast';
 import { insertActivityIntoCache, replaceActivityInCache } from '@shared/utils/mapActivity';
 import { idbDelete } from '@shared/lib/idb';
@@ -533,9 +534,14 @@ export default function CreateActivityPage() {
   // The College mode restricts an activity to the host's own college, so it is
   // only offered to users who actually have one — otherwise the activity would
   // be publishable but unreachable for everyone except the host.
+  //
+  // Keyed on a VERIFIED college (an active campus affiliation, as the Campus
+  // page uses), not on `collegeName`: getCollegeName falls back to the word
+  // "College" for a user with none, so that check never hid the option.
+  const { isActive: hasVerifiedCollege, status: collegeStatus } = useCampusAffiliation();
   const visibilityOptions = useMemo(
-    () => VISIBILITY_OPTIONS.filter(o => o.value !== 'College' || Boolean(collegeName)),
-    [collegeName],
+    () => VISIBILITY_OPTIONS.filter(o => o.value !== 'College' || hasVerifiedCollege),
+    [hasVerifiedCollege],
   );
   const containerRef = useRef(null);
 
@@ -564,6 +570,16 @@ export default function CreateActivityPage() {
   }));
 
   const set = p => setFormData(prev => ({ ...prev, ...p }));
+
+  // Opened from Campus, or a draft saved while the user still had a college:
+  // College is not available without a verified one, so fall back to Anyone.
+  // Only once that is KNOWN ('none'): while the check is still loading, a
+  // Campus-opened form must keep its College choice.
+  useEffect(() => {
+    if (collegeStatus === 'none' && formData.whoCanJoin === 'College') {
+      setFormData(prev => ({ ...prev, whoCanJoin: 'Anyone' }));
+    }
+  }, [collegeStatus, formData.whoCanJoin]);
 
   // Monotonic token for cover selection. Every user action that changes the
   // cover bumps it; any async result carrying a stale token is discarded. This

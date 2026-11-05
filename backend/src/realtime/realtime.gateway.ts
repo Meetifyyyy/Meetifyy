@@ -672,7 +672,10 @@ export class RealtimeGateway
     let targets: string[] = [];
 
     const commId = top('communityId') || inData('communityId');
-    if (commId) {
+    // A join request and its answer are about one person. Sent to the room,
+    // everyone looking at the community learned who asked to join and who
+    // was declined; they go to their targets only (below).
+    if (commId && !RealtimeGateway.PERSONAL_COMMUNITY_EVENTS.has(type)) {
       // ONE event, to the room, on the generic bus.
       //
       // This used to fan a single membership change out four ways: two
@@ -1358,6 +1361,13 @@ export class RealtimeGateway
 
   // Realtime event types that fan out to a `post_<id>` room (everyone viewing
   // the post), not just per-user targets. Kept idempotent on the client.
+  // Community events that concern one person and are never room-broadcast.
+  private static readonly PERSONAL_COMMUNITY_EVENTS = new Set([
+    'community.joinRequested',
+    'community.requestAccepted',
+    'community.requestDeclined',
+  ]);
+
   private static readonly POST_ROOM_EVENTS = new Set([
     'comment.created',
     'comment.deleted',

@@ -20,6 +20,7 @@ import {
   ALLOWED_IMAGE_ACCEPT,
 } from '@shared/constants/mediaLimits';
 import { generateInitialAvatarFile } from '@shared/utils/generateAvatarImage';
+import { useCampusAffiliation } from '@shared/hooks/useCampusAffiliation';
 
 const colors26 = [
   'linear-gradient(135deg, #FF6B6B, #FF8E53)',
@@ -85,6 +86,9 @@ const categories = [
   { id: 'other', label: 'Other', icon: '✨' }
 ];
 
+/** Characters a community name may use. `&` is allowed ("Robotics & AI"). */
+const COMMUNITY_NAME_PATTERN = /^[a-zA-Z0-9\s.,!?'"()&-]+$/;
+
 export default function CreateCommunityModal({ onClose, onCreated, isCampusCommunity = false }) {
   const { currentUser } = useAuth();
   const { addCommunity } = useCommunityActions();
@@ -127,6 +131,11 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
   const [desc, setDesc] = useState('');
   const [selectedCat, setSelectedCat] = useState(null);
   const [privacy, setPrivacy] = useState(isCampusCommunity ? 'campus' : 'public');
+  const { isActive: hasVerifiedCollege, status: collegeStatus } = useCampusAffiliation();
+  // No verified college (known, not still loading): Campus is not on offer.
+  useEffect(() => {
+    if (collegeStatus === 'none' && privacy === 'campus') setPrivacy('public');
+  }, [collegeStatus, privacy]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Avatar crop & upload state
@@ -185,12 +194,19 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
     return selectedCat !== null;
   }, [selectedCat]);
 
-  const isNameValid = useMemo(() => {
+  // Why the name cannot be used yet, or null. Shown under the field: the
+  // Continue button used to just stay grey with nothing saying why.
+  const nameProblem = useMemo(() => {
     const trimmed = name.trim();
-    if (trimmed.length < 3 || trimmed.length > 30) return false;
-    const regex = /^[a-zA-Z0-9\s.,!?'"()-]+$/;
-    return regex.test(trimmed);
+    if (!trimmed) return null; // nothing typed yet is not an error
+    if (trimmed.length < 3) return 'Use at least 3 characters.';
+    if (trimmed.length > 30) return 'Use 30 characters or fewer.';
+    if (!COMMUNITY_NAME_PATTERN.test(trimmed)) {
+      return 'Use letters, numbers, spaces and . , ! ? \' " ( ) & - only.';
+    }
+    return null;
   }, [name]);
+  const isNameValid = name.trim().length > 0 && nameProblem === null;
 
   const isDescValid = useMemo(() => {
     return isValidCommunityDescription(desc);
@@ -420,6 +436,9 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
         categories: [selectedCat.id],
         privacy: privacy,
         hasCustomAvatar,
+        // What was chosen, never quietly downgraded: the server refuses Campus
+        // without a verified college (with a reason that is shown), whereas
+        // dropping it here made a public community out of a campus request.
         isCampusCommunity: isCampusCommunity || privacy === 'campus'
       });
 
@@ -427,8 +446,11 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
       avatarUploadRef.current = null;
       onCreated(id);
     } catch (err) {
+      // A 400 carries a reason written for the person (e.g. Campus without a
+      // college email); anything else stays generic.
+      const reason = err?.status === 400 && typeof err.message === 'string' ? err.message : null;
       showToast(
-        isNetworkLevelFailure(err) ? submitErrorMessage(err) : "Couldn't create community",
+        isNetworkLevelFailure(err) ? submitErrorMessage(err) : (reason || "Couldn't create community"),
         'error',
       );
       console.error(err);
@@ -518,11 +540,18 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
                     onChange={(e) => setName(e.target.value)}
                     onKeyDown={handleKeyDown}
                     maxLength={30}
+                    aria-invalid={nameProblem ? true : undefined}
+                    aria-describedby={nameProblem ? 'community-name-problem' : undefined}
                     className={styles.textInput}
                   />
                   <label className={styles.fieldLabel}>Name</label>
                 </div>
-                <div className={styles.counterRow}>{name.length}/30</div>
+                <div className={styles.counterRow}>
+                  {nameProblem && (
+                    <span id="community-name-problem" className={styles.fieldProblem} role="alert">{nameProblem}</span>
+                  )}
+                  {name.length}/30
+                </div>
               </div>
 
               <div className={styles.fieldGroup}>
@@ -665,6 +694,10 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
                   </div>
                 </button>
 
+                {/* Campus restricts the community to the creator's college, so it
+                    is offered only to someone with a verified one (the server
+                    refuses it otherwise). */}
+                {hasVerifiedCollege && (
                 <button
                   type="button"
                   onClick={() => setPrivacy('campus')}
@@ -679,6 +712,7 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
                     <div className={styles.radioDot} />
                   </div>
                 </button>
+                )}
               </div>
             </>
           )}

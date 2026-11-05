@@ -438,6 +438,9 @@ export default function CommunityAdminModal({ community, onClose, onDeleteCommun
                 <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', lineHeight: 1.5 }}>
                   Once deleted, this community, its posts, members, and settings will be permanently removed. This action cannot be undone.
                 </div>
+                <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', lineHeight: 1.5, marginTop: '0.5rem' }}>
+                  Want to step down instead? Open Members, tap ⋯ next to someone, and choose Make owner. You will stay on as a moderator and can then leave.
+                </div>
               </div>
               <button
                 type="button"

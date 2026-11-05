@@ -174,8 +174,26 @@ export function useCommunityActions() {
     }
   };
 
+  /**
+   * Make another member the owner. Not optimistic: it changes what the caller
+   * may do everywhere on the page, so the page waits for the server and then
+   * reloads the community from it.
+   */
+  const transferOwnership = async (communityId, memberId) => {
+    if (blockIfOffline('action')) return false;
+    try {
+      await communitiesApi.transferOwnership(communityId, memberId);
+      queryClient.invalidateQueries({ queryKey: ['community', communityId] });
+      queryClient.invalidateQueries({ queryKey: ['communities'] });
+      return true;
+    } catch (err) {
+      showToast(err?.message || "Couldn't transfer ownership", 'error');
+      return false;
+    }
+  };
+
   return {
     createCampusGroup, addCommunity, addPost, updateCommunity, kickMember,
-    setMemberRole, createCommMutation,
+    setMemberRole, transferOwnership, createCommMutation,
   };
 }

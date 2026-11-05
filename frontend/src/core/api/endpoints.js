@@ -249,6 +249,9 @@ export function createEndpoints({
     // promote or demote a moderator anywhere in the UI.
     updateMemberRole: (id, memberId, role) =>
       apiClient.patch(`/api/communities/${id}/members/${memberId}/role`, { role }),
+    // Hands the community to another member; the caller stays as a moderator.
+    transferOwnership: (id, userId) =>
+      apiClient.post(`/api/communities/${id}/transfer-ownership`, { userId }),
     // The moderator permission set, served from the same table the backend
     // enforces with — so the promotion modals show what is actually applied
     // rather than a copy that quietly goes stale.

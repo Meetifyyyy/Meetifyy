@@ -188,6 +188,13 @@
   margin-top: 0.25rem;
 }
 
+/* Why the field cannot be used, left of the counter. */
+.fieldProblem {
+  margin-right: auto;
+  padding-right: 0.5rem;
+  color: var(--color-danger, #e5484d);
+}
+
 /* === Categories Flow Grid === */
 .categoryGrid {
   display: flex;
