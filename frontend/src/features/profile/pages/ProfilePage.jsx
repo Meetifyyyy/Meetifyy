@@ -98,6 +98,7 @@ INTERESTS_BY_CATEGORY.forEach(category => {
 
 import CoverImage, { warmCover, getCleanCoverUrl } from '@shared/components/ui/CoverImage';
 import CoverEditorSheet from '../components/CoverEditorSheet';
+import ArrivalReveal from '../components/ArrivalReveal';
 import BlurredCover from '@shared/components/ui/BlurredCover';
 import CollapsingHeader from '@shared/components/CollapsingHeader/CollapsingHeader';
 import { Bookmark, MoreVertical, Settings, Share2, Flag, ChevronLeft } from '@shared/components/icons';
@@ -680,14 +681,15 @@ export default function ProfilePage() {
                 <CollegeRepresentativeBadge isCampusRep={effectiveUser.isCampusRep} collegeName={universityName} user={effectiveUser} size="lg" />
               </h1>
               <p className={s.username} data-exit-track="username">@{effectiveUser.username}</p>
-              {effectiveUser.bio && <p className={s.bio}>{effectiveUser.bio}</p>}
+              <ArrivalReveal show={Boolean(effectiveUser.bio)}>
+                <p className={s.bio}>{effectiveUser.bio}</p>
+              </ArrivalReveal>
 
               {/* Interest tags */}
               {(() => {
                 const [row1Tags, row2Tags] = balanceTagsIntoTwoRows(userTags);
-                if (userTags.length === 0) return null;
-
                 return (
+                  <ArrivalReveal show={userTags.length > 0} delay={140}>
                   <div className={s.tagsScrollWrapper}>
                     <div className={s.tagsRow}>
                       {row1Tags.map((tag, idx) => renderProfileTag(tag, `tag-row1-${idx}`))}
@@ -698,6 +700,7 @@ export default function ProfilePage() {
                       </div>
                     )}
                   </div>
+                  </ArrivalReveal>
                 );
               })()}
 

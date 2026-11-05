@@ -1,0 +1,33 @@
+.reveal {
+  display: grid;
+  grid-template-rows: 0fr;
+  width: 100%;
+  opacity: 0;
+  transition:
+    grid-template-rows 320ms cubic-bezier(0.2, 0, 0, 1),
+    opacity 260ms ease 80ms;
+}
+
+.open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.instant {
+  transition: none;
+}
+
+.inner {
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal {
+    transition: opacity 160ms ease;
+  }
+}
