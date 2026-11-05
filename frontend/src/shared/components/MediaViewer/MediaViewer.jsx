@@ -3,8 +3,6 @@ import { createPortal } from 'react-dom';
 import { useMediaViewer } from '@shared/context/MediaViewerContext';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
-import { showToast } from '@shared/utils/toast';
-import { copyToClipboard, shareNatively } from '@shared/lib/share/shareTargets';
 import ImageViewer from './ImageViewer';
 import VideoViewer from './VideoViewer';
 import { mediaCache } from '@shared/utils/MediaCacheManager';
@@ -24,7 +22,6 @@ import {
   Forward,
   MoreVertical,
   Download,
-  Share,
   Flag,
 } from '@shared/components/icons';
 import Menu, { MenuItem, useMenu } from '@shared/components/ui/Menu';
@@ -49,6 +46,81 @@ const SWIPE_DISTANCE_THRESHOLD = 0.25;
 const SWIPE_VELOCITY_THRESHOLD = 0.45;
 /** Horizontal boundary resistance factor (0–1). Lower = more rubbery. */
 const BOUNDARY_RESISTANCE = 0.3;
+/** Corner radius (on-screen px) the media reaches while dragged to dismiss. */
+const DISMISS_CORNER_RADIUS = 24;
+
+/**
+ * A `clip-path` that rounds the corners of the PICTURE inside a media element.
+ *
+ * `border-radius` would round the element's box, and a video's box is the
+ * whole stage (object-fit: contain), so its letterbox corners — invisible —
+ * would be the rounded ones. The inset is the letterbox, computed from the
+ * media's own size, so the visible picture is what gets the corners. `radius`
+ * is in the element's own (unscaled) px.
+ */
+function pictureClip(el, radius, knownBox) {
+  const r = Math.max(0, radius).toFixed(1);
+  // A drag passes the box it measured once at its start: measuring per move
+  // read layout right after the transform write, every frame.
+  const box = knownBox !== undefined ? knownBox : pictureBox(el);
+  if (!box) return `inset(0px round ${r}px)`;
+  const f = (n) => Math.max(0, n).toFixed(1);
+  return `inset(${f(box.top)}px ${f(box.right)}px ${f(box.bottom)}px ${f(box.left)}px round ${r}px)`;
+}
+
+/** A media element's own letterbox (object-fit: contain), in its own px. */
+function ownLetterbox(media) {
+  const w = media.clientWidth;
+  const h = media.clientHeight;
+  const iw = media.naturalWidth || media.videoWidth || 0;
+  const ih = media.naturalHeight || media.videoHeight || 0;
+  if (!(w > 0 && h > 0 && iw > 0 && ih > 0)) return { x: 0, y: 0, w, h };
+  const fit = Math.min(w / iw, h / ih);
+  return { x: (w - iw * fit) / 2, y: (h - ih * fit) / 2, w: iw * fit, h: ih * fit };
+}
+
+/**
+ * Where the visible picture sits inside `el`, as insets from each of its
+ * edges in `el`'s own (untransformed) px — or null when there is no picture.
+ *
+ * `el` is what the dismiss drag moves. For a video it is the <video> (whose
+ * box is the whole stage, letterboxed); for a photo it is the stage-sized
+ * wrapper around the <img>, so the picture has to be found inside it. Rounding
+ * the wrapper's own corners rounded empty space and nothing visible changed.
+ */
+function pictureBox(el) {
+  const isMedia = el.tagName === 'IMG' || el.tagName === 'VIDEO';
+  const media = isMedia
+    ? el
+    : (el.querySelector('video')
+      || [...el.querySelectorAll('img')].reverse().find((img) => img.naturalWidth > 0));
+  if (!media) return null;
+  const lb = ownLetterbox(media);
+  if (isMedia) {
+    return { left: lb.x, top: lb.y, right: el.clientWidth - lb.x - lb.w, bottom: el.clientHeight - lb.y - lb.h };
+  }
+  // Both rects carry the drag's transform; dividing by it gives el's own px.
+  const er = el.getBoundingClientRect();
+  const mr = media.getBoundingClientRect();
+  const scale = el.offsetWidth > 0 ? er.width / el.offsetWidth : 1;
+  const inner = media.offsetWidth > 0 ? (mr.width / scale) / media.offsetWidth : 1;
+  const left = (mr.left - er.left) / scale + lb.x * inner;
+  const top = (mr.top - er.top) / scale + lb.y * inner;
+  return {
+    left,
+    top,
+    right: el.offsetWidth - left - lb.w * inner,
+    bottom: el.offsetHeight - top - lb.h * inner,
+  };
+}
+
+/** Radius for a drag `progress` (0-1): eased in, so the first pixels of a drag do not snap. */
+function dismissRadius(progress, scale) {
+  const t = Math.min(1, progress / 0.25);
+  const eased = t * t * (3 - 2 * t);
+  return (DISMISS_CORNER_RADIUS * eased) / (scale || 1);
+}
+
 /** Vertical: fraction of viewport height that triggers dismiss. */
 const DISMISS_DISTANCE_THRESHOLD = 0.30;
 /** Vertical: pointer speed (px/ms) that triggers dismiss. */
@@ -159,6 +231,7 @@ function MediaViewerSession() {
     // Stop the viewer's audio immediately, rather than waiting for unmount.
     overlayRef.current?.querySelectorAll('video').forEach(video => video.pause());
     controlsHiddenByGesture.current = false;
+    setGestureHidesControls(false);
     // Pause all feed videos (below MediaViewer priority 10) on close
     feedVideoRegistry.pauseAll(PLAYBACK_PRIORITY.VIEWER);
     closeTimerRef.current = setTimeout(() => {
@@ -202,6 +275,8 @@ function MediaViewerSession() {
   useEffect(() => { itemsLenRef.current = items.length; }, [items.length]);
 
   const controlsHiddenByGesture = useRef(false);
+  // Mirrors the ref for rendering: a video's own bottom bar hides with the header.
+  const [gestureHidesControls, setGestureHidesControls] = useState(false);
 
   // ── Open / close animation ──────────────────────────────────────────────────
   useEffect(() => {
@@ -366,9 +441,14 @@ function MediaViewerSession() {
     const media = mediaElRef.current;
     const backdrop = backdropRef.current;
     if (media) {
-      media.style.transition = animate ? motionTransition('transform', 0.32) : 'none';
+      media.style.transition = animate
+        ? `${motionTransition('transform', 0.32)}, clip-path 0.32s ease`
+        : 'none';
       media.style.transform  = '';
       media.style.willChange = '';
+      // Square again with the snap-back. A clip-path only animates to another
+      // inset(), so it goes to radius 0 first and is cleared afterwards.
+      if (media.style.clipPath) media.style.clipPath = animate ? pictureClip(media, 0) : '';
     }
     if (backdrop) {
       backdrop.style.transition = animate ? 'opacity 0.32s ease' : 'none';
@@ -382,6 +462,7 @@ function MediaViewerSession() {
         if (media) {
           media.style.transition = '';
           media.style.transform  = '';
+          media.style.clipPath   = '';
         }
         if (backdrop) {
           backdrop.style.transition = '';
@@ -487,9 +568,14 @@ function MediaViewerSession() {
       const scale = 1 - progress * 0.12;
 
       if (mediaElRef.current) {
+        // Where the picture sits in the element: measured once per drag,
+        // before the first transform (nothing about it changes while dragging).
+        if (g.clipBox === undefined) g.clipBox = pictureBox(mediaElRef.current);
         mediaElRef.current.style.transition = 'none';
         mediaElRef.current.style.willChange = 'transform';
         mediaElRef.current.style.transform  = `translate3d(0, ${dampened}px, 0) scale(${scale})`;
+        // The corners round as it is lifted away (see pictureClip).
+        mediaElRef.current.style.clipPath   = pictureClip(mediaElRef.current, dismissRadius(progress, scale), g.clipBox);
       }
       if (backdropRef.current) {
         backdropRef.current.style.transition = 'none';
@@ -507,6 +593,7 @@ function MediaViewerSession() {
       if (!controlsHiddenByGesture.current && Math.abs(dy) > 20) {
         controlsHiddenByGesture.current = true;
         setControlsVisible(false);
+        setGestureHidesControls(true);
       }
     }
   }, [setBarsFollowPage]);
@@ -547,6 +634,7 @@ function MediaViewerSession() {
     if (controlsHiddenByGesture.current) {
       controlsHiddenByGesture.current = false;
       setControlsVisible(true);
+      setGestureHidesControls(false);
     }
   }, [resetGestureTransforms]);
 
@@ -610,10 +698,14 @@ function MediaViewerSession() {
         const sign    = dy > 0 ? 1 : -1;
         const finishY = sign * vh;
         if (mediaElRef.current) {
-          mediaElRef.current.style.transition = motionTransition('transform', 0.24);
+          mediaElRef.current.style.transition = `${motionTransition('transform', 0.24)}, clip-path 0.24s ease`;
           // Keeps the shrink the drag reached, so the fly-out continues it.
-          const endScale = 1 - Math.min(Math.abs(dy * DISMISS_DRAG_DAMPEN) / (vh * 0.55), 1) * 0.12;
+          const endProgress = Math.min(Math.abs(dy * DISMISS_DRAG_DAMPEN) / (vh * 0.55), 1);
+          const endScale = 1 - endProgress * 0.12;
           mediaElRef.current.style.transform  = `translate3d(0, ${finishY}px, 0) scale(${endScale})`;
+          // A fast flick may leave before the corners finished rounding:
+          // they complete on the way out, never snapping.
+          mediaElRef.current.style.clipPath   = pictureClip(mediaElRef.current, DISMISS_CORNER_RADIUS / endScale, g.clipBox);
         }
         if (backdropRef.current) {
           backdropRef.current.style.transition = prefersReducedMotion() ? 'none' : 'opacity 0.24s ease';
@@ -624,6 +716,7 @@ function MediaViewerSession() {
         // Snap back
         controlsHiddenByGesture.current = false;
         setControlsVisible(true);
+        setGestureHidesControls(false);
         resetGestureTransforms(true);
       }
     }
@@ -820,29 +913,6 @@ function MediaViewerSession() {
     }, 2000);
   };
 
-  /**
-   * Shares the media being viewed.
-   *
-   * Goes through the same helpers every share dialog uses rather than calling
-   * `navigator.share` directly. The hand-rolled version here swallowed every
-   * outcome in an empty catch, so a browser that refused the share and a
-   * clipboard that refused the write both looked exactly like success: nothing
-   * happened and nothing was said.
-   *
-   * It still shares the media's own URL, not the post's — that is what this
-   * viewer is showing, and changing it is a product decision rather than a
-   * cleanup.
-   */
-  const handleShare = async () => {
-    const url = currentItem?.url;
-    if (!url) return;
-
-    const outcome = await shareNatively({ url });
-    // Somebody closing the sheet is a change of mind, not a failure.
-    if (outcome === 'shared' || outcome === 'dismissed') return;
-
-    showToast((await copyToClipboard(url)) ? 'Link copied' : 'Could not copy the link');
-  };
 
   if (!open) return null;
 
@@ -929,16 +999,10 @@ function MediaViewerSession() {
             >
               <MoreVertical size={18} strokeWidth={1.75} />
             </button>
-            <Menu {...moreMenu.menuProps} size="md" ariaLabel="Media options">
+            <Menu {...moreMenu.menuProps} size="md" ariaLabel="Media options" className={styles.viewerMenu}>
               <MenuItem icon={Download} onSelect={handleDownload} onClose={moreMenu.close}>
                 Download
               </MenuItem>
-
-              {meta?.source !== 'Post' && (
-                <MenuItem icon={Share} onSelect={handleShare} onClose={moreMenu.close}>
-                  Share
-                </MenuItem>
-              )}
 
               {reportTarget && (
                 <MenuItem
@@ -987,6 +1051,7 @@ function MediaViewerSession() {
                       onFullscreenChange={isCurrent ? setVideoFullscreen : undefined}
                       onStageClick={moreMenu.close}
                       isCurrent={isCurrent && !closing}
+                      gestureHidesControls={isCurrent && gestureHidesControls}
                     />
                   ) : (
                     <ImageViewer

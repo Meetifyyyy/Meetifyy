@@ -105,3 +105,20 @@ describe('viewer modal focus', () => {
     opener.remove();
   });
 });
+
+describe('a sheet opened from the viewer', () => {
+  it('never focuses its search field by itself, so no keyboard opens', async () => {
+    render(<Viewer />);
+    const sheet = document.createElement('div');
+    sheet.setAttribute('role', 'dialog'); sheet.setAttribute('aria-modal', 'true');
+    const search = document.createElement('input'); search.type = 'text';
+    const close = document.createElement('button'); close.textContent = 'Close';
+    sheet.append(search, close);
+    document.body.append(sheet);
+    // The focus trap reacts to the new layer on its MutationObserver tick.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.activeElement).not.toBe(search);
+    expect(sheet.contains(document.activeElement)).toBe(true);
+    sheet.remove();
+  });
+});

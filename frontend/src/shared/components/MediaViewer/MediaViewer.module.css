@@ -26,7 +26,8 @@
   --mv-btn-bg-hover:  rgba(0, 0, 0, 0.70);
   --mv-btn-border:    rgba(255, 255, 255, 0.16);
   --mv-btn-color:     #ffffff;
-  --mv-btn-shadow:    0 4px 14px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.3);
+  /* Kept light: enough to lift a control off a bright photo, no halo. */
+  --mv-btn-shadow:    0 1px 3px rgba(0, 0, 0, 0.22);
 
   /* More-menu: always dark since the viewer is always dark */
   --mv-menu-bg:     var(--color-bg-white);
@@ -123,27 +124,31 @@
 }
 
 /* ── Icon Buttons (close, forward, more) ────────────────────────────────────
-   One grey in both themes, the dark dropdown-menu surface, with no border
-   and no shadow: the stage behind them is always dark, so a theme-following
-   light button read as a white blob over the photo. */
+   The same frosted dark glass as the video's bottom controls, in both themes:
+   the stage behind them is always dark, so a theme-following light button
+   read as a white blob over the photo. */
 .iconBtn {
   width: 38px;
   height: 38px;
   border-radius: var(--radius-full);
   border: none !important;
-  background: #2C2C2E;
-  color: #FFFFFF;
+  /* The video controls' frosted dark glass, so the header and the bottom bar
+     are one set of controls. */
+  background: var(--mv-btn-bg);
+  color: var(--mv-btn-color);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   transition: background 0.15s ease, transform 0.15s ease;
   flex-shrink: 0;
-  box-shadow: none;
+  box-shadow: var(--mv-btn-shadow);
 }
 
 .iconBtn:hover {
-  background: #3A3A3C;
+  background: var(--mv-btn-bg-hover);
 }
 
 .iconBtn:active {
@@ -355,7 +360,7 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   padding: 1rem;
-  box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.3), 0 8px 32px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
   pointer-events: auto;
 }
 
@@ -862,7 +867,7 @@
   z-index: 25;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
 }
 
 .seekRippleLeft  { left: 14%; }
@@ -879,7 +884,7 @@
   font-size: 0.8rem;
   font-weight: 700;
   letter-spacing: 0.04em;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
 }
 
 @keyframes rippleFade {
@@ -905,7 +910,7 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.55);
+  box-shadow: var(--mv-btn-shadow);
   z-index: 15;
   transition: transform 0.18s ease, background 0.15s ease;
   animation: replayIn 0.22s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
@@ -1073,7 +1078,7 @@
   border-radius: var(--radius-full);
   transform: translate(-50%, -50%) scale(0);
   pointer-events: none;
-  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
   transition: width 0.15s, height 0.15s, transform 0.15s;
 }
 
@@ -1131,7 +1136,7 @@
   border-radius: 50%;
   transition: background 0.15s, transform 0.12s;
   flex-shrink: 0;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--mv-btn-shadow);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   padding: 0;
@@ -1177,7 +1182,7 @@
   border-radius: 20px;
   background: rgba(0, 0, 0, 0.52);
   border: none !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--mv-btn-shadow);
   overflow: hidden;
   transition: max-width 0.25s cubic-bezier(0.4, 0, 0.2, 1), background 0.15s ease;
   flex-shrink: 0;
@@ -1244,7 +1249,7 @@
   height: 10px;
   border-radius: 50%;
   background: #fff;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
   cursor: pointer;
 }
 
@@ -1253,7 +1258,7 @@
   height: 10px;
   border-radius: 50%;
   background: #fff;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
   border: none;
   cursor: pointer;
 }
@@ -1268,7 +1273,7 @@
   letter-spacing: 0.03em;
   padding: 0 0.35rem;
   user-select: none;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
 }
 
 .videoTimeSep {
@@ -1297,7 +1302,7 @@
   display: flex;
   align-items: center;
   gap: 0.25rem;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--mv-btn-shadow);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
 }
@@ -1318,7 +1323,7 @@
   background: rgba(12, 12, 12, 0.92);
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 12px;
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.72);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
   padding: 0.45rem;
   min-width: 120px;
   z-index: 20;
@@ -1727,4 +1732,38 @@
   clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
+}
+
+/* ── The ⋯ menu, inside the viewers only ─────────────────────────────────────
+   The speed menu's dark glass rather than the page theme's menu, which was a
+   light card over the dark stage. Doubled class so it outranks Menu's own
+   theme rules, including the dark-theme ones. */
+.viewerMenu.viewerMenu {
+  background: rgba(12, 12, 12, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  color: #ffffff;
+}
+
+.viewerMenu.viewerMenu [role='menuitem']:not([class*='danger']) {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.viewerMenu.viewerMenu [role='menuitem']:not([class*='danger']) svg {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.viewerMenu.viewerMenu [role='menuitem']:hover:not(:disabled),
+.viewerMenu.viewerMenu [role='menuitem']:focus-visible {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.viewerMenu.viewerMenu [role='menuitem']:active:not(:disabled) {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.viewerMenu.viewerMenu [role='separator'] {
+  background: rgba(255, 255, 255, 0.14);
 }

@@ -26,7 +26,24 @@ export function useViewerFocus(open, overlayRef) {
     const isAllowed = target => roots().some(root => root.contains(target));
     const tabbables = () => roots().flatMap(root => [...root.querySelectorAll(focusable)])
       .filter(el => !el.closest('[inert], [aria-hidden="true"]') && getComputedStyle(el).visibility !== 'hidden');
-    const focusFirst = () => (tabbables()[0] || activeRoot()).focus();
+    const isTextEntry = el => el.matches('input, textarea, select, [contenteditable="true"]');
+    /*
+     * Where focus goes when it has to move into a layer.
+     *
+     * Never into a text field: on a phone that opens the keyboard by itself.
+     * The Forward sheet opened from the viewer came up with its search field
+     * focused and the keyboard rising while the sheet was still sliding in;
+     * the two motions fought over the sheet's transform and left a gap above
+     * the keyboard. So focus goes to the layer's first control that is not a
+     * field (the sheet's close button), or to the layer itself.
+     */
+    const focusFirst = () => {
+      const root = activeRoot();
+      const first = tabbables().find(el => !isTextEntry(el));
+      if (first) { first.focus({ preventScroll: true }); return; }
+      if (root !== viewer && !root.hasAttribute('tabindex')) root.setAttribute('tabindex', '-1');
+      root.focus({ preventScroll: true });
+    };
     // Only layers opened after the viewer stay interactive. Everything else in
     // <body> - the app root and any dialog beneath the viewer - is made inert,
     // whether or not it happens to contain a dialog of its own.

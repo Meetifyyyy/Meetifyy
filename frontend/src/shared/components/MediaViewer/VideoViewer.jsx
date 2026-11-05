@@ -16,6 +16,7 @@ import {
 } from '@shared/components/icons';
 import { feedVideoRegistry } from '@shared/utils/feedVideoRegistry';
 import { PLAYBACK_PRIORITY } from '@shared/utils/playbackPriority';
+import { useUsablePoster } from '@shared/utils/posterCheck';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
@@ -122,7 +123,7 @@ function SeekRipple({ direction, visible, seconds = SEEK_STEP_S }) {
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
-export default function VideoViewer({ src: rawSrc, poster: rawPoster, mediaRef, onControlsChange, onFullscreenChange, onStageClick, isCurrent = true }) {
+export default function VideoViewer({ src: rawSrc, poster: rawPoster, mediaRef, onControlsChange, onFullscreenChange, onStageClick, isCurrent = true, gestureHidesControls = false }) {
   /*
    * The viewer is handed whatever the opener had — usually an unsigned
    * `/api/media/<key>` URL. For a conversation attachment that URL 404s inside
@@ -132,7 +133,9 @@ export default function VideoViewer({ src: rawSrc, poster: rawPoster, mediaRef, 
   const { src, failed: srcFailed, pending: srcPending, refresh: refreshSrc, recover: recoverSrc, attempt } = useSignedMediaSrc(rawSrc);
   // A poster for a conversation attachment is a private key too, so it is signed
   // the same way. A poster that cannot be resolved is cosmetic and just absent.
-  const { src: posterSrc } = useSignedMediaSrc(rawPoster || '');
+  // A flat black poster is dropped like an unresolvable one.
+  const { src: signedPosterSrc } = useSignedMediaSrc(rawPoster || '');
+  const posterSrc = useUsablePoster(signedPosterSrc);
 
   /*
    * The element the viewer's drag-to-dismiss gesture should move.
@@ -228,6 +231,11 @@ export default function VideoViewer({ src: rawSrc, poster: rawPoster, mediaRef, 
   useEffect(() => {
     if (onControlsChange) onControlsChange(ctrlVisible);
   }, [ctrlVisible, onControlsChange]);
+
+  // The bottom bar (timeline and buttons) goes away while the viewer is being
+  // dragged to close, together with the viewer's header; it used to stay up.
+  // Its own visible state is kept, so it comes back as it was on a snap-back.
+  const barShown = ctrlVisible && !gestureHidesControls;
 
   // ── Hover tooltip on progress bar ──────────────────────────────────────────
   const [hoverTime, setHoverTime]     = useState(null);
@@ -503,6 +511,10 @@ export default function VideoViewer({ src: rawSrc, poster: rawPoster, mediaRef, 
       setCtrlVisible(true); // Keep controls visible on end
     };
 
+    // Scrubbing back from the end leaves the clip no longer ended, but only a
+    // `play` used to clear the flag, so Replay stayed up over a video sitting
+    // mid-way. Follow the element: `ended` is true only at the very end.
+    const onSeekChange   = () => setEnded(v.ended);
     const onWaiting      = () => setIsBuf(true);
     const onPlaying      = () => { setIsBuf(false); resetHideTimer(); };
     const onCanPlay      = () => { setMetaReady(true); setFrameReady(true); setIsBuf(false); };
@@ -544,6 +556,8 @@ export default function VideoViewer({ src: rawSrc, poster: rawPoster, mediaRef, 
     v.addEventListener('play',             onPlay);
     v.addEventListener('pause',            onPause);
     v.addEventListener('ended',            onEnded);
+    v.addEventListener('seeking',          onSeekChange);
+    v.addEventListener('seeked',           onSeekChange);
     v.addEventListener('waiting',          onWaiting);
     v.addEventListener('playing',          onPlaying);
     v.addEventListener('canplay',          onCanPlay);
@@ -580,6 +594,8 @@ export default function VideoViewer({ src: rawSrc, poster: rawPoster, mediaRef, 
       v.removeEventListener('play',             onPlay);
       v.removeEventListener('pause',            onPause);
       v.removeEventListener('ended',            onEnded);
+      v.removeEventListener('seeking',          onSeekChange);
+      v.removeEventListener('seeked',           onSeekChange);
       v.removeEventListener('waiting',          onWaiting);
       v.removeEventListener('playing',          onPlaying);
       v.removeEventListener('canplay',          onCanPlay);
@@ -721,7 +737,8 @@ export default function VideoViewer({ src: rawSrc, poster: rawPoster, mediaRef, 
            * allows it (Android Chrome, in fullscreen) the screen is turned for
            * it; elsewhere `lock` rejects and the phone's own rotation applies.
            */
-          if (v && v.videoWidth > v.videoHeight && window.screen?.orientation?.lock) {
+          // Never in the installed app, which stays portrait.
+          if (!IS_MOBILE_BUILD && v && v.videoWidth > v.videoHeight && window.screen?.orientation?.lock) {
             window.screen.orientation.lock('landscape')
               .then(() => { orientationLockedRef.current = true; })
               .catch(() => {});
@@ -1462,6 +1479,10 @@ export default function VideoViewer({ src: rawSrc, poster: rawPoster, mediaRef, 
       {ended && canInteract && (
         <button
           className={styles.centerReplayBtn}
+          // A control, like the bar's buttons: without this the same tap also
+          // reached the stage's touch handler, whose delayed "centre tap =
+          // play/pause" paused the video ~300 ms after Replay started it.
+          data-controls=""
           onClick={(e) => {
             e.stopPropagation();
             togglePlay();
@@ -1487,9 +1508,9 @@ export default function VideoViewer({ src: rawSrc, poster: rawPoster, mediaRef, 
       {canInteract && (
         <div
           data-controls
-          inert={!ctrlVisible || !isCurrent ? '' : undefined}
-          aria-hidden={!ctrlVisible || !isCurrent}
-          className={`${styles.videoControlsOverlay} ${ctrlVisible ? styles.controlsOverlayVisible : ''}`}
+          inert={!barShown || !isCurrent ? '' : undefined}
+          aria-hidden={!barShown || !isCurrent}
+          className={`${styles.videoControlsOverlay} ${barShown ? styles.controlsOverlayVisible : ''}`}
         >
           <div className={styles.videoGradient} aria-hidden="true" />
 

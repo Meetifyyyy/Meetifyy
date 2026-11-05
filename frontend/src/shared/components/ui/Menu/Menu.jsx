@@ -47,6 +47,9 @@ export default function Menu({
   align = 'end',
   size = 'md',
   ariaLabel = 'Menu',
+  // An extra class for a surface that needs its own look (the media viewers'
+  // dark glass). Everywhere else the menu follows the page theme.
+  className = '',
   children,
 }) {
   const menuRef = useRef(null);
@@ -110,6 +113,7 @@ export default function Menu({
         // Motion in the app only; the website keeps the appearance it had.
         IS_MOBILE_BUILD ? styles.animated : '',
         coords.ready ? styles.ready : '',
+        className,
       ]
         .filter(Boolean)
         .join(' ')}
