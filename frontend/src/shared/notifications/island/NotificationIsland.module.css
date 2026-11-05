@@ -114,6 +114,8 @@
   position: absolute;
   top: 0;
   left: 0;
+  /* Grows with the shape, from its top edge. */
+  transform-origin: 50% 0;
   width: min(380px, calc(100vw - 24px));
   height: 192px;
 }
@@ -134,25 +136,39 @@
   background: var(--island-bg);
 }
 
-/* While a row is swiped the island splits into cards: no clip, so each row
-   rounds its own corners and draws its own border; the dragged one is never
-   cut at the island's edge. Corners ease in and back out. */
-.row {
-  transition: border-radius 0.22s cubic-bezier(0.22, 1, 0.36, 1),
-              box-shadow 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+/* Rows are role="button", and the app's base button rule eases transform
+   and opacity over 0.15s. Every frame's position is set by the island's
+   spring; a CSS transition on top re-eased each one, so the rows trailed
+   the island's edge as it grew. (Two classes: beats that rule whatever the
+   stylesheet order.) */
+.expanded .row {
+  transition: none;
 }
 
-.shell.split {
-  overflow: visible;
-  contain: layout;
+.expanded .rowLifted {
+  transition: border-radius 0.2s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.split .row {
+/* The island's corners belong to its outer rows too, so a lifted row can
+   open the clip sideways without the island losing its rounded shape. */
+.rowFirst {
+  border-top-left-radius: 24px;
+  border-top-right-radius: 24px;
+}
+
+.rowLast {
+  border-bottom-left-radius: 24px;
+  border-bottom-right-radius: 24px;
+}
+
+/* A row being swiped lifts out of the island as its own card. Only its
+   corners animate (one element), and only while it is lifted. */
+.rowLifted {
   border-radius: 24px;
   box-shadow: inset 0 0 0 1px var(--island-border);
 }
 
-.split .rowDivided::before {
+.rowLifted::before {
   opacity: 0;
 }
 
