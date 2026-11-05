@@ -36,6 +36,24 @@ export function countChars(text) {
 }
 
 /**
+ * `text` cut to at most `max` characters, counted the same way (code points),
+ * so an emoji is never split in half.
+ */
+export function clampChars(text, max) {
+  if (typeof text !== 'string') return '';
+  if (!(max >= 0)) return text;
+  if (countChars(text) <= max) return text;
+  let out = '';
+  let count = 0;
+  for (const ch of text) {
+    if (count >= max) break;
+    out += ch;
+    count += 1;
+  }
+  return out;
+}
+
+/**
  * Where a draft stands against a limit. `status` is 'ok' (counter hidden),
  * 'near' (counter shown) or 'over' (the draft cannot be sent).
  */

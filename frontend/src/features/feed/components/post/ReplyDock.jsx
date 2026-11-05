@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import Avatar from '@shared/components/avatar/Avatar';
 import MentionInput from '@shared/components/mentions/MentionInput';
 import { KEYBOARD_OVERLAYS_PAGE } from '@shared/utils/keyboardOverlay';
-import { getCommentLimitState } from '@shared/utils/textLimit';
+import { getCommentLimitState, COMMENT_MAX_CHARS } from '@shared/utils/textLimit';
 import styles from './ReplyDock.module.css';
 
 /**
@@ -31,9 +31,10 @@ import styles from './ReplyDock.module.css';
  * LENGTH
  * A comment or reply is limited to 500 characters (shared/utils/textLimit,
  * the same rule the server applies). A quiet "412 / 500" line appears above
- * the bar from 400 characters and turns to the danger colour over the limit, where
- * Send is disabled. Text is never cut or refused as it arrives, so a long
- * paste is not silently trimmed: the person sees the count and edits.
+ * the bar from 400 characters. The field stops taking text at 500 (MentionInput
+ * `maxChars`); a paste that does not fit is cut, with a notice saying so. The
+ * over-limit state (Send disabled) remains for text that arrives some other
+ * way, such as an old draft.
  *
  * `data-keyboard-dock` tells the app-wide "keep the focused field visible"
  * pass (shared/utils/keyboardFocus) that this field moves itself: scrolling the
@@ -158,6 +159,7 @@ export default function ReplyDock({
             ariaInvalid={limit.isOver || undefined}
             className={styles.input}
             singleLine={false}
+            maxChars={COMMENT_MAX_CHARS}
           />
         </div>
         {/* Always mounted: the slot animates open, so there is nothing to

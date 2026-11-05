@@ -3,6 +3,8 @@ import { useMentionSuggestions } from '../../hooks/useMentionSuggestions';
 import { filterLocalMentions } from './localMentions';
 import MentionDropdown from './MentionDropdown';
 import { visibleViewportBottom } from '@shared/utils/visibleViewport';
+import { countChars, clampChars } from '@shared/utils/textLimit';
+import { showToast } from '@shared/utils/toast';
 import styles from './MentionInput.module.css';
 
 function escapeHtml(str) {
@@ -52,6 +54,11 @@ export default function MentionInput({
   // 'off': "@" is just a character (direct chats).
   mentionMode = 'search',
   mentionCandidates = null,
+  // Hard limit, in characters as the server counts them. Typing stops at it,
+  // a paste is cut to fit, and anything an input method commits past it is
+  // trimmed. Without it the field accepted any length and only the counter
+  // said it was too long.
+  maxChars,
 }) {
   const containerRef = useRef(null);
   const editorRef = useRef(null);
@@ -66,6 +73,9 @@ export default function MentionInput({
   const caretOffsetRef = useRef(0);
   const lastParsedTextRef = useRef(null);
   const savedRangeRef = useRef(null);
+  // True between compositionstart and compositionend. The DOM must not be
+  // touched while an input method is composing a word, or the IME loses it.
+  const composingRef = useRef(false);
 
   const searched = useMentionSuggestions({
     query: mentionQuery,
@@ -166,12 +176,64 @@ export default function MentionInput({
     return { text: textString, mentions };
   }, []);
 
+  /**
+   * Removes whatever is over `maxChars`, from just before the caret, which is
+   * where it was typed or pasted. Returns whether the DOM was changed.
+   */
+  const trimOverflow = useCallback((currentText) => {
+    const el = editorRef.current;
+    if (!el || !(maxChars > 0)) return false;
+    const over = countChars(currentText) - maxChars;
+    if (over <= 0) return false;
+
+    const sel = window.getSelection();
+    const caretInside = sel && sel.rangeCount > 0 && el.contains(sel.focusNode);
+    // Small overflows (a keystroke, an emoji, a committed word) come off at
+    // the caret. Selection.modify steps over a mention pill as one unit.
+    if (caretInside && over <= 200 && typeof sel.modify === 'function') {
+      try {
+        sel.collapse(sel.focusNode, sel.focusOffset);
+        let previous = -1;
+        for (let i = 0; i < over + 20; i += 1) {
+          sel.modify('extend', 'backward', 'character');
+          const taken = countChars(sel.toString());
+          if (taken >= over || taken === previous) break;
+          previous = taken;
+        }
+        if (!sel.isCollapsed) {
+          sel.getRangeAt(0).deleteContents();
+          sel.collapseToStart();
+          if (countChars(parseDOM().text) <= maxChars) return true;
+        }
+      } catch {
+        // Fall through to the plain cut below.
+      }
+    }
+
+    // Anything else: keep the first `maxChars` characters as plain text and
+    // put the caret at the end.
+    el.innerHTML = textToEditorHtml(clampChars(parseDOM().text, maxChars));
+    try {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      range.collapse(false);
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+      savedRangeRef.current = range.cloneRange();
+    } catch {
+      // Selection can be unavailable (detached editor); the text is still cut.
+    }
+    return true;
+  }, [maxChars, parseDOM]);
+
   // Handle typing and caret check for @ suggestions
   const handleInput = useCallback(() => {
     const el = editorRef.current;
     if (!el) return;
 
-    const parsed = parseDOM();
+    // One read of the editor per input; a second only when the cap cut it.
+    let parsed = parseDOM();
+    if (!composingRef.current && trimOverflow(parsed.text)) parsed = parseDOM();
     lastParsedTextRef.current = parsed.text;
     el.setAttribute('data-empty', parsed.text ? 'false' : 'true');
     if (onChange) {
@@ -245,7 +307,7 @@ export default function MentionInput({
     }
 
     setMentionActive(false);
-  }, [onChange, parseDOM, singleLine, mentionMode]);
+  }, [onChange, parseDOM, singleLine, mentionMode, trimOverflow]);
 
   // Insert text/emoji at current or saved cursor position, then reposition caret directly after
   const insertTextAtCursor = useCallback((textToInsert) => {
@@ -348,10 +410,13 @@ export default function MentionInput({
     const { text, mentions = [] } = currentVal();
     const isFocused = document.activeElement === el;
 
-    if ((isFocused || lastParsedTextRef.current === text) && text) {
-      // Typing or programmatic insertion in progress.
-      return;
-    }
+    // The DOM already shows this text: it came from typing here (onChange
+    // echoes it back) or an insertion done in place. Leave the caret alone.
+    if (lastParsedTextRef.current === text && text) return;
+    // Focused, but the value was changed from outside (a reply's @mention put
+    // in front): it was skipped before, so the box never showed it. Write it,
+    // then put the caret at the end.
+    const moveCaretToEnd = isFocused && Boolean(text);
 
     lastParsedTextRef.current = text;
 
@@ -364,8 +429,24 @@ export default function MentionInput({
 
     el.setAttribute('data-empty', 'false');
 
+    const placeCaretAtEnd = () => {
+      if (!moveCaretToEnd) return;
+      try {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        range.collapse(false);
+        const sel = window.getSelection();
+        sel?.removeAllRanges();
+        sel?.addRange(range);
+        savedRangeRef.current = range.cloneRange();
+      } catch (_) {
+        // Selection unavailable: the text is still shown.
+      }
+    };
+
     if (!mentions || mentions.length === 0) {
       el.innerHTML = textToEditorHtml(text);
+      placeCaretAtEnd();
       return;
     }
 
@@ -384,6 +465,7 @@ export default function MentionInput({
 
     html += textToEditorHtml(text.slice(cursor));
     el.innerHTML = html;
+    placeCaretAtEnd();
   }, [value, currentVal]);
 
   // Focus on autoFocus
@@ -487,7 +569,22 @@ export default function MentionInput({
     const range = sel.getRangeAt(0);
     range.deleteContents();
 
-    if (html && html.includes('data-username')) {
+    // Only as much as still fits. Cut here, before it is in the DOM, so a huge
+    // paste never has to be inserted and then taken back out.
+    const room = maxChars > 0
+      ? Math.max(0, maxChars - countChars(parseDOM().text))
+      : Infinity;
+    if (room === 0) {
+      if (text) showToast(`This is limited to ${maxChars.toLocaleString('en-US')} characters`, 'info');
+      handleInput();
+      return;
+    }
+    const fittedText = Number.isFinite(room) ? clampChars(text, room) : text;
+    if (fittedText !== text) {
+      showToast(`Only ${maxChars.toLocaleString('en-US')} characters fit, so the paste was cut`, 'info');
+    }
+
+    if (html && html.includes('data-username') && countChars(text) <= room) {
       const parser = new DOMParser();
       const doc = parser.parseFromString(html, 'text/html');
       const temp = doc.body;
@@ -524,12 +621,46 @@ export default function MentionInput({
       }
       range.insertNode(frag);
       range.collapse(false);
-    } else if (text) {
-      const textNode = document.createTextNode(text);
+    } else if (fittedText) {
+      const textNode = document.createTextNode(fittedText);
       range.insertNode(textNode);
       range.collapse(false);
     }
 
+    handleInput();
+  }, [handleInput, maxChars, parseDOM]);
+
+  // At the limit, a keystroke that would add characters is refused before it
+  // reaches the DOM. Composition (most Android keyboards) cannot be refused;
+  // what it commits past the limit is trimmed on compositionend instead.
+  // Native listener: React's onBeforeInput is built on `textInput`/`keypress`,
+  // which carry no inputType and miss Enter and line breaks.
+  const handleBeforeInput = useCallback((e) => {
+    if (!(maxChars > 0)) return;
+    const type = e.inputType || '';
+    if (!type.startsWith('insert') || type === 'insertCompositionText' || type === 'insertFromPaste') return;
+    const sel = window.getSelection();
+    const selected = sel && !sel.isCollapsed ? countChars(sel.toString()) : 0;
+    // The text as of the last input (kept current by handleInput): no DOM walk per key.
+    const room = maxChars - countChars(lastParsedTextRef.current ?? '') + selected;
+    if (room <= 0) e.preventDefault();
+  }, [maxChars]);
+
+  useEffect(() => {
+    const el = editorRef.current;
+    if (!el) return undefined;
+    el.addEventListener('beforeinput', handleBeforeInput);
+    return () => el.removeEventListener('beforeinput', handleBeforeInput);
+  }, [handleBeforeInput]);
+
+  const handleCompositionStart = useCallback(() => {
+    composingRef.current = true;
+  }, []);
+
+  const handleCompositionEnd = useCallback(() => {
+    composingRef.current = false;
+    // The final input event of a composition can arrive before this one, so
+    // the limit is applied again now that the word is committed.
     handleInput();
   }, [handleInput]);
 
@@ -541,6 +672,8 @@ export default function MentionInput({
         contentEditable={true}
         inputMode={inputMode}
         onInput={handleInput}
+        onCompositionStart={handleCompositionStart}
+        onCompositionEnd={handleCompositionEnd}
         onKeyDown={handleKeyDownInternal}
         onKeyUp={saveSelection}
         onMouseUp={saveSelection}

@@ -538,6 +538,7 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit, draftScope = '
               singleLine={false}
               ariaDescribedBy={textLimit.status !== 'ok' ? textLimitId : undefined}
               ariaInvalid={textLimit.isOver || undefined}
+              maxChars={POST_MAX_CHARS}
             />
           </div>
           <button

@@ -10,6 +10,7 @@ import ReplyPreviewContent from './ReplyPreviewContent';
 import LiveWaveform from './LiveWaveform';
 import VoiceMessagePlayer from './VoiceMessagePlayer';
 import { MAX_MESSAGE_TEXT_LENGTH, MESSAGE_LENGTH_WARN_AT } from '@shared/constants/messageLimits';
+import { countChars } from '@shared/utils/textLimit';
 import { useComposerDraft } from '@shared/hooks/useComposerDraft';
 
 /**
@@ -74,6 +75,7 @@ export default function ChatInputArea({
     setEditor({ scope: draftScope, key: sameThread ? editor.key : (draftScope ?? 'no-draft') });
   }
   const [inputValue, setInputValue] = useComposerDraft(draftScope, { maxLength: MAX_MESSAGE_TEXT_LENGTH });
+  const typedChars = countChars(typeof inputValue === 'string' ? inputValue : inputValue?.text);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const fileInputRef = useRef(null);
   const inputRef = useRef(null);
@@ -528,21 +530,18 @@ export default function ChatInputArea({
                   mentionMode={isGroupChat ? 'local' : 'off'}
                   mentionCandidates={mentionCandidates}
                   value={inputValue}
+                  /*
+                   * Capped as it is typed or pasted, rather than refused at send.
+                   * The server refuses anything over MAX_MESSAGE_TEXT_LENGTH,
+                   * and finding that out only at send time loses a long message
+                   * already written. The clamp used to be here, on a string —
+                   * but the field reports `{ text, mentions }`, so it never ran
+                   * and nothing was capped at all. MentionInput does it now (a
+                   * paste keeps the part that fits and says so).
+                   */
+                  maxChars={MAX_MESSAGE_TEXT_LENGTH}
                   onChange={(val) => {
-                    /*
-                     * Clamped rather than rejected. The server refuses anything
-                     * over MAX_MESSAGE_TEXT_LENGTH, and finding that out only at
-                     * send time means losing a long message you have already
-                     * written. Truncating as it arrives keeps the composer and
-                     * the server agreeing on what is sendable, and pasting an
-                     * over-long block keeps the part that fits instead of
-                     * silently dropping the whole paste.
-                     */
-                    setInputValue(
-                      typeof val === 'string' && val.length > MAX_MESSAGE_TEXT_LENGTH
-                        ? val.slice(0, MAX_MESSAGE_TEXT_LENGTH)
-                        : val,
-                    );
+                    setInputValue(val);
                     if (onTyping) onTyping();
                   }}
                   onSubmit={handleSend}
@@ -554,13 +553,16 @@ export default function ChatInputArea({
 
             {/* Only once it is nearly relevant: an always-on counter is noise
                 in a chat composer. */}
-            {inputValue.length >= MESSAGE_LENGTH_WARN_AT && (
+            {/* Counted on the text (the value is `{ text, mentions }`, whose
+                own `.length` is undefined, so this never showed), the way the
+                server counts it. */}
+            {typedChars >= MESSAGE_LENGTH_WARN_AT && (
               <div
                 className={styles.charCount}
                 aria-live="polite"
-                data-at-limit={inputValue.length >= MAX_MESSAGE_TEXT_LENGTH || undefined}
+                data-at-limit={typedChars >= MAX_MESSAGE_TEXT_LENGTH || undefined}
               >
-                {inputValue.length} / {MAX_MESSAGE_TEXT_LENGTH}
+                {typedChars} / {MAX_MESSAGE_TEXT_LENGTH}
               </div>
             )}
 
