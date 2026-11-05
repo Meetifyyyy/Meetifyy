@@ -29,10 +29,11 @@ describe('viewer stylesheet', () => {
     expect(rewritten.match(/--navigation-bar-inset/g)).toHaveLength(1);
   });
 
-  it('never hides the paging buttons on touch or narrow windows (MV-018)', () => {
+  it('hides the paging buttons only on touch-only devices, never for a narrow window (MV-018)', () => {
     expect(css).not.toMatch(/@media \(max-width: 768px\), \(pointer: coarse\)/);
-    const hidden = [...css.matchAll(/@media[^{]*\{[^{}]*\.navBtn\s*\{[^}]*display:\s*none/g)];
-    expect(hidden).toHaveLength(0);
+    const hidden = [...css.matchAll(/@media([^{]*)\{[^{}]*\.navBtn\s*\{[^}]*display:\s*none/g)];
+    // Phones/tablets swipe; a mouse in a narrow window still needs the arrows.
+    expect(hidden.map((m) => m[1].trim())).toEqual(['(hover: none) and (pointer: coarse)']);
   });
 
   it('stops the scripted slide, image and zoom motion under reduced motion (MV-037)', () => {

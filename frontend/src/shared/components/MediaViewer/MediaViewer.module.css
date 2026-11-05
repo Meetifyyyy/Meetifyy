@@ -1438,12 +1438,17 @@
    These used to be hidden on every touch screen and narrow window, which left
    swiping as the only way to page - nothing for a switch user, nothing while
    zoomed (swipe paging is off then), and nothing for a MOUSE user in a narrow
-   desktop window (mouse drag does not page). They now stay, and a touch screen
-   only gets them a little closer to the edge. They fade with the other controls,
-   so a tap on the image still clears them. */
+   desktop window (mouse drag does not page). A narrow window keeps them; a
+   touch screen gets them a little closer to the edge, and a touch-only device
+   (phone/tablet: no hover) drops them by request - swiping pages there. */
 @media (pointer: coarse) {
   .navPrev { left: 0.5rem; }
   .navNext { right: 0.5rem; }
+}
+
+/* Phones and tablets (touch only, no hover): no paging arrows; swipe pages. */
+@media (hover: none) and (pointer: coarse) {
+  .navBtn { display: none; }
 }
 
 /* Zoom buttons are for pointer and keyboard users; touch has pinch / double-tap. */
