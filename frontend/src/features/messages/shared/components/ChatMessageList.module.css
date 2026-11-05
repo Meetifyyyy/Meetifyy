@@ -1279,13 +1279,13 @@
   align-items: center;
   justify-content: center;
   flex-wrap: wrap;
-  gap: 0.28rem;
+  gap: 0.2rem;
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.1);
   color: var(--color-text-muted, #a1a1aa);
-  padding: 0.38rem 0.95rem;
+  padding: 0.22rem 0.7rem;
   border-radius: 9999px;
-  font-size: 0.78rem;
+  font-size: 0.7rem;
   font-weight: 500;
   line-height: 1.4;
   text-align: center;
