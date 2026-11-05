@@ -1191,3 +1191,42 @@
     50% { opacity: 0.35; }
   }
 }
+
+/* ── Detail view: one rhythm for every combination ──────────────────────────
+   Header, text, media, poll, link card, timestamp and actions each carried
+   their own margins, so the gaps changed with which of them a post had. Here
+   the post is a column with one gap, and the blocks inside carry none. */
+.postDetailed {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.postDetailed > .postHeader,
+.postDetailed > .postBody,
+.postDetailed > .postAttachments,
+.postDetailed > .postExactTime {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.postDetailed > .postActions {
+  margin-top: 0 !important; /* PostActions sets an inline margin-top */
+}
+
+.postDetailed > .postAttachments {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.postDetailed > .postAttachments > *,
+.postDetailed > .postAttachments > * > * {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+/* The timestamp's divider sits halfway between it and the actions. */
+.postDetailed > .postExactTime {
+  padding: 0 0 0.75rem;
+}
