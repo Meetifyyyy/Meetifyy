@@ -2486,3 +2486,9 @@
 :global(html[data-theme='dark']) .heroSection {
   box-shadow: none;
 }
+
+/* Rounded bottom corners on the cover (not in the app's collapsing header). */
+:global(html:not([data-collapsing-header])) .heroCover {
+  border-radius: 20px;
+  overflow: hidden;
+}
