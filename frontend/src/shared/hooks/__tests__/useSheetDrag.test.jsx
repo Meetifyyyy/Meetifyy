@@ -83,6 +83,19 @@ describe('useSheetDrag', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it('stays off screen when it closes, never snapping back open (the flicker)', () => {
+    const onClose = vi.fn();
+    const { getByTestId } = render(<Sheet onClose={onClose} />);
+    drag(getByTestId('handle'), 100, 250, 600);
+    // Step to the moment the close is reported, and look straight after it:
+    // the caller has not removed the sheet yet, so it must still be gone.
+    for (let i = 0; i < 20 && onClose.mock.calls.length === 0; i++) {
+      act(() => { vi.advanceTimersToNextTimer(); });
+    }
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(getByTestId('sheet').style.transform).toBe('translate3d(0, 424px, 0)');
+  });
+
   it('closes on a short fast flick', () => {
     const onClose = vi.fn();
     const { getByTestId } = render(<Sheet onClose={onClose} />);

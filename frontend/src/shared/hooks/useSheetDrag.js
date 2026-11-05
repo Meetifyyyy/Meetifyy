@@ -9,12 +9,24 @@ import { useEffect, useRef } from 'react';
  * calls `onClose`. Anything shorter springs back.
  *
  * Built to stay smooth on low-end Android:
- * - Only `transform` is written (translate3d, so it is composited), and at
- *   most once per frame: touchmove only records
- *   the finger, a requestAnimationFrame callback paints it.
+ * - Only `transform` is written (translate3d, so it is composited), straight
+ *   from touchmove. Android already delivers one touchmove per frame, so
+ *   painting on the next requestAnimationFrame (as this did) only put the
+ *   sheet a frame behind the finger. One style write per event, no reads.
  * - The sheet's height is measured once when the drag starts, never per move.
- * - `will-change` is set for the drag and removed after, so the sheet does not
- *   hold a GPU layer while it is just sitting there.
+ * - `will-change` is set when a drag starts and removed after, so the sheet
+ *   does not hold a GPU layer while it is just sitting there. Not at
+ *   touch-down: every plain tap on a sheet (its close button included) then
+ *   created and dropped a layer while the sheet's own exit animation ran,
+ *   which flashes on Android WebView.
+ * - Closing by drag leaves the sheet where the slide put it, off screen. It
+ *   is put back only if it is still on the page two frames after `onClose`
+ *   (a caller that keeps it mounted). Snapping it back straight away showed
+ *   the open sheet for the frame or two before React removed it: a flicker.
+ * - Grabbing a sheet that is still springing back continues from where it
+ *   visibly is. It used to restart from its resting place, a jump.
+ * - The end of each slide is taken from `transitionend` (a timer only as a
+ *   fallback), so nothing is reset while the sheet is still moving.
  * - Release speed is smoothed over recent moves, so a flick is judged by the
  *   gesture, not by the jitter of the last event; the slide-off then runs at
  *   roughly that speed instead of a fixed duration.
@@ -67,8 +79,12 @@ export function useSheetDrag(onClose, { enabled = true, media = '(max-width: 768
     let armed = false;
     let dragging = false;
     let closing = false;
-    let frame = 0;
     let timer = 0;
+    let resetFrame = 0;
+    /** Where the sheet was when this drag took it (non-zero mid snap-back). */
+    let baseOffset = 0;
+    /** The current slide's completion, run once by transitionend or the timer. */
+    let pendingDone = null;
 
     // True when some scroller between the finger and the sheet's container is
     // not at its top, i.e. a downward swipe there means "scroll up".
@@ -98,9 +114,39 @@ export function useSheetDrag(onClose, { enabled = true, media = '(max-width: 768
       sheet.style.willChange = '';
     };
 
-    const onFrame = () => {
-      frame = 0;
-      paint(offsetFor(fingerY - startY));
+    /** The sheet's on-screen offset right now (mid-transition included). */
+    const currentOffset = () => {
+      const t = getComputedStyle(sheet).transform;
+      if (!t || t === 'none') return 0;
+      const m = t.match(/matrix(3d)?\(([^)]+)\)/);
+      if (!m) return 0;
+      const v = m[2].split(',').map(Number);
+      const y = m[1] ? v[13] : v[5];
+      return Number.isFinite(y) ? Math.max(0, y) : 0;
+    };
+
+    /** Runs `done` when the slide that was just started has finished. */
+    const afterSlide = (ms, done) => {
+      window.clearTimeout(timer);
+      pendingDone = null;
+      if (!(ms > 0)) { done(); return; }
+      let ran = false;
+      const run = () => {
+        if (ran) return;
+        ran = true;
+        pendingDone = null;
+        window.clearTimeout(timer);
+        done();
+      };
+      pendingDone = run;
+      // Fallback: a transition that never fires its end (display changed,
+      // the sheet unmounted mid-slide) still completes.
+      timer = window.setTimeout(run, ms + 60);
+    };
+
+    const onTransitionEnd = (e) => {
+      if (e.target !== sheet || e.propertyName !== 'transform') return;
+      pendingDone?.();
     };
 
     const onStart = (e) => {
@@ -136,10 +182,16 @@ export function useSheetDrag(onClose, { enabled = true, media = '(max-width: 768
         // slop distance the moment it is grabbed.
         startY = y;
         height = sheet.getBoundingClientRect().height || 1;
+        // Mid snap-back: take it from where it visibly is, and drop the
+        // snap-back's own completion, which would reset it under the finger.
+        baseOffset = pendingDone ? currentOffset() : 0;
+        window.clearTimeout(timer);
+        pendingDone = null;
         // A running entrance animation would override the inline transform.
         sheet.style.animation = 'none';
         sheet.style.willChange = 'transform';
         setTransition(0);
+        paint(baseOffset);
         onDragStartRef.current?.();
       }
       e.preventDefault();
@@ -153,7 +205,7 @@ export function useSheetDrag(onClose, { enabled = true, media = '(max-width: 768
       lastY = y;
       lastT = e.timeStamp;
       fingerY = y;
-      if (!frame) frame = window.requestAnimationFrame(onFrame);
+      paint(offsetFor(baseOffset + fingerY - startY));
     };
 
     const onEnd = (e) => {
@@ -161,12 +213,12 @@ export function useSheetDrag(onClose, { enabled = true, media = '(max-width: 768
       armed = false;
       if (!dragging) return;
       dragging = false;
-      if (frame) { window.cancelAnimationFrame(frame); frame = 0; }
 
       // A finger that stopped before lifting is not a flick.
       const stale = e && e.timeStamp - lastT > 80;
       const speed = stale ? 0 : velocity;
-      const dy = Math.max(0, fingerY - startY);
+      const dy = offsetFor(baseOffset + fingerY - startY);
+      baseOffset = 0;
       const instant = reduceMotion.matches;
 
       if (dy > height * DISMISS_FRACTION || speed > FLICK_SPEED) {
@@ -176,18 +228,27 @@ export function useSheetDrag(onClose, { enabled = true, media = '(max-width: 768
         const ms = instant ? 0 : Math.round(Math.min(320, Math.max(160, remaining / Math.max(speed, 1.2))));
         setTransition(ms);
         paint(height + 24);
-        timer = window.setTimeout(() => {
+        afterSlide(ms, () => {
           onCloseRef.current?.();
-          // A caller that keeps the sheet mounted gets it back in place.
-          closing = false;
-          paint(0);
-          release();
-        }, ms);
+          // Stays off screen while the caller removes it. Only a sheet still
+          // on the page two frames later (kept mounted) is put back, and then
+          // nobody is looking at it.
+          resetFrame = window.requestAnimationFrame(() => {
+            resetFrame = window.requestAnimationFrame(() => {
+              resetFrame = 0;
+              closing = false;
+              if (!sheet.isConnected) return;
+              setTransition(0);
+              paint(0);
+              release();
+            });
+          });
+        });
       } else {
         const ms = instant ? 0 : 280;
         setTransition(ms);
         paint(0);
-        timer = window.setTimeout(release, ms);
+        afterSlide(ms, release);
       }
     };
 
@@ -195,9 +256,12 @@ export function useSheetDrag(onClose, { enabled = true, media = '(max-width: 768
     sheet.addEventListener('touchmove', onMove, { passive: false });
     sheet.addEventListener('touchend', onEnd);
     sheet.addEventListener('touchcancel', onEnd);
+    sheet.addEventListener('transitionend', onTransitionEnd);
     return () => {
       window.clearTimeout(timer);
-      if (frame) window.cancelAnimationFrame(frame);
+      if (resetFrame) window.cancelAnimationFrame(resetFrame);
+      pendingDone = null;
+      sheet.removeEventListener('transitionend', onTransitionEnd);
       sheet.removeEventListener('touchstart', onStart);
       sheet.removeEventListener('touchmove', onMove);
       sheet.removeEventListener('touchend', onEnd);
