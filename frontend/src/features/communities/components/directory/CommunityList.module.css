@@ -58,6 +58,14 @@
   padding: 0.875rem 1rem;
 }
 
+/* The card's icon size: 64px, 48px in the compact large-screen card. */
+.skeletonAvatar {
+  display: flex;
+  flex-shrink: 0;
+  width: 64px;
+  height: 64px;
+}
+
 .skeletonBody {
   flex: 1;
   display: flex;
@@ -242,4 +250,17 @@
   top: 50%;
   left: 50%;
   margin: -8px 0 0 -8px;
+}
+
+/* Same compact card as CommunityRow on large screens, so loading does not jump. */
+@media (min-width: 769px) {
+  .skeletonRow {
+    gap: 0.7rem;
+    padding: 0.625rem 0.75rem;
+  }
+
+  .skeletonAvatar {
+    width: 48px;
+    height: 48px;
+  }
 }

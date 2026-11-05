@@ -160,3 +160,38 @@
 [data-theme='dark'] .row.highlight {
   box-shadow: none;
 }
+
+/* Large screens: a more compact card. The phone layout (one full-width card
+   per row) keeps its size; here, with two or more side by side, the 64px icon,
+   1.1rem name and roomy padding made each card larger than its content. The
+   icon's size is inline (CommunityAvatar), so this overrides it. */
+@media (min-width: 769px) {
+  .row {
+    gap: 0.7rem;
+    padding: 0.625rem 0.75rem;
+  }
+
+  .row [data-community-avatar] {
+    width: 48px !important;
+    height: 48px !important;
+    font-size: 20px !important;
+  }
+
+  .body {
+    gap: 0.1rem;
+  }
+
+  .name {
+    font-size: 1rem;
+  }
+
+  .members,
+  .meta {
+    font-size: 0.75rem;
+  }
+
+  .description {
+    font-size: 0.8rem;
+    line-height: 1.4;
+  }
+}

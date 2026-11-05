@@ -62,6 +62,8 @@ function CommunityAvatar({ community, size = 48 }) {
   return (
     <span
       className={styles.avatar}
+      // Lets a surface resize it in CSS (the compact cards on large screens).
+      data-community-avatar=""
       style={{
         width: size,
         height: size,
