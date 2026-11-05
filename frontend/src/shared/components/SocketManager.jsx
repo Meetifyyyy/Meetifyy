@@ -2,9 +2,9 @@ import { useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useGlobalSocketStore } from '../stores/useGlobalSocketStore';
 import { useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
-import { useNavigate } from 'react-router-dom';
-import InstantNotificationCard from './InstantNotificationCard';
+import { useLocation, useNavigate } from 'react-router-dom';
+import NotificationIsland from '../notifications/island/NotificationIsland';
+import { islandNotify, islandDismissForPath } from '../notifications/island/islandStore';
 import { parseConversationRoute } from '../utils/conversationUrl';
 import { messagesApi, getMediaUrl } from '../api/apiClient';
 import { getDefaultActivityCover } from '../utils/activityCover';
@@ -34,6 +34,12 @@ export default function SocketManager() {
   const socket = useGlobalSocketStore((s) => s.socket);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+
+  // Opening the chat or page a notification is about makes it moot.
+  useEffect(() => {
+    islandDismissForPath(pathname);
+  }, [pathname]);
 
   useGlobalSocketSync();
 
@@ -253,8 +259,7 @@ export default function SocketManager() {
         const activityImage = rawActivityImage ? getMediaUrl(rawActivityImage) : getDefaultActivityCover(activityName || notification.entityId || '');
         const activityDate = notification.metadata?.activityDate || notification.metadata?.startDate || null;
 
-        const handleClick = (toastId) => {
-          if (toastId) toast.dismiss(toastId);
+        const handleClick = () => {
           if (notifType === 'message') {
             const convId = notification.metadata?.conversationId || notification.entityId;
             if (convId) {
@@ -287,22 +292,25 @@ export default function SocketManager() {
         // Use activity name as the card title for both join and invite
         const displayTitle = showActivityThumb ? activityName : actorName;
 
-        toast.custom((t) => (
-          <InstantNotificationCard
-            avatar={showActivityThumb ? activityImage : displayAvatar}
-            isGroup={isGroupMessage}
-            isActivity={showActivityThumb}
-            groupName={groupName}
-            actorName={displayTitle}
-            bodyText={isGroupMessage ? (notification.metadata?.messageText || '') : bodyText}
-            subText={null}
-            thumbnail={null}
-            activityDate={showActivityThumb ? activityDate : undefined}
-            time="just now"
-            onClick={() => handleClick(t)}
-            onDismiss={() => toast.dismiss(t)}
-          />
-        ), { duration: 5000, position: 'top-center', dismissible: false });
+        const messageConvId = notifType === 'message'
+          ? (notification.metadata?.conversationId || notification.entityId || null)
+          : null;
+        islandNotify({
+          id: notification.id ? `notification:${notification.id}` : null,
+          groupKey: messageConvId ? `conversation:${messageConvId}` : null,
+          priority: isActivityInvite ? 'important' : (messageConvId ? 'message' : 'normal'),
+          relevantPath: messageConvId ? `/messages/${messageConvId}` : notificationTargetPath(notification),
+          content: {
+            variant: showActivityThumb ? 'activity' : 'person',
+            avatar: displayAvatar,
+            isGroup: isGroupMessage,
+            title: isGroupMessage ? groupName : displayTitle,
+            actor: isGroupMessage ? displayTitle : null,
+            body: isGroupMessage ? (notification.metadata?.messageText || '') : bodyText,
+            activityDate: showActivityThumb ? activityDate : null,
+          },
+          onOpen: handleClick,
+        });
       }
     };
 
@@ -821,20 +829,18 @@ export default function SocketManager() {
       // same socket event.
       if (isInstantChat(message)) {
         if (!isSenderSelf && message.alert !== false && !isInstantMatchChatOpen()) {
-          toast.custom((t) => (
-            <InstantNotificationCard
-              avatar={message.senderAvatar || message.sender?.avatar || ''}
-              isGroup={false}
-              actorName={message.senderName || message.sender?.displayName || 'Your match'}
-              bodyText={message.text || 'New message'}
-              time="just now"
-              onClick={() => {
-                toast.dismiss(t);
-                requestOpenInstantMatchChat();
-              }}
-              onDismiss={() => toast.dismiss(t)}
-            />
-          ), { duration: 4000, position: 'top-center', dismissible: false });
+          islandNotify({
+            id: message.id ? `message:${message.id}` : null,
+            groupKey: `instant:${convId}`,
+            priority: 'message',
+            content: {
+              variant: 'person',
+              avatar: message.senderAvatar || message.sender?.avatar || '',
+              title: message.senderName || message.sender?.displayName || 'Your match',
+              body: message.text || 'New message',
+            },
+            onOpen: requestOpenInstantMatchChat,
+          });
         }
         return;
       }
@@ -929,22 +935,26 @@ export default function SocketManager() {
           const groupAvatar = targetConv?.avatar || '';
           const textSnippet = messagePreviewText(message) || 'New message';
 
-          toast.custom((t) => (
-            <InstantNotificationCard
-              avatar={isGroupMessage ? (groupAvatar || actorAvatar) : actorAvatar}
-              isGroup={isGroupMessage}
-              groupName={groupName}
-              actorName={isSystem ? null : actorName}
-              bodyText={textSnippet}
-              time="just now"
-              onClick={() => {
-                toast.dismiss(t);
-                const origin = window.location.pathname.startsWith('/messages') || window.location.pathname.startsWith('/inbox') ? '/home' : window.location.pathname;
-                navigate(`/messages/${convId}`, { state: { from: origin } });
-              }}
-              onDismiss={() => toast.dismiss(t)}
-            />
-          ), { duration: 4000, position: 'top-center', dismissible: false });
+          islandNotify({
+            id: message.id ? `message:${message.id}` : null,
+            // Same key as the notification-path message alert, so the two
+            // can never show the same chat twice.
+            groupKey: `conversation:${convId}`,
+            priority: 'message',
+            relevantPath: `/messages/${convId}`,
+            content: {
+              variant: 'person',
+              avatar: isGroupMessage ? (groupAvatar || actorAvatar) : actorAvatar,
+              isGroup: isGroupMessage,
+              title: isGroupMessage ? groupName : actorName,
+              actor: isGroupMessage && !isSystem ? actorName : null,
+              body: textSnippet,
+            },
+            onOpen: () => {
+              const origin = window.location.pathname.startsWith('/messages') || window.location.pathname.startsWith('/inbox') ? '/home' : window.location.pathname;
+              navigate(`/messages/${convId}`, { state: { from: origin } });
+            },
+          });
         }
       }
     };
@@ -1151,5 +1161,5 @@ export default function SocketManager() {
     };
   }, [socket, queryClient, navigate, session?.user?.id]);
 
-  return null;
+  return <NotificationIsland />;
 }

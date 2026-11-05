@@ -1,0 +1,235 @@
+/* Solid white in light theme, solid black in dark. A hairline edge keeps it
+   distinct from a page of the same colour; the shadow stays short. */
+.host {
+  --island-bg: #FFFFFF;
+  --island-fg: #0B1220;
+  --island-muted: #5A6478;
+  --island-edge: rgba(15, 23, 42, 0.08);
+  --island-accent: var(--color-brand-primary, #5C47FA);
+  --island-border: rgba(15, 23, 42, 0.14);
+  --island-drop: 0 2px 5px rgba(15, 23, 42, 0.12);
+
+  position: fixed;
+  z-index: 9999999;
+  top: 12px;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  /* The shell is clipped, which would cut off a box-shadow and a border, so
+     the edge and shadow are drawn around the clipped shape from out here. */
+  /* Short shadow around the clipped shape (a box-shadow would be clipped). */
+  filter: drop-shadow(var(--island-drop));
+}
+
+:global([data-theme="dark"]) .host {
+  --island-bg: #000000;
+  --island-fg: #FFFFFF;
+  --island-muted: rgba(255, 255, 255, 0.62);
+  --island-edge: rgba(255, 255, 255, 0.1);
+  --island-accent: var(--color-brand-accent, #7965FB);
+  --island-border: rgba(255, 255, 255, 0.18);
+  --island-drop: 0 2px 5px rgba(0, 0, 0, 0.5);
+}
+
+/* Below the status bar on phones: the app shell publishes its height as
+   --status-bar-inset, the browser through env(); the larger one is real. */
+@media (max-width: 768px) {
+  .host {
+    top: calc(max(env(safe-area-inset-top, 0px), var(--status-bar-inset, 0px)) + 6px);
+  }
+}
+
+.stage {
+  position: relative;
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  will-change: transform, opacity;
+}
+
+/* The 1px border: a fill of the border colour one pixel larger than the
+   shell all round, clipped to the same shape, sitting behind it. */
+.frame {
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  width: calc(100% + 2px);
+  height: calc(100% + 2px);
+  background: var(--island-border);
+}
+
+.backdrop {
+  position: absolute;
+  inset: 0;
+  background: var(--island-bg);
+}
+
+.shell {
+  /* Fixed at its largest size; the visible shape is the animated clip-path.
+     Nothing here changes size, so nothing re-runs layout while it moves. */
+  position: relative;
+  width: min(380px, calc(100vw - 24px));
+  height: 192px;
+  box-sizing: border-box;
+  overflow: hidden;
+  color: var(--island-fg);
+  contain: layout paint;
+  font-family: var(--font-family-sans);
+  outline: none;
+}
+
+/* The Meetifyy mark: alone in the pill, it travels to the top row's avatar
+   and dissolves into it as the island expands. Positioned by transform only. */
+.logo {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 40px;
+  height: 40px;
+  z-index: 1;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+/* Blue dot at the right of the pill; fades as the island expands. */
+.dot {
+  position: absolute;
+  top: calc(36px / 2 - 4px);
+  /* Right end of the centred 120px pill, 14px in. */
+  left: calc(50% + 60px - 22px);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-primary, #2563EB);
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* Expanded content: rows at fixed slots inside the fixed shell; the clip
+   reveals as many as are showing. */
+.expanded {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: min(380px, calc(100vw - 24px));
+  height: 192px;
+}
+
+.row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 64px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 18px 0 12px;
+  cursor: pointer;
+  outline: none;
+  background: var(--island-bg);
+}
+
+.rowDivided::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 64px;
+  right: 18px;
+  height: 1px;
+  background: var(--island-edge);
+}
+
+.row:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--island-accent);
+  border-radius: 24px;
+}
+
+.text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.title {
+  font-size: 0.875rem;
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: -0.005em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.count {
+  flex: 0 0 auto;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  box-sizing: border-box;
+  border-radius: 9px;
+  background: var(--island-accent);
+  color: #FFFFFF;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.body {
+  font-size: 0.8rem;
+  line-height: 1.3;
+  color: var(--island-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  animation: islandFresh 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.actor {
+  color: var(--island-fg);
+  font-weight: 600;
+}
+
+@keyframes islandFresh {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.coverWrap {
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-block;
+}
+
+.cover {
+  width: 100%;
+  height: 100%;
+  border-radius: 10px;
+  object-fit: cover;
+  display: block;
+}
+
+.calendarBadge {
+  position: absolute;
+  right: -6px;
+  bottom: -4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .body { animation: none; }
+}
