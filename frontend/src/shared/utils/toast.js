@@ -65,7 +65,7 @@ export function showToast(message, type = 'default', positionOrOptions = 'bottom
     };
     toast.addEventListener('transitionend', removeHandler);
     // Fallback cleanup if transitionend does not fire
-    setTimeout(removeHandler, 400);
+    setTimeout(removeHandler, 500);
   }, duration);
 }
 
