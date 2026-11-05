@@ -1,6 +1,8 @@
 import { lazy, Suspense, useEffect, useMemo } from 'react';
 import { AuthShell, LoginPage, SignupPage, preloadAuthScreens } from './features/auth/routes/authRoutes';
 import SignOutOverlay from '@shared/components/SignOutOverlay/SignOutOverlay';
+import { hasAffiliationField, isAffiliationActive } from '@shared/lib/campusAccess';
+import campusHeroImage from '@assets/images/campus_hero.webp';
 import { IS_DEV_BUILD, IS_MOBILE_BUILD } from '@config';
 import { isKnownAppRoute, normalisePathname } from '@config/seo';
 import { createBrowserRouter, RouterProvider, Navigate, Outlet, ScrollRestoration, useLocation } from 'react-router-dom';
@@ -117,7 +119,8 @@ const ActivityDetailPage = lazyRoute(() => import('./features/crew/pages/Activit
 const CreateActivityPage = lazyRoute(() => import('./features/crew/pages/CreateActivityPage'));
 const CrewSearchRoute = lazyRoute(() => import('./features/crew/pages/CrewSearchRoute'));
 const NotificationsRoute = lazyRoute(() => import('./features/notifications/pages/NotificationsRoute'));
-const CampusPage = lazyRoute(() => import('./features/campus/pages/CampusPage'));
+const loadCampusPage = () => import('./features/campus/pages/CampusPage');
+const CampusPage = lazyRoute(loadCampusPage);
 const DirectoryPage = lazyRoute(() => import('./features/campus/pages/DirectoryPage'));
 const CampusCommunitiesPage = lazyRoute(() => import('./features/campus/pages/CampusCommunitiesPage'));
 const CampusEventsPage = lazyRoute(() => import('./features/campus-events/pages/CampusEventsPage'));
@@ -219,6 +222,41 @@ const PUBLIC_VIEW_ROUTES = [
     render: ([, postId]) => <PublicPostPage postId={postId} />,
   },
 ];
+
+/**
+ * Gets Campus ready before it is opened: its code always, and for someone with
+ * no verified college the join screen's hero image, decoded. Opening Campus
+ * used to fetch the chunk on the tap, so an unverified user watched the hub's
+ * skeleton turn into the join screen as it arrived. Code and the one picture
+ * only, in idle time after sign-in: the page's data (the college list, the
+ * hub's content) is still fetched only when the page is visited.
+ */
+function CampusWarmup() {
+  const { isLoggedIn, currentUser } = useAuth();
+  const knowsAffiliation = hasAffiliationField(currentUser);
+  const unverified = knowsAffiliation && !isAffiliationActive(currentUser?.campusAffiliation);
+  useEffect(() => {
+    if (!isLoggedIn) return undefined;
+    let cancelled = false;
+    const warm = () => {
+      if (cancelled) return;
+      loadCampusPage().catch(() => {}); // a failure resurfaces on navigation
+      if (unverified) {
+        const img = new Image();
+        img.decoding = 'async';
+        img.src = campusHeroImage;
+        img.decode?.().catch(() => {});
+      }
+    };
+    if (typeof window.requestIdleCallback === 'function') {
+      const id = window.requestIdleCallback(warm, { timeout: 6000 });
+      return () => { cancelled = true; window.cancelIdleCallback?.(id); };
+    }
+    const t = setTimeout(warm, 3000);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [isLoggedIn, unverified]);
+  return null;
+}
 
 /** The signed-in redirect: navigates, then forgets the stored destination. */
 function RedirectAfterSignIn({ to }) {
@@ -425,6 +463,7 @@ export default function App({ homeElement, rootExtras = null }) {
           <CookieBanner />
           <CookiePreferencesModal />
           <SignOutOverlay preloadDestination={preloadSignOutDestination} />
+          <CampusWarmup />
           {rootExtras}
           <Outlet />
         </ErrorBoundary>
