@@ -32,6 +32,8 @@
 }
 
 .name {
+  flex: 1 1 auto;
+  min-width: 0;
   font-size: 1.1rem;
   font-weight: 600;
   color: var(--color-text-main);
@@ -62,10 +64,6 @@
   white-space: nowrap;
 }
 
-.members::before {
-  content: '·';
-  margin-right: 0.4rem;
-}
 
 .privateTag {
   display: inline-flex;
@@ -110,41 +108,19 @@
   margin-right: 0.4rem;
 }
 
-/* Above the stretched link, so the button takes its own clicks. */
+/* Above the stretched link, so the button takes its own clicks. On the
+   name's line, pushed to its end. */
 .action {
   position: relative;
   z-index: 1;
   flex-shrink: 0;
-  align-self: center;
+  margin-left: auto;
 }
 
 @media (max-width: 480px) {
   .row {
     padding: 0.75rem;
     gap: 0.75rem;
-  }
-}
-
-/* Narrow cards (two or three across): the name gets the whole first line and
-   the member count drops just below it, instead of squeezing the name to a few
-   letters. Measured on the card itself, so it follows the grid, not the page. */
-.row {
-  container-type: inline-size;
-}
-
-@container (max-width: 22rem) {
-  .titleLine {
-    flex-wrap: wrap;
-    row-gap: 0.1rem;
-  }
-
-  .name {
-    flex: 1 1 100%;
-    min-width: 0;
-  }
-
-  .members::before {
-    display: none;
   }
 }
 
@@ -182,16 +158,16 @@
   }
 
   .name {
-    font-size: 1rem;
+    font-size: 0.95rem;
   }
 
   .members,
   .meta {
-    font-size: 0.75rem;
+    font-size: 0.72rem;
   }
 
   .description {
-    font-size: 0.8rem;
-    line-height: 1.4;
+    font-size: 0.78rem;
+    line-height: 1.35;
   }
 }

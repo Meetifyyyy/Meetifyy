@@ -40,6 +40,9 @@ function CommunityRow({ community, from, showMembership = true, highlightOnHover
       <CommunityAvatar community={community} size={64} />
 
       <div className={styles.body}>
+        {/* Name, then the Join control on the same line: the name gives way
+            (ellipsis) before the button does. Members and the description sit
+            below, so neither squeezes the name. */}
         <div className={styles.titleLine}>
           <Link
             to={`/communities/${community.id}`}
@@ -49,15 +52,20 @@ function CommunityRow({ community, from, showMembership = true, highlightOnHover
           >
             {community.name}
           </Link>
-          {/* Beside the name; the name gives way (ellipsis) before this does. */}
-          <span className={styles.members}>{memberLabel(community)}</span>
           {community.isPrivate && (
             <span className={styles.privateTag}>
               <Lock size={12} strokeWidth={2} aria-hidden="true" />
               Private
             </span>
           )}
+          {showAction && (
+            <div className={styles.action}>
+              <JoinAction community={community} />
+            </div>
+          )}
         </div>
+
+        <span className={styles.members}>{memberLabel(community)}</span>
 
         {description && <p className={styles.description}>{description}</p>}
 
@@ -67,12 +75,6 @@ function CommunityRow({ community, from, showMembership = true, highlightOnHover
           </p>
         )}
       </div>
-
-      {showAction && (
-        <div className={styles.action}>
-          <JoinAction community={community} />
-        </div>
-      )}
     </article>
   );
 }

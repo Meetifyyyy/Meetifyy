@@ -49,9 +49,9 @@
 /* Large screens: sized to the compact community card. */
 @media (min-width: 769px) {
   .btn {
-    min-width: 4.75rem;
-    height: 30px;
-    padding: 0 0.75rem;
-    font-size: 0.8rem;
+    min-width: 0;
+    height: 26px;
+    padding: 0 0.7rem;
+    font-size: 0.75rem;
   }
 }
