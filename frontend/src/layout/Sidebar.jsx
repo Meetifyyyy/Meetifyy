@@ -1,4 +1,5 @@
 import { useAuth } from '@shared/context/AuthContext';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useSmartNavigation } from '@shared/hooks/useSmartNavigation';
 import NavIcon from './NavIcon';
@@ -33,13 +34,40 @@ export default function Sidebar() {
 
   const username = currentUser?.username || '';
 
+  // A pill behind the active link that glides to the new one on navigation.
+  const navRef = useRef(null);
+  const [pill, setPill] = useState(null);
+  useLayoutEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return undefined;
+    const measure = () => {
+      const active = nav.querySelector(`.${styles.active}`);
+      setPill((prev) => {
+        const next = active ? { top: active.offsetTop, height: active.offsetHeight } : null;
+        if (prev && next && prev.top === next.top && prev.height === next.height) return prev;
+        return next ? { ...next, animate: Boolean(prev) } : null;
+      });
+    };
+    measure();
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : null;
+    observer?.observe(nav);
+    return () => observer?.disconnect();
+  }, [location.pathname]);
+
   return (
     <aside className={styles.sidebar}>
       
 
       {/* 2. Navigation Card */}
       <div className={`${styles.sidebarCard} ${styles.navCard}`}>
-        <nav className={styles.sidebarNav}>
+        <nav className={styles.sidebarNav} ref={navRef}>
+          {pill && (
+            <span
+              className={`${styles.activePill}${pill.animate ? ` ${styles.activePillMoving}` : ''}`}
+              style={{ transform: `translateY(${pill.top}px)`, height: `${pill.height}px` }}
+              aria-hidden="true"
+            />
+          )}
           <a
             href="#"
             className={`${styles.sidebarLink}${location.pathname === '/home' ? ` ${styles.active}` : ''}`}

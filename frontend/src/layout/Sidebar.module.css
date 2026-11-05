@@ -65,6 +65,33 @@
   flex-direction: column;
   align-items: stretch;
   gap: 0.25rem;
+  position: relative;
+}
+
+/* The blue line beside the active link; glides between links. */
+.activePill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 3px;
+  border-radius: 0 4px 4px 0;
+  background: var(--color-primary);
+  pointer-events: none;
+  z-index: 2;
+  /* Inset like the old line: 70% of the row's height, centred. */
+  clip-path: inset(15% 0 15% 0 round 0 4px 4px 0);
+}
+
+.activePillMoving {
+  transition:
+    transform 320ms cubic-bezier(0.2, 0, 0, 1),
+    height 320ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .activePillMoving {
+    transition: none;
+  }
 }
 
 .sidebarLink {
@@ -82,7 +109,8 @@
   font-weight: 600;
   color: var(--color-icon-base);
   position: relative;
-  transition: all 0.2s ease;
+  z-index: 1;
+  transition: background 0.15s ease, color 0.2s ease;
   border-radius: var(--radius-md);
 }
 
@@ -117,6 +145,7 @@
 }
 
 .sidebarLink.active::before {
+  display: none;
   content: '';
   position: absolute;
   left: 0;
