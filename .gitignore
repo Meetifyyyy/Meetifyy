@@ -459,3 +459,6 @@ security-reports/
 # The `build/` and `**/build/` rules above are directory patterns and do not
 # cover it.
 /build
+
+# Independent local React Native / Expo application
+/mobile/
