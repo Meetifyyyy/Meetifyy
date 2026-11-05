@@ -24,6 +24,7 @@ import {
   uploadContextForFolder,
 } from '../constants/mediaLimits';
 import { generateImagePlaceholder } from './imagePlaceholder';
+import { isBlankFrame } from './blankFrame';
 
 
 
@@ -128,14 +129,37 @@ const wholeSeconds = (d) => (Number.isFinite(d) && d > 0 ? Math.max(1, Math.roun
  * `onMetadata({ width, height, duration })` is called as soon as the clip's
  * metadata is read, before the frame is drawn.
  */
+
+/**
+ * Extracts a lightweight poster frame + intrinsic metadata from a video File
+ * without decoding the whole clip. Returns:
+ *   { posterBlob, width, height, duration }  (duration in whole seconds)
+ * Resolves null on failure so the caller can proceed with just the original.
+ *
+ * Every post video on development had a solid black poster: the frame at 1 s
+ * was drawn the moment `seeked` fired, from a detached element loaded with
+ * preload="metadata", so it was either not decoded yet or the clip's own dark
+ * opening — and a black image was uploaded as the poster. Now the frame is
+ * drawn only once its data is decoded (readyState >= HAVE_CURRENT_DATA), a
+ * flat frame is rejected, and later points of the clip are tried. If none has a picture there is no poster at all, so players fall back
+ * to the video's own first frame rather than a black card.
+ *
+ * The frame is drawn at most `maxSize` px on its longest edge; the reported
+ * width/height stay the clip's own (they size the bubble).
+ *
+ * `onMetadata({ width, height, duration })` is called as soon as the clip's
+ * metadata is read, before any frame is drawn.
+ */
 export const generateVideoPoster = async (file, options = {}) => {
-  const { quality = 0.75, mimeType = 'image/webp', maxSize = 720, timeoutMs = 4000, onMetadata = null } = options;
+  const { quality = 0.75, mimeType = 'image/webp', maxSize = 720, timeoutMs = 6000, onMetadata = null } = options;
   if (!file || !file.type?.startsWith('video/')) return null;
 
   return new Promise((resolve) => {
     let settled = false;
     let objectUrl = null;
     let timer = null;
+    let attempt = 0;
+    let targets = [0];
     const video = document.createElement('video');
     const metaOnly = () => ({
       posterBlob: null,
@@ -152,41 +176,83 @@ export const generateVideoPoster = async (file, options = {}) => {
       resolve(result);
     };
 
+    const seekTo = (t) => {
+      try {
+        if (Math.abs(video.currentTime - t) < 0.001 && video.readyState >= 2) whenFramePresented(capture);
+        else video.currentTime = t;
+      } catch (_) {
+        whenFramePresented(capture);
+      }
+    };
+
+    // `seeked` can fire before the frame it landed on is decoded. Drawable
+    // from HAVE_CURRENT_DATA on. Not requestVideoFrameCallback: this element
+    // is never on the page, so it is never presented and the callback never
+    // came, costing a fallback wait on every attempt.
+    const whenFramePresented = (fn) => {
+      if (settled) return;
+      if (video.readyState >= 2) { fn(); return; }
+      let called = false;
+      const once = () => {
+        if (called) return;
+        called = true;
+        video.removeEventListener('loadeddata', once);
+        video.removeEventListener('canplay', once);
+        fn();
+      };
+      video.addEventListener('loadeddata', once);
+      video.addEventListener('canplay', once);
+      setTimeout(once, 300);
+    };
+
+    const capture = () => {
+      if (settled) return;
+      try {
+        const vw = video.videoWidth;
+        const vh = video.videoHeight;
+        if (!vw || !vh) return done(metaOnly());
+        const scale = Math.min(1, maxSize / Math.max(vw, vh));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(vw * scale));
+        canvas.height = Math.max(1, Math.round(vh * scale));
+        canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+        if (isBlankFrame(canvas)) {
+          attempt += 1;
+          if (attempt < targets.length) return seekTo(targets[attempt]);
+          // No frame with a picture: no poster beats a black one.
+          return done(metaOnly());
+        }
+        canvas.toBlob(
+          (blob) => done({ ...metaOnly(), posterBlob: blob || null }),
+          mimeType,
+          quality,
+        );
+      } catch (_) {
+        done(metaOnly());
+      }
+    };
+
     try {
       objectUrl = URL.createObjectURL(file);
-      video.preload = 'metadata';
+      // 'auto', not 'metadata': with metadata only, some engines never decode
+      // the frame a seek lands on, and the canvas reads back black.
+      video.preload = 'auto';
       video.muted = true;
       video.playsInline = true;
       video.crossOrigin = 'anonymous';
-
-      const capture = () => {
-        try {
-          const vw = video.videoWidth;
-          const vh = video.videoHeight;
-          if (!vw || !vh) return done(metaOnly());
-          const scale = Math.min(1, maxSize / Math.max(vw, vh));
-          const canvas = document.createElement('canvas');
-          canvas.width = Math.max(1, Math.round(vw * scale));
-          canvas.height = Math.max(1, Math.round(vh * scale));
-          canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
-          canvas.toBlob(
-            (blob) => done({ ...metaOnly(), posterBlob: blob || null }),
-            mimeType,
-            quality,
-          );
-        } catch (_) {
-          done(metaOnly());
-        }
-      };
 
       video.onloadedmetadata = () => {
         // The size is known here, long before a frame is drawn: callers that
         // lay something out for the clip use it straight away.
         try { onMetadata?.({ width: video.videoWidth || null, height: video.videoHeight || null, duration: wholeSeconds(video.duration) }); } catch (_) { /* caller's problem */ }
-        const target = Number.isFinite(video.duration) ? Math.min(1, video.duration / 2) : 0;
-        try { video.currentTime = target; } catch (_) { capture(); }
+        const d = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0;
+        // Past a dark opening first, then further in.
+        targets = d > 0
+          ? [Math.min(1, d / 2), d * 0.25, d * 0.5, d * 0.75].filter((t, i, a) => a.indexOf(t) === i)
+          : [0];
+        seekTo(targets[0]);
       };
-      video.onseeked = capture;
+      video.onseeked = () => whenFramePresented(capture);
       video.onerror = () => done(null);
       // Safety timeout — never hang the send on a stubborn codec.
       timer = setTimeout(() => done(metaOnly()), timeoutMs);
@@ -669,16 +735,30 @@ export const processAndUploadVideo = async (file, folder = 'general', onProgress
   // Bands: 0-8 poster extraction, 8-90 clip upload, 90-99 poster upload, 100 done.
   const report = makeProgressReporter(onProgress);
   report(2, 'preparing');
-  const meta = options.meta !== undefined ? options.meta : await generateVideoPoster(file).catch(() => null);
+  // The clip's size is all its own upload needs, and it is known as soon as
+  // the metadata is read; the poster frame (seeks, decodes, a few tries past a
+  // dark opening) is made meanwhile and uploaded after the clip. Waiting for
+  // the poster first delayed the start of every video upload.
+  let resolveDims;
+  const dimsReady = new Promise((resolve) => { resolveDims = resolve; });
+  const posterPromise = options.meta !== undefined
+    ? Promise.resolve(options.meta)
+    : generateVideoPoster(file, { onMetadata: (d) => resolveDims(d) }).catch(() => null);
+  void posterPromise.then((m) => resolveDims(m ? { width: m.width, height: m.height, duration: m.duration } : null));
+  const dims = await dimsReady;
   throwIfAborted(signal);
   report(8, 'preparing');
 
   const stored = [];
   try {
-    const originalRes = await uploadFileDirect(file, folder, (percent) => {
-      report(band(8, 90, percent), 'uploading');
-    }, signal, null, { width: meta?.width, height: meta?.height, duration: meta?.duration });
+    const [originalRes, meta] = await Promise.all([
+      uploadFileDirect(file, folder, (percent) => {
+        report(band(8, 90, percent), 'uploading');
+      }, signal, null, { width: dims?.width, height: dims?.height, duration: dims?.duration }),
+      posterPromise,
+    ]);
     if (originalRes?.key) stored.push(originalRes.key);
+    throwIfAborted(signal);
 
     let thumbnailUrl = null;
     let posterKey = null;

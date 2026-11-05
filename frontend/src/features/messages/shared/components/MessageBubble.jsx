@@ -30,6 +30,7 @@ import { mediaCache } from '@shared/utils/MediaCacheManager';
 import { isOnline } from '@shared/lib/networkStatus';
 import { getMediaUrl } from '@shared/api/apiClient';
 import { normalizeBodyText, truncateBodyText } from '@shared/utils/bodyText';
+import { useUsablePoster } from '@shared/utils/posterCheck';
 
 // Messages longer than this are clipped behind a "Show more" toggle.
 const MSG_LIMITS = { maxChars: 300, maxLines: 10 };
@@ -337,7 +338,9 @@ export function VideoPlayerWithOverlay({ src, poster = null, placeholder = null,
    */
   const { src: resolvedSrc, pending, failed, refresh, attempt } = useSignedMediaSrc(src);
   // A missing poster is cosmetic, so it has no error state of its own.
-  const { src: resolvedPoster } = useSignedMediaSrc(poster || '');
+  // A flat black poster is dropped, so the bubble paints the clip's own frame.
+  const { src: signedPoster } = useSignedMediaSrc(poster || '');
+  const resolvedPoster = useUsablePoster(signedPoster);
   const [videoFailure, setVideoFailure] = useState(null);
   const reloadedRef = useRef(false);
 

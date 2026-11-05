@@ -104,6 +104,11 @@ public class MainActivity extends BridgeActivity {
 
         super.onCreate(savedInstanceState);
 
+        // 3a. No grey "play" placeholder over videos (see MeetifyyChromeClient).
+        if (getBridge() != null && getBridge().getWebView() != null) {
+            getBridge().getWebView().setWebChromeClient(new MeetifyyChromeClient(getBridge()));
+        }
+
         // 3b. Survive the WebView's renderer being lost (see onRendererLost).
         if (getBridge() != null) {
             getBridge().addWebViewListener(new WebViewListener() {

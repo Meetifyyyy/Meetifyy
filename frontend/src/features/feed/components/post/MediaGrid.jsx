@@ -5,6 +5,7 @@ import { deriveThumbnailKey, getMediaUrl } from '@shared/api/apiClient';
 import { Play, Pause, VolumeHigh, VolumeOff, Maximize } from '@shared/components/icons';
 import { feedVideoRegistry } from '@shared/utils/feedVideoRegistry';
 import { isThumbnailMissing, markThumbnailMissing } from '@shared/utils/missingThumbnails';
+import { whenPosterBlank, useUsablePoster } from '@shared/utils/posterCheck';
 import { safePlaceholder } from '@shared/utils/imagePlaceholder';
 import { noteImageStart, loadedQuickly } from '@shared/utils/imageReveal';
 import ImagePlaceholder from '@shared/components/media/ImagePlaceholder';
@@ -41,6 +42,7 @@ function fmtTime(s) {
  */
 const InlineVideoPlayer = memo(function InlineVideoPlayer({
   src,
+  poster = null,
   isPortrait,
   aspect,
   handleVideoLoaded,
@@ -48,6 +50,9 @@ const InlineVideoPlayer = memo(function InlineVideoPlayer({
   index,
 }) {
   const uid = useId(); // Stable unique id for registry
+  // Shown until the first frame is decoded, so the element is never empty
+  // (on Android an empty <video> paints the WebView's grey play placeholder).
+  const usablePoster = useUsablePoster(poster);
   const videoRef = useRef(null);
   const rafRef   = useRef(null);
 
@@ -299,6 +304,7 @@ const InlineVideoPlayer = memo(function InlineVideoPlayer({
         <video
           ref={videoRef}
           src={src}
+          poster={usablePoster || undefined}
           playsInline
           muted={muted}
           preload="metadata"
@@ -682,6 +688,13 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
   if (!mediaList.length) return null;
 
   const handleImageLoad = (index, e) => {
+    // A video's poster that is one flat colour (the black posters uploaded
+    // before the generator checked) is treated like a failed one: the tile
+    // falls back to the clip's real first frame, and the key is remembered.
+    if (mediaList[index]?.isVideo) {
+      const shown = e?.target?.currentSrc || e?.target?.getAttribute?.('src');
+      if (shown) whenPosterBlank(shown, () => handlePosterError(index));
+    }
     // The original loaded after its thumbnail failed: that thumbnail really is
     // missing, so later mounts and launches skip straight to the original.
     const failedThumb = e?.target?.getAttribute?.('data-failed-thumb');
@@ -887,15 +900,18 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
       const isLoaded = loadedStates[keyAt(0)];
       const isPlayingInline = Boolean(inlinePlaying[keyAt(0)]);
       const rawPoster = item.raw?.poster || item.raw?.thumbnail || item.raw?.thumbnailUrl;
-      const posterUrl = rawPoster
-        ? getMediaUrl(rawPoster)
-        : (posterFailed[keyAt(0)] ? null : item.posterUrl || null);
+      // A failed (or blank) poster falls back to the first frame whichever
+      // field it came from; a poster carried on the payload used to ignore it.
+      const posterUrl = posterFailed[keyAt(0)]
+        ? null
+        : (rawPoster ? getMediaUrl(rawPoster) : item.posterUrl || null);
       const mediaSrc = item.url || (item.rawSrc ? getMediaUrl(item.rawSrc) : null);
 
       if (isPlayingInline && mediaSrc) {
         return (
           <InlineVideoPlayer
             src={mediaSrc}
+            poster={posterUrl}
             isPortrait={isPortrait}
             aspect={aspect}
             handleVideoLoaded={handleVideoLoaded}

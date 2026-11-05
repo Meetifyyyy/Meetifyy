@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { ImageOff, Play } from '@shared/components/icons';
 import { useSignedMediaSrc } from '@shared/hooks/useSignedMediaSrc';
 import styles from './MediaThumb.module.css';
+import { whenPosterBlank } from '@shared/utils/posterCheck';
 
 /**
  * One square media tile — the shape used by chat galleries and any other
@@ -188,7 +189,12 @@ function MediaThumbTile({
                 decoding="async"
                 className={styles.media}
                 data-visible={status === 'ready' ? 'true' : 'false'}
-                onLoad={() => setReady(true)}
+                onLoad={() => {
+                  setReady(true);
+                  // A flat black poster (uploaded before blank frames were
+                  // refused) is no picture of the clip: use the clip itself.
+                  if (hasPoster) whenPosterBlank(resolved, fallBackToVideo);
+                }}
                 onError={handleError}
               />
             )
