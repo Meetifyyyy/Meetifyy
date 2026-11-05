@@ -59,6 +59,18 @@ export function markThumbnailMissing(key) {
   persist();
 }
 
+/**
+ * Clear cached data: forget which thumbnails were missing, so ones added since
+ * (a later upload, the thumbnail backfill) are asked for again.
+ */
+export function clearMissingThumbnails() {
+  entries = new Map();
+  try {
+    if (typeof localStorage !== 'undefined') localStorage.removeItem(STORAGE_KEY);
+  } catch (_) { /* storage disabled */ }
+  return true;
+}
+
 /** For tests. */
 export function _resetMissingThumbnails() {
   entries = null;

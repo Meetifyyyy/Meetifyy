@@ -186,3 +186,37 @@ describe('the feed snapshot key it clears', () => {
     expect(source).toContain(`'${FEED_SNAPSHOT_KEY}'`);
   });
 });
+
+describe('clearCachedData: thumbnail bookkeeping and storage-less browsers', () => {
+  it('re-fetches blank posters past the HTTP cache, then forgets every verdict', async () => {
+    storage.set('meetifyy_poster_verdicts_v1', JSON.stringify({
+      'https://cdn.example/posts/a_thumb.webp': 1,
+      'https://cdn.example/posts/b_thumb.webp': 0,
+      'chat/c_thumb.webp': 1, // private, stored without a signature: not refetchable
+    }));
+    const fetchSpy = vi.fn(() => Promise.resolve({ ok: true }));
+    vi.stubGlobal('fetch', fetchSpy);
+
+    const result = await mod.clearCachedData(queryClient);
+
+    expect(result.ok).toBe(true);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy).toHaveBeenCalledWith(
+      'https://cdn.example/posts/a_thumb.webp',
+      expect.objectContaining({ cache: 'reload' }),
+    );
+    expect(storage.has('meetifyy_poster_verdicts_v1')).toBe(false);
+  });
+
+  it('forgets which thumbnails were missing, so regenerated ones are used', async () => {
+    storage.set('meetifyy_missing_thumbs_v1', JSON.stringify({ 'posts/x_thumb.webp': Date.now() + 1e6 }));
+    await mod.clearCachedData(queryClient);
+    expect(storage.has('meetifyy_missing_thumbs_v1')).toBe(false);
+  });
+
+  it('counts a browser with no IndexedDB as nothing to clear, not a failure', async () => {
+    vi.stubGlobal('indexedDB', undefined);
+    const result = await mod.clearCachedData(queryClient);
+    expect(result).toEqual({ ok: true, failed: [] });
+  });
+});

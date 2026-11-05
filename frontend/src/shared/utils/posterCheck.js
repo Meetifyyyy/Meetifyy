@@ -83,6 +83,29 @@ export function isPosterBlank(url) {
   return probe;
 }
 
+/**
+ * Clear cached data: re-fetch every poster this device found blank, bypassing
+ * the browser's HTTP cache, then forget the verdicts.
+ *
+ * Uploads are cached for a year as immutable, so a black poster that has since
+ * been regenerated (scripts/backfill-media-thumbnails.ts) would otherwise stay
+ * black on this device for as long as the cached copy lived. A `reload` fetch
+ * replaces that cached copy with the current one. Only public addresses: a
+ * private one was stored without its signature and cannot be fetched again
+ * (its next signed URL is a new cache entry anyway).
+ */
+export async function refreshBlankPosters() {
+  const map = loadStored();
+  const blank = [...map].filter(([k, v]) => v === 1 && /^https?:\/\//.test(k)).map(([k]) => k);
+  if (typeof fetch === 'function') {
+    await Promise.allSettled(
+      blank.map((url) => fetch(url, { cache: 'reload', mode: 'no-cors', credentials: 'omit' })),
+    );
+  }
+  forgetPosterVerdicts();
+  return true;
+}
+
 /** Sign-out: the next account starts with no record of this one's media. */
 export function forgetPosterVerdicts() {
   results.clear();

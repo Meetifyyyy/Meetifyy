@@ -8,7 +8,9 @@
  *   - cached message history and its sync cursors;
  *   - the signed media URLs;
  *   - the service worker's image cache;
- *   - the installed app's saved Home feed page.
+ *   - the installed app's saved Home feed page;
+ *   - which thumbnails were missing and which posters were blank (so ones
+ *     regenerated since are used), re-fetching blank posters past the HTTP cache.
  *
  * It must NOT touch, and does not reach:
  *   - the session or any auth key (this is not a sign-out, see AuthContext);
@@ -23,6 +25,8 @@
 import { idbClearCache } from './idb';
 import { idbClearMessageCache } from '../../features/messages/shared/utils/idbMessages';
 import { mediaCache } from '@shared/utils/MediaCacheManager';
+import { clearMissingThumbnails } from '@shared/utils/missingThumbnails';
+import { refreshBlankPosters } from '@shared/utils/posterCheck';
 
 /**
  * The installed app's saved Home feed page. The same string as
@@ -73,12 +77,20 @@ function clearFeedSnapshot() {
  *   step finished; `failed` names the ones that did not.
  */
 export async function clearCachedData(queryClient) {
+  // No IndexedDB at all (storage blocked, an old private mode): nothing was
+  // ever stored there, so there is nothing to clear — not a failure. It used to
+  // throw, and the person was told the clear had failed.
+  const hasIdb = typeof indexedDB !== 'undefined';
   const steps = {
-    cache: idbClearCache,
-    messages: idbClearMessageCache,
+    cache: hasIdb ? idbClearCache : async () => true,
+    messages: hasIdb ? idbClearMessageCache : async () => true,
     mediaUrls: async () => clearMediaUrls(),
     imageCaches: clearImageCaches,
     feedSnapshot: async () => clearFeedSnapshot(),
+    // Thumbnail bookkeeping is cache too: which ones 404'd, and which video
+    // posters were blank (re-fetched past the HTTP cache, see posterCheck).
+    missingThumbnails: async () => clearMissingThumbnails(),
+    blankPosters: refreshBlankPosters,
   };
   const names = Object.keys(steps);
   const results = await Promise.allSettled(names.map((n) => steps[n]()));
