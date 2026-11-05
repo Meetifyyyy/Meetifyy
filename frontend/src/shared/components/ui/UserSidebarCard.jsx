@@ -212,7 +212,7 @@ export default function UserSidebarCard({ username: propUsername, initialUser = 
             <Avatar 
               src={isDeletedUser ? null : effectiveUser.avatar} 
               name={isDeletedUser ? 'Deleted User' : (effectiveUser.displayName || effectiveUser.username)} 
-              size="76px" 
+              size="64px" 
             />
           </div>
         </div>

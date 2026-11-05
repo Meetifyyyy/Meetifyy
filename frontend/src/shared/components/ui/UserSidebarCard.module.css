@@ -234,3 +234,45 @@
   line-height: 1.5;
   color: var(--color-text-light, #64748b);
 }
+
+/* ── Layout pass ── */
+/* Same proportions as the full profile: a 3:1 cover, its bottom corners the
+   card's own radius, and the avatar centred on the cover's lower edge. */
+.coverWrap {
+  border-radius: 0 0 var(--radius-xl, 16px) var(--radius-xl, 16px);
+  height: auto;
+  aspect-ratio: 3 / 1;
+}
+
+.content {
+  gap: 0.85rem;
+  padding: 0 1.15rem 1.15rem;
+}
+
+/* The name sits close under the avatar, not a full gap below it. */
+.headerRow {
+  /* Half the avatar (64px) plus its 4px ring: centred on the edge. */
+  margin-top: -36px;
+  margin-bottom: -0.25rem;
+}
+
+.identity {
+  gap: 0.1rem;
+}
+
+/* Stats line up with the name. */
+.statsRow {
+  gap: 2rem;
+  padding: 0;
+  padding-left: 0;
+}
+
+.statItem {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 0.35rem;
+}
+
+.statNumber {
+  font-size: 1rem;
+}
