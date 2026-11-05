@@ -35,6 +35,18 @@ export const JITTER_PX = 6;
 export const HIDE_AFTER_PX = 64;
 /** Don't engage unless there is meaningfully more content than viewport. */
 export const MIN_SCROLLABLE_PX = 240;
+/**
+ * After a navigation, how long scroll movement is taken as the page settling
+ * (its saved position being restored, a virtual list re-measuring) and never
+ * as a gesture.
+ */
+export const NAVIGATION_SETTLE_MS = 600;
+
+/**
+ * Set by every navigation (see the layout effect at the bottom). Module-level
+ * because the listener effect outlives route changes and has to see it.
+ */
+let settleUntil = 0;
 
 /**
  * The decision itself, as a pure function of the previous state and the new
@@ -121,6 +133,19 @@ export function useAutoHideChrome({ enabled = true } = {}) {
       // attaching, so crossing the breakpoint needs no listener juggling.
       if (!mq.matches) { setHidden(false); return; }
 
+      // Just navigated: the page is settling, not being scrolled. Coming back
+      // to Home, the restored scroll position arrived here as one big
+      // downward "gesture" and hid the header and nav mid-transition (feed
+      // under the status bar, the white flash), and the next jump brought
+      // them back. The chrome stays shown, and the reference follows the
+      // page, so measuring resumes from wherever it settles.
+      if (performance.now() < settleUntil) {
+        lastY = Math.max(0, window.scrollY);
+        downTravel = 0;
+        setHidden(false);
+        return;
+      }
+
       const state = nextChromeState(
         { lastY, downTravel, hidden },
         {
@@ -182,5 +207,6 @@ export function useAutoHideChrome({ enabled = true } = {}) {
   // paints, not a frame after it.
   useLayoutEffect(() => {
     document.documentElement.removeAttribute('data-chrome-hidden');
+    settleUntil = performance.now() + NAVIGATION_SETTLE_MS;
   }, [pathname]);
 }

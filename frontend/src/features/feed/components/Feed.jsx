@@ -13,10 +13,37 @@ import styles from './Feed.module.css';
 import { useAuth } from '@shared/context/AuthContext';
 import { addCreatedPostToCaches } from '../utils/postCache';
 import { feedQueryOptions, refreshStaleFeedHead } from '../utils/feedQuery';
-import { readSavedFeedScroll, saveFeedScroll } from '../utils/feedScrollMemory';
+import {
+  readSavedFeedScroll,
+  saveFeedScroll,
+  FEED_TOP_EVENT,
+  isFeedTopRequested,
+  clearFeedTopRequest,
+} from '../utils/feedScrollMemory';
 import VerificationGate from '@shared/components/VerificationGate/VerificationGate';
 import HeaderScrollEdge from '@shared/components/ui/HeaderScrollEdge';
 import HomeCommunities from '@features/communities/components/home/HomeCommunities';
+
+/**
+ * Smoothly scrolls the window to the top, then calls `done` once it is there.
+ * Already at the top: at once. A scroll that never quite arrives (the user
+ * grabs the page, the engine skips the smooth part) is finished after a moment.
+ */
+function whenScrolledToTop(done) {
+  if (window.scrollY <= 2) { done(); return; }
+  let finished = false;
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    window.removeEventListener('scroll', onScroll);
+    clearTimeout(timer);
+    done();
+  };
+  const onScroll = () => { if (window.scrollY <= 2) finish(); };
+  const timer = setTimeout(finish, 1200);
+  window.addEventListener('scroll', onScroll, { passive: true });
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
 
 function Feed({ onPostClick, onCommentClick }) {
   const { currentUser } = useAuth();
@@ -43,9 +70,29 @@ function Feed({ onPostClick, onCommentClick }) {
   // On arrival the position about to be restored decides, not the current
   // scroll, which the route change has already reset.
   const userId = currentUser?.id;
+  // Arrived from the logo on another page: start at the top with the newest
+  // posts instead of restoring the old position. Read once, on mount.
+  const [arrivedForTop] = useState(() => !searchQuery && isFeedTopRequested());
+  // Filled by the app's PullToRefresh: runs a refresh with its indicator, as
+  // if pulled. Null on the website, which has no pull-to-refresh.
+  const refreshTriggerRef = useRef(null);
   useEffect(() => {
     const key = feedQueryOptions(searchQuery, userId).queryKey;
-    void refreshStaleFeedHead(queryClient, key, { scrollY: readSavedFeedScroll() });
+    // The logo's refresh: the first page only, in place — the posts on screen
+    // stay until the new ones land, so nothing flashes to a skeleton.
+    const headRefresh = () =>
+      refreshStaleFeedHead(queryClient, key, { scrollY: 0, force: true }) ?? Promise.resolve();
+    // Shown like a pull-to-refresh in the app, so a tap visibly reloads.
+    const visibleHeadRefresh = () => {
+      const trigger = refreshTriggerRef.current;
+      return trigger ? trigger(headRefresh) : headRefresh();
+    };
+    if (arrivedForTop) {
+      clearFeedTopRequest();
+      void visibleHeadRefresh();
+    } else {
+      void refreshStaleFeedHead(queryClient, key, { scrollY: readSavedFeedScroll() });
+    }
     // Fire-and-forget: a failed head refresh leaves the cached list on screen.
     const unsubscribeFocus = focusManager.subscribe((focused) => {
       if (focused) void refreshStaleFeedHead(queryClient, key, { scrollY: window.scrollY });
@@ -55,11 +102,23 @@ function Feed({ onPostClick, onCommentClick }) {
     const unsubscribeOnline = onlineManager.subscribe((online) => {
       if (online) void refreshStaleFeedHead(queryClient, key, { scrollY: window.scrollY });
     });
+    // The logo tapped while Home is already showing: back to the top and
+    // fetch the newest first page.
+    const handleFeedTop = () => {
+      if (searchQuery) return;
+      clearFeedTopRequest();
+      // Glide to the top first, then refresh there: the indicator belongs at
+      // the top of the feed, and new posts landing mid-scroll would jolt it.
+      whenScrolledToTop(() => { void visibleHeadRefresh(); });
+    };
+    window.addEventListener(FEED_TOP_EVENT, handleFeedTop);
     return () => {
       unsubscribeFocus();
       unsubscribeOnline();
+      window.removeEventListener(FEED_TOP_EVENT, handleFeedTop);
     };
-  }, [queryClient, searchQuery, userId]);
+  // `arrivedForTop` is fixed at mount, so listing it never re-runs this.
+  }, [queryClient, searchQuery, userId, arrivedForTop]);
 
   // Flatten the pages of posts into a single deduped array with stable reference
   const allPosts = useMemo(() => {
@@ -115,11 +174,15 @@ function Feed({ onPostClick, onCommentClick }) {
   useLayoutEffect(() => {
     if (restoredRef.current || isLoading || !hasPosts) return;
     restoredRef.current = true;
+    if (arrivedForTop) {
+      if (window.scrollY > 0) window.scrollTo(0, 0);
+      return;
+    }
     const savedY = readSavedFeedScroll();
     if (savedY > 0 && Math.abs(window.scrollY - savedY) > 1) {
       window.scrollTo(0, savedY);
     }
-  }, [isLoading, hasPosts]);
+  }, [isLoading, hasPosts, arrivedForTop]);
 
   // Save scroll position on scroll.
   //
@@ -170,7 +233,7 @@ function Feed({ onPostClick, onCommentClick }) {
   }, [queryClient, searchQuery, currentUser?.id]);
 
   return (
-    <PullToRefresh onRefresh={handlePullToRefresh}>
+    <PullToRefresh onRefresh={handlePullToRefresh} triggerRef={refreshTriggerRef}>
       {/* data-bars-ignore: the status bar continues the page behind the feed,
           never a post card. With Home's header slid away the card under the
           bar was all a sample could see, and the header then slid back in

@@ -58,14 +58,18 @@ export const FEED_HEAD_REFRESH_MAX_Y = 600;
  *
  * Returns the refetch promise, or null when nothing was done.
  */
-export function refreshStaleFeedHead(queryClient, queryKey, { scrollY = 0 } = {}) {
+export function refreshStaleFeedHead(queryClient, queryKey, { scrollY = 0, force = false } = {}) {
   const query = queryClient.getQueryCache().find({ queryKey, exact: true });
   if (!query || !query.state.data) return null;
   if (query.state.fetchStatus === 'fetching') return null;
-  // By time, not `isStale()`: with no observer mounted that only reports an
-  // explicit invalidation, and this also runs before Home's observer exists.
-  if (!query.isStaleByTime(FEED_STALE_MS)) return null;
-  if (scrollY > FEED_HEAD_REFRESH_MAX_Y) return null;
+  // `force`: the person asked for the newest posts (the logo), so neither the
+  // age of the cache nor the scroll position is a reason to skip it.
+  if (!force) {
+    // By time, not `isStale()`: with no observer mounted that only reports an
+    // explicit invalidation, and this also runs before Home's observer exists.
+    if (!query.isStaleByTime(FEED_STALE_MS)) return null;
+    if (scrollY > FEED_HEAD_REFRESH_MAX_Y) return null;
+  }
   // Offline it could only fail, and the trim below would have thrown away the
   // pages the user can still read.
   if (!onlineManager.isOnline()) return null;

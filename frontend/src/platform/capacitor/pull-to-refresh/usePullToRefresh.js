@@ -113,7 +113,7 @@ function isInsideNestedScroller(target, root) {
  * frames came from. React state now changes only with the phase — idle,
  * pulling, ready, refreshing — a handful of times per gesture.
  */
-export function usePullToRefresh({ onRefresh, disabled = false, getScrollTop, onDistance } = {}) {
+export function usePullToRefresh({ onRefresh, disabled = false, getScrollTop, onDistance, triggerRef } = {}) {
   const containerRef = useRef(null);
 
   /** 'idle' | 'pulling' | 'ready' | 'refreshing' */
@@ -173,7 +173,9 @@ export function usePullToRefresh({ onRefresh, disabled = false, getScrollTop, on
     setPhaseBoth('idle');
   }, [moveTo, setPhaseBoth]);
 
-  const runRefresh = useCallback(async () => {
+  // `override`: a refresh started from code (the logo) may run its own reload
+  // through the same indicator; a pull always runs `onRefresh`.
+  const runRefresh = useCallback(async (override) => {
     /*
      * The lock. A second gesture while a refresh is in flight is ignored
      * outright rather than queued — a queued one fires against data that the
@@ -188,7 +190,7 @@ export function usePullToRefresh({ onRefresh, disabled = false, getScrollTop, on
 
     const startedAt = Date.now();
     try {
-      await onRefreshRef.current?.();
+      await (typeof override === 'function' ? override() : onRefreshRef.current?.());
     } catch {
       /*
        * A failed refresh settles exactly like a successful one.
@@ -333,6 +335,19 @@ export function usePullToRefresh({ onRefresh, disabled = false, getScrollTop, on
       frameRef.current = 0;
     };
   }, [atTop, moveTo, runRefresh, settle, setPhaseBoth]);
+
+  // Lets the screen start the same refresh, indicator and all, without a pull.
+  useEffect(() => {
+    if (!triggerRef) return undefined;
+    triggerRef.current = (override) => {
+      // Gesture switched off: still reload, only without the indicator.
+      if (disabledRef.current) {
+        return Promise.resolve(typeof override === 'function' ? override() : onRefreshRef.current?.());
+      }
+      return runRefresh(override);
+    };
+    return () => { triggerRef.current = null; };
+  }, [triggerRef, runRefresh]);
 
   return {
     containerRef,

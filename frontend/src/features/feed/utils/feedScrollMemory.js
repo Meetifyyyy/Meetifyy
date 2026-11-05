@@ -43,6 +43,39 @@ export function saveFeedScroll(y) {
 }
 
 /**
+ * "Take me to the top of Home" — the MEETIFYY logo.
+ *
+ * Going to /home normally restores where the feed was left, which is right
+ * for Back and for the Home tab. The logo is the other intent: newest posts,
+ * from the top. It used to be a plain navigate('/home'), so the feed painted
+ * at the top, then jumped down to the remembered position — the "glitch",
+ * landing somewhere different each time.
+ *
+ * The request is remembered here as well as broadcast, because when the logo
+ * is tapped on another page there is no Home mounted to hear the event yet.
+ */
+export const FEED_TOP_EVENT = 'meetifyy:feed-top';
+let feedTopRequested = false;
+
+export function requestFeedTop() {
+  saveFeedScroll(0);
+  feedTopRequested = true;
+  try {
+    window.dispatchEvent(new Event(FEED_TOP_EVENT));
+  } catch {
+    // No window (tests): the remembered request still applies on mount.
+  }
+}
+
+export function isFeedTopRequested() {
+  return feedTopRequested;
+}
+
+export function clearFeedTopRequest() {
+  feedTopRequested = false;
+}
+
+/**
  * Heights are only valid for the layout width they were measured at: a rotated
  * phone or a resized window re-flows every row, so a different width discards
  * them rather than seeding wrong values.
@@ -79,4 +112,5 @@ export function recallRowSizes(width) {
 export function forgetRowSizes() {
   rememberedWidth = 0;
   rememberedSizes = new Map();
+  feedTopRequested = false;
 }

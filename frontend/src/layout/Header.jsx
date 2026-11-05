@@ -20,6 +20,7 @@ import {
   Cog6ToothIcon as SettingsIcon,
   MagnifyingGlassIcon,
 } from '@heroicons/react/24/outline';
+import { requestFeedTop } from '@features/feed/utils/feedScrollMemory';
 import styles from './Header.module.css';
 import wordmark from '@assets/images/meetifyy_wordmark.svg';
 import dashboardStyles from './DashboardLayout.module.css';
@@ -89,14 +90,19 @@ export default function Header({ variant = 'dashboard', wide = false }) {
    * one fired on EVERY click in the app whether the menu was open or not.
    */
 
+  // The logo means "newest posts, from the top" — not "back to where Home
+  // was left", which is what the Home tab and Back do.
+  const goToFeedTop = () => {
+    requestFeedTop();
+    if (!isHomePage) navigate('/home');
+  };
+
   const handleLogout = () => {
-    // `logout` signs this tab out synchronously and resets the query cache as
-    // part of that. Clearing the cache here too, first, only made the still
-    // mounted signed-in pages refetch against a session that was ending.
-    logout();
-    // Replace, don't push: pushing left the authenticated page one entry behind
-    // the landing page, so Back after signing out walked straight back into it.
-    navigate('/', { replace: true });
+    // `logout` puts up the "Logging out" cover, ends the session, empties the
+    // caches and then goes to the landing page (or the app's login screen) by
+    // replacing the entry, so Back cannot walk into the signed-in page. It
+    // owns the navigation: going to '/' here as well raced it.
+    void logout();
   };
 
   const username = currentUser?.username || '';
@@ -241,7 +247,7 @@ export default function Header({ variant = 'dashboard', wide = false }) {
           src={wordmark} 
           alt="Meetifyy" 
           className={styles.mobileBrandWordmark} 
-          onClick={() => navigate('/home')} 
+          onClick={goToFeedTop}
         />
       </div>
 
@@ -251,7 +257,7 @@ export default function Header({ variant = 'dashboard', wide = false }) {
           src={wordmark} 
           alt="Meetifyy" 
           className={styles.brandWordmark} 
-          onClick={() => navigate('/home')} 
+          onClick={goToFeedTop}
         />
       </div>
 
@@ -278,7 +284,7 @@ export default function Header({ variant = 'dashboard', wide = false }) {
             src={wordmark} 
             alt="Meetifyy" 
             className={styles.drawerWordmark} 
-            onClick={() => { navigate('/home'); setDrawerOpen(false); }} 
+            onClick={() => { goToFeedTop(); setDrawerOpen(false); }}
           />
           <button className={styles.closeDrawerBtn} onClick={closeDrawer} aria-label="Close menu">
             <X size={18} strokeWidth={2} />

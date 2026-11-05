@@ -44,6 +44,8 @@ export default function PullToRefresh({
   getScrollTop,
   surface = 'canvas',
   pullTargetRef,
+  // Filled with `(reload?) => Promise`: runs a refresh as if pulled (see usePullToRefresh).
+  triggerRef,
 }) {
   const gapRef = useRef(null);
   const indicatorRef = useRef(null);
@@ -165,6 +167,7 @@ export default function PullToRefresh({
     disabled,
     getScrollTop,
     onDistance: paint,
+    triggerRef,
   });
   refreshingRef.current = isRefreshing;
 
