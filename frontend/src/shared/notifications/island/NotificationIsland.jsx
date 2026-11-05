@@ -28,8 +28,10 @@ import styles from './NotificationIsland.module.css';
  *   the next read as a stop between two animations.
  * - A swipe moves only what is under the finger: the whole island when it
  *   shows one notification, otherwise just that row. While a row moves, the
- *   island's backdrop and border step aside (each row has its own
- *   background), so no empty white box is left standing behind it.
+ *   island splits into separate cards: the clip comes off (it cut the
+ *   dragged row off at the island's edge), the backdrop and frame step
+ *   aside, and every row rounds its own corners and carries its own border.
+ *   When the swipe ends the rows rejoin under the clip as one shape.
  * - A released swipe keeps the finger's speed: a spring seeded with the drag
  *   velocity, both for flinging away and for settling back. A fixed-duration
  *   tween started at its own speed, which read as a snap.
@@ -157,6 +159,7 @@ function Row({ item, index, spring, wasDragged, swipeable, onSwipeStart, onSwipe
       dragDirectionLock
       dragMomentum={false}
       dragElastic={0.9}
+      whileDrag={{ zIndex: 2 }}
       onDragStart={() => { rowDraggedRef.current = true; onSwipeStart(); }}
       onDragEnd={handleDragEnd}
       onPointerDown={() => { rowDraggedRef.current = false; }}
@@ -190,6 +193,9 @@ export default function NotificationIsland() {
   const draggedRef = useRef(false);
   const swipingRef = useRef(false);
   const [width, setWidth] = useState(expandedWidth);
+  const [split, setSplit] = useState(false);
+  const splitRef = useRef(false);
+  const lastCountRef = useRef(0);
 
   const count = items.length;
   const spring = reduceMotion ? REDUCED : SPRING;
@@ -205,8 +211,27 @@ export default function NotificationIsland() {
   const backdrop = useCallback((visible) => {
     animate('[data-island-bg], [data-island-frame]', { opacity: visible ? 1 : 0 }, { duration: visible ? 0.18 : 0.1 });
   }, [animate]);
-  const handleRowSwipeStart = useCallback(() => backdrop(false), [backdrop]);
-  const handleRowSwipeSettled = useCallback(() => backdrop(true), [backdrop]);
+  const handleRowSwipeStart = useCallback(() => {
+    splitRef.current = true;
+    setSplit(true);
+    backdrop(false);
+    const shell = scope.current?.querySelector('[data-island-shell]');
+    if (shell) shell.style.clipPath = 'none';
+  }, [backdrop, scope]);
+
+  // Rejoin: the clip goes back on at the current shape (its outer corners
+  // match the rows' rounding), then the rows' own corners ease back square.
+  const rejoin = useCallback((rows) => {
+    if (!splitRef.current) return;
+    splitRef.current = false;
+    setClip(rowsClip(rows), { duration: 0 });
+    setSplit(false);
+  }, [setClip]);
+
+  const handleRowSwipeSettled = useCallback(() => {
+    rejoin(islandSnapshot().items.length);
+    backdrop(true);
+  }, [backdrop, rejoin]);
 
   useEffect(() => {
     const onResize = () => setWidth(expandedWidth());
@@ -232,6 +257,10 @@ export default function NotificationIsland() {
     const run = ++runRef.current;
     const alive = () => run === runRef.current;
     const { spring: sp, reduceMotion: reduced } = motionRef.current;
+    const prevCount = lastCountRef.current;
+    lastCountRef.current = count;
+    // A swiped row was dismissed: rejoin at the old shape, then shrink.
+    if (count > 0) rejoin(prevCount || count);
 
     if (count === 0) {
       phaseRef.current = 'hidden';
@@ -285,7 +314,7 @@ export default function NotificationIsland() {
       phaseRef.current = 'expanded';
       islandMarkShown();
     });
-  }, [count, closing, animate, scope, setClip]);
+  }, [count, closing, animate, scope, setClip, rejoin]);
 
   const handleDragStart = useCallback(() => {
     draggedRef.current = true;
@@ -349,7 +378,7 @@ export default function NotificationIsland() {
         onHoverEnd={() => islandResume('hover')}
       >
         <div data-island-frame className={styles.frame} style={{ clipPath: frameClip(pillClip()) }} />
-        <div data-island-shell className={styles.shell} style={{ clipPath: pillClip(), pointerEvents: count ? 'auto' : 'none' }}>
+        <div data-island-shell className={`${styles.shell}${split ? ` ${styles.split}` : ''}`} style={{ clipPath: pillClip(), pointerEvents: count ? 'auto' : 'none' }}>
         <div data-island-bg className={styles.backdrop} />
         <motion.img
           data-island-logo
