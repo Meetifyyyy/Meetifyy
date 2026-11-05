@@ -256,8 +256,12 @@
   align-self: stretch;
   min-height: 40px;
   box-sizing: border-box;
-  padding: 8px 14px;
-  border-radius: var(--radius-lg);
+  /* One line is exactly 40px tall: the avatar's and the Reply button's height. */
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 7px 16px;
+  border-radius: 20px;
   background: var(--color-bg-soft);
   border: 1px solid transparent;
   transition: border-color 0.16s ease, background 0.16s ease;

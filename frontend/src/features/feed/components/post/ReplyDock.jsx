@@ -144,7 +144,7 @@ export default function ReplyDock({
         <Avatar
           src={currentUser?.avatar}
           name={currentUser?.displayName}
-          size={inline ? '36px' : '38px'}
+          size={inline ? '40px' : '38px'}
           disableHover
           className={styles.avatar}
         />
