@@ -1,7 +1,6 @@
 package app.meetifyy;
 
 import android.app.Activity;
-import android.content.pm.ActivityInfo;
 import android.view.Window;
 import android.view.WindowManager;
 
@@ -25,30 +24,27 @@ import com.getcapacitor.annotation.CapacitorPlugin;
  *
  *  - the status and navigation bars hidden (immersive; a swipe from an edge
  *    brings them back for a moment, as in any video app);
- *  - the screen turned to landscape for a wide clip;
+ *  - (no rotation: the app is portrait-only, MainActivity in the manifest,
+ *    so a wide clip plays letterboxed rather than turning the screen);
  *  - the screen kept on while it plays.
  *
- * {@link #exit} puts all three back exactly as they were, and so does the
- * activity going away, so the app can never be left without its bars or stuck
- * on its side.
+ * {@link #exit} puts both back exactly as they were, and so does the
+ * activity going away, so the app can never be left without its bars.
  */
 @CapacitorPlugin(name = "MediaFullscreen")
 public class MediaFullscreenPlugin extends Plugin {
 
     private boolean active = false;
-    private int previousOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
 
-    /** @param call `landscape`: true to turn the screen for a wide clip */
+    /** `landscape` is accepted and ignored: the app never leaves portrait. */
     @PluginMethod
     public void enter(PluginCall call) {
-        final boolean landscape = Boolean.TRUE.equals(call.getBoolean("landscape", false));
         final Activity activity = getActivity();
         if (activity == null) {
             call.reject("no activity");
             return;
         }
         activity.runOnUiThread(() -> {
-            if (!active) previousOrientation = activity.getRequestedOrientation();
             active = true;
             final Window window = activity.getWindow();
             final WindowInsetsControllerCompat controller =
@@ -57,9 +53,6 @@ public class MediaFullscreenPlugin extends Plugin {
                     WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
             controller.hide(WindowInsetsCompat.Type.systemBars());
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-            activity.setRequestedOrientation(landscape
-                    ? ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                    : previousOrientation);
             call.resolve();
         });
     }
@@ -90,6 +83,5 @@ public class MediaFullscreenPlugin extends Plugin {
         WindowCompat.getInsetsController(window, window.getDecorView())
                 .show(WindowInsetsCompat.Type.systemBars());
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        activity.setRequestedOrientation(previousOrientation);
     }
 }

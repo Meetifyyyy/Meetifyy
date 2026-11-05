@@ -3,6 +3,7 @@ package app.meetifyy;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Paint;
+import android.graphics.RectF;
 import android.os.Build;
 import android.webkit.WebView;
 
@@ -73,7 +74,15 @@ import org.json.JSONObject;
  * plus a translation that moves it: no explicit pivot is ever set, so there is
  * nothing to put back afterwards but scale and translation.
  *
- * JS (shared/lib/navigation/centreTransition.js) passes: pictureScale (the
+ * ROUNDED CORNERS (closing)
+ * As the closing picture shrinks its four corners round, from square at the
+ * start to `cornerRadius` (on screen) once it is a little way in, drawn as one
+ * anti-aliased rounded rectangle through a BitmapShader — no clip path, which
+ * a hardware canvas does not anti-alias. The opening picture only grows past
+ * the screen, so its corners are never seen and it stays a plain bitmap.
+ *
+ * JS (shared/lib/navigation/centreTransition.js) passes: cornerRadius (CSS px,
+ * optional), pictureScale (the
  * picture's size at the end, >= 1 opening, <= 1 closing), fadeEnd (0-1), opening only: liveScale (the
  * new page's size when it starts, >= 1, 1 = not moved), and closing only:
  * earlyFadeEnd (0-1), fadeEarly ([{x, y, width, height}]).
@@ -85,8 +94,12 @@ final class CentrePageEffect extends PageEffect {
     private static final float MIN_CLOSING_SCALE = 0.5f;
     /** More than this is a page marking everything; the rest are ignored. */
     private static final int MAX_EARLY_RECTS = 16;
+    /** The corners reach their full round over this much of the close. */
+    private static final float CORNER_SPAN = 0.25f;
 
     private final Paint bitmapPaint = new Paint();
+    private final PicturePaint picturePaint = new PicturePaint();
+    private final RectF pageRect = new RectF();
 
     // Per play.
     private boolean opening;
@@ -95,6 +108,8 @@ final class CentrePageEffect extends PageEffect {
     private float liveScale;
     private float fadeEnd;
     private float earlyFadeEnd;
+    /** Full corner radius on screen, device px. */
+    private float cornerRadius;
     /** The window's centre relative to the WebView's own centre, in px. */
     private float offsetX;
     private float offsetY;
@@ -106,6 +121,8 @@ final class CentrePageEffect extends PageEffect {
     private float pictureScale;
     private float pictureAlpha;
     private float earlyAlpha;
+    /** Corner radius in the picture's own (unscaled) pixels; 0 = square. */
+    private float pictureRadius;
 
     CentrePageEffect() {
         // The picture is drawn scaled; without this HWUI would not filter it.
@@ -121,6 +138,7 @@ final class CentrePageEffect extends PageEffect {
         liveScale = opening ? (float) clamp(number(call, "liveScale", 1), 1, MAX_SCALE) : 1f;
         fadeEnd = (float) clamp(number(call, "fadeEnd", 0.75), 0.05, 1);
         earlyFadeEnd = (float) clamp(number(call, "earlyFadeEnd", 0.35), 0.05, 1);
+        cornerRadius = (float) clamp(number(call, "cornerRadius", DEFAULT_CORNER_RADIUS_CSS), 0, 64) * stage.density;
         // The window's centre in the WebView's own coordinates, minus the
         // WebView's centre. Zero when the WebView fills the window.
         offsetX = (stage.hostWidth / 2f - stage.pageLeft) - stage.pageWidth / 2f;
@@ -175,6 +193,11 @@ final class CentrePageEffect extends PageEffect {
         pictureScale = 1f + (pictureEndScale - 1f) * progress;
         pictureAlpha = dissolve(progress, fadeEnd);
         earlyAlpha = opening ? 0f : dissolve(progress, earlyFadeEnd);
+        // Only a picture smaller than the screen has corners to round. The
+        // radius is wanted on screen, so it is divided by the scale it is drawn at.
+        pictureRadius = !opening && pictureScale < 1f
+            ? cornerRadius * Math.min(1f, progress / CORNER_SPAN) / pictureScale
+            : 0f;
     }
 
     /** 1 at progress 0, 0 from `end` on, eased at both ends (a smoothstep). */
@@ -225,6 +248,13 @@ final class CentrePageEffect extends PageEffect {
     }
 
     private void drawPicture(Canvas canvas, Bitmap b, int alpha) {
+        if (pictureRadius > 0f) {
+            final Paint paint = picturePaint.forBitmap(b, 0f, 0f);
+            paint.setAlpha(alpha);
+            pageRect.set(0f, 0f, b.getWidth(), b.getHeight());
+            canvas.drawRoundRect(pageRect, pictureRadius, pictureRadius, paint);
+            return;
+        }
         bitmapPaint.setAlpha(alpha);
         canvas.drawBitmap(b, 0f, 0f, bitmapPaint);
     }

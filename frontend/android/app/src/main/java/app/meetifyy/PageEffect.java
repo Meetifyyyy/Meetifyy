@@ -1,7 +1,13 @@
 package app.meetifyy;
 
 import android.graphics.Bitmap;
+import android.graphics.BitmapShader;
 import android.graphics.Canvas;
+import android.graphics.Matrix;
+import android.graphics.Paint;
+import android.graphics.Path;
+import android.graphics.RectF;
+import android.graphics.Shader;
 import android.webkit.WebView;
 
 import com.getcapacitor.PluginCall;
@@ -64,6 +70,52 @@ abstract class PageEffect {
 
     /** Draws the picture, which is the other page, as `apply` last posed it. */
     abstract void draw(Canvas canvas, Bitmap picture, int width, int height);
+
+    /** A moving page's corner radius, CSS px; JS may override it (`cornerRadius`). */
+    static final float DEFAULT_CORNER_RADIUS_CSS = 20f;
+
+    /**
+     * The picture as a paint, for drawing it into a rounded shape. Built once
+     * per bitmap; only its matrix changes per frame (no allocation).
+     */
+    static final class PicturePaint {
+        final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+        private final Matrix matrix = new Matrix();
+        private Bitmap shaderFor;
+
+        Paint forBitmap(Bitmap b, float dx, float dy) {
+            if (shaderFor != b) {
+                paint.setShader(new BitmapShader(b, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP));
+                shaderFor = b;
+            }
+            matrix.setTranslate(dx, dy);
+            paint.getShader().setLocalMatrix(matrix);
+            return paint;
+        }
+    }
+
+    /**
+     * The two wedges OUTSIDE a rounded left edge: what is cut off the top-left
+     * and bottom-left corners of a page whose left edge is at `x`. Filled with
+     * the page beneath, they make the page above look rounded without clipping
+     * it. `path` and `oval` are reused, so nothing is allocated.
+     */
+    static void leftCornerWedges(Path path, RectF oval, float x, float height, float r) {
+        path.reset();
+        if (r <= 0f) return;
+        // Top-left.
+        path.moveTo(x, 0f);
+        path.lineTo(x + r, 0f);
+        oval.set(x, 0f, x + 2f * r, 2f * r);
+        path.arcTo(oval, 270f, -90f, false);
+        path.close();
+        // Bottom-left.
+        path.moveTo(x, height);
+        path.lineTo(x, height - r);
+        oval.set(x, height - 2f * r, x + 2f * r, height);
+        path.arcTo(oval, 180f, -90f, false);
+        path.close();
+    }
 
     static double number(PluginCall call, String key, double fallback) {
         final Double value = call.getDouble(key);
