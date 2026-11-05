@@ -4,16 +4,27 @@
  * from anywhere.
  *
  * The island shows up to MAX_VISIBLE notifications at once as rows, newest on
- * top. A new one slides in at the top; when that makes one too many, the
- * oldest slides out at the bottom. Each row has its own time on screen.
+ * top. Anything beyond that waits in a FIFO queue; when a visible row leaves,
+ * the oldest waiting one slides in at the top. Because the queue is FIFO and
+ * a queued item is always newer than every visible one, "newest on top" holds
+ * for the whole lifecycle: rows never reorder, they only enter at the top and
+ * leave from wherever they are.
  *
- * Grouping: rows with the same `groupKey` (e.g. one conversation) never
- * stack. A new one updates the existing row in place, bumps its count and
- * restarts its time.
+ * Each visible row has its own time on screen; a queued one has none until it
+ * is shown.
  *
- * When the last row's time runs out the island is marked `closing` with that
- * row still in it, so it can collapse showing real content; the island calls
- * islandFinish() once it has gone.
+ * Grouping: items with the same `groupKey` (e.g. one conversation) never
+ * stack. A new one updates the existing row (or queued item) in place, bumps
+ * its count and restarts its time.
+ *
+ * Holds: while something is interacting with the rows (a finger is down, a
+ * row is being swiped as a separate card) the visible set is frozen: nothing
+ * is promoted from the queue, so no row moves under the finger. Updates in
+ * place still apply. A hold never blocks an empty island from showing.
+ *
+ * When the last row's time runs out and nothing is waiting, the island is
+ * marked `closing` with that row still in it, so it can collapse showing real
+ * content; the island calls islandFinish() once it has gone.
  */
 
 export const ISLAND_DURATIONS = {
@@ -23,10 +34,15 @@ export const ISLAND_DURATIONS = {
 };
 
 export const MAX_VISIBLE = 3;
+// A flood (reconnect replay, a busy group) must not keep the island up for
+// minutes. Past this, the oldest waiting notification is dropped; it is still
+// in the notifications list, the island is only the instant surface.
+export const MAX_QUEUED = 12;
 const SEEN_LIMIT = 100;
 const MIN_RESUME_MS = 1200;
 
 let items = [];
+let queue = [];
 let closing = false;
 let shown = false; // island has finished expanding; clocks may run
 let seenIds = [];
@@ -34,6 +50,7 @@ let snapshot = { items, closing };
 const listeners = new Set();
 const timers = new Map(); // key -> { handle, remaining, startedAt }
 const pauseReasons = new Set();
+const holdReasons = new Set();
 let nextSeq = 1;
 
 function emit() {
@@ -77,18 +94,53 @@ function rememberId(id) {
   if (seenIds.length > SEEN_LIMIT) seenIds = seenIds.slice(-SEEN_LIMIT);
 }
 
-/** Remove one row; the last one is kept and the island marked closing. */
+/**
+ * Move waiting items into free rows, oldest first, each entering at the top.
+ * Returns whether anything moved.
+ */
+function promote() {
+  let moved = false;
+  while (
+    items.length < MAX_VISIBLE
+    && queue.length > 0
+    && (holdReasons.size === 0 || items.length === 0)
+  ) {
+    const next = queue[0];
+    queue = queue.slice(1);
+    timers.set(next.key, { handle: null, remaining: next.duration, startedAt: 0 });
+    items = [next, ...items];
+    startTimer(next);
+    moved = true;
+  }
+  return moved;
+}
+
+/** Remove one item; the last visible row is kept and the island marked closing. */
 function remove(key) {
+  if (queue.some((i) => i.key === key)) {
+    queue = queue.filter((i) => i.key !== key);
+    return;
+  }
   if (!items.some((i) => i.key === key)) return;
-  if (items.length === 1) {
+  if (items.length === 1 && queue.length === 0) {
     if (closing) return;
     items.forEach((i) => stopTimer(i.key));
     closing = true;
   } else {
     dropTimer(key);
     items = items.filter((i) => i.key !== key);
+    promote();
   }
   emit();
+}
+
+function removeMany(keys) {
+  // Queued ones first, so removing the visible ones cannot promote an item
+  // that is itself about to be removed.
+  const queued = new Set(queue.filter((i) => keys.includes(i.key)).map((i) => i.key));
+  if (queued.size) queue = queue.filter((i) => !queued.has(i.key));
+  keys.filter((k) => !queued.has(k)).forEach(remove);
+  if (queued.size) emit();
 }
 
 /** Show a notification (or merge it into its conversation's row). Returns its key. */
@@ -118,6 +170,17 @@ export function islandNotify(input) {
       emit();
       return merged.key;
     }
+    const waiting = queue.find((i) => i.groupKey === input.groupKey);
+    if (waiting) {
+      queue = queue.map((i) => (i.key === waiting.key ? {
+        ...waiting,
+        content: input.content,
+        onOpen: input.onOpen || waiting.onOpen,
+        count: waiting.count + 1,
+        revision: waiting.revision + 1,
+      } : i));
+      return waiting.key;
+    }
   }
 
   if (wasClosing) {
@@ -141,16 +204,11 @@ export function islandNotify(input) {
     count: 1,
     revision: 0,
   };
-  timers.set(item.key, { handle: null, remaining: item.duration, startedAt: 0 });
-  items = [item, ...items];
-  while (items.length > MAX_VISIBLE) {
-    const oldest = items[items.length - 1];
-    dropTimer(oldest.key);
-    items = items.slice(0, -1);
-  }
+  queue = [...queue, item];
+  if (queue.length > MAX_QUEUED) queue = queue.slice(queue.length - MAX_QUEUED);
+  const moved = promote();
   if (wasClosing) startAll();
-  else startTimer(item);
-  emit();
+  if (moved || wasClosing) emit();
   return item.key;
 }
 
@@ -161,29 +219,39 @@ export function islandMarkShown() {
   startAll();
 }
 
-/** Close one row by key or group key. */
+/** Close one row (or waiting item) by key or group key. */
 export function islandDismiss(keyOrGroup) {
-  const match = items.filter((i) => i.key === keyOrGroup || i.groupKey === keyOrGroup);
-  match.forEach((i) => remove(i.key));
+  const match = [...items, ...queue]
+    .filter((i) => i.key === keyOrGroup || i.groupKey === keyOrGroup)
+    .map((i) => i.key);
+  if (match.length) removeMany(match);
 }
 
 /** Drop every row the given route makes irrelevant (e.g. the chat it opens). */
 export function islandDismissForPath(pathname) {
   if (!pathname) return;
-  items
+  const match = [...items, ...queue]
     .filter((i) => i.relevantPath && pathname.startsWith(i.relevantPath))
-    .forEach((i) => remove(i.key));
+    .map((i) => i.key);
+  if (match.length) removeMany(match);
 }
 
 /** Remove a row with no collapse (it was swiped away). */
 export function islandDismissNow(key) {
+  if (queue.some((i) => i.key === key)) {
+    queue = queue.filter((i) => i.key !== key);
+    return;
+  }
   if (!items.some((i) => i.key === key)) return;
   dropTimer(key);
   items = items.filter((i) => i.key !== key);
   if (items.length === 0) {
+    // The island has gone; whatever comes next drops in afresh, and its
+    // clock waits for that.
     closing = false;
     shown = false;
   }
+  promote();
   emit();
 }
 
@@ -194,9 +262,11 @@ export function islandFinish() {
   items = [];
   closing = false;
   shown = false;
-  // Pauses tied to the island (hover, press) end with it; the app being in
-  // the background does not.
+  // Pauses and holds tied to the island (hover, press, a swipe) end with it;
+  // the app being in the background does not.
   pauseReasons.forEach((r) => { if (r !== 'hidden') pauseReasons.delete(r); });
+  holdReasons.clear();
+  promote();
   emit();
 }
 
@@ -212,6 +282,16 @@ export function islandResume(reason) {
   startAll();
 }
 
+/** Freeze the visible set (nothing promoted) while the rows are being handled. */
+export function islandHold(reason) {
+  holdReasons.add(reason);
+}
+
+export function islandRelease(reason) {
+  if (!holdReasons.delete(reason) || holdReasons.size > 0) return;
+  if (promote()) emit();
+}
+
 export function islandSubscribe(listener) {
   listeners.add(listener);
   return () => listeners.delete(listener);
@@ -221,15 +301,22 @@ export function islandSnapshot() {
   return snapshot;
 }
 
+/** How many notifications are waiting for a row. */
+export function islandQueuedCount() {
+  return queue.length;
+}
+
 /** Tests only. */
 export function __resetIsland() {
   timers.forEach((t) => { if (t.handle) clearTimeout(t.handle); });
   timers.clear();
   items = [];
+  queue = [];
   closing = false;
   shown = false;
   seenIds = [];
   pauseReasons.clear();
+  holdReasons.clear();
   snapshot = { items, closing };
   listeners.clear();
 }
