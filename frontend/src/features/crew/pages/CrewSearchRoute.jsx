@@ -153,7 +153,7 @@ export default function CrewSearchRoute() {
     <SearchLayout section="activities" mainClassName={styles.page}>
       <div className={styles.box}>
         <div className={`${searchStyles.header} ${styles.header}`} role="search">
-          <div className={searchStyles.topRow}>
+          <div className={`${searchStyles.topRow} ${styles.topRow}`}>
             <button type="button" className={searchStyles.backBtn} aria-label="Back to crew" onClick={handleBack}>
               <ChevronLeft size={20} />
             </button>

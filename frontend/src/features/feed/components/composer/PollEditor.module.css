@@ -61,16 +61,17 @@
   font-family: var(--font-family-sans);
   font-size: 0.9rem;
   outline: none;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color 0.15s ease;
 }
 
 .input::placeholder {
   color: var(--color-text-light, #a1a1aa);
 }
 
+/* The option being typed in is marked by its border alone: no glow around it. */
 .input:focus {
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.15);
+  box-shadow: none;
 }
 
 .count {

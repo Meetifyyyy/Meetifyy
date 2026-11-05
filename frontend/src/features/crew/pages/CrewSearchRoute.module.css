@@ -234,3 +234,13 @@
     padding: 0 0 0.5rem;
   }
 }
+
+/* The global search page hides its own search row on large screens, where
+   the header already holds the live search field. This page has no header
+   field of its own, so the row is its only input and must stay visible
+   (two classes, so it wins over that single-class rule). */
+@media (min-width: 769px) {
+  .header .topRow {
+    display: flex;
+  }
+}

@@ -74,7 +74,7 @@ export default function CommunitySearchRoute() {
     <SearchLayout section="communities" mainClassName={styles.page}>
       <div className={styles.box}>
         <div className={`${searchStyles.header} ${styles.header}`} role="search">
-          <div className={searchStyles.topRow}>
+          <div className={`${searchStyles.topRow} ${styles.topRow}`}>
             <button type="button" className={searchStyles.backBtn} aria-label="Back to communities" onClick={handleBack}>
               <ChevronLeft size={20} />
             </button>

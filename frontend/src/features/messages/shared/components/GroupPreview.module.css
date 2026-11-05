@@ -37,17 +37,24 @@
 }
 
 .face {
+  /* Each face is its own stacking layer, later faces above earlier ones.
+     Without it the ring never showed: the avatar inside a face is
+     transformed, which paints it in a later layer than the next face's
+     ring, so the first face's picture was drawn OVER the second's ring. */
+  position: relative;
   display: flex;
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
+  box-sizing: border-box;
   border-radius: 50%;
-  /* The ring separates overlapping faces in the page's own colour. */
-  box-shadow: 0 0 0 2px var(--color-bg-white, #ffffff);
+  /* The ring around every face, in the sheet's own colour: where two
+     overlap it reads as a clean cut between them. */
+  border: 2px solid var(--color-bg-white, #ffffff);
   background: var(--color-bg-white, #ffffff);
 }
 
 .face + .face {
-  margin-left: -8px;
+  margin-left: -10px;
 }
 
 .faceSkeleton {

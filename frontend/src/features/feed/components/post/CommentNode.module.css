@@ -7,8 +7,8 @@
  * scale.
  *
  *                       desktop   phone
- *   top avatar            36       32
- *   reply avatar          24       24
+ *   top avatar            40       40
+ *   reply avatar          40       40   (same as the top comment's)
  *   avatar → text         12       10
  *   reply column indent   48       42   (= top avatar + its gap)
  *   between threads       24       20
@@ -18,7 +18,8 @@
 .treeRoot {
   --top-avatar: 40px;
   --top-gap: 8px;
-  --reply-avatar: 32px;
+  /* Replies use the top-level size: one avatar size for every comment. */
+  --reply-avatar: var(--top-avatar);
   --reply-gap: 8px;
   --thread-gap: 20px;
   --reply-spacing: 16px;

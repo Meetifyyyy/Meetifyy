@@ -1,6 +1,13 @@
-/* Inside the Communities page card: no box of its own. */
+/* Inside the Communities page card: no box of its own, and no bleed.
+   The list used to be pulled 0.5rem past the card's padding on both sides
+   (from when each community was a plain row whose hover filled the card).
+   Since every community is its own bordered card in a grid, and the tab
+   panes clip sideways overflow for the swipe, that bleed cut the outer
+   cards' edges off. The section now sits inside the padding, and the cards
+   share exactly the width that is there. */
 .section {
-  margin: 0 -0.5rem;
+  margin: 0;
+  min-width: 0;
 }
 
 /* Shared by both tabs: the list surface, its header, and its states. */
@@ -125,7 +132,15 @@
 
 .heading {
   display: block;
-  padding: 0.75rem 0.5rem 1rem;
+  /* Flush with the cards below it (the section no longer bleeds). */
+  padding: 0.75rem 0 1rem;
+}
+
+/* Phones: the page title sits 0.5rem in, and the heading lines up with it. */
+@media (max-width: 768px) {
+  .heading {
+    padding-inline: 0.5rem;
+  }
 }
 
 .headingTitle {

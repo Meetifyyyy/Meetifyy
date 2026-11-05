@@ -6,7 +6,7 @@
   padding: 0.6rem 0.9rem 0.6rem 0.6rem;
   gap: 0.75rem;
   cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: background-color 0.15s ease, transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   position: relative;
   width: 100%;
   max-width: 100%;
@@ -15,16 +15,12 @@
   box-shadow: 0 2px 8px rgba(15, 23, 42, 0.03);
 }
 
-.card:hover {
-  background: var(--color-bg-white);
-  border-color: var(--color-primary, #2563eb);
-  box-shadow: 0 8px 24px rgba(37, 99, 235, 0.08), 0 2px 6px rgba(15, 23, 42, 0.04);
-}
-
+/* Hover is a plain highlight of the whole card, like any list row: no lift,
+   no blue border, no glow. Mouse and trackpad only, so a tap on a phone does
+   not leave the card lit. */
 @media (hover: hover) and (pointer: fine) {
-
   .card:hover {
-  transform: translateY(-2px);
+    background: var(--color-bg-soft);
   }
 }
 
