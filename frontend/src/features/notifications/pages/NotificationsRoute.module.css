@@ -138,12 +138,13 @@
   text-transform: none;
   letter-spacing: -0.005em;
   margin: 0;
-  padding: 0.9rem 1rem 0.35rem;
+  padding: 0.75rem 1rem 0.2rem;
 }
 
 /* Every section after the first is separated from the rows above it. */
 .groupTitleDivided {
-  padding-top: 1.25rem;
+  padding-top: 0.85rem;
+  margin-top: 0.35rem;
   border-top: 1px solid var(--color-border-light);
 }
 

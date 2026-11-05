@@ -155,7 +155,7 @@ function isScrollContainer(el) {
 }
 
 const estimateSizeFor = (flatItems) => (index) =>
-  flatItems[index]?.type === 'header' ? (index === 0 ? 38 : 52) : 68;
+  flatItems[index]?.type === 'header' ? (index === 0 ? 34 : 46) : 58;
 
 function ElementRows({ scrollElement, flatItems, ...rest }) {
   const virtualizer = useVirtualizer({
