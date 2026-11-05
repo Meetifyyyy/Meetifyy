@@ -88,6 +88,7 @@ import {
 } from './socket-payloads';
 import { publicMessage } from '../messages/message-alert.util';
 import { CONVERSATION_REVIVED } from '../messages/core/conversation-revive';
+import { SESSIONS_REVOKED_EVENT } from '../auth/session/user-session.service';
 
 /**
  * The client address behind a socket.
@@ -446,6 +447,13 @@ export class RealtimeGateway
     // only go through `top`/`inData`, which yield non-empty strings or nothing.
     const { payload, type, data, top, inData } = parsed;
 
+    // A login was signed out somewhere: close its sockets on this replica now
+    // rather than at the next minute's sweep. Nothing to forward to clients.
+    if (type === SESSIONS_REVOKED_EVENT) {
+      this.sweepRevokedSessionsSoon();
+      return;
+    }
+
     // Cross-instance cache invalidation. VerificationAccessService caches
     // status in process, and this handler runs on EVERY instance (the event
     // arrives over Redis pub/sub), so an approval or revocation on one node
@@ -764,6 +772,20 @@ export class RealtimeGateway
         socket.disconnect(true);
       }
     }
+  }
+
+  /**
+   * Runs the revoked-session sweep shortly, once for a burst of sign-outs
+   * ("sign out of all other devices" revokes many logins in one go).
+   */
+  private sweepSoonTimer: NodeJS.Timeout | null = null;
+  private sweepRevokedSessionsSoon(): void {
+    if (this.sweepSoonTimer) return;
+    this.sweepSoonTimer = setTimeout(() => {
+      this.sweepSoonTimer = null;
+      void this.disconnectRevokedSessions();
+    }, 250);
+    this.sweepSoonTimer.unref?.();
   }
 
   private async disconnectRevokedSessions(): Promise<void> {

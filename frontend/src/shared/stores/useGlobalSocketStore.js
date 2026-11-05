@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { getAccessToken, getBackendUrl, getNativeSessionId, isApiFailoverActive, API_PROXY_PREFIX } from '@shared/api/apiClient';
+import { getAccessToken, getBackendUrl, getNativeSessionId, isApiFailoverActive, API_PROXY_PREFIX, sessionsApi } from '@shared/api/apiClient';
 
 /**
  * socket.io-client, loaded on the first connect rather than with the app.
@@ -125,6 +125,16 @@ export const useGlobalSocketStore = create((set, get) => ({
 
       newSocket.on('disconnect', () => {
         set({ isConnected: false, lastDisconnectAt: Date.now() });
+      });
+
+      // The server closed this socket because this device's login was signed
+      // out (Settings > Devices on another device, a password change). It is
+      // not taken on the socket's word: one signed-in request is made, and if
+      // the session really is gone the API's 401 path signs this device out at
+      // once instead of whenever its next request happened to run. A session
+      // that is fine answers normally and nothing changes.
+      newSocket.on('session:revoked', () => {
+        Promise.resolve(sessionsApi.list()).catch(() => {});
       });
 
       // Refreshed on every (re)connect: `auth` reads the session id afresh.

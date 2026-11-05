@@ -1,7 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { UserSessionRevokedReason } from '@prisma/client';
 import * as crypto from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
+import { DomainEventService } from '../../events/domain-event.service';
 import { JwtGuard } from '../../common/guards/jwt.guard';
 import { sealSecret, openSecret } from '../../common/crypto/secret-box';
 
@@ -95,11 +96,29 @@ export interface IssuedSession {
  * database dump therefore yields nothing usable, which is the same reason the
  * admin table has always stored a hash.
  */
+/** Published when a login is signed out; RealtimeGateway listens for it. */
+export const SESSIONS_REVOKED_EVENT = 'auth.sessionsRevoked';
+
 @Injectable()
 export class UserSessionService {
   private readonly logger = new Logger(UserSessionService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    // Optional so the service still works where no event bus is wired (tests).
+    @Optional() private readonly events?: DomainEventService,
+  ) {}
+
+  /**
+   * Tells every API replica a login was ended, so each closes the realtime
+   * sockets it holds for it now. Without this a signed-out device kept
+   * receiving messages over its open socket until the next minute's sweep.
+   * Fire-and-forget: the sweep remains the backstop. Only for sign-outs, never
+   * for a token rotation (that replaces a session within the same login).
+   */
+  private announceRevocation(): void {
+    void this.events?.emit(SESSIONS_REVOKED_EVENT, {}, []);
+  }
 
   /**
    * 64 random bytes. There is no user-chosen material here and no guessing to
@@ -131,29 +150,40 @@ export class UserSessionService {
   } {
     const ua = (userAgent || '').toLowerCase();
 
-    const browser = ua.includes('edg/')
+    // Brand tokens before the generic ones: almost every browser's user
+    // agent also says "Chrome" or "Safari". Chrome, Firefox and Edge on iOS
+    // say CriOS / FxiOS / EdgiOS (and "Safari"), Edge on Android EdgA,
+    // Samsung Internet SamsungBrowser (and "Chrome"); they were all listed as
+    // Safari or Chrome.
+    const browser = /edg(e|a|ios)?\//.test(ua)
       ? 'Edge'
-      : ua.includes('opr/') || ua.includes('opera')
-        ? 'Opera'
-        : ua.includes('chrome') && !ua.includes('chromium')
-          ? 'Chrome'
-          : ua.includes('firefox')
-            ? 'Firefox'
-            : ua.includes('safari')
-              ? 'Safari'
-              : 'Browser';
+      : ua.includes('samsungbrowser')
+        ? 'Samsung Internet'
+        : ua.includes('opr/') || ua.includes('opera') || ua.includes('opt/')
+          ? 'Opera'
+          : ua.includes('crios')
+            ? 'Chrome'
+            : ua.includes('fxios') || ua.includes('firefox')
+              ? 'Firefox'
+              : ua.includes('chrome') && !ua.includes('chromium')
+                ? 'Chrome'
+                : ua.includes('safari')
+                  ? 'Safari'
+                  : 'Browser';
 
     const os = ua.includes('android')
       ? 'Android'
       : /iphone|ipad|ipod/.test(ua)
         ? 'iOS'
-        : ua.includes('mac os')
-          ? 'macOS'
-          : ua.includes('windows')
-            ? 'Windows'
-            : ua.includes('linux')
-              ? 'Linux'
-              : 'Unknown device';
+        : ua.includes('cros')
+          ? 'ChromeOS'
+          : ua.includes('mac os')
+            ? 'macOS'
+            : ua.includes('windows')
+              ? 'Windows'
+              : ua.includes('linux')
+                ? 'Linux'
+                : 'Unknown device';
 
     if (native) {
       return {
@@ -605,6 +635,7 @@ export class UserSessionService {
 
     affected.forEach((s) => JwtGuard.forgetSession(s.id));
     await this.forgetPushDevices([familyId]);
+    this.announceRevocation();
   }
 
   /**
@@ -657,6 +688,7 @@ export class UserSessionService {
 
     affected.forEach((s) => JwtGuard.forgetSession(s.id));
     await this.forgetPushDevices([...new Set(affected.map((s) => s.familyId))]);
+    if (result.count > 0) this.announceRevocation();
     return result.count;
   }
 
@@ -751,6 +783,7 @@ export class UserSessionService {
     // window. Correctness does not depend on it — the cache expires either way
     // — but "sign out" should not appear to do nothing for ten seconds.
     JwtGuard.forgetSession(sessionId);
+    if (result.count > 0) this.announceRevocation();
     return result.count > 0;
   }
 
