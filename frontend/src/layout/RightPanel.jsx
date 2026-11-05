@@ -19,6 +19,7 @@ import {
   DEFAULT_ACTIVITY_COVERS,
   getDefaultActivityCover,
 } from '@shared/utils/activityCover';
+import { notificationTargetPath } from '@shared/utils/notificationTarget';
 
 /**
  * The third column — and nothing at all below the width it is shown at.
@@ -151,11 +152,12 @@ export function NotificationsActivity() {
                 const activityId = n.entityId || n.metadata?.activityId;
                 if (activityId) { navigate(`/crew/${activityId}`, { state: { from: location.pathname } }); return; }
               }
-              const postId = n.metadata?.postId || (n.entityType === 'POST' ? n.entityId : null);
+              const target = notificationTargetPath(n);
               if (isFollow && targetUsername) {
                 navigate(`/profile/${targetUsername}`, { state: { from: location.pathname } });
-              } else if (postId) {
-                navigate(`/post/${postId}`, { state: { from: location.pathname } });
+              } else if (target) {
+                // At the comment itself for a comment or reply, not the top of the post.
+                navigate(target, { state: { from: location.pathname } });
               } else {
                 navigate('/notifications', { state: { from: location.pathname } });
               }

@@ -23,6 +23,7 @@ import { idbDelete } from '../lib/idb';
 import { applyAffiliationToUser, hasAffiliationField } from '../lib/campusAccess';
 import { dropCampusCaches } from '../lib/campusCache';
 import { PROFILE_KEYS } from '../hooks/useProfile';
+import { notificationTargetPath } from '@shared/utils/notificationTarget';
 
 export default function SocketManager() {
   const { session, isLoggedIn, currentUser, updateCurrentUser, refreshCurrentUser } = useAuth();
@@ -268,6 +269,14 @@ export default function SocketManager() {
               navigate(`/crew/${activityId}`, { state: { from: window.location.pathname } });
               return;
             }
+          }
+          // A comment, reply, like or mention opens what it is about (a reply
+          // at the reply itself), the same place the Notifications page sends
+          // it. Only a notification with no page of its own falls back there.
+          const target = notificationTargetPath(notification);
+          if (target) {
+            navigate(target, { state: { from: window.location.pathname } });
+            return;
           }
           navigate('/notifications');
         };

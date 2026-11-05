@@ -306,9 +306,18 @@
 }
 
 .liked svg {
-  animation: likePop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
   stroke: var(--color-primary);
   color: var(--color-primary);
+}
+
+/* The pop: only right after a like from this button (PostActions `likeTap`),
+   never because a liked post appeared on screen. */
+.likePopping svg {
+  animation: likePop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .likePopping svg { animation: none; }
 }
 
 .saved svg {
@@ -587,7 +596,6 @@
 }
 
 .liked svg {
-  animation: likePop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
   stroke: var(--color-primary);
   color: var(--color-primary);
 }

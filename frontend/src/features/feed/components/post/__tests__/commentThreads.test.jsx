@@ -95,7 +95,8 @@ describe('Instagram-style comment threads', () => {
     fireEvent.click(screen.getByRole('button', { name: /View 4 replies/ }));
     const replyOn = (id) => document.getElementById(`comment-${id}`).querySelector('[aria-pressed]:not([aria-label])');
     fireEvent.click(replyOn('b'));
-    expect(onReplyRequest).toHaveBeenLastCalledWith({ id: 'b', username: 'cat' });
+    // The author's id rides along so the reply box can start with a real @mention.
+    expect(onReplyRequest).toHaveBeenLastCalledWith({ id: 'b', username: 'cat', userId: 'cat' });
   });
 
   it('opens a folded thread when its top comment is replied to', () => {

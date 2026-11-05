@@ -38,6 +38,10 @@ function PostActions({
   const { toggle: toggleLike } = useLikePost();
   const { mutate: toggleSave } = useSavePost();
   const [showShareModal, setShowShareModal] = useState(false);
+  // Likes made from THIS button since it appeared. The pop belongs to that
+  // tap only: tied to the liked state, it replayed every time a liked post's
+  // button appeared — opening a post, going back, a card scrolling in.
+  const [likeTap, setLikeTap] = useState(0);
 
   if (!post || !post.id) return null;
 
@@ -63,6 +67,7 @@ function PostActions({
 
   const toggleLikeHandler = (e) => {
     e.stopPropagation();
+    if (!isLikedByMe) setLikeTap((n) => n + 1);
     toggleLike(post, currentUser?.id);
   };
 
@@ -92,12 +97,14 @@ function PostActions({
         <button
           type="button"
           {...PAGE_FADE_EARLY}
-          className={`${styles.postActionBtn} ${isLikedByMe ? styles.liked : ''}`}
+          className={`${styles.postActionBtn} ${isLikedByMe ? styles.liked : ''} ${isLikedByMe && likeTap > 0 ? styles.likePopping : ''}`}
           onClick={toggleLikeHandler}
           {...PRESS_HANDLERS}
           aria-label="Like post"
         >
           <svg
+            // A new key per like replays the pop on every like, not only the first.
+            key={likeTap}
             width="18"
             height="18"
             viewBox="0 0 24 24"

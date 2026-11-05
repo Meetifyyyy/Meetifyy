@@ -26,7 +26,9 @@
  */
 
 import { useState, useCallback, useEffect, useMemo, useRef, useContext, createContext, useSyncExternalStore, memo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
+import { usePageTransition } from '@shared/hooks/usePageTransition';
+import { CENTRE_EFFECT } from '@shared/lib/navigation/centreTransition';
 
 import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
 import { getCollegeName } from '@shared/utils/user';
@@ -213,16 +215,19 @@ export function CommentTreeRoot({ postId, comments, onReplyRequest, replyTargetI
   useEffect(() => { shownRef.current = true; }, []);
 
   // A #comment-<id> link: open the thread holding it, then bring it into view.
+  // Keyed on the hash too, so a second notification for the same open post
+  // (same comments, new target) still scrolls.
+  const { hash } = useLocation();
   useEffect(() => {
-    if (!window.location.hash.startsWith('#comment-')) return undefined;
-    const targetId = window.location.hash.replace('#comment-', '');
+    if (!hash.startsWith('#comment-')) return undefined;
+    const targetId = hash.replace('#comment-', '');
     const threadId = findThreadOf(comments, targetId);
     if (threadId && threadId !== targetId) store.expand(threadId);
     const t = setTimeout(() => {
       document.getElementById(`comment-${targetId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }, 120);
     return () => clearTimeout(t);
-  }, [comments, store]);
+  }, [comments, store, hash]);
 
   // Replies are written in the page's own composer (PostView). The section only
   // says which comment was picked, and marks the one currently being answered.
@@ -332,7 +337,7 @@ function CommentItemImpl({ postId, comment, threadId, replyTo = null, isReply })
   // means "never tapped here", so liked comments do not all pop on load.
   const [likeTap, setLikeTap] = useState(0);
 
-  const navigate = useNavigate();
+  const { open: openPage } = usePageTransition({ effect: CENTRE_EFFECT });
   const { currentUser } = useAuth();
   const { communitiesById } = useCommunities();
   const { mutate: deleteCommentMutate } = useDeleteComment();
@@ -372,14 +377,15 @@ function CommentItemImpl({ postId, comment, threadId, replyTo = null, isReply })
   const authorCollegeName = getCollegeName(author, '') || authorCollege?.name || '';
   const { liked: localLiked, count: localLikesCount } = readCommentLike(comment, currentUser?.id);
 
-  const handleProfileClick = () => navigate(`/profile/${author.username}`, { state: { from: window.location.pathname } });
+  // Out of the centre of the screen, like a post's author and a tagged @name.
+  const handleProfileClick = () => openPage(`/profile/${author.username}`, { state: { from: window.location.pathname } });
 
   // The reply is written in the page's composer and filed under THIS comment
   // (so its author is the one notified). The thread opens in full so the reply
   // appears where it was written.
   const handleReplyClick = () => {
     expand(threadId);
-    requestReply({ id: comment.id, username: author.username });
+    requestReply({ id: comment.id, username: author.username, userId: author.id ?? comment.authorId ?? null });
   };
 
   const runDelete = () => {

@@ -156,6 +156,27 @@ function CommentsSkeleton() {
   );
 }
 
+/**
+ * `value` with `@username` at its start, as a mention, unless that person is
+ * already mentioned. Mentions already in the text move along with it.
+ */
+export function withLeadingMention(value, { userId, username }) {
+  const text = typeof value?.text === 'string' ? value.text : '';
+  const mentions = Array.isArray(value?.mentions) ? value.mentions : [];
+  if (mentions.some((m) => m.username === username || m.userId === userId)) return value;
+  const tag = `@${username}`;
+  const rest = text.replace(/^\s+/, '');
+  const dropped = text.length - rest.length;
+  const shift = tag.length + 1 - dropped;
+  return {
+    text: `${tag} ${rest}`,
+    mentions: [
+      { userId, username, start: 0, end: tag.length },
+      ...mentions.map((m) => ({ ...m, start: m.start + shift, end: m.end + shift })),
+    ],
+  };
+}
+
 export default function PostView({ post, onBack, autoFocusComment = false }) {
   const location = useLocation();
   const shouldFocusComment = Boolean(
@@ -218,10 +239,26 @@ export default function PostView({ post, onBack, autoFocusComment = false }) {
   }, [focusComposer]);
 
   // "Reply" on a comment: tag the composer with it and put the caret there.
+  // The box starts with the person being answered, as a real @mention: in the
+  // posted reply it is a link to their profile. Deleting it leaves the reply
+  // where it is — "Replying to @…" follows `replyTarget`, not the text.
+  // The name Reply last put in the box, so switching to another comment
+  // before typing anything swaps it instead of stacking "@a @b".
+  const autoMentionRef = useRef(null);
   const handleReplyRequest = useCallback((target) => {
     setReplyTarget(target);
+    const username = target?.username;
+    const userId = target?.userId;
+    const own = !username || !userId || userId === currentUser?.id;
+    const previous = autoMentionRef.current;
+    autoMentionRef.current = own ? null : username;
+    setReplyContent((cur) => {
+      const untouched = previous && (cur?.text ?? '').trim() === `@${previous}`;
+      const base = untouched ? { text: '', mentions: [] } : cur;
+      return own ? base : withLeadingMention(base, { userId, username });
+    });
     focusComposer();
-  }, [focusComposer]);
+  }, [focusComposer, setReplyContent, currentUser?.id]);
 
   const cancelReply = useCallback(() => setReplyTarget(null), []);
 
@@ -236,12 +273,35 @@ export default function PostView({ post, onBack, autoFocusComment = false }) {
     queryKey: ['post', post?.id],
     queryFn: () => postsApi.getPostById(post.id),
     enabled: !!post?.id,
-    staleTime: 30_000,
+    // Fresh for a few seconds only. Live comments reach this cache only while
+    // the post is open (the post_<id> room), so a copy kept from an earlier
+    // visit lacks whatever was written in between — at 30 s, opening a
+    // comment notification showed the post without the comment it was about.
+    // A few seconds still spares the round trip (a whole comment tree) for an
+    // open, back, open again; a #comment link that is not in the copy is
+    // refetched regardless (below). The cached copy always paints at once.
+    staleTime: 5_000,
     initialData: hasSeedData ? post : undefined,
     initialDataUpdatedAt: hasSeedData ? 0 : undefined,
   });
 
   const livePost = isPostError ? null : (fetchedPost || post);
+
+  // Arriving at #comment-<id> (a notification) while the post is already open,
+  // or with a cached copy that predates that comment: fetch once more, so the
+  // comment the link points at is actually in the list to scroll to.
+  const linkedCommentId = location.hash.startsWith('#comment-')
+    ? location.hash.slice('#comment-'.length)
+    : null;
+  const refetchedForRef = useRef(null);
+  useEffect(() => {
+    const pid = post?.id;
+    if (!pid || !linkedCommentId || isFetching || !Array.isArray(livePost?.comments)) return;
+    if (refetchedForRef.current === linkedCommentId) return;
+    if (livePost.comments.some((c) => c.id === linkedCommentId)) return;
+    refetchedForRef.current = linkedCommentId;
+    void queryClient.invalidateQueries({ queryKey: ['post', pid], exact: true });
+  }, [post?.id, linkedCommentId, isFetching, livePost?.comments, queryClient]);
   const hasContent = !!(livePost && livePost.author);
   const commentsLoading = !livePost?.comments && isFetching;
   const commentsNextCursor = livePost?.commentsNextCursor;

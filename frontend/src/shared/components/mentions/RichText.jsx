@@ -1,4 +1,6 @@
 import { useNavigate } from 'react-router-dom';
+import { usePageTransition } from '@shared/hooks/usePageTransition';
+import { CENTRE_EFFECT } from '@shared/lib/navigation/centreTransition';
 
 import {
   createUrlMatcher,
@@ -56,6 +58,9 @@ export function markMatches(text, term, keyPrefix, markClass) {
 const isEveryone = (username) => String(username || '').toLowerCase() === 'everyone';
 
 export default function RichText({ content = '', mentions = [], className = '', urlLimit = 50, highlight = '', linkHashtags = false, verifiedMentionsOnly = false, linkClassName = '', mentionClassName = '' }) {
+  // A tagged @username opens the profile out of the centre of the screen, the
+  // way a post's author does (a plain navigate on the website).
+  const { open: openPage } = usePageTransition({ effect: CENTRE_EFFECT });
   const navigate = useNavigate();
   // useUsersMap() always returns an object, so the `= {}` default is no longer needed.
   const users = useUsersMap();
@@ -80,7 +85,7 @@ export default function RichText({ content = '', mentions = [], className = '', 
   const handleMentionClick = (e, username) => {
     e.stopPropagation();
     if (username && !isEveryone(username)) {
-      navigate(`/profile/${username}`);
+      openPage(`/profile/${username}`, { state: { from: window.location.pathname } });
     }
   };
   // `@everyone` (group chats) tags the whole group: styled like any mention,
