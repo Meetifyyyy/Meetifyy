@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo } from 'react';
-import { AuthShell, LoginPage, SignupPage } from './features/auth/routes/authRoutes';
+import { AuthShell, LoginPage, SignupPage, preloadAuthScreens } from './features/auth/routes/authRoutes';
+import SignOutOverlay from '@shared/components/SignOutOverlay/SignOutOverlay';
 import { IS_DEV_BUILD, IS_MOBILE_BUILD } from '@config';
 import { isKnownAppRoute, normalisePathname } from '@config/seo';
 import { createBrowserRouter, RouterProvider, Navigate, Outlet, ScrollRestoration, useLocation } from 'react-router-dom';
@@ -89,6 +90,14 @@ function lazyRoute(componentImport) {
 const LandingPage = IS_MOBILE_BUILD
   ? null
   : lazyRoute(() => import('./features/auth/pages/LandingPage'));
+/**
+ * Where signing out lands, fetched while the sign-out cover is up so the
+ * screen is ready the moment the cover lifts: the landing page on the website,
+ * the login screen in the app (see SignOutOverlay).
+ */
+const preloadSignOutDestination = IS_MOBILE_BUILD
+  ? () => preloadAuthScreens()
+  : () => import('./features/auth/pages/LandingPage');
 const FeedRoute = lazyRoute(() => import('./features/feed/pages/FeedRoute'));
 const CommunitiesRoute = lazyRoute(() => import('./features/communities/pages/CommunitiesRoute'));
 const CommunitySearchRoute = lazyRoute(() => import('./features/communities/pages/CommunitySearchRoute'));
@@ -415,6 +424,7 @@ export default function App({ homeElement, rootExtras = null }) {
           <NotificationLabMount />
           <CookieBanner />
           <CookiePreferencesModal />
+          <SignOutOverlay preloadDestination={preloadSignOutDestination} />
           {rootExtras}
           <Outlet />
         </ErrorBoundary>

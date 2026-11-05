@@ -18,6 +18,12 @@ const fetchMock = vi.hoisted(() => vi.fn());
 const mediaClearSpy = vi.hoisted(() => vi.fn());
 const forgetTokens = vi.hoisted(() => vi.fn());
 
+// The "Logging out" cover is SignOutOverlay's (not mounted here): it is up at once.
+vi.mock('@shared/lib/signOutFlow', () => ({
+  beginSignOut: () => Promise.resolve(),
+  signOutCleared: vi.fn(),
+  isSigningOut: () => false,
+}));
 vi.mock('@shared/lib/supabase', () => ({
   supabase: {
     auth: {

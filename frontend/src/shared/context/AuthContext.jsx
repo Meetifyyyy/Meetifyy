@@ -18,6 +18,7 @@ import { clearAllDrafts } from '@shared/lib/drafts';
 import { mediaCache } from '@shared/utils/MediaCacheManager';
 import { useQueryClient } from '@tanstack/react-query';
 import { IS_MOBILE_BUILD } from '@config';
+import { beginSignOut, signOutCleared } from '@shared/lib/signOutFlow';
 import { propagateUserMedia } from '@shared/utils/propagateUserMedia';
 import { suppressRedirectIntent, allowRedirectIntent } from '@shared/utils/redirectIntent';
 
@@ -146,6 +147,9 @@ function isRecoveryPending() {
 const PREVIOUS_ACCOUNT_KEY = 'meetifyy_previous_account';
 
 const SESSION_SCOPED_KEYS = [
+  // Which video posters this device found blank, keyed by media path (chat
+  // attachments included): a record of what the account viewed.
+  'meetifyy_poster_verdicts_v1',
   'currentUser',
   'loggedIn',
   'meetifyy_recent_searches',
@@ -171,7 +175,17 @@ const SESSION_SCOPED_KEYS = [
  * recorded a response. On a shared machine that cache is how the next person is
  * served the previous person's feed.
  */
+/**
+ * The longest a sign-out waits under its cover for the caches and the server.
+ * Past it the next screen is shown anyway; what is still running finishes in
+ * the background.
+ */
+const SIGN_OUT_WAIT_CAP_MS = 2500;
+
 function resetClientStateForNewUser(queryClient) {
+  // Every asynchronous part, so a sign-out can wait for the device to really
+  // be empty (see `logout`); the session switch path does not wait.
+  const pending = [];
   /**
    * The server-data cache, and the reason this parameter exists.
    *
@@ -189,7 +203,7 @@ function resetClientStateForNewUser(queryClient) {
   queryClient?.clear();
 
   useSavedActivitiesStore.getState().clearAll?.();
-  idbClearAll().catch((e) => console.error('Failed to clear local cache', e));
+  pending.push(idbClearAll().catch((e) => console.error('Failed to clear local cache', e)));
 
   /**
    * Cached conversations.
@@ -200,35 +214,35 @@ function resetClientStateForNewUser(queryClient) {
    * lazily: it is only needed on this exit path, and the entry chunk should not
    * carry the messaging cache for it.
    */
-  import('../../features/messages/shared/utils/idbMessages')
+  pending.push(import('../../features/messages/shared/utils/idbMessages')
     .then(({ idbClearMessages }) => idbClearMessages())
-    .catch(() => {});
+    .catch(() => {}));
   // Which messages were already counted as unread, and which membership
   // events were already applied: the next account can share a group with
   // this one, and must count its messages for itself.
-  import('../../features/messages/shared/utils/conversationList')
+  pending.push(import('../../features/messages/shared/utils/conversationList')
     .then(({ resetConversationListMemory }) => resetConversationListMemory())
-    .catch(() => {});
-  import('../../features/messages/shared/utils/groupMembership')
+    .catch(() => {}));
+  pending.push(import('../../features/messages/shared/utils/groupMembership')
     .then(({ resetMembershipEventMemory }) => resetMembershipEventMemory())
-    .catch(() => {});
+    .catch(() => {}));
   // Unsent text the composers kept for this account, and photos picked for a
   // post that was never published (a separate database, which nothing used to
   // clear: the next person on the device could read them).
   // Synchronously, before a switch writes the next account's markers.
   clearAllDrafts();
-  import('@shared/utils/draftImageCache')
+  pending.push(import('@shared/utils/draftImageCache')
     .then(({ clearDraftImages }) => clearDraftImages())
-    .catch(() => {});
+    .catch(() => {}));
   // Voice notes recorded but not sent yet, held in memory per chat.
-  import('../../features/messages/hooks/useVoiceRecorder')
+  pending.push(import('../../features/messages/hooks/useVoiceRecorder')
     .then(({ clearKeptVoiceNotes }) => clearKeptVoiceNotes())
-    .catch(() => {});
+    .catch(() => {}));
   // And the outbox's in-memory state: which chats have a send pending. Its
   // stored entries went with the message cache above.
-  import('../../features/messages/shared/utils/outboxClient')
+  pending.push(import('../../features/messages/shared/utils/outboxClient')
     .then(({ outbox }) => outbox.reset())
-    .catch(() => {});
+    .catch(() => {}));
 
   /**
    * Private media.
@@ -239,9 +253,13 @@ function resetClientStateForNewUser(queryClient) {
    * instead of being written back after the switch.
    */
   mediaCache.clear();
+  // Which posters were blank, by media path (what this account looked at).
+  pending.push(import('@shared/utils/posterCheck')
+    .then(({ forgetPosterVerdicts }) => forgetPosterVerdicts())
+    .catch(() => {}));
 
   if (typeof caches !== 'undefined') {
-    caches
+    pending.push(caches
       .keys()
       .then((names) =>
         Promise.all(
@@ -253,7 +271,7 @@ function resetClientStateForNewUser(queryClient) {
             .map((n) => caches.delete(n)),
         ),
       )
-      .catch(() => {});
+      .catch(() => {}));
   }
 }
 
@@ -482,7 +500,7 @@ export function AuthProvider({ children }) {
       forgetCredentials();
     }
     clearSessionScopedStorage();
-    resetClientStateForNewUser(queryClientRef.current);
+    const cachesCleared = resetClientStateForNewUser(queryClientRef.current);
     try { localStorage.removeItem(PREVIOUS_ACCOUNT_KEY); } catch (_) {}
     /*
      * Stop this browser/phone receiving the account's pushes: drop the local
@@ -496,6 +514,8 @@ export function AuthProvider({ children }) {
         .then((m) => m.forgetThisDevice({ server: false }))
         .catch(() => {});
     }
+    // For `logout`, which waits for the device to be empty before it moves on.
+    return cachesCleared;
   }, []);
 
   /**
@@ -1592,39 +1612,53 @@ export function AuthProvider({ children }) {
    * session belongs to the server now, and other devices have their own rows in
    * the session table — ending one device's session here must not end theirs.
    */
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    // One sign-out at a time: a second tap while the cover is up does nothing.
+    if (isLoggingOutRef.current) return;
     isLoggingOutRef.current = true;
     /*
-     * Signed out the moment it is asked for, not when the server answers.
+     * Signing out, in the order it is seen:
      *
-     * This used to await the revocation first and tear down afterwards, so the
-     * signed-in UI - the Home feed, Settings - stayed on screen, fully
-     * interactive, for the whole round trip (seconds on a slow network or a
-     * cold server), and the logout button's own navigation to `/` was bounced
-     * straight back to Home by the still-authenticated route guard.
+     * 1. A "Logging out" cover goes up over the page (shared/lib/signOutFlow).
+     *    Everything below happens under it, so the signed-in page never
+     *    re-renders without its user in front of anyone, and no blank frame
+     *    shows while the signed-out screen loads.
+     * 2. The session is ended here at once — the UI does not wait for the
+     *    server to agree — and every cache this account filled is emptied:
+     *    the query cache, IndexedDB (feed, messages, drafts, draft photos),
+     *    the service worker's API and image caches, signed media URLs, and
+     *    this tab's sessionStorage. Unlike before, the cover waits for those
+     *    to finish (capped, so a stuck one cannot hold it), so the account
+     *    is really gone from the device when the next screen appears.
+     * 3. SignOutOverlay goes to the landing page (website) or the login
+     *    screen (app) and lifts the cover once that screen has painted.
      *
-     * The request is started first so it is built with the credentials that are
-     * still in hand; the UI then moves on without waiting. A revocation that
-     * fails is logged, and the session it leaves behind is one the next boot
-     * discovers is revoked or expired.
-     *
-     * `signOut({ scope: 'local' })`, never the default global scope: other
-     * devices have their own rows in the session table.
+     * The revocation request is started before the teardown so it is built
+     * with the credentials still in hand. `signOut({ scope: 'local' })`, never
+     * the default global scope: other devices have their own sessions.
      */
-    const revocation = authApi.logoutSession().catch((e) => {
-      console.error('Server sign-out failed; this browser is signed out anyway', e);
-    });
-    clearLocalSession(revocation);
-
-    const providerSignOut = isSupabaseConfigured
-      ? supabase.auth.signOut({ scope: 'local' }).catch((e) => {
-          console.error('Supabase signOut error', e);
-        })
-      : Promise.resolve();
-    // Resolves once everything has settled, for callers that care; none need to wait.
-    return Promise.all([revocation, providerSignOut]).then(() => {
+    try {
+      await beginSignOut();
+      const revocation = authApi.logoutSession().catch((e) => {
+        console.error('Server sign-out failed; this browser is signed out anyway', e);
+      });
+      const cachesCleared = clearLocalSession(revocation);
+      // Per-tab state of the account that left (scroll positions, signup and
+      // recovery flags, API failover): none of it belongs to the next person.
+      try { sessionStorage.clear(); } catch (_) { /* storage disabled */ }
+      const providerSignOut = isSupabaseConfigured
+        ? supabase.auth.signOut({ scope: 'local' }).catch((e) => {
+            console.error('Supabase signOut error', e);
+          })
+        : Promise.resolve();
+      await Promise.race([
+        Promise.allSettled([cachesCleared, revocation, providerSignOut]),
+        new Promise((resolve) => { setTimeout(resolve, SIGN_OUT_WAIT_CAP_MS); }),
+      ]);
+    } finally {
+      signOutCleared(IS_MOBILE_BUILD ? '/login' : '/');
       isLoggingOutRef.current = false;
-    });
+    }
   }, [clearLocalSession]);
 
   /**

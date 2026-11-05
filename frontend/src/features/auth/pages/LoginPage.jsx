@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
@@ -13,6 +13,7 @@ import {
   styles as s,
 } from '../shared/ui';
 import { AUTH_STORIES } from '../shared/ui/authStories';
+import { markSignOutDestinationReady } from '@shared/lib/signOutFlow';
 
 /**
  * What the notice says. A request that never reached the server comes back
@@ -29,6 +30,11 @@ function friendlyLoginError(err) {
 }
 
 export default function LoginPage() {
+  // Signing out waits under its cover until this screen has painted.
+  useEffect(() => {
+    const id = requestAnimationFrame(() => markSignOutDestinationReady());
+    return () => cancelAnimationFrame(id);
+  }, []);
   const { login } = useAuth();
   const goBack = useSmartBack();
   // Previous page, or the site root when login was the first page opened.
