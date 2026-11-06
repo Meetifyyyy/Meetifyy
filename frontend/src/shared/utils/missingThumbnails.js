@@ -59,6 +59,13 @@ export function markThumbnailMissing(key) {
   persist();
 }
 
+/** This thumbnail now exists (this device just stored it): ask for it again. */
+export function unmarkThumbnailMissing(key) {
+  if (!key) return;
+  const map = load();
+  if (map.delete(key)) persist();
+}
+
 /**
  * Clear cached data: forget which thumbnails were missing, so ones added since
  * (a later upload, the thumbnail backfill) are asked for again.

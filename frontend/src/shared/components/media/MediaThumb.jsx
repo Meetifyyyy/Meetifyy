@@ -3,6 +3,7 @@ import { ImageOff, Play } from '@shared/components/icons';
 import { useSignedMediaSrc } from '@shared/hooks/useSignedMediaSrc';
 import styles from './MediaThumb.module.css';
 import { whenPosterBlank } from '@shared/utils/posterCheck';
+import { useGeneratedPoster } from '@shared/utils/generatedPoster';
 
 /**
  * One square media tile — the shape used by chat galleries and any other
@@ -110,6 +111,7 @@ function MediaThumbTile({
   useEffect(() => () => clearTimeout(retryTimerRef.current), []);
 
   const { src: resolved, failed: signFailed, refresh } = useSignedMediaSrc(near ? source : null);
+  const generatedPoster = useGeneratedPoster(useVideoElement ? resolved : null, { enabled: useVideoElement });
 
   // A poster the server will not sign is as dead as one that will not load.
   useEffect(() => {
@@ -172,6 +174,9 @@ function MediaThumbTile({
                 // `#t=0.1` asks the browser to seek a tenth of a second in, so it
                 // paints a real frame instead of an empty black element.
                 src={`${resolved}#t=0.1`}
+                // The Android WebView paints no frame for the hint above, so a
+                // frame drawn here stands in (generatedPoster.js).
+                poster={generatedPoster || undefined}
                 className={styles.media}
                 data-visible={status === 'ready' ? 'true' : 'false'}
                 preload="metadata"

@@ -6,6 +6,36 @@ import { Play, Pause, VolumeHigh, VolumeOff, Maximize } from '@shared/components
 import { feedVideoRegistry } from '@shared/utils/feedVideoRegistry';
 import { isThumbnailMissing, markThumbnailMissing } from '@shared/utils/missingThumbnails';
 import { whenPosterBlank, useUsablePoster } from '@shared/utils/posterCheck';
+import { useGeneratedPoster } from '@shared/utils/generatedPoster';
+
+/*
+ * A video tile with no usable stored poster (an older upload: none, or a
+ * black one). Its `#t=0.001` hint paints a frame on desktop browsers but not in
+ * the Android WebView, where these were empty tiles; a frame drawn on this
+ * device fills in (generatedPoster.js). On the author's own device that frame
+ * is also stored as the post's real poster (`repairKey`).
+ */
+function PosterlessVideo({ src, repairKey, videoRef, ...rest }) {
+  const poster = useGeneratedPoster(src, { repairKey });
+  return (
+    <video
+      ref={videoRef}
+      src={`${src}#t=0.001`}
+      poster={poster || undefined}
+      preload="metadata"
+      playsInline
+      muted
+      {...rest}
+    />
+  );
+}
+
+/** The same frame as a still, for a carousel tile (no <video> element at all). */
+function PosterlessVideoStill({ src, repairKey, className, onLoad }) {
+  const poster = useGeneratedPoster(src, { repairKey });
+  if (!poster) return null;
+  return <img src={poster} alt="" decoding="async" draggable={false} className={className} onLoad={onLoad} />;
+}
 import { safePlaceholder } from '@shared/utils/imagePlaceholder';
 import { noteImageStart, loadedQuickly } from '@shared/utils/imageReveal';
 import ImagePlaceholder from '@shared/components/media/ImagePlaceholder';
@@ -569,7 +599,7 @@ const revealClass = (state) => {
   return state ? styles.loaded : styles.loading;
 };
 
-export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
+export function MediaGrid({ media, onMediaClick, onRemove, authorName, ownMedia = false }) {
   /*
    * What is shown is derived from `media` during render, with resolved URLs
    * laid over it. It used to be a copy in state, updated only after the async
@@ -957,14 +987,12 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
                 }`}
               />
             ) : mediaSrc && singleTileNear ? (
-              <video
-                src={`${mediaSrc}#t=0.001`}
-                preload="metadata"
-                playsInline
-                muted
+              <PosterlessVideo
+                src={mediaSrc}
+                repairKey={ownMedia ? item.rawSrc || null : null}
                 onLoadedMetadata={(e) => handleVideoLoaded(0, e)}
                 onLoadedData={(e) => handleVideoLoaded(0, e)}
-                ref={(vidEl) => {
+                videoRef={(vidEl) => {
                   if (vidEl && vidEl.readyState >= 1 && !loadedStates[keyAt(0)]) {
                     handleVideoLoaded(0, { target: vidEl });
                   }
@@ -1039,6 +1067,7 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
       loadedStates={loadedStates}
       failedStates={failedStates}
       tileSrc={tileSrc}
+      ownMedia={ownMedia}
       onTileLoad={handleImageLoad}
       onTileError={onTileError}
       onItemClick={handleItemClick}
@@ -1068,6 +1097,7 @@ const MediaCarousel = memo(function MediaCarousel({
   loadedStates,
   failedStates,
   tileSrc,
+  ownMedia,
   onTileLoad,
   onTileError,
   onItemClick,
@@ -1165,6 +1195,14 @@ const MediaCarousel = memo(function MediaCarousel({
                   }}
                   style={{ visibility: failedStates[keyAt(index)] ? 'hidden' : undefined }}
                   className={`${styles.carouselImage} ${revealClass(loadedStates[keyAt(index)])}`}
+                />
+              )}
+              {!src && item.isVideo && (item.url || item.rawSrc) && (
+                <PosterlessVideoStill
+                  src={item.url || getMediaUrl(item.rawSrc)}
+                  repairKey={ownMedia ? item.rawSrc || null : null}
+                  className={`${styles.carouselImage} ${revealClass(loadedStates[keyAt(index)])}`}
+                  onLoad={(e) => onTileLoad(index, e)}
                 />
               )}
               {item.isVideo && (

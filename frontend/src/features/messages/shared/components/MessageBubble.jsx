@@ -31,6 +31,7 @@ import { isOnline } from '@shared/lib/networkStatus';
 import { getMediaUrl } from '@shared/api/apiClient';
 import { normalizeBodyText, truncateBodyText } from '@shared/utils/bodyText';
 import { useUsablePoster } from '@shared/utils/posterCheck';
+import { useGeneratedPoster } from '@shared/utils/generatedPoster';
 
 // Messages longer than this are clipped behind a "Show more" toggle.
 const MSG_LIMITS = { maxChars: 300, maxLines: 10 };
@@ -321,7 +322,7 @@ export function formatClipDuration(duration) {
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
 }
 
-export function VideoPlayerWithOverlay({ src, poster = null, placeholder = null, duration = null, width = null, height = null, isInline = false, hasText = false, onOpenMediaModal, openExtra, openDisabled = false }) {
+export function VideoPlayerWithOverlay({ src, poster = null, placeholder = null, duration = null, width = null, height = null, isInline = false, hasText = false, onOpenMediaModal, openExtra, openDisabled = false, repairKey = null }) {
   /*
    * Signed through the shared hook, exactly like the viewer and the image path.
    *
@@ -340,7 +341,30 @@ export function VideoPlayerWithOverlay({ src, poster = null, placeholder = null,
   // A missing poster is cosmetic, so it has no error state of its own.
   // A flat black poster is dropped, so the bubble paints the clip's own frame.
   const { src: signedPoster } = useSignedMediaSrc(poster || '');
-  const resolvedPoster = useUsablePoster(signedPoster);
+  const usablePoster = useUsablePoster(signedPoster);
+  // A stored poster that does not load (never uploaded: older sends) is
+  // treated like no poster at all.
+  const [brokenPoster, setBrokenPoster] = useState(null);
+  useEffect(() => {
+    if (!usablePoster || typeof Image === 'undefined') return undefined;
+    let live = true;
+    const probe = new Image();
+    probe.onerror = () => { if (live) setBrokenPoster(usablePoster.split('?')[0]); };
+    probe.src = usablePoster;
+    return () => { live = false; probe.onerror = null; };
+  }, [usablePoster]);
+  const storedPoster = usablePoster && brokenPoster !== usablePoster.split('?')[0] ? usablePoster : null;
+  /*
+   * No usable stored poster: draw one from the clip on this device. The
+   * `#t=0.1` hint below paints a frame on desktop browsers but not in the
+   * Android WebView, which left older videos as blank tiles in the app. The
+   * sender's own device also stores it as the real poster (`repairKey`).
+   */
+  const generatedPoster = useGeneratedPoster(resolvedSrc, {
+    enabled: !storedPoster && !placeholder && Boolean(resolvedSrc),
+    repairKey,
+  });
+  const resolvedPoster = storedPoster || generatedPoster;
   const [videoFailure, setVideoFailure] = useState(null);
   const reloadedRef = useRef(false);
 
@@ -904,6 +928,8 @@ const MessageBubble = memo(function MessageBubble({
   const uploadProgress = typeof msg.uploadProgress === 'number' ? msg.uploadProgress : 0;
   const isUploading = uploadStatus === 'uploading';
   const isUploadFailed = uploadStatus === 'failed' || (isMe && isFailedMsg && rawMediaUrl && String(rawMediaUrl).startsWith('blob:'));
+  // My own, settled video: my device may store a missing poster for it.
+  const posterRepairKey = isMe && !isUploading && !isUploadFailed && rawMediaUrl ? rawMediaUrl : null;
 
   /*
    * What the viewer is told about this message when it opens one of its media.
@@ -1036,7 +1062,7 @@ const MessageBubble = memo(function MessageBubble({
       <div className={styles.msgImageCardContainer}>
         <div className={`${styles.msgMainRow} ${isMe ? styles.msgMainRowMe : styles.msgMainRowThem}`}>
           <div className={styles.msgImageCard} style={{ overflow: 'hidden', borderRadius: '16px', width: 'fit-content', height: 'fit-content', position: 'relative' }}>
-            <VideoPlayerWithOverlay src={mediaUrl} poster={videoPoster} placeholder={localPoster} duration={mediaDuration} width={mediaWidth} height={mediaHeight} isInline={false} onOpenMediaModal={onOpenMediaModal} openExtra={buildOpenExtra(videoPoster)} openDisabled={isUploading || isUploadFailed} />
+            <VideoPlayerWithOverlay src={mediaUrl} poster={videoPoster} placeholder={localPoster} duration={mediaDuration} width={mediaWidth} height={mediaHeight} isInline={false} onOpenMediaModal={onOpenMediaModal} openExtra={buildOpenExtra(videoPoster)} openDisabled={isUploading || isUploadFailed} repairKey={posterRepairKey} />
             {(isUploading || isUploadFailed) && (
               <MediaUploadOverlay
                 progress={uploadProgress}
@@ -1149,7 +1175,7 @@ const MessageBubble = memo(function MessageBubble({
           {mediaUrl && (
             isVideo ? (
               <div style={{ position: 'relative' }}>
-                <VideoPlayerWithOverlay src={mediaUrl} poster={videoPoster} placeholder={localPoster} duration={mediaDuration} width={mediaWidth} height={mediaHeight} isInline={true} hasText={hasText} onOpenMediaModal={onOpenMediaModal} openExtra={buildOpenExtra(videoPoster)} openDisabled={isUploading || isUploadFailed} />
+                <VideoPlayerWithOverlay src={mediaUrl} poster={videoPoster} placeholder={localPoster} duration={mediaDuration} width={mediaWidth} height={mediaHeight} isInline={true} hasText={hasText} onOpenMediaModal={onOpenMediaModal} openExtra={buildOpenExtra(videoPoster)} openDisabled={isUploading || isUploadFailed} repairKey={posterRepairKey} />
                 {(isUploading || isUploadFailed) && (
                   <MediaUploadOverlay
                     progress={uploadProgress}

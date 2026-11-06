@@ -257,6 +257,10 @@ function resetClientStateForNewUser(queryClient) {
   pending.push(import('@shared/utils/posterCheck')
     .then(({ forgetPosterVerdicts }) => forgetPosterVerdicts())
     .catch(() => {}));
+  // Frames this device drew for posterless videos, chat media included.
+  pending.push(import('@shared/utils/generatedPoster')
+    .then(({ forgetGeneratedPosters }) => forgetGeneratedPosters())
+    .catch(() => {}));
 
   if (typeof caches !== 'undefined') {
     pending.push(caches

@@ -381,6 +381,7 @@ function Post({ postData, onClick, onCommentClick, onDeleted, isDetailed = false
               media={postData.media}
               onMediaClick={handleMediaClick}
               authorName={postData.author?.displayName || postData.author?.username}
+              ownMedia={isOwnPost}
             />
           )}
           {postData.linkPreview && (

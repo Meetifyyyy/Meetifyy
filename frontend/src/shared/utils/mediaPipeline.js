@@ -151,9 +151,24 @@ const wholeSeconds = (d) => (Number.isFinite(d) && d > 0 ? Math.max(1, Math.roun
  * metadata is read, before any frame is drawn.
  */
 export const generateVideoPoster = async (file, options = {}) => {
-  const { quality = 0.75, mimeType = 'image/webp', maxSize = 720, timeoutMs = 6000, onMetadata = null } = options;
   if (!file || !file.type?.startsWith('video/')) return null;
+  return capturePoster(() => URL.createObjectURL(file), true, options);
+};
 
+/**
+ * The same poster, drawn from a video that is already stored: `url` is its
+ * public or signed address. Used for older uploads whose poster is missing or
+ * black (see shared/utils/generatedPoster.js). The media host must allow this
+ * origin through CORS, or the canvas is tainted and this resolves null.
+ */
+export const generateVideoPosterFromUrl = async (url, options = {}) => {
+  if (!url || typeof url !== 'string') return null;
+  const clean = url.split('#')[0];
+  return capturePoster(() => clean, false, { timeoutMs: 12000, ...options });
+};
+
+function capturePoster(makeSrc, revokeSrc, options) {
+  const { quality = 0.75, mimeType = 'image/webp', maxSize = 720, timeoutMs = 6000, onMetadata = null } = options;
   return new Promise((resolve) => {
     let settled = false;
     let objectUrl = null;
@@ -172,7 +187,7 @@ export const generateVideoPoster = async (file, options = {}) => {
       settled = true;
       clearTimeout(timer);
       try { video.removeAttribute('src'); video.load(); } catch (_) {}
-      if (objectUrl) { try { URL.revokeObjectURL(objectUrl); } catch (_) {} }
+      if (objectUrl && revokeSrc) { try { URL.revokeObjectURL(objectUrl); } catch (_) {} }
       resolve(result);
     };
 
@@ -233,7 +248,7 @@ export const generateVideoPoster = async (file, options = {}) => {
     };
 
     try {
-      objectUrl = URL.createObjectURL(file);
+      objectUrl = makeSrc();
       // 'auto', not 'metadata': with metadata only, some engines never decode
       // the frame a seek lands on, and the canvas reads back black.
       video.preload = 'auto';
@@ -262,7 +277,7 @@ export const generateVideoPoster = async (file, options = {}) => {
       done(null);
     }
   });
-};
+}
 
 /**
  * An upload refused for what the file is, not for how the upload went: too
