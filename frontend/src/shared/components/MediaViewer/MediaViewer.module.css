@@ -67,12 +67,49 @@
   opacity: 1;
 }
 
-/* Closing removes chrome in the same commit as the exit starts. It must not
-   remain over the underlying page while the media fades out. */
+/* ── Close ───────────────────────────────────────────────────────────────────
+   X, Back and Escape all close the same way: one motion, entirely on the
+   compositor, finished before the viewer unmounts (280 ms in handleClose).
+
+   - The overlay's own black goes at once. The `.backdrop` layer under it is
+     the same black at full opacity, so nothing changes on screen, and the fade
+     is then an opacity change on that layer. The overlay used to transition
+     `background`, a full-screen repaint on every frame of the close, which is
+     what stuttered on the phone.
+   - The media fades and settles slightly (0.94, not the opening's 0.85: a
+     large shrink reads as the picture jumping away), on the same curve and
+     length as the backdrop, so the two never drift apart.
+   - The chrome (top bar, counter, arrows, video controls) fades quickly
+     rather than vanishing in one frame. It is gone well before the media, so
+     it never sits over the page underneath. One-shot animated elements (the
+     play/pause flash, the seek ripple, replay) still go at once. */
+.overlay.closing {
+  background: transparent;
+  transition: none;
+}
+
+.overlay.closing .backdrop {
+  transition: opacity 260ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.overlay.closing .stage {
+  transform: scale(0.94) translate3d(0, 0, 0);
+  opacity: 0;
+  transition:
+    transform 260ms cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 240ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
 .overlay.closing .topBar,
 .overlay.closing .counterBadge,
 .overlay.closing .navBtn,
-.overlay.closing .videoControlsOverlay,
+.overlay.closing .videoControlsOverlay {
+  opacity: 0 !important;
+  pointer-events: none;
+  transition: opacity 140ms ease-out !important;
+  animation: none;
+}
+
 .overlay.closing .centerReplayBtn,
 .overlay.closing .tapFeedback,
 .overlay.closing .seekRipple {
@@ -1401,7 +1438,14 @@
   white-space: nowrap;
 }
 
-/* ── Tap Feedback ── */
+/* ── Tap Feedback ──
+   The centre play/pause flash. It used to be cut from the DOM at 550 ms while
+   its 600 ms animation still had it partly visible at 1.4x, so it vanished
+   with a pop, and its backdrop blur was re-filtered on every frame of the
+   scale. Now: no blur (a solid scrim reads the same over video), a short
+   ease-out rise, a hold, and a gentle fade that has reached zero before the
+   element is removed (TAP_FEEDBACK_MS in VideoViewer). Only opacity and
+   transform move, so it stays on the compositor. */
 .tapFeedback {
   position: absolute;
   top: 50%;
@@ -1412,21 +1456,21 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.52);
+  background: rgba(0, 0, 0, 0.5);
   color: #fff;
   width: 72px;
   height: 72px;
   border-radius: 50%;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  animation: tapFeedbackAnim 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  opacity: 0;
+  will-change: opacity, transform;
+  animation: tapFeedbackAnim 680ms both;
 }
 
 @keyframes tapFeedbackAnim {
-  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.6); }
-  20%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-  80%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.4); }
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.82); animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1); }
+  26%  { opacity: 1; transform: translate(-50%, -50%) scale(1); animation-timing-function: linear; }
+  58%  { opacity: 1; transform: translate(-50%, -50%) scale(1); animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.1); }
 }
 
 /* ── Responsive ── */
@@ -1720,7 +1764,8 @@
 
   /* Its resting state is invisible (the animation fades it in), so without
      the animation it has to be shown outright or the seek gives no feedback. */
-  .seekRipple {
+  .seekRipple,
+  .tapFeedback {
     opacity: 1;
   }
 }

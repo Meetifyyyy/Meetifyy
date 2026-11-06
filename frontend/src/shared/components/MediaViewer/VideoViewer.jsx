@@ -24,6 +24,8 @@ const HIDE_DELAY_MS = 3000;
 const SEEK_TOOLTIP_WIDTH = 52;
 const VOLUME_KEY = '__mv_volume__';
 const DOUBLE_TAP_MS = 280;
+/** The centre play/pause flash's length; matches `.tapFeedback` in the CSS. */
+const TAP_FEEDBACK_MS = 680;
 /** After a double-tap seek, further taps on the same side keep seeking for this long. */
 const SEEK_CHAIN_MS = 700;
 const SEEK_STEP_S = 10;
@@ -236,6 +238,14 @@ export default function VideoViewer({ src: rawSrc, poster: rawPoster, mediaRef, 
   // dragged to close, together with the viewer's header; it used to stay up.
   // Its own visible state is kept, so it comes back as it was on a snap-back.
   const barShown = ctrlVisible && !gestureHidesControls;
+  /*
+   * Whether the chrome (header and bottom bar) is on screen as the tap lands.
+   * A centre tap while it is hidden only brings it back; the next one plays or
+   * pauses. Read at tap time, since the single-tap action runs after the
+   * double-tap window, by when the controls may have changed.
+   */
+  const barShownRef = useRef(barShown);
+  barShownRef.current = barShown;
 
   // ── Hover tooltip on progress bar ──────────────────────────────────────────
   const [hoverTime, setHoverTime]     = useState(null);
@@ -1005,7 +1015,8 @@ export default function VideoViewer({ src: rawSrc, poster: rawPoster, mediaRef, 
     clearTimeout(tapFeedbackTimerRef.current);
     tapFeedbackIdRef.current += 1;
     setTapFeedback({ type, id: tapFeedbackIdRef.current });
-    tapFeedbackTimerRef.current = setTimeout(() => setTapFeedback(null), 550);
+    // Removed only once its fade has finished (TAP_FEEDBACK_MS in the CSS).
+    tapFeedbackTimerRef.current = setTimeout(() => setTapFeedback(null), TAP_FEEDBACK_MS + 40);
   }, []);
 
   // ─── Seek ripple helper ──────────────────────────────────────────────────
@@ -1123,6 +1134,13 @@ export default function VideoViewer({ src: rawSrc, poster: rawPoster, mediaRef, 
       clickTimerRef.current = null;
       lastTapRef.current = { time: 0, x: 0, y: 0, zone: null, chain: 0 };
       showControls();
+    } else if (zone === 'center' && !barShownRef.current) {
+      // Controls hidden: this tap only reveals them, at once. Not recorded as
+      // a first tap, so a quick second tap is a play/pause, not a double tap.
+      clearTimeout(clickTimerRef.current);
+      clickTimerRef.current = null;
+      lastTapRef.current = { time: 0, x: 0, y: 0, zone: null, chain: 0 };
+      showControls();
     } else {
       // First tap — record & schedule single tap
       lastTapRef.current = { time: now, x: touch.clientX, y: touch.clientY, zone, chain: 0 };
@@ -1167,6 +1185,13 @@ export default function VideoViewer({ src: rawSrc, poster: rawPoster, mediaRef, 
 
     const zone = getTapZone(e.clientX);
     clearTimeout(clickTimerRef.current);
+
+    // Same rule as the touch path: hidden controls come back first.
+    if (zone === 'center' && !barShownRef.current) {
+      clickTimerRef.current = null;
+      showControls();
+      return;
+    }
 
     clickTimerRef.current = setTimeout(() => {
       clickTimerRef.current = null;
