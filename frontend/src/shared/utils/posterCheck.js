@@ -67,11 +67,52 @@ function remember(key, blank) {
 /** A stored blank verdict still within its time (1 = legacy, so expired). */
 const blankStillHolds = (checkedAt) => checkedAt > 1 && Date.now() - checkedAt < BLANK_TTL_MS;
 
-/** Replace the HTTP-cached copy of `url` with the current object. */
-function refetchPastCache(url) {
-  if (typeof fetch !== 'function' || !/^https?:\/\//.test(url)) return Promise.resolve();
-  return fetch(url, { cache: 'reload', mode: 'no-cors', credentials: 'omit' })
-    .then(() => undefined, () => undefined);
+
+/** Session copies of posters the probe downloaded fresh: key -> blob: URL. */
+const fresh = new Map();
+const MAX_FRESH = 150;
+
+function rememberFresh(key, blobUrl) {
+  const old = fresh.get(key);
+  if (old && old !== blobUrl) URL.revokeObjectURL(old);
+  fresh.delete(key);
+  fresh.set(key, blobUrl);
+  // Evicted ones are not revoked: an element may still be showing them.
+  while (fresh.size > MAX_FRESH) fresh.delete(fresh.keys().next().value);
+}
+
+/** The probe's fresh copy of the poster at `url` this session, if it has one. */
+export function freshPosterUrl(url) {
+  return url ? fresh.get(cacheKey(url)) || null : null;
+}
+
+async function decode(blob) {
+  if (typeof createImageBitmap === 'function') return createImageBitmap(blob);
+  const img = new Image();
+  const objectUrl = URL.createObjectURL(blob);
+  try {
+    img.src = objectUrl;
+    await img.decode();
+    return img;
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+/** `{ blank, blobUrl }` from the current file at `url`, or null if unreadable. */
+async function probeFresh(url) {
+  if (typeof fetch !== 'function' || typeof document === 'undefined') return null;
+  try {
+    const res = await fetch(url, { mode: 'cors', cache: 'reload', credentials: 'omit' });
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    const picture = await decode(blob);
+    const blank = isBlankFrame(picture);
+    picture.close?.();
+    return { blank, blobUrl: URL.createObjectURL(blob) };
+  } catch (_) {
+    return null;
+  }
 }
 
 export function isPosterBlank(url) {
@@ -87,25 +128,30 @@ export function isPosterBlank(url) {
     results.set(key, answer);
     return answer;
   }
-  // Never checked, or found blank long enough ago that it may have been
-  // regenerated since: in that case the cached copy is the old black one, so
-  // refresh it first (the <img> then gets the new one too).
-  const ready = verdict === undefined ? Promise.resolve() : refetchPastCache(url);
-  const probe = ready.then(() => new Promise((resolve) => {
-    if (typeof Image === 'undefined' || typeof document === 'undefined') { resolve(false); return; }
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.decoding = 'async';
-    img.onload = () => {
-      const blank = isBlankFrame(img);
-      remember(key, blank);
-      resolve(blank);
-    };
-    // Unreadable here (no CORS, offline): not remembered, so a later session
-    // may still find out. Never treated as blank.
-    img.onerror = () => resolve(false);
-    img.src = url;
-  }));
+  /*
+   * The probe downloads the poster past the HTTP cache (`reload`) and judges
+   * those bytes.
+   *
+   * It used to be a CORS <img> of the same address, served from the cache.
+   * In the installed app that cached copy was stored by the plain <img> that
+   * displays the poster, without CORS headers, so the CORS probe of it failed
+   * every time; a failure counts as "fine", so a black (or transparent)
+   * poster saved before the backfill replaced it stayed on screen for the
+   * year it is cached for, and was never even recorded as blank. A reload
+   * both reads the current file and overwrites that stale cached copy, so the
+   * next launch's <img> gets the current one too. For this session, the
+   * fresh bytes are kept as a blob: URL the caller can show at once
+   * (`freshPosterUrl`, `onFresh`).
+   */
+  const probe = probeFresh(url).then((result) => {
+    // Unreadable (offline, refused): not remembered, so a later session may
+    // still find out. Never treated as blank.
+    if (!result) return false;
+    remember(key, result.blank);
+    if (!result.blank && result.blobUrl) rememberFresh(key, result.blobUrl);
+    else if (result.blobUrl) URL.revokeObjectURL(result.blobUrl);
+    return result.blank;
+  });
   results.set(key, probe);
   while (results.size > MAX_RESULTS) results.delete(results.keys().next().value);
   return probe;
@@ -137,24 +183,41 @@ export async function refreshBlankPosters() {
 /** Sign-out: the next account starts with no record of this one's media. */
 export function forgetPosterVerdicts() {
   results.clear();
+  for (const blobUrl of fresh.values()) URL.revokeObjectURL(blobUrl);
+  fresh.clear();
   stored = null;
   try { localStorage.removeItem(STORAGE_KEY); } catch (_) { /* storage disabled */ }
 }
 
-/** Calls `onBlank` once if the poster at `url` turns out to be flat. */
-export function whenPosterBlank(url, onBlank) {
-  void isPosterBlank(url).then((blank) => { if (blank) onBlank(); });
+/**
+ * Calls `onBlank` once if the poster at `url` turns out to be flat, or
+ * `onFresh(blobUrl)` with the probe's fresh copy when it is fine, so a stale
+ * cached copy on screen can be swapped for the current file at once.
+ */
+export function whenPosterBlank(url, onBlank, onFresh) {
+  void isPosterBlank(url).then((blank) => {
+    if (blank) { onBlank(); return; }
+    const freshUrl = onFresh ? freshPosterUrl(url) : null;
+    if (freshUrl) onFresh(freshUrl);
+  });
 }
 
-/** `url`, or null once it is known to be a blank poster. */
+/**
+ * `url`, or null once it is known to be a blank poster, or the probe's fresh
+ * copy of it this session (so a stale cached image is replaced at once).
+ */
 export function useUsablePoster(url) {
-  const [blankFor, setBlankFor] = useState(null);
+  const [checked, setChecked] = useState(null); // { key, blank, freshUrl }
   useEffect(() => {
     if (!url) return undefined;
     let live = true;
-    void isPosterBlank(url).then((blank) => { if (live && blank) setBlankFor(cacheKey(url)); });
+    void isPosterBlank(url).then((blank) => {
+      if (live) setChecked({ key: cacheKey(url), blank, freshUrl: blank ? null : freshPosterUrl(url) });
+    });
     return () => { live = false; };
   }, [url]);
   if (!url) return null;
-  return blankFor === cacheKey(url) ? null : url;
+  if (!checked || checked.key !== cacheKey(url)) return url;
+  if (checked.blank) return null;
+  return checked.freshUrl || url;
 }

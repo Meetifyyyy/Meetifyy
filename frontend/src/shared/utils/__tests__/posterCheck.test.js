@@ -8,42 +8,60 @@ const STORAGE_KEY = 'meetifyy_poster_verdicts_v1';
 const URL_A = 'https://media.example.test/posts/a_thumb.webp';
 const DAY = 24 * 60 * 60 * 1000;
 
-/** An Image whose load fires on the next tick, so the probe completes. */
-class FakeImage {
-  set src(value) {
-    this._src = value;
-    setTimeout(() => this.onload?.(), 0);
-  }
-  get src() { return this._src; }
-}
-
 async function freshModule() {
   vi.resetModules();
   return import('../posterCheck');
 }
 
-describe('posterCheck blank verdicts', () => {
+describe('posterCheck', () => {
   let fetchMock;
 
   beforeEach(() => {
     localStorage.clear();
     pixelsBlank = true;
-    vi.stubGlobal('Image', FakeImage);
-    fetchMock = vi.fn(() => Promise.resolve({ ok: true }));
+    fetchMock = vi.fn(() => Promise.resolve({ ok: true, blob: () => Promise.resolve(new Blob(['x'])) }));
     vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal('createImageBitmap', vi.fn(() => Promise.resolve({ close() {} })));
+    URL.createObjectURL = vi.fn(() => 'blob:fresh');
+    URL.revokeObjectURL = vi.fn();
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
-    vi.useRealTimers();
+  });
+
+  it('probes the current file past the HTTP cache, with CORS', async () => {
+    const { isPosterBlank } = await freshModule();
+    await isPosterBlank(URL_A);
+    expect(fetchMock).toHaveBeenCalledWith(URL_A, expect.objectContaining({ mode: 'cors', cache: 'reload' }));
   });
 
   it('remembers a blank poster with the time it was checked', async () => {
     const { isPosterBlank } = await freshModule();
     expect(await isPosterBlank(URL_A)).toBe(true);
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    expect(saved[URL_A]).toBeGreaterThan(1);
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY))[URL_A]).toBeGreaterThan(1);
+  });
+
+  it('offers the fresh copy of a fine poster for this session (a stale cached copy may be on screen)', async () => {
+    pixelsBlank = false;
+    const { isPosterBlank, freshPosterUrl, whenPosterBlank } = await freshModule();
+    expect(await isPosterBlank(URL_A)).toBe(false);
+    expect(freshPosterUrl(`${URL_A}?sig=2`)).toBe('blob:fresh');
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY))[URL_A]).toBe(0);
+
+    const onBlank = vi.fn();
+    const onFresh = vi.fn();
+    whenPosterBlank(URL_A, onBlank, onFresh);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(onBlank).not.toHaveBeenCalled();
+    expect(onFresh).toHaveBeenCalledWith('blob:fresh');
+  });
+
+  it('an unreadable poster is neither blank nor remembered', async () => {
+    fetchMock.mockImplementation(() => Promise.reject(new TypeError('Failed to fetch')));
+    const { isPosterBlank } = await freshModule();
+    expect(await isPosterBlank(URL_A)).toBe(false);
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
   });
 
   it('trusts a recent blank verdict without probing again', async () => {
@@ -54,12 +72,12 @@ describe('posterCheck blank verdicts', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('re-checks an expired blank verdict past the HTTP cache and accepts a repaired poster', async () => {
+  it('re-checks an expired blank verdict and accepts a repaired poster', async () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ [URL_A]: Date.now() - DAY - 1000 }));
-    pixelsBlank = false; // the backfill replaced it
+    pixelsBlank = false;
     const { isPosterBlank } = await freshModule();
     expect(await isPosterBlank(URL_A)).toBe(false);
-    expect(fetchMock).toHaveBeenCalledWith(URL_A, expect.objectContaining({ cache: 'reload' }));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(JSON.parse(localStorage.getItem(STORAGE_KEY))[URL_A]).toBe(0);
   });
 
@@ -73,7 +91,6 @@ describe('posterCheck blank verdicts', () => {
 
   it('keeps a fine verdict for good', async () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ [URL_A]: 0 }));
-    pixelsBlank = true;
     const { isPosterBlank } = await freshModule();
     expect(await isPosterBlank(URL_A)).toBe(false);
     expect(fetchMock).not.toHaveBeenCalled();

@@ -111,6 +111,9 @@ function MediaThumbTile({
   useEffect(() => () => clearTimeout(retryTimerRef.current), []);
 
   const { src: resolved, failed: signFailed, refresh } = useSignedMediaSrc(near ? source : null);
+  // The blank check's fresh copy of the poster (posterCheck.js), shown in
+  // place of a possibly stale cached one.
+  const [freshPoster, setFreshPoster] = useState(null);
   const generatedPoster = useGeneratedPoster(useVideoElement ? resolved : null, { enabled: useVideoElement });
 
   // A poster the server will not sign is as dead as one that will not load.
@@ -188,7 +191,7 @@ function MediaThumbTile({
             ) : (
               <img
                 key={mountKey}
-                src={resolved}
+                src={freshPoster || resolved}
                 alt={alt}
                 loading="lazy"
                 decoding="async"
@@ -198,7 +201,7 @@ function MediaThumbTile({
                   setReady(true);
                   // A flat black poster (uploaded before blank frames were
                   // refused) is no picture of the clip: use the clip itself.
-                  if (hasPoster) whenPosterBlank(resolved, fallBackToVideo);
+                  if (hasPoster && !freshPoster) whenPosterBlank(resolved, fallBackToVideo, setFreshPoster);
                 }}
                 onError={handleError}
               />

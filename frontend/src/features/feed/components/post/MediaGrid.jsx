@@ -631,6 +631,9 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName, ownMedia 
   const [failedStates, setFailedStates] = useState({});
   // Video tiles whose poster image failed; they fall back to a first frame.
   const [posterFailed, setPosterFailed] = useState({});
+  // Video posters the blank check downloaded fresh this session (blob: URLs),
+  // shown in place of a possibly stale cached copy (see posterCheck.js).
+  const [freshPoster, setFreshPoster] = useState({});
   // The single-video tile mounts its first-frame <video> only near the
   // viewport: the virtualized feed keeps off-screen posts mounted, and each
   // one fetched video metadata — often megabytes for a phone MP4.
@@ -723,7 +726,12 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName, ownMedia 
     // falls back to the clip's real first frame, and the key is remembered.
     if (mediaList[index]?.isVideo) {
       const shown = e?.target?.currentSrc || e?.target?.getAttribute?.('src');
-      if (shown) whenPosterBlank(shown, () => handlePosterError(index));
+      if (shown) {
+        const key = keyAt(index);
+        whenPosterBlank(shown, () => handlePosterError(index), (freshUrl) => {
+          setFreshPoster((prev) => (prev[key] === freshUrl ? prev : { ...prev, [key]: freshUrl }));
+        });
+      }
     }
     // The original loaded after its thumbnail failed: that thumbnail really is
     // missing, so later mounts and launches skip straight to the original.
@@ -813,7 +821,7 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName, ownMedia 
 
   /** What a grid tile paints: the image, or a video's poster (never the MP4). */
   const tileSrc = (item, index) => (item.isVideo
-    ? (posterFailed[keyAt(index)] ? null : item.posterUrl || null)
+    ? (posterFailed[keyAt(index)] ? null : freshPoster[keyAt(index)] || item.posterUrl || null)
     : item.url || (item.rawSrc ? getMediaUrl(item.rawSrc) : null));
 
   const onTileError = (index, e) => (mediaList[index]?.isVideo
@@ -934,7 +942,7 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName, ownMedia 
       // field it came from; a poster carried on the payload used to ignore it.
       const posterUrl = posterFailed[keyAt(0)]
         ? null
-        : (rawPoster ? getMediaUrl(rawPoster) : item.posterUrl || null);
+        : freshPoster[keyAt(0)] || (rawPoster ? getMediaUrl(rawPoster) : item.posterUrl || null);
       const mediaSrc = item.url || (item.rawSrc ? getMediaUrl(item.rawSrc) : null);
 
       if (isPlayingInline && mediaSrc) {
