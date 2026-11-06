@@ -428,13 +428,15 @@ export default function CampusPage() {
   // The verification flow (pick a college, confirm its email) owns the whole
   // content area, so the hub's own bottom padding gives way to it.
   const showJoinFlow = isChangingCollege || (!campus.isActive && !campus.isLoading);
-  // Verified or not, and while it loads: white behind the page on a phone in
-  // light theme, black in dark (see `.campusPage` in CampusPage.module.css),
-  // never the app's blue gradient.
-  useWhiteSurface();
+  // The verified hub keeps the app's own page background, as the other tabs
+  // do. The pick-a-college flow, and the moment before the campus is known,
+  // are white behind the page on a phone in light theme (black in dark, see
+  // `.campusPage` in CampusPage.module.css), status and navigation bars too.
+  const isVerifiedHub = campus.isActive && !isChangingCollege;
+  useWhiteSurface(!isVerifiedHub);
 
   return (
-    <main className={`centre centre-wide ${styles.hubContainer} ${styles.campusPage} ${showJoinFlow ? sharedStyles.hubJoin : ''}`}>
+    <main className={`centre centre-wide ${styles.hubContainer} ${styles.campusPage} ${showJoinFlow ? sharedStyles.hubJoin : ''} ${isVerifiedHub ? styles.campusVerified : ''}`}>
       {isChangingCollege ? (
         <CampusJoinFlow onVerified={finishCollegeChange} onCancel={finishCollegeChange} />
       ) : campus.isActive && showOfflineEmpty ? (

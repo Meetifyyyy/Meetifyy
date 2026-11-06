@@ -352,9 +352,12 @@
    are overridden while this page is mounted. Phones only: on large screens
    the page is a card on the desktop layout, whose header band and sidebar are
    built for the gradient. */
+/* The verified hub (`.campusVerified`) keeps the app's own page background
+   in the light theme, like every other tab; only the pick-a-college flow and
+   the moment before the campus is known stay white. Dark is black for both. */
 @media (max-width: 768px) {
-  :global(html):has(.campusPage),
-  :global(html):has(.campusPage) :global(body) {
+  :global(html):has(.campusPage:not(.campusVerified)),
+  :global(html):has(.campusPage:not(.campusVerified)) :global(body) {
     background: #ffffff !important;
   }
 
