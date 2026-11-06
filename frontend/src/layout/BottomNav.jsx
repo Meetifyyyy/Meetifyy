@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useSmartNavigation } from '@shared/hooks/useSmartNavigation';
 import { useAuth } from '@shared/context/AuthContext';
@@ -19,6 +19,33 @@ import {
 } from '@heroicons/react/24/solid';
 
 import { useUnreadCounts } from '@features/messages/hooks/useUnreadCounts';
+
+/*
+ * Line weight per icon, in each glyph's own 24-unit viewBox.
+ *
+ * The icons are drawn at different sizes so they look the same size (see
+ * BottomNav.module.css), and a stroke scales with its icon, so one shared
+ * value would come out thicker on the enlarged icons and thinner on the shrunk
+ * one. Each value is the one that lands on the same on-screen line as Home's
+ * 1.75 at its size; Crew's glyph also defaults to a thinner 1.5, which is why
+ * it used to read as the lightest of the five. Checked on the phone, by eye.
+ */
+const NAV_STROKE = {
+  home: 1.75, // 26px
+  campus: 1.585, // 28.7px
+  messages: 1.82, // 25px
+  crew: 1.72, // 26.5px
+};
+
+/** Which of the five tabs a path belongs to, or -1 for none. */
+function tabIndexFor(pathname) {
+  if (pathname === '/home') return 0;
+  if (pathname.startsWith('/campus')) return 1;
+  if (pathname.startsWith('/messages')) return 2;
+  if (pathname.startsWith('/crew')) return 3;
+  if (pathname.startsWith('/profile')) return 4;
+  return -1;
+}
 
 export default function BottomNav({ hidden }) {
   const { smartNavigate: navigate } = useSmartNavigation();
@@ -54,18 +81,46 @@ export default function BottomNav({ hidden }) {
   // one finds its code already there (see tabPrefetch).
   useEffect(() => tabPrefetch.warmAllWhenIdle(), []);
 
-  const handleTabClick = (path) => {
+  const { currentUser } = useAuth();
+  const username = currentUser?.username || '';
+
+  const routeIndex = tabIndexFor(location.pathname);
+
+  /*
+   * The tab the user just tapped, shown as active before the route arrives.
+   *
+   * The route can take a while to change after a tap: switching to a tab
+   * already in the history is a history jump (popstate lands a frame or more
+   * later), a lazy page may still be loading, and a jump that misses is
+   * corrected by a second navigation. Driving the highlight from the pathname
+   * alone made it wait through all of that, and in the corrected case flash on
+   * the wrong tab first. The tapped tab holds the highlight until the route
+   * reaches it (or a short timeout, so a navigation that was refused cannot
+   * leave it stuck).
+   */
+  const [pendingIndex, setPendingIndex] = useState(null);
+  useLayoutEffect(() => {
+    if (pendingIndex === null) return undefined;
+    if (routeIndex === pendingIndex) {
+      setPendingIndex(null);
+      return undefined;
+    }
+    const timer = setTimeout(() => setPendingIndex(null), 1500);
+    return () => clearTimeout(timer);
+  }, [pendingIndex, routeIndex]);
+
+  const shownIndex = pendingIndex ?? routeIndex;
+
+  const handleTabClick = (index, path) => {
+    if (index !== routeIndex) setPendingIndex(index);
     navigate(path);
   };
 
-  const { currentUser } = useAuth();
-  const username = currentUser?.username || '';
-  
-  const isHomeActive = location.pathname === '/home';
-  const isCampusActive = location.pathname.startsWith('/campus');
-  const isMessagesActive = location.pathname.startsWith('/messages');
-  const isCrewActive = location.pathname.startsWith('/crew');
-  const isProfileActive = location.pathname.startsWith('/profile');
+  const isHomeActive = shownIndex === 0;
+  const isCampusActive = shownIndex === 1;
+  const isMessagesActive = shownIndex === 2;
+  const isCrewActive = shownIndex === 3;
+  const isProfileActive = shownIndex === 4;
 
   // Note: an open chat thread completely hides the nav on mobile to allow edge-to-edge chat.
   // The post view used to be hidden the same way, but unlike a chat it is an
@@ -99,14 +154,14 @@ export default function BottomNav({ hidden }) {
     <div data-bars-ignore className={`app-bottom-nav ${styles.bottomNav} ${isHidden ? styles.hiddenNav : ''}`}>
       <button 
         className={`${styles.bottomNavItem}${isHomeActive ? ` ${styles.active}` : ''}`}
-        onClick={() => handleTabClick('/home')}
+        onClick={() => handleTabClick(0, '/home')}
         {...tabPrefetch.handlersFor('home')}
       >
         <div className={styles.iconWrapper}>
           <NavIcon
             className={styles.navIcon}
             active={isHomeActive}
-            outline={<HomeOutline strokeWidth={1.75} />}
+            outline={<HomeOutline strokeWidth={NAV_STROKE.home} />}
             solid={<HomeSolid />}
           />
         </div>
@@ -115,14 +170,14 @@ export default function BottomNav({ hidden }) {
 
       <button 
         className={`${styles.bottomNavItem}${isCampusActive ? ` ${styles.active}` : ''}`}
-        onClick={() => handleTabClick('/campus')}
+        onClick={() => handleTabClick(1, '/campus')}
         {...tabPrefetch.handlersFor('campus')}
       >
         <div className={styles.iconWrapper}>
           <NavIcon
-            className={styles.navIcon}
+            className={`${styles.navIcon} ${styles.campusIcon}`}
             active={isCampusActive}
-            outline={<CampusOutline size={28} />}
+            outline={<CampusOutline size={28} strokeWidth={NAV_STROKE.campus} />}
             solid={<CampusSolid size={28} />}
           />
         </div>
@@ -131,36 +186,36 @@ export default function BottomNav({ hidden }) {
 
       <button 
         className={`${styles.bottomNavItem}${isMessagesActive ? ` ${styles.active}` : ''}`}
-        onClick={() => handleTabClick('/messages')}
+        onClick={() => handleTabClick(2, '/messages')}
         {...tabPrefetch.handlersFor('messages')}
       >
         <div className={styles.iconWrapper}>
           <NavIcon
-            className={styles.navIcon}
+            className={`${styles.navIcon} ${styles.messagesIcon}`}
             active={isMessagesActive}
-            outline={<MessagesOutline />}
-            solid={<MessagesSolid />}
+            outline={<MessagesOutline strokeWidth={NAV_STROKE.messages} />}
+            solid={<MessagesSolid strokeWidth={NAV_STROKE.messages} />}
           />
-          {unreadMessagesCount > 0 && (
-            <span className={styles.unreadBadge}>
-              {unreadMessagesCount > 99 ? '99+' : unreadMessagesCount}
-            </span>
-          )}
+          {/* A dot, not a count: the inbox shows how many. The number stays in
+              the button's accessible name below. */}
+          {unreadMessagesCount > 0 && <span className={styles.unreadDot} aria-hidden="true" />}
         </div>
-        <span>Messages</span>
+        <span>
+          {unreadMessagesCount > 0 ? `Messages, ${unreadMessagesCount} unread` : 'Messages'}
+        </span>
       </button>
 
       <button 
         className={`${styles.bottomNavItem}${isCrewActive ? ` ${styles.active}` : ''}`}
-        onClick={() => handleTabClick('/crew')}
+        onClick={() => handleTabClick(3, '/crew')}
         {...tabPrefetch.handlersFor('crew')}
       >
         <div className={styles.iconWrapper}>
           <NavIcon
-            className={styles.navIcon}
+            className={`${styles.navIcon} ${styles.crewIcon}`}
             active={isCrewActive}
-            outline={<CrewOutline size={28} />}
-            solid={<CrewSolid size={28} />}
+            outline={<CrewOutline size={28} strokeWidth={NAV_STROKE.crew} />}
+            solid={<CrewSolid size={28} strokeWidth={NAV_STROKE.crew} />}
           />
         </div>
         <span>Crew</span>
@@ -168,7 +223,7 @@ export default function BottomNav({ hidden }) {
 
       <button 
         className={`${styles.bottomNavItem}${isProfileActive ? ` ${styles.active}` : ''}`}
-        onClick={() => handleTabClick(`/profile/${username}`)}
+        onClick={() => handleTabClick(4, `/profile/${username}`)}
         {...tabPrefetch.handlersFor('profile')}
       >
         <div className={styles.iconWrapper}>

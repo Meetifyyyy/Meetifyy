@@ -67,7 +67,13 @@
   cursor: pointer;
   flex: 1;
   height: 100%;
-  transition: color 180ms ease-out, opacity 120ms ease-out;
+  /* The active tab switches in one frame (colour, fill, avatar ring): any fade
+     between the two states read as the icons flickering on a tap. */
+  transition: none;
+  /* No double-tap-zoom wait, and a fast tap never starts a text selection. */
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
   padding: 4px 0;
   border-radius: var(--radius-md);
   -webkit-tap-highlight-color: transparent;
@@ -95,12 +101,40 @@
   flex-shrink: 0;
 }
 
+/*
+ * Optical sizes. One shared box made the icons look different sizes, because
+ * each glyph fills its box differently: the Messages bubble is a square that
+ * fills it edge to edge and read as the biggest, the cap is wide and short and
+ * the Crew figure tall and narrow, so both read as smaller. The avatar keeps
+ * the shared size: smaller, it read as the odd one out. Sized against each other on
+ * the phone, by eye, so the five look one size. An icon larger than its 28px
+ * wrapper overflows it evenly rather than resizing it, so the tabs keep their
+ * spacing. Line weights are matched to these sizes in BottomNav.jsx.
+ */
+.navIcon.campusIcon,
+.navIcon.campusIcon > svg {
+  width: 30.7px;
+  height: 30.7px;
+}
+
+.navIcon.messagesIcon,
+.navIcon.messagesIcon > svg {
+  width: 27px;
+  height: 27px;
+}
+
+.navIcon.crewIcon,
+.navIcon.crewIcon > svg {
+  width: 28.5px;
+  height: 28.5px;
+}
+
 .bottomNavAvatar {
   width: 28px !important;
   height: 28px !important;
   flex-shrink: 0;
   box-shadow: 0 0 0 2px transparent;
-  transition: box-shadow 180ms ease-out;
+  transition: none;
 }
 
 /*
@@ -110,12 +144,8 @@
  * button's accessible name, and a row of five unlabelled icon buttons is
  * unusable with a screen reader. Clipped instead of `display: none`, which
  * would take them out of the accessibility tree along with the layout.
- *
- * `:not(.unreadBadge)` is belt-and-braces — the badge is nested inside
- * `.iconWrapper` and is not a direct child — so a later refactor that hoists it
- * cannot accidentally hide the unread count.
  */
-.bottomNavItem > span:not(.unreadBadge) {
+.bottomNavItem > span {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -133,17 +163,14 @@
   }
 }
 
-.bottomNavItem:active {
-  /* Opacity, not scale: a scaled press springs back after the tap lands,
-     which reads as the icons shifting once they reach their place. */
-  opacity: 0.78;
-}
+/* No press dip (opacity or scale): the tab turns active on the tap itself, and
+   a dip on top of that made the tapped icon blink. */
 
-/* Cross-fade only. NavIcon grows the incoming layer from 0.9, which on a bar
-   this small looks like the icon settling into position after every tap. */
+/* Instant swap: outline and solid are both mounted (NavIcon), and the bottom
+   nav shows one or the other with no fade or scale between them. */
 .navIcon > svg {
   transform: none !important;
-  transition: opacity 180ms ease-out;
+  transition: none !important;
   will-change: auto;
 }
 
@@ -152,25 +179,18 @@
   font-weight: 600;
 }
 
-.unreadBadge {
+.unreadDot {
   position: absolute;
-  top: -6px;
-  right: -12px;
-  background: var(--color-primary);
-  color: #ffffff;
-  font-size: 0.65rem;
-  font-weight: 700;
-  padding: 0 4px;
-  min-width: 16px;
-  height: 16px;
+  /* On the bubble's corner: the bubble is drawn smaller than its wrapper. */
+  top: 1px;
+  right: 0;
+  width: 8px;
+  height: 8px;
   border-radius: 9999px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
-  border: 2px solid var(--color-bg-white, #111111);
-  box-sizing: content-box;
-  z-index: 2;
+  background: var(--color-primary);
+  /* Ring in the bar's own colour, so the dot reads as cut out of the icon. */
+  box-shadow: 0 0 0 2px var(--bottom-nav-bg, var(--color-nav-surface));
+  pointer-events: none;
 }
 
 @media (max-width: 768px) {
@@ -197,16 +217,24 @@
     width: 26px;
     height: 26px;
   }
+  .navIcon.campusIcon,
+  .navIcon.campusIcon > svg {
+    width: 28.7px;
+    height: 28.7px;
+  }
+  .navIcon.messagesIcon,
+  .navIcon.messagesIcon > svg {
+    width: 25px;
+    height: 25px;
+  }
+  .navIcon.crewIcon,
+  .navIcon.crewIcon > svg {
+    width: 26.5px;
+    height: 26.5px;
+  }
   .bottomNavAvatar {
     width: 26px !important;
     height: 26px !important;
-  }
-  .unreadBadge {
-    top: -5px;
-    right: -10px;
-    min-width: 14px;
-    height: 14px;
-    font-size: 0.58rem;
   }
 }
 
