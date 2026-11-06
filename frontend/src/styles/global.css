@@ -515,14 +515,38 @@ nav a.active {
   }
 }
 
-/* Phones: wide, centred above the bottom nav, rising from below
-   (or dropping from above when a caller asks for the top). */
+/* Phones: wide and centred, rising from below (or dropping from above when a
+   caller asks for the top).
+
+   Where it sits depends on what is at the bottom of the screen:
+   - the bottom nav on screen (`data-bottom-nav-shown`, set by BottomNav):
+     just above the nav;
+   - no nav (a chat, Settings, Saved, a community, pages outside the
+     dashboard): near the bottom edge, not over an empty nav-sized gap; on a
+     chat, just above the composer (`--toast-floor`, set by ChatInputArea).
+
+   The lift above the nav is the `translate` property, apart from the
+   `transform` that runs the show/hide motion, so the two animate on their own.
+   It uses the nav's own slide (0.26s, same curve; BottomNav.module.css): when
+   scrolling hides or brings back the nav (`data-chrome-hidden`) while a toast
+   is up, the toast travels with it rather than jumping. It moves a shorter
+   distance than the nav, so it never overlaps it on the way. */
 @media (max-width: 768px) {
   .custom-toast {
     left: 50%;
     width: calc(100vw - 24px);
-    bottom: calc(var(--bottom-nav-height) + var(--bottom-nav-gap) + env(safe-area-inset-bottom, 0px) + 12px);
+    bottom: max(
+      calc(env(safe-area-inset-bottom, 0px) + 12px),
+      calc(var(--toast-floor, 0px) + 8px)
+    );
     transform: translateX(-50%) translateY(24px);
+    translate: 0 0;
+    transition: opacity 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+                transform 0.42s cubic-bezier(0.22, 1, 0.36, 1),
+                translate 0.26s cubic-bezier(0.22, 0.9, 0.3, 1);
+  }
+  :root[data-bottom-nav-shown]:not([data-chrome-hidden]) .custom-toast:not(.custom-toast-top) {
+    translate: 0 calc(-1 * (var(--bottom-nav-height) + var(--bottom-nav-gap)));
   }
   .custom-toast.custom-toast-top {
     top: max(1rem, env(safe-area-inset-top, 0px));

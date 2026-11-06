@@ -59,7 +59,10 @@
   .toast {
     left: 50%;
     width: calc(100vw - 24px);
-    bottom: max(1.5rem, calc(4.5rem + env(safe-area-inset-bottom, 0px)));
+    /* Only used on pages without the bottom nav (Forgot password), so it sits
+       near the edge, as the app-wide toast does there. It used to leave room
+       for a nav that is not on these pages. */
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
     transform: translateX(-50%) translateY(24px);
   }
   .toast.visible {

@@ -77,6 +77,21 @@ export default function BottomNav({ hidden }) {
   const isChatOpen = isMessageChatOpen || isInboxChatOpen;
   const isHidden = hidden || isChatOpen;
 
+  /*
+   * Whether the bar is on screen, for whatever sits above it (toasts, see
+   * `.custom-toast` in global.css). Absent when the bar is hidden on this page
+   * or not mounted at all (pages outside the dashboard, ones that remove it),
+   * so a toast then sits near the bottom edge instead of over an empty gap.
+   * Scrolling it away is a separate flag (`data-chrome-hidden`). A layout
+   * effect, so the flag is right before the page's first paint.
+   */
+  useLayoutEffect(() => {
+    if (isHidden) return undefined;
+    const root = document.documentElement;
+    root.setAttribute('data-bottom-nav-shown', '');
+    return () => root.removeAttribute('data-bottom-nav-shown');
+  }, [isHidden]);
+
   return (
     // `data-bars-ignore`: this bar paints its own strip under the phone's
     // navigation bar, so it is not what that bar has to continue. When it

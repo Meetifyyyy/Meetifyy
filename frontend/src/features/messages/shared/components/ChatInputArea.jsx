@@ -149,6 +149,28 @@ export default function ChatInputArea({
     return () => observer.disconnect();
   }, [replyingTo]);
 
+  /*
+   * The composer's height, for toasts: on a chat there is no bottom nav, and a
+   * toast at the bottom edge would cover the input. It sits just above the
+   * composer instead (`--toast-floor`, see `.custom-toast` in global.css).
+   */
+  // Callback ref: both shells (the composer, and the "can't send" notice)
+  // publish their height, whichever is on screen.
+  const [wrapEl, wrapRef] = useState(null);
+  useLayoutEffect(() => {
+    const wrap = wrapEl;
+    if (!wrap) return undefined;
+    const root = document.documentElement;
+    const measure = () => root.style.setProperty('--toast-floor', `${Math.ceil(wrap.getBoundingClientRect().height)}px`);
+    measure();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    observer?.observe(wrap);
+    return () => {
+      observer?.disconnect();
+      root.style.removeProperty('--toast-floor');
+    };
+  }, [wrapEl]);
+
   const hasText = !!(typeof inputValue === 'string' ? inputValue : (inputValue?.text || '')).trim();
 
   const {
@@ -257,7 +279,7 @@ export default function ChatInputArea({
     // in, no Enter to intercept, no attach/emoji/GIF/mic button, and no
     // contenteditable to paste or drop media onto.
     return (
-      <div className={styles.msgChatInputWrap}>
+      <div ref={wrapRef} className={styles.msgChatInputWrap}>
         <div className={styles.msgBlockedInputOverlay} role="status">
           <span>
             {disabledReason
@@ -276,6 +298,7 @@ export default function ChatInputArea({
        this composer rises with the keyboard by itself, so the app-wide "keep
        the focused field visible" pass (keyboardFocus) leaves it alone. */
     <div
+      ref={wrapRef}
       className={styles.msgChatInputWrap}
       data-keyboard-dock={keyboardDock ? '' : undefined}
       style={replyBarHeight > 0 ? { '--reply-bar-h': `${replyBarHeight}px` } : undefined}

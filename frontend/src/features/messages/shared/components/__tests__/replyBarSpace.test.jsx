@@ -35,7 +35,7 @@ beforeEach(() => {
   observers = [];
   globalThis.ResizeObserver = class {
     constructor(cb) { this.cb = cb; observers.push(this); }
-    observe() {}
+    observe(el) { this.target = el; }
     unobserve() {}
     disconnect() { observers = observers.filter((o) => o !== this); }
   };
@@ -83,7 +83,17 @@ describe('the composer reserves room for the reply bar', () => {
     expect(reserved(container)).toBe('58px');
     rerender(<ChatInputArea conversation={chat} onSend={() => {}} replyingTo={null} onCancelReply={() => {}} />);
     expect(reserved(container)).toBe('');
-    expect(observers).toHaveLength(0); // and stops watching a bar that is gone
+    // and stops watching a bar that is gone (the composer's own observer, for
+    // the toast floor, stays while the composer does)
+    const watchingBar = observers.filter((o) => /msgReplyPreview/.test(String(o.target?.className)));
+    expect(watchingBar).toHaveLength(0);
+  });
+
+  it('publishes its height for toasts while mounted, and clears it after', () => {
+    const { unmount } = render(<ChatInputArea conversation={chat} onSend={() => {}} />);
+    expect(document.documentElement.style.getPropertyValue('--toast-floor')).toBe('0px');
+    unmount();
+    expect(document.documentElement.style.getPropertyValue('--toast-floor')).toBe('');
   });
 
   it('names who is being replied to, in sentence case', () => {
