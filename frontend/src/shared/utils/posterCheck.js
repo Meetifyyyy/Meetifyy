@@ -24,9 +24,19 @@ const cacheKey = (url) => String(url).split('?')[0];
  * poster was downloaded twice in every session. Each poster is now checked
  * once per device. Only old uploads can be blank (the generator refuses flat
  * frames now), so the list stays small; it is capped all the same.
+ *
+ * A "fine" verdict is final: a real poster never turns black. A "blank" one
+ * is not: scripts/backfill-media-thumbnails.ts replaces black posters in
+ * place, and a device that kept "blank" forever hid the repaired poster for
+ * good. On the installed app that left an empty tile, since its WebView paints
+ * no first frame for a `preload="metadata"` video. So a blank verdict holds
+ * for BLANK_TTL_MS, then the poster is fetched again past the year-long HTTP
+ * cache and probed again. Verdicts saved before this (the value 1) carry no
+ * time and count as expired.
  */
 const STORAGE_KEY = 'meetifyy_poster_verdicts_v1';
-let stored = null; // Map<key, 0 | 1>, 1 = blank
+const BLANK_TTL_MS = 24 * 60 * 60 * 1000;
+let stored = null; // Map<key, 0 | checkedAt>: 0 = fine, a time = blank, checked then
 
 function loadStored() {
   if (stored) return stored;
@@ -34,20 +44,34 @@ function loadStored() {
   try {
     const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
     for (const [k, v] of Object.entries(raw ? JSON.parse(raw) : {})) {
-      if (v === 0 || v === 1) stored.set(k, v);
+      if (typeof v === 'number' && Number.isFinite(v) && v >= 0) stored.set(k, v);
     }
   } catch (_) { /* unavailable or corrupt: start empty */ }
   return stored;
 }
 
-function remember(key, blank) {
-  const map = loadStored();
-  map.delete(key);
-  map.set(key, blank ? 1 : 0);
-  while (map.size > MAX_RESULTS) map.delete(map.keys().next().value);
+function persist(map) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(Object.fromEntries(map)));
   } catch (_) { /* quota or disabled: memory only */ }
+}
+
+function remember(key, blank) {
+  const map = loadStored();
+  map.delete(key);
+  map.set(key, blank ? Date.now() : 0);
+  while (map.size > MAX_RESULTS) map.delete(map.keys().next().value);
+  persist(map);
+}
+
+/** A stored blank verdict still within its time (1 = legacy, so expired). */
+const blankStillHolds = (checkedAt) => checkedAt > 1 && Date.now() - checkedAt < BLANK_TTL_MS;
+
+/** Replace the HTTP-cached copy of `url` with the current object. */
+function refetchPastCache(url) {
+  if (typeof fetch !== 'function' || !/^https?:\/\//.test(url)) return Promise.resolve();
+  return fetch(url, { cache: 'reload', mode: 'no-cors', credentials: 'omit' })
+    .then(() => undefined, () => undefined);
 }
 
 export function isPosterBlank(url) {
@@ -58,12 +82,16 @@ export function isPosterBlank(url) {
   const known = results.get(key);
   if (known) return known;
   const verdict = loadStored().get(key);
-  if (verdict !== undefined) {
-    const answer = Promise.resolve(verdict === 1);
+  if (verdict === 0 || (verdict !== undefined && blankStillHolds(verdict))) {
+    const answer = Promise.resolve(verdict !== 0);
     results.set(key, answer);
     return answer;
   }
-  const probe = new Promise((resolve) => {
+  // Never checked, or found blank long enough ago that it may have been
+  // regenerated since: in that case the cached copy is the old black one, so
+  // refresh it first (the <img> then gets the new one too).
+  const ready = verdict === undefined ? Promise.resolve() : refetchPastCache(url);
+  const probe = ready.then(() => new Promise((resolve) => {
     if (typeof Image === 'undefined' || typeof document === 'undefined') { resolve(false); return; }
     const img = new Image();
     img.crossOrigin = 'anonymous';
@@ -77,7 +105,7 @@ export function isPosterBlank(url) {
     // may still find out. Never treated as blank.
     img.onerror = () => resolve(false);
     img.src = url;
-  });
+  }));
   results.set(key, probe);
   while (results.size > MAX_RESULTS) results.delete(results.keys().next().value);
   return probe;
@@ -96,7 +124,7 @@ export function isPosterBlank(url) {
  */
 export async function refreshBlankPosters() {
   const map = loadStored();
-  const blank = [...map].filter(([k, v]) => v === 1 && /^https?:\/\//.test(k)).map(([k]) => k);
+  const blank = [...map].filter(([k, v]) => v !== 0 && /^https?:\/\//.test(k)).map(([k]) => k);
   if (typeof fetch === 'function') {
     await Promise.allSettled(
       blank.map((url) => fetch(url, { cache: 'reload', mode: 'no-cors', credentials: 'omit' })),
