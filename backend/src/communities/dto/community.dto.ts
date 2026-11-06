@@ -5,18 +5,34 @@ import {
   IsBoolean,
   IsIn,
   IsUUID,
+  Matches,
 } from 'class-validator';
-import { COMMUNITY_DESCRIPTION_MAX } from '../community-limits';
+import { Transform } from 'class-transformer';
+import {
+  COMMUNITY_DESCRIPTION_MAX,
+  COMMUNITY_DESCRIPTION_MAX_LINE_BREAKS,
+} from '../community-limits';
+import { normalizeMultilineTransform } from '../../common/utils/multiline-text.util';
+
+/** Text with at most COMMUNITY_DESCRIPTION_MAX_LINE_BREAKS line breaks. */
+const MAX_LINE_BREAKS_PATTERN = new RegExp(
+  `^[^\\n]*(?:\\n[^\\n]*){0,${COMMUNITY_DESCRIPTION_MAX_LINE_BREAKS}}$`,
+);
 
 export class CreateCommunityDto {
   @IsString()
   @MaxLength(30)
   name!: string;
 
+  // Normalised before validation, so the length limit counts what is stored.
+  @Transform(normalizeMultilineTransform)
   @IsString()
   @IsOptional()
   @MaxLength(COMMUNITY_DESCRIPTION_MAX, {
     message: `description must be at most ${COMMUNITY_DESCRIPTION_MAX} characters`,
+  })
+  @Matches(MAX_LINE_BREAKS_PATTERN, {
+    message: `description can have at most ${COMMUNITY_DESCRIPTION_MAX_LINE_BREAKS} line breaks`,
   })
   description?: string;
 
@@ -57,10 +73,15 @@ export class UpdateCommunityDto {
   @MaxLength(30)
   name?: string;
 
+  // Normalised before validation, so the length limit counts what is stored.
+  @Transform(normalizeMultilineTransform)
   @IsString()
   @IsOptional()
   @MaxLength(COMMUNITY_DESCRIPTION_MAX, {
     message: `description must be at most ${COMMUNITY_DESCRIPTION_MAX} characters`,
+  })
+  @Matches(MAX_LINE_BREAKS_PATTERN, {
+    message: `description can have at most ${COMMUNITY_DESCRIPTION_MAX_LINE_BREAKS} line breaks`,
   })
   description?: string;
 

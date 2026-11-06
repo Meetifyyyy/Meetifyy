@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from 'react';
+import { normalizeMultilineText, toSummaryText } from '@shared/utils/communityText';
 import { isImageComplete } from '@shared/utils/imageReveal';
 
 /**
@@ -307,7 +308,7 @@ function HeroSection({ coverRef, comm, joined, joining, onToggleJoin, onCreatePo
 
               {(comm.description || comm.desc) && (
                 <p className={styles.heroDesc}>
-                  {comm.description || comm.desc}
+                  {toSummaryText(comm.description || comm.desc)}
                 </p>
               )}
 
@@ -494,7 +495,7 @@ function HeroSection({ coverRef, comm, joined, joining, onToggleJoin, onCreatePo
 
           <div className={styles.mobileHeroDescWrapper}>
             <p className={styles.mobileHeroDescLine}>
-              {comm.description || comm.desc}
+              {toSummaryText(comm.description || comm.desc)}
             </p>
           </div>
 
@@ -564,7 +565,7 @@ function AboutCard({ comm }) {
     <div className={styles.aboutCard}>
       <div>
         <h4 className={styles.sectionLabel}>About</h4>
-        <p className={styles.aboutDesc}>{comm.description || comm.desc}</p>
+        <p className={styles.aboutDesc}>{normalizeMultilineText(comm.description || comm.desc)}</p>
         <div className={styles.createdDateRow}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={styles.createdDateIcon}>
             <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />

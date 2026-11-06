@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { normalizeMultilineText } from '@shared/utils/communityText';
 import { createPortal } from 'react-dom';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
@@ -10,6 +11,7 @@ import { openVerificationModal } from '@shared/stores/verificationModalStore';
 import styles from './CreateCommunityModal.module.css';
 import {
   COMMUNITY_DESCRIPTION_MAX,
+  limitLineBreaks,
   isValidCommunityDescription,
 } from '@shared/constants/communityLimits';
 import { useCommunityActions } from '@shared/hooks/useCommunityActions';
@@ -209,7 +211,7 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
   const isNameValid = name.trim().length > 0 && nameProblem === null;
 
   const isDescValid = useMemo(() => {
-    return isValidCommunityDescription(desc);
+    return isValidCommunityDescription(normalizeMultilineText(desc));
   }, [desc]);
 
   const isStep2Valid = useMemo(() => {
@@ -427,8 +429,8 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
 
       const id = await addCommunity({
         name: name.trim(),
-        description: desc.trim(),
-        desc: desc.trim(),
+        description: normalizeMultilineText(desc),
+        desc: normalizeMultilineText(desc),
         avatarKey: finalAvatar,
         avatar: finalAvatar,
         color: gradient,
@@ -559,14 +561,14 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
                   <textarea
                     placeholder=" "
                     value={desc}
-                    onChange={(e) => setDesc(e.target.value)}
+                    onChange={(e) => setDesc(limitLineBreaks(e.target.value))}
                     rows={3}
                     maxLength={COMMUNITY_DESCRIPTION_MAX}
                     className={styles.textareaInput}
                   />
                   <label className={styles.textareaLabel}>Description</label>
                 </div>
-                <div className={styles.counterRow}>{desc.length}/{COMMUNITY_DESCRIPTION_MAX}</div>
+                <div className={styles.counterRow}>{normalizeMultilineText(desc).length}/{COMMUNITY_DESCRIPTION_MAX}</div>
               </div>
             </>
           )}

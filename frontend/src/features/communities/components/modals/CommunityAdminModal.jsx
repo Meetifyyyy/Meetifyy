@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { normalizeMultilineText } from '@shared/utils/communityText';
 import { createPortal } from 'react-dom';
 import { useCommunityActions } from '@shared/hooks/useCommunityActions';
 import { communitiesApi, getMediaUrl } from '@shared/api/apiClient';
@@ -16,7 +17,7 @@ import styles from './CommunityAdminModal.module.css';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
 import RowSkeleton from '@shared/components/skeletons/RowSkeleton';
-import { COMMUNITY_DESCRIPTION_MAX } from '@shared/constants/communityLimits';
+import { COMMUNITY_DESCRIPTION_MAX, limitLineBreaks } from '@shared/constants/communityLimits';
 
 export default function CommunityAdminModal({ community, onClose, onDeleteCommunity }) {
   // Back dismisses this dialog rather than navigating the page behind it.
@@ -57,7 +58,7 @@ export default function CommunityAdminModal({ community, onClose, onDeleteCommun
 
   // Details State
   const [name, setName] = useState(community?.name || '');
-  const [desc, setDesc] = useState(community?.description || community?.desc || '');
+  const [desc, setDesc] = useState(() => limitLineBreaks(normalizeMultilineText(community?.description || community?.desc || '')));
   const [avatar, setAvatar] = useState(community?.avatar || community?.avatarKey || '');
   const [coverImage, setCoverImage] = useState(community?.coverImage || community?.coverKey || community?.cover || '');
   
@@ -66,7 +67,7 @@ export default function CommunityAdminModal({ community, onClose, onDeleteCommun
   useEffect(() => {
     if (community) {
       setName(community.name || '');
-      setDesc(community.description || community.desc || '');
+      setDesc(limitLineBreaks(normalizeMultilineText(community.description || community.desc || '')));
       setAvatar(community.avatar || community.avatarKey || '');
       setCoverImage(community.coverImage || community.coverKey || community.cover || '');
 
@@ -85,7 +86,9 @@ export default function CommunityAdminModal({ community, onClose, onDeleteCommun
     try {
       await updateCommunity(community.id, {
         name: finalName,
-        description: desc,
+        // Same whitespace rules as the server, so the saved text is what the
+        // counter counted.
+        description: normalizeMultilineText(desc),
         avatarKey: avatar,
         coverKey: coverImage,
       });
@@ -250,12 +253,12 @@ export default function CommunityAdminModal({ community, onClose, onDeleteCommun
               <label style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--color-text-main)' }}>Description</label>
               <textarea 
                 value={desc} 
-                onChange={e => setDesc(e.target.value)} 
+                onChange={e => setDesc(limitLineBreaks(e.target.value))} 
                 maxLength={COMMUNITY_DESCRIPTION_MAX}
                 style={{ ...inputStyle, minHeight: '80px', resize: 'vertical' }} 
               />
               <div style={{ display: 'flex', justifyContent: 'flex-end', fontSize: '0.78rem', color: 'var(--color-text-muted)', marginTop: '-0.2rem' }}>
-                {desc.length} / {COMMUNITY_DESCRIPTION_MAX}
+                {normalizeMultilineText(desc).length} / {COMMUNITY_DESCRIPTION_MAX}
               </div>
             </div>
 

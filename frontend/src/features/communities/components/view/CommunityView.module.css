@@ -401,6 +401,7 @@
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  overflow-wrap: anywhere;
 }
 
 .heroCategories {
@@ -946,8 +947,10 @@
   color: var(--color-text-muted);
   line-height: 1.55;
   margin: 0;
-  word-break: break-word;
-  overflow-wrap: break-word;
+  /* The stored text keeps its line and paragraph breaks (normalised: no
+     space runs, at most one blank line). Long unbroken words wrap. */
+  white-space: pre-line;
+  overflow-wrap: anywhere;
 }
 
 /* ---------- Section Label ---------- */
@@ -2000,6 +2003,7 @@
     -webkit-box-orient: vertical;
     overflow: hidden;
     flex: 1;
+    overflow-wrap: anywhere;
   }
 
   .mobileHeroButtonsRow {

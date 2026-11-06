@@ -1,4 +1,5 @@
 import { detach } from '../common/utils/detach.util';
+import { normalizeMultilineText } from '../common/utils/multiline-text.util';
 import {
   Injectable,
   NotFoundException,
@@ -1773,7 +1774,12 @@ export class CommunitiesService implements OnModuleInit {
     // `desc`, `avatar` and `coverImage` were also read here as aliases. None is
     // on CreateCommunityDto, and the global ValidationPipe refuses unlisted
     // fields, so they could never arrive.
-    const descVal = data.description || undefined;
+    // The DTO already normalised it; repeated here for callers that skip the
+    // HTTP pipe (scripts, other services).
+    const descVal =
+      (typeof data.description === 'string'
+        ? normalizeMultilineText(data.description)
+        : '') || undefined;
 
     // Only images the creator uploaded (or shared platform defaults) may be
     // attached; another user's media key is refused.
@@ -1946,7 +1952,9 @@ export class CommunitiesService implements OnModuleInit {
     // description came back on the next load.
     if (data.description !== undefined) {
       const description =
-        typeof data.description === 'string' ? data.description.trim() : '';
+        typeof data.description === 'string'
+          ? normalizeMultilineText(data.description)
+          : '';
       updateData.description = description || null;
     }
     if (data.isPrivate !== undefined) {

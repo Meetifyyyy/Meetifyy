@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect, useRef, useCallback, memo } from 'react';
+import { toSummaryText } from '@shared/utils/communityText';
 import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { useUrlState } from '@shared/hooks/useUrlState';
 import { Search, Clock, X, RefreshCw, AlertCircle, ChevronLeft, Loader2, Users, Activity, Globe2, FileText } from '@shared/components/icons';
@@ -58,7 +59,8 @@ const CommunityRow = memo(function CommunityRow({ data, onOpen }) {
   const [imgError, setImgError] = useState(false);
   const avatar = data.avatarKey || data.avatar;
   const memberCount = data.memberCount || data.membersCount || data.members || 0;
-  const hasDescription = Boolean(data.description && data.description.trim() && data.description.toLowerCase() !== data.name?.toLowerCase());
+  const summary = toSummaryText(data.description);
+  const hasDescription = Boolean(summary && summary.toLowerCase() !== data.name?.toLowerCase());
 
   return (
     <div className={`${styles.resultItem} ${styles.resultCard}`} onClick={() => onOpen('community', data)}>
@@ -80,7 +82,7 @@ const CommunityRow = memo(function CommunityRow({ data, onOpen }) {
         </div>
         {hasDescription && (
           <span className={styles.feedDesc}>
-            {data.description}
+            {summary}
           </span>
         )}
         <span className={styles.feedSub}>
