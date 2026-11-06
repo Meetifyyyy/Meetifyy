@@ -1,12 +1,13 @@
 .btn {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 5.5rem;
-  height: 34px;
-  padding: 0 0.9rem;
+  height: 30px;
+  padding: 0 1rem;
   border-radius: var(--radius-full, 999px);
-  font-size: 0.85rem;
+  font-size: 0.84rem;
+  line-height: 1;
   font-weight: 600;
   white-space: nowrap;
   border: 1px solid transparent;
@@ -39,19 +40,13 @@
   color: var(--color-text-muted);
 }
 
-/* Phones: the pill stays visually small but the hit area reaches 44px. */
+/* Touch: the pill stays 30px, but its tap target reaches 44px through an
+   invisible extension above and below. It used to be `min-height: 44px` on the
+   pill itself, which made the button 44px tall on every phone. */
 @media (pointer: coarse) {
-  .btn {
-    min-height: 44px;
-  }
-}
-
-/* Large screens: sized to the compact community card. */
-@media (min-width: 769px) {
-  .btn {
-    min-width: 0;
-    height: 26px;
-    padding: 0 0.7rem;
-    font-size: 0.75rem;
+  .primary::after {
+    content: '';
+    position: absolute;
+    inset: -7px -4px;
   }
 }

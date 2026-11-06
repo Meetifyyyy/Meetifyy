@@ -8,6 +8,7 @@ import { isCommunityMember, isCommunityOwner } from '@shared/utils/community';
 import CommunityAvatar from './CommunityAvatar';
 import JoinAction from './JoinAction';
 import { memberLabel } from './communityMeta';
+import { toSummaryText } from '@shared/utils/communityText';
 import styles from './CommunityRow.module.css';
 
 const ROLE_LABEL = { OWNER: 'Owner', MODERATOR: 'Moderator' };
@@ -37,44 +38,43 @@ function CommunityRow({ community, from, showMembership = true, highlightOnHover
 
   return (
     <article className={highlightOnHover ? `${styles.row} ${styles.highlight}` : styles.row}>
-      <CommunityAvatar community={community} size={64} />
+      {/* Icon, then name over member count, then Join: one line. The name
+          gives way (ellipsis) before the button does. The description runs
+          under all three, across the card's full width. */}
+      <div className={styles.head}>
+        <CommunityAvatar community={community} size={52} />
 
-      <div className={styles.body}>
-        {/* Name, then the Join control on the same line: the name gives way
-            (ellipsis) before the button does. Members and the description sit
-            below, so neither squeezes the name. */}
-        <div className={styles.titleLine}>
-          <Link
-            to={`/communities/${community.id}`}
-            state={from ? { from } : undefined}
-            className={styles.name}
-            onClick={(e) => openFromLink(e, `/communities/${community.id}`, from ? { state: { from } } : undefined)}
-          >
-            {community.name}
-          </Link>
-          {community.isPrivate && (
-            <span className={styles.privateTag}>
-              <Lock size={12} strokeWidth={2} aria-hidden="true" />
-              Private
-            </span>
-          )}
-          {showAction && (
-            <div className={styles.action}>
-              <JoinAction community={community} />
-            </div>
-          )}
+        <div className={styles.titles}>
+          <div className={styles.titleLine}>
+            <Link
+              to={`/communities/${community.id}`}
+              state={from ? { from } : undefined}
+              className={styles.name}
+              onClick={(e) => openFromLink(e, `/communities/${community.id}`, from ? { state: { from } } : undefined)}
+            >
+              {community.name}
+            </Link>
+            {community.isPrivate && (
+              <span className={styles.privateTag}>
+                <Lock size={12} strokeWidth={2} aria-hidden="true" />
+                Private
+              </span>
+            )}
+          </div>
+          <p className={styles.meta}>
+            <span>{memberLabel(community)}</span>
+            {role && <span>{role}</span>}
+          </p>
         </div>
 
-        <span className={styles.members}>{memberLabel(community)}</span>
-
-        {description && <p className={styles.description}>{description}</p>}
-
-        {role && (
-          <p className={styles.meta}>
-            <span>{role}</span>
-          </p>
+        {showAction && (
+          <div className={styles.action}>
+            <JoinAction community={community} />
+          </div>
         )}
       </div>
+
+      {description && <p className={styles.description}>{toSummaryText(description)}</p>}
     </article>
   );
 }

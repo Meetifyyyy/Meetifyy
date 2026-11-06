@@ -1,10 +1,15 @@
+/*
+ * A community card: icon, name over member count, Join, on one line; the
+ * description under all three across the full width, two lines at most.
+ * The member count uses the post card's @handle size; the name is a step
+ * larger than the post card's author name.
+ */
 .row {
   position: relative;
   display: flex;
-  /* The icon lines up with the top of the text, not the card's middle. */
-  align-items: flex-start;
-  gap: 0.875rem;
-  padding: 0.875rem 1rem;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem 0.875rem;
   border-radius: var(--radius-md);
   transition: background var(--transition-fast, 0.15s ease);
 }
@@ -17,25 +22,33 @@
   background: var(--color-bg-soft);
 }
 
-.body {
+.head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.titles {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.1rem;
+  gap: 1px;
 }
 
 .titleLine {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.4rem;
   min-width: 0;
 }
 
+/* A step above the post card's author name, so the community's name leads the card. */
 .name {
-  flex: 1 1 auto;
   min-width: 0;
-  font-size: 1.1rem;
+  font-family: var(--font-family-display);
+  font-size: 1.0625rem;
   line-height: 1.3;
   font-weight: 600;
   color: var(--color-text-main);
@@ -46,7 +59,7 @@
   outline: none;
 }
 
-/* The whole row is the link's target. */
+/* The whole card is the link's target. */
 .name::after {
   content: '';
   position: absolute;
@@ -57,15 +70,6 @@
 .name:focus-visible::after {
   box-shadow: 0 0 0 2px var(--color-primary);
 }
-
-.members {
-  flex-shrink: 0;
-  font-size: 0.74rem;
-  font-weight: 500;
-  color: var(--color-text-light, var(--color-text-muted));
-  white-space: nowrap;
-}
-
 
 .privateTag {
   display: inline-flex;
@@ -82,10 +86,41 @@
   line-height: 1.4;
 }
 
+/* Post card @handle (.postTime): members, and the role when shown. */
+.meta {
+  margin: 0;
+  display: flex;
+  min-width: 0;
+  column-gap: 0.3rem;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.meta span + span::before {
+  content: '·';
+  margin-right: 0.3rem;
+}
+
+/* Above the stretched link, so the button takes its own clicks. */
+.action {
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+/* Two lines at most. Paragraph breaks are folded into spaces for this
+   summary (a blank line would spend one of the two lines on nothing); the
+   community page shows them. A long unbroken word wraps rather than
+   overflowing the card. */
 .description {
   margin: 0;
   font-size: 0.875rem;
-  line-height: 1.45;
+  line-height: 1.4;
   color: var(--color-text-muted);
   overflow-wrap: anywhere;
   display: -webkit-box;
@@ -94,90 +129,24 @@
   overflow: hidden;
 }
 
-.meta {
-  margin: 0.1rem 0 0;
-  display: flex;
-  flex-wrap: wrap;
-  column-gap: 0.4rem;
-  font-size: 0.8rem;
-  color: var(--color-text-light, var(--color-text-muted));
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.meta span + span::before {
-  content: '·';
-  margin-right: 0.4rem;
-}
-
-/* Above the stretched link, so the button takes its own clicks. On the
-   name's line, pushed to its end. */
-.action {
-  position: relative;
-  z-index: 1;
-  flex-shrink: 0;
-  margin-left: auto;
-  /* The pill (34px, 44px hit area on touch) is taller than the name. Without
-     this it set the line's height, so a row with a Join button had a wider gap
-     between name and members than one without. It now overhangs the line
-     evenly, into the card's padding, and the name sets the height. */
-  margin-block: -10px;
-}
-
-@media (max-width: 480px) {
-  .row {
-    padding: 0.75rem;
-    gap: 0.75rem;
-  }
-}
-
-/* Campus surfaces only (the `highlightOnHover` prop). At rest the Campus cards
-   carry the confession card's lift; dark mode stays flat like confessions.
-   Hover is the plain whole-card highlight every row has (`.row:hover` above):
-   no lift, no blue border, no glow — the same as an activity card. */
+/* Campus surfaces only (the `highlightOnHover` prop). The same flat card as
+   the Communities page: the shared border (CommunityList's `.list > *`) and
+   no drop shadow. Hover is the plain whole-card highlight every row has
+   (`.row:hover` above). */
 .row.highlight {
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px -16px rgba(15, 23, 42, 0.18);
+  box-shadow: none;
   transition: background-color 0.15s ease;
 }
 
-[data-theme='dark'] .row.highlight {
-  box-shadow: none;
-}
-
-/* Large screens: a more compact card. The phone layout (one full-width card
-   per row) keeps its size; here, with two or more side by side, the 64px icon,
-   1.1rem name and roomy padding made each card larger than its content. The
-   icon's size is inline (CommunityAvatar), so this overrides it. */
+/* Large screens: several cards side by side, so a slightly smaller icon. */
 @media (min-width: 769px) {
-  .row {
-    gap: 0.7rem;
-    padding: 0.625rem 0.75rem;
-  }
-
   .row [data-community-avatar] {
-    width: 48px !important;
-    height: 48px !important;
-    font-size: 20px !important;
-  }
-
-  .body {
-    gap: 0.1rem;
-  }
-
-  .name {
-    font-size: 0.95rem;
-  }
-
-  .members {
-    font-size: 0.68rem;
-  }
-
-  .meta {
-    font-size: 0.72rem;
+    width: 44px !important;
+    height: 44px !important;
+    font-size: 18px !important;
   }
 
   .description {
-    font-size: 0.78rem;
-    line-height: 1.35;
+    font-size: 0.8125rem;
   }
 }
