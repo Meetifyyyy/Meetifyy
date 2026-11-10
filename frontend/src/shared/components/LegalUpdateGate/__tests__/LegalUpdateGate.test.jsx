@@ -229,7 +229,7 @@ describe('LegalUpdateGate', { timeout: 20_000 }, () => {
     const desc = document.getElementById('legal-update-desc');
     fireEvent.click(desc.querySelector('button'));
     expect(screen.getByText('Body of the terms.')).toBeTruthy();
-    expect(screen.queryByText(/Welcome to Meetifyy/)).toBeNull();
+    expect(screen.queryByText(/These Terms govern your access/)).toBeNull();
   });
 
   it('falls back to the bundled website text only when the API body is empty', async () => {
@@ -238,7 +238,7 @@ describe('LegalUpdateGate', { timeout: 20_000 }, () => {
     await dialog();
     const desc = document.getElementById('legal-update-desc');
     fireEvent.click(desc.querySelector('button'));
-    expect(await screen.findByText(/Welcome to Meetifyy/)).toBeTruthy();
+    expect(await screen.findByText(/These Terms govern your access/)).toBeTruthy();
   });
 
   it('lists no document cards: the subtitle links are the way in', async () => {
