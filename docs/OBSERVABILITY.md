@@ -1,19 +1,99 @@
-# Sentry
+# Observability
+
+Error and performance monitoring (Sentry), logs, rate-limit telemetry, and
+what none of them can see.
+
+Related: [INFRASTRUCTURE.md](INFRASTRUCTURE.md), [BACKEND_AND_API.md](BACKEND_AND_API.md),
+[MOBILE_APP.md](MOBILE_APP.md).
+
+---
+
+## What is monitored, and the gap
+
+- **Sentry** — errors and traces from the website, the Android app and the API
+  (below). Off whenever no DSN is set.
+- **Container logs** — Azure Log Analytics (`ContainerAppConsoleLogs_CL`).
+  `az containerapp logs show` caps `--tail` at **300**; use Log Analytics for
+  anything historical.
+- **Admin analytics** (`/admin/analytics/*`): `infrastructure` (live health
+  and usage tiles), `error-logs` (the `ErrorLog` table) and `slow-requests`
+  (sampled slow requests). Capture defaults are in
+  [BACKEND_AND_API.md](BACKEND_AND_API.md#8-error-handling).
+
+### Admin infrastructure panel
+
+The admin dashboard probes upstreams (timeout `ANALYTICS_PROBE_TIMEOUT_MS`,
+default 4000 ms) and reports PostgreSQL, Redis, Cloudflare R2 (storage and
+Class A/B operations; listing capped by `ANALYTICS_R2_MAX_LIST_PAGES`, default
+20), email (Resend sends counted by the API itself; the SMTP relay labelled
+**Brevo** with Brevo's own daily requests/delivered and remaining credits when
+`BREVO_API_KEY` is set), Vercel usage and plan limits, and Azure (Container App
+revision/replicas and subscription spend, cached `AZURE_SPEND_TTL_MS`,
+default 15 min, because Cost Management rate-limits).
+
+These tiles need optional **read-only** credentials, set per environment only
+(dev and prod are separate tenants, so the other's values cannot resolve):
+`CLOUDFLARE_API_TOKEN` (+ `CLOUDFLARE_ACCOUNT_ID`, default `R2_ACCOUNT_ID`),
+`VERCEL_TOKEN` + `VERCEL_TEAM_ID`, `AZURE_TENANT_ID` / `AZURE_CLIENT_ID` /
+`AZURE_CLIENT_SECRET` / `AZURE_SUBSCRIPTION_ID` / `AZURE_RESOURCE_GROUP` /
+`AZURE_CONTAINER_APP`, `BREVO_API_KEY`. Blank means the tile shows "not
+configured"; nothing else is affected. The backend never mutates
+infrastructure through them. Route prefix: `ANALYTICS_ADMIN_ROUTE_PREFIX`
+(default `/admin`).
+- **Uptime — not covered.** Sentry sees errors from inside the apps only. An
+  outage where requests never reach the API (as on 2026-10-06, when the dev
+  environment's public endpoint refused connections for ~3 hours) produces no
+  Sentry event: that needs an uptime monitor on `/health` (Sentry Uptime or an
+  Azure availability test). Nothing pages anyone today.
+
+### Rate-limit rejections
+
+Every rejection is logged as `ratelimit.rejected` with a hashed `subject`
+([BACKEND_AND_API.md](BACKEND_AND_API.md#observability)). Log Analytics
+(Portal → workspace → Logs):
+
+```kql
+ContainerAppConsoleLogs_CL
+| where TimeGenerated > ago(7d)
+| where ContainerAppName_s == "meetifyy-api"
+| where Log_s has "ratelimit.rejected"
+| extend policy  = extract('"policy":"([^"]+)"', 1, Log_s)
+| extend subject = extract('"subject":"([^"]+)"', 1, Log_s)
+| summarize rejections = count(), people = dcount(subject) by policy
+| extend perPerson = round(todouble(rejections) / people, 1)
+| order by rejections desc
+```
+
+| `perPerson` | Meaning | Action |
+| --- | --- | --- |
+| ~1–2 | many people, once each | **too tight — raise it** |
+| 10+ | few people, hammering | working correctly |
+
+`ratelimit.degraded` at ERROR means limits fell back to per-instance counting
+(Redis unavailable). It should never appear.
+
+---
+
+## Sentry
 
 Error and performance monitoring for the three Meetifyy applications. Every
 piece is environment-controlled, nothing is hardcoded, and a missing or empty
 configuration simply leaves Sentry off: every app starts and runs normally
 without it.
 
-## Structure
+### Structure
 
 One Sentry **project per application**; **environments** separate development
 from production inside each project; every build reports a **release**.
 
 Development lives in the Sentry org **`meetifyy-dev`** (US region), projects
-`meetifyy-api`, `meetifyy-web`, `meetifyy-android`. Production should get its
-own org (like the separate Azure, Cloudflare and Supabase accounts), with the
-same three project names and its own DSNs and auth token.
+`meetifyy-api`, `meetifyy-web`, `meetifyy-android`. Production has its own org,
+**`meetifyy`** (like the separate Azure, Cloudflare and Supabase accounts), with
+the same three project names and its own DSNs and auth token. As of
+2026-10-27 the production org was not connected to the Sentry connector used
+for audits, so no production issue had been inspected that way; whether the
+production auth token and Vercel variables are fully set should be checked in
+the deployments, not assumed.
 
 | Application | Sentry project (suggested slug) | Environments | Release |
 |---|---|---|---|
@@ -25,7 +105,7 @@ The website is **not** Next.js. It is Vite 6 + React 18, so it uses
 `@sentry/react`; the app uses `@sentry/capacitor` (which wraps `@sentry/react`
 and adds the native Android SDK); the API uses `@sentry/nestjs`.
 
-## How development and production stay apart
+### How development and production stay apart
 
 - **The environment is never a free setting.** Each app tags events with the
   environment it already uses for everything else: `VITE_APP_ENV` (website,
@@ -47,9 +127,9 @@ and adds the native Android SDK); the API uses `@sentry/nestjs`.
   Environments, exactly like the Azure credentials, so the dev workflow can
   only ever write to the dev configuration.
 
-## Environment variables
+### Environment variables
 
-### API (`backend/.env*`, Container App env/secrets)
+#### API (`backend/.env*`, Container App env/secrets)
 
 | Variable | Purpose |
 |---|---|
@@ -62,7 +142,7 @@ and adds the native Android SDK); the API uses `@sentry/nestjs`.
 | `SENTRY_PROFILES_SAMPLE_RATE` | Default 0.05 production / 1.0 elsewhere. |
 | `SENTRY_REPORT_LOCAL` | `true` lets a local run report. Default false outside production: a run with no `GIT_COMMIT_SHA` (a laptop) stays off, so it cannot file issues into the deployed development API's project. |
 
-### Website and app (`frontend/.env*`, Vercel project env vars)
+#### Website and app (`frontend/.env*`, Vercel project env vars)
 
 | Variable | Purpose |
 |---|---|
@@ -85,7 +165,7 @@ never exposes them to client code:
 | `SENTRY_PROJECT_ANDROID` | Shell, for APK builds: `meetifyy-android`. |
 | `SENTRY_PROJECT_API` | GitHub Environment variable: `meetifyy-api`. |
 
-## Website
+### Website
 
 - `src/platform/web/sentryBoot.js` runs first in `src/main.jsx`. It decides,
   synchronously and cheaply, whether Sentry runs (`shared/lib/sentryOptions.js`).
@@ -131,7 +211,7 @@ never exposes them to client code:
   on purpose, so the rate stays visible. Vercel's Skew Protection would keep
   the old chunks reachable instead, and is a plan-level setting.
 
-## Android app
+### Android app
 
 - Two halves, like the website's. `src/platform/capacitor/sentryBoot.js` runs
   first in `src/mobile/main.jsx` and is tiny: it decides whether Sentry is on,
@@ -185,7 +265,7 @@ never exposes them to client code:
   `scripts/build-apk.mjs` prints which org/project it will upload to.
 - Session Replay is not enabled anywhere (both rates are 0).
 
-## API
+### API
 
 - `src/instrument.ts` is imported as the first line of `main.ts`, before
   express, Prisma or any module loads, which is what lets request and database
@@ -267,7 +347,7 @@ never exposes them to client code:
   deploy workflow copies `dist/` out of the built image and uploads it, so
   stack traces resolve to the original `.ts` lines.
 
-## Privacy
+### Privacy
 
 Enforced in code, in two layers, on every platform:
 
@@ -292,14 +372,14 @@ The user is set on sign-in and cleared synchronously on sign-out
 account's id never follows the next session. Before sign-in, the native SDK
 uses its own random installation id.
 
-## Breadcrumbs
+### Breadcrumbs
 
 What happened before an error, without content: navigation (from/to paths),
 each failed API call (`POST /api/posts/:id/like → 500`, from the transport's
 `onApiFailure` hook), sign-in/sign-out, and on Android app lifecycle,
 connectivity and system events.
 
-## Releases and CI
+### Releases and CI
 
 - **API**: `deploy-dev.yml` / `deploy-prod.yml` create `meetifyy-api@<sha>`,
   associate the commit, upload the image's source maps, and after the health
@@ -317,7 +397,7 @@ connectivity and system events.
 release, or the project's Releases page, which lists each deploy per
 environment.
 
-## Trace propagation
+### Trace propagation
 
 The API accepts `sentry-trace` and `baggage` (CORS `allowedHeaders` in
 `main.ts`). Clients only send them with `VITE_SENTRY_PROPAGATE_TRACES=true`,
@@ -325,7 +405,7 @@ which must not be switched on until that API is deployed in the environment:
 a preflight that rejects a header fails the whole request, and Vercel ships the
 website minutes before the API deploy completes.
 
-## Quota
+### Quota
 
 Spans (traces) and errors are metered separately. On 2026-10-27 the
 development org ran out of span quota (`span_usage_exceeded`): from then on
@@ -337,7 +417,7 @@ Sentry connector's `find_dropped_events`, or Stats in Sentry. The causes were
 background noise, all fixed in the API: the database keep-alive, orphaned
 node-postgres spans, BullMQ's Redis polling and the 10-second sweep (see API).
 
-## Disabling locally
+### Disabling locally
 
 Leave the DSN empty (the default in every `.env.example`), or set
 `SENTRY_ENABLED=false` / `VITE_SENTRY_ENABLED=false`. Dev builds log one line,
@@ -348,7 +428,7 @@ Local runs are already off by default even with a DSN: the API needs
 Vite's dev server need `VITE_SENTRY_REPORT_DEV_SERVER=true`. Set the flag only
 for the run that is checking Sentry, against the development DSN.
 
-## Verifying
+### Verifying
 
 - **API**: deploy, then trigger a 5xx; or locally, run against the
   development DSN only. The issue shows `environment`, `release`, tags

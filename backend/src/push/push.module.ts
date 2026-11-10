@@ -14,7 +14,7 @@ import { PUSH_QUEUE } from './push.types';
 /**
  * Push notifications. Depends on nothing but Prisma, Redis and its queue, so
  * NotificationsModule, CommunitiesModule and the realtime gateway can import
- * it without a cycle. See docs/push-notifications.md.
+ * it without a cycle. See docs/FEATURES_AND_FLOWS.md.
  */
 @Module({
   imports: [

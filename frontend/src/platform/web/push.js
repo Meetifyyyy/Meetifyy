@@ -2,7 +2,7 @@ import { parseIntentFromPath } from '../../core/navigation/intents';
 
 /**
  * Web Push, as a `PushService` (platform/contracts.ts). See
- * docs/push-notifications.md.
+ * docs/FEATURES_AND_FLOWS.md.
  *
  * Standards only: the Push API through the site's own service worker
  * (src/sw.js) and a VAPID key from the API. No Firebase on the web.

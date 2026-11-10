@@ -32,7 +32,7 @@ import type { RateLimitService } from '../common/rate-limit/rate-limit.service';
  * would in Supabase — including the direct `PUT /auth/v1/user` bypass.
  *
  * Needs a disposable database with the migrations applied and a
- * Supabase-shaped `auth.users` (see docs/email-change-security.md), named in
+ * Supabase-shaped `auth.users` (see docs/SECURITY.md), named in
  * BOTH `DATABASE_URL` and `EMAIL_SECURITY_TEST_DATABASE_URL`, on localhost.
  * Skipped otherwise, so it can never run against a shared database.
  */

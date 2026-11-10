@@ -28,7 +28,7 @@
 #   secret   SENTRY_AUTH_TOKEN   — org auth token with project:releases scope
 #   variable SENTRY_ORG          — Sentry organisation slug
 #   variable SENTRY_PROJECT_API  — the API project's slug (e.g. meetifyy-api)
-# Set them on the `development` environment only. See docs/sentry.md.
+# Set them on the `development` environment only. See docs/OBSERVABILITY.md.
 #
 # Database credentials are stored as Container App secrets on the DEV Container
 # App — they are NEVER stored as GitHub secrets. The migration job reads them

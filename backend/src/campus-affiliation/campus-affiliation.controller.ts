@@ -24,7 +24,7 @@ import {
 /**
  * The Campus page's college-email verification. Deliberately NOT selfie-gated:
  * verifying a college email is how an account gets campus access in the first
- * place. See docs/college-affiliation.md.
+ * place. See docs/FEATURES_AND_FLOWS.md.
  */
 @UseGuards(JwtGuard)
 @Controller('api/campus/affiliation')

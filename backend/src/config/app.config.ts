@@ -198,7 +198,7 @@ export const appConfigValues = {
     /**
      * Sentry. Off unless a DSN is configured; SENTRY_ENABLED=false turns it off
      * even with one (local debugging against a real project, an incident).
-     * See src/instrument.ts and docs/sentry.md.
+     * See src/instrument.ts and docs/OBSERVABILITY.md.
      */
     sentryDsn: str('SENTRY_DSN'),
     sentryEnabled: bool('SENTRY_ENABLED', { default: 'true' }),

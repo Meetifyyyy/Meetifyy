@@ -147,7 +147,7 @@ export default defineConfig(({ mode }) => {
 
   // Sentry release: meetifyy-web@<commit>, the same commit /version.json names.
   // Source maps are uploaded under it when the build has Sentry credentials
-  // (see sentrySourceMaps and docs/sentry.md).
+  // (see sentrySourceMaps and docs/OBSERVABILITY.md).
   const commitSha = resolveCommitSha();
   const sentryRelease = commitSha ? `meetifyy-web@${commitSha}` : '';
   const sentryMaps = sentrySourceMaps({

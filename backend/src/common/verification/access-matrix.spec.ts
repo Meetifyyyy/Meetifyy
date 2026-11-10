@@ -177,7 +177,7 @@ describe('verification access matrix', () => {
 /**
  * Which routes carry the selfie gate (`@VerifiedOnly()`).
  *
- * Policy, not plumbing: docs/college-affiliation.md narrowed the gate to
+ * Policy, not plumbing: docs/FEATURES_AND_FLOWS.md narrowed the gate to
  * messaging, creating posts / communities / activities and Instant Match.
  * Everything else a signed-in account does (likes, comments, follows, joins,
  * bookmarks, community and activity management, discussion posts) is open,

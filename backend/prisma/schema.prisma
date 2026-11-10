@@ -222,7 +222,7 @@ model User {
   profilePromptLaterAt DateTime?
   profilePromptLaterSessionId String?
   // The verified college email. `collegeId` / `collegeEmail` above mirror it;
-  // only CampusAffiliationService writes either. See docs/college-affiliation.md.
+  // only CampusAffiliationService writes either. See docs/FEATURES_AND_FLOWS.md.
   collegeAffiliation         CollegeAffiliation?
   confessionProfile          ConfessionProfile?
   activityBookmarks          ActivityBookmark[]
@@ -323,7 +323,7 @@ enum CollegeAffiliationMethod {
 }
 
 /// A user's verified college email, and the only thing that authorizes campus
-/// features. See docs/college-affiliation.md.
+/// features. See docs/FEATURES_AND_FLOWS.md.
 model CollegeAffiliation {
   id              String                   @id @default(uuid())
   userId          String                   @unique
@@ -2189,7 +2189,7 @@ enum PushPlatform {
 }
 
 /// One push registration: a browser's Web Push subscription or an installed
-/// app's FCM token. See docs/push-notifications.md.
+/// app's FCM token. See docs/FEATURES_AND_FLOWS.md.
 ///
 /// Keyed to the LOGIN (UserSession.familyId), not to a session row: refresh
 /// rotates the row on every use, the family survives it. Revoking a login

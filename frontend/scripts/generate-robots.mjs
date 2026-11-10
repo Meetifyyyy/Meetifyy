@@ -15,8 +15,8 @@
  * This is a discoverability control, NOT an access control. robots.txt is a
  * request that well-behaved crawlers honour and nothing more: it stops the dev
  * site being indexed, it does not stop anyone reading it. Actual protection for
- * the development deployment is Vercel Deployment Protection (see
- * docs/ENVIRONMENT_ISOLATION.md section 2).
+ * the development deployment is Cloudflare Access (see
+ * docs/INFRASTRUCTURE.md, "Access control on hosts").
  *
  * Note also that Disallow and noindex do NOT stack. A URL that is disallowed
  * here can never be fetched, so a crawler never sees the noindex on it, and a
@@ -113,7 +113,7 @@ function nonProductionRobots() {
     '#',
     '# That is not a hypothetical here. Every TLS certificate is published to',
     '# Certificate Transparency logs, so this hostname is public knowledge the',
-    '# moment it is issued (see docs/operations.md, "Security posture"). The URL',
+    '# moment it is issued (see docs/INFRASTRUCTURE.md, "Access control on hosts"). The URL',
     '# is discoverable whatever this file says; what this file controls is',
     '# whether a crawler can read the directive that gets it removed.',
     '#',

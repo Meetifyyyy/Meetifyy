@@ -14,7 +14,7 @@ import type { Prisma } from '@prisma/client';
 import { CreateCommunityDto } from './dto/community.dto';
 
 /**
- * Joining a community (docs/college-affiliation.md, "Selfie gate").
+ * Joining a community (docs/FEATURES_AND_FLOWS.md, "Verification gates").
  *
  * Joining, requesting to join and approving a request are NOT selfie-gated:
  * only creating a community is. A campus community instead requires the

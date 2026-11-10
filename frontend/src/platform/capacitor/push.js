@@ -4,7 +4,7 @@ import { parseIntent } from '../../core/navigation/intents';
 
 /**
  * Native push on Android (FCM through @capacitor/push-notifications), as a
- * `PushService` (platform/contracts.ts). See docs/push-notifications.md.
+ * `PushService` (platform/contracts.ts). See docs/FEATURES_AND_FLOWS.md.
  *
  * Never imported statically by shared code: `shared/push/pushPlatform` loads
  * this with `import()` under IS_MOBILE_BUILD, because importing a Capacitor

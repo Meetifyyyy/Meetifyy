@@ -38,7 +38,7 @@ RUN npm run build
 # Stamp each compiled file and its source map with a matching Sentry debug ID.
 # Offline and credential-free: the maps themselves are uploaded by the deploy
 # workflow (only when SENTRY_AUTH_TOKEN is configured), so stack traces in
-# Sentry resolve to the original .ts lines. See docs/sentry.md.
+# Sentry resolve to the original .ts lines. See docs/OBSERVABILITY.md.
 RUN npx sentry-cli sourcemaps inject dist
 
 # ─────────────────────────────────────────────────────────────────────────────

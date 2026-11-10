@@ -747,7 +747,7 @@ export function createEndpoints({
   };
 
   /**
-   * Push notifications (docs/push-notifications.md). The server takes the
+   * Push notifications (docs/FEATURES_AND_FLOWS.md). The server takes the
    * caller from the session; nothing here names a user.
    */
   const pushApi = {

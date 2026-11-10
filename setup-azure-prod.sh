@@ -399,8 +399,8 @@ echo "==> 4b. Provisioning Redis container ($REDIS_NAME) with persistent storage
 # a restart. Rather than pay for Standard, this container is hardened against
 # the two failure modes we can control ourselves.
 #
-# Redis here is not a cache. It holds five BullMQ queues - email, notifications,
-# moderation, account-deletion, instant-match - plus admin sessions and
+# Redis here is not a cache. It holds six BullMQ queues - email, notifications,
+# push, account-deletion, instant-match, ranking - plus admin sessions and
 # rate-limit counters. Losing it silently drops OTP emails users are waiting on
 # and deletion jobs the app has already confirmed.
 #

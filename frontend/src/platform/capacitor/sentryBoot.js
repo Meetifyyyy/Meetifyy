@@ -24,7 +24,7 @@
  * called: by mobile/main.jsx once the first screen is fully drawn and the page
  * is idle, or at a cap. Native crashes (Java and NDK) are caught from then on,
  * a second or two into a cold start instead of about one: a native crash in
- * that window is not reported. Documented in docs/sentry.md.
+ * that window is not reported. Documented in docs/OBSERVABILITY.md.
  */
 import { Capacitor } from '@capacitor/core';
 import { IS_DEV_SERVER } from '@config';

@@ -58,7 +58,7 @@
         </activity>
 
         <!--
-            Push notifications (FCM, see docs/push-notifications.md). Used for
+            Push notifications (FCM, see docs/FEATURES_AND_FLOWS.md). Used for
             a notification that names no channel or a channel this build does
             not have; the server always names one of the four this app creates.
         -->

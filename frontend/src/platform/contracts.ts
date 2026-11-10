@@ -364,7 +364,7 @@ export interface DeviceInfo {
  *
  * Consumer: `shared/push/pushRegistration` (registration, permission state for
  * Settings) and the tap routers (`mobile/navigation/DeepLinkNavigator`, web
- * `shared/push/PushNavigator`). See docs/push-notifications.md.
+ * `shared/push/PushNavigator`). See docs/FEATURES_AND_FLOWS.md.
  *
  * `onNotificationTap` yields an `Intent`, not a payload: the payload carries
  * routing data only — no message content, no email address, no user id, no

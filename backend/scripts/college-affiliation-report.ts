@@ -2,7 +2,7 @@
  * College-affiliation dry-run report. READ-ONLY.
  *
  * Classifies existing accounts against the legacy backfill rule in migration
- * 00000000000014_college_affiliation (see docs/college-affiliation.md) so the
+ * 00000000000014_college_affiliation (see docs/FEATURES_AND_FLOWS.md) so the
  * outcome is known before the migration runs anywhere that matters:
  *
  *   would-backfill        collegeId set, not deleted, email domain maps to that

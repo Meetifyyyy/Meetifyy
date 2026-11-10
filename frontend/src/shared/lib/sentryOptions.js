@@ -86,7 +86,7 @@ export function buildSentryOptions({
   }
   // A dev server is a developer's machine, not a deployment: its hot-reload
   // errors and test-harness events went into the development projects
-  // alongside the deployed site's and app's (docs/sentry.md).
+  // alongside the deployed site's and app's (docs/OBSERVABILITY.md).
   if (isDevServer && !sentry.reportDevServer) {
     return off('served by the Vite dev server (set VITE_SENTRY_REPORT_DEV_SERVER=true to report)');
   }

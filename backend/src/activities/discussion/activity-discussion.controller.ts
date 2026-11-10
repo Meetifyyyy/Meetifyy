@@ -45,7 +45,7 @@ export class ActivityDiscussionController {
    * Not selfie-gated: posting in an activity's discussion is participation in
    * an activity the caller already belongs to, not messaging. The selfie gate
    * is kept only on messaging, creating posts/communities/activities and
-   * Instant Match (docs/college-affiliation.md → Selfie gate).
+   * Instant Match (docs/FEATURES_AND_FLOWS.md → Verification gates).
    */
   @Post()
   @Idempotent()

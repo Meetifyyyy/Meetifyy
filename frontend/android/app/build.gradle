@@ -96,7 +96,7 @@ dependencies {
 apply from: 'capacitor.build.gradle'
 
 /*
- * Firebase (push notifications), per build type. See docs/push-notifications.md.
+ * Firebase (push notifications), per build type. See docs/FEATURES_AND_FLOWS.md.
  *
  * Debug builds talk to the development API and release builds to production,
  * so each needs ITS OWN environment's Firebase project:

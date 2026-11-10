@@ -25,7 +25,7 @@ import { bootWebSentry } from './platform/web/sentryBoot';
 
 // Error monitoring first, so a failure during boot is held and reported once
 // the SDK (a lazy chunk) arrives. A no-op without a DSN; see
-// platform/web/sentryBoot.js and docs/sentry.md. The release is stamped at
+// platform/web/sentryBoot.js and docs/OBSERVABILITY.md. The release is stamped at
 // build time by vite.config.js.
 bootWebSentry({
   config,

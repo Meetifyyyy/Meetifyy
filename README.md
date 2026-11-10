@@ -3,61 +3,16 @@
 A campus network for university students — activities, communities, feed,
 messaging and presence, in real time.
 
-The repo is a monorepo of three deployable applications and the infrastructure
-that runs them.
+The repository is a monorepo of three deployable applications and the
+infrastructure that runs them.
 
 | | What it is | Stack | Deployed to |
 |---|---|---|---|
 | `backend/` | API, queues, realtime | NestJS 11, Node ≥ 22 | Azure Container Apps |
-| `frontend/` | Student web app (PWA) | React 18, Vite 6 | Vercel |
+| `frontend/` | Student web app (PWA) and the Capacitor Android app | React 18, Vite 6 | Vercel |
 | `admin-frontend/` | Admin portal | React 19, Vite 8, TypeScript | Vercel |
 
----
-
-## Documentation
-
-Four documents, kept current:
-
-| Doc | Read it when |
-|---|---|
-| [docs/techstack.md](docs/techstack.md) | You want the full dependency picture |
-| [docs/project-structure.md](docs/project-structure.md) | You need to know how local, dev and prod differ |
-| [docs/operations.md](docs/operations.md) | **Before changing anything in production** |
-| [docs/rate-limiting.md](docs/rate-limiting.md) | You're adding a limit, tuning one, or a 429 is firing where it shouldn't |
-
-`operations.md` is the one that saves time. Every entry in it is a real failure
-that already happened, and they all share a shape: nothing errors at the time,
-and you find out later — in a user's inbox, or five deploys into an outage.
-
----
-
-## Repository layout
-
-```
-meetifyy/
-├── backend/                  NestJS API
-│   ├── prisma/               schema + 44 migrations
-│   ├── src/config/           the only place that reads process.env
-│   ├── src/                  ~30 domain modules (auth, posts, activities, …)
-│   └── supabase-templates/   Auth emails, rendered per environment
-│
-├── frontend/                 student web app
-│   └── src/
-│       ├── config/           build-time public config
-│       ├── features/         feed, messaging, campus, crew, instant-match …
-│       ├── layout/           shells, headers, sidebars
-│       └── shared/           components, hooks, stores
-│
-├── admin-frontend/           admin portal
-├── docs/                     the six documents above
-├── setup-azure-dev.sh        provisions the DEV Azure stack
-├── setup-azure-prod.sh       provisions the PROD Azure stack
-└── .github/workflows/        ci.yml · deploy-dev.yml · deploy-prod.yml
-```
-
----
-
-## Getting started
+## Quick start
 
 ```bash
 npm install
@@ -68,173 +23,19 @@ cp admin-frontend/.env.example admin-frontend/.env.local
 npm run dev:services
 ```
 
-`dev:services` runs Mailpit, the backend, the frontend and the admin portal
-together. Mail goes to Mailpit at <http://localhost:8025> instead of to real
-inboxes. Individual targets exist too: `dev:backend`, `dev:frontend`,
-`dev:admin`.
+`dev:services` runs Mailpit (<http://localhost:8025>), the backend, the web
+frontend, the admin portal and the mobile dev server together. Full setup,
+testing and the contribution flow: [docs/DEVELOPMENT_GUIDE.md](docs/DEVELOPMENT_GUIDE.md).
 
-### Configuration
+## Documentation
 
-Every environment-specific value — domains, database, email, storage, auth
-redirects, cookies, CORS — comes from environment variables read through a
-central config layer. **No source file needs editing to move between
-environments.**
+Everything lives in [`docs/`](docs/README.md). Start with:
 
-- `backend/src/config/env.ts` is the only place in the backend that touches
-  `process.env`. Everything else imports the typed `config` object.
-- Validation runs once at import, so a misconfigured environment fails at boot
-  with one message listing every problem — not at the first request that happens
-  to need the value.
-- Each app's `.env.example` and `.env.production.example` are the authoritative,
-  annotated variable lists, marking what is required, what is secret, and what is
-  inlined at build time.
+- [Project overview](docs/PROJECT_OVERVIEW.md) — what is here
+- [Architecture and stack](docs/ARCHITECTURE.md)
+- [Infrastructure and operations](docs/INFRASTRUCTURE.md) — **read before changing anything in production**
+- [Decisions and guidelines](docs/DECISIONS_AND_GUIDELINES.md) — the rules every change follows
 
-Only `*.example` files are committed. Real `.env` files are git-ignored by a
-deny-all rule, and `git check-ignore` is the way to confirm before you commit.
-
-Frontend variables are inlined by Vite at **build** time, so they must exist in
-Vercel before the build runs, and changing one requires a redeploy. Nothing in a
-`VITE_` variable is secret — it ships in the bundle.
-
----
-
-## Branches and environments
-
-| Branch | Deploys to | Database | GitHub environment |
-|---|---|---|---|
-| `feature/*` | — (CI only) | — | — |
-| `development` | Azure DEV (`meetifyy-api-dev`) | Supabase DEV | `development` |
-| `main` | Azure PROD (`meetifyy-api`) | Supabase PROD | `Production` |
-
-Dev and prod live in **separate Azure subscriptions on separate Microsoft
-accounts** — not for tidiness, but because a subscription may hold only one
-Container Apps environment.
-
-### Contribution flow
-
-```
-1. branch from development        git switch -c feature/your-change development
-2. commit                         schema + migrations together, always
-3. push, open a PR into development
-4. CI must pass, then merge       → DEV deploys, DEV migrations run
-5. test on dev.meetifyy.app
-6. open a PR: development → main
-7. review, then merge             → PROD deploys, PROD migrations run
-```
-
-Both deploys are automatic on merge. Nothing is deployed by hand.
-
-### Backend lint
-
-`npm run lint` in `backend/` lints every source file, including the email
-templates and `scripts/`, and CI runs it with `--max-warnings 0`: the backend
-is at zero errors and zero warnings, with no suppressions, so a new `any` or a
-new unawaited promise can't be merged. Never silence a rule to make code pass —
-no `eslint-disable` comments, no suppressions file, no relaxed config: fix the
-code, or raise it for a decision.
-
-The conventions that keep it at zero:
-
-- **No `any`, and no `as any`.** A cast to reach a missing field hides a real
-  mismatch: fix the query's `select`/`include`, or take `unknown` and narrow it.
-- **Type the sources.** `@CurrentUser() user: AuthenticatedUser`,
-  `getRequest<AuthenticatedRequest>()`, `Prisma.XWhereInput` for a `where` built
-  up conditionally, `$queryRaw<Row[]>`, `Prisma.TransactionClient`, and declared
-  return types on service methods other modules call.
-- **Untrusted input is `unknown` until validated:** a class-validator DTO for
-  HTTP bodies, `parseSocketPayload` for socket payloads, a guard after
-  `JSON.parse`. Catch variables are `unknown`; use `errorMessage()`.
-- **Fields are definitely assigned:** `field!: T` for a required DTO field,
-  `field?: T` for an `@IsOptional()` one, `T | undefined` for one that can stay
-  unset.
-- **Tests are typed too.** Build fakes with `stub<T>()` from
-  `src/common/testing/stub.ts`, give `jest.fn` its signature, and reach private
-  members as `service['member']`. Never change what a fake returns to satisfy a
-  type.
-- **Scripts are TypeScript** (`npx ts-node scripts/<name>.ts`). Anything that
-  goes through `src/config` loads `backend/.env.local` and
-  `backend/.env.development`, so it is pointed at development. Check a script
-  with its variables set to empty strings, and never with `--apply`.
-
-Before opening a PR, run in `backend/`:
-
-```bash
-npm run lint && npx tsc --noEmit -p tsconfig.json && npx tsc --noEmit -p tsconfig.tooling.json && npx jest
-```
-
----
-
-## Database changes — always use migrations
-
-**Never run `prisma db push`.** When you change `backend/prisma/schema.prisma`,
-create a migration:
-
-```bash
-cd backend && npx prisma migrate dev --name describe_your_change
-```
-
-Then **commit the generated folder** under `backend/prisma/migrations/`. That
-folder is the deployable unit — the workflows run `prisma migrate deploy` as a
-pre-deploy step and apply exactly those files, in order. A schema change without
-a committed migration never reaches production, and the app boots expecting a
-column that isn't there.
-
-Why `db push` is banned rather than discouraged:
-
-- It force-matches the database to `schema.prisma` and **drops whatever doesn't
-  match** — including columns holding real user data — with no migration to
-  review and no rollback.
-- It records nothing, so `_prisma_migrations` stops describing the real
-  database. This repo has already been bitten: migration files sat unapplied on
-  disk while the database quietly had their changes, and reconciling the two
-  meant comparing databases column by column.
-
-| Command | Use |
-|---|---|
-| `npx prisma migrate dev --name <x>` | Local only. Creates + applies a migration. |
-| `npx prisma migrate deploy` | Deployed environments. Applies pending migrations; never drops. |
-| `npx prisma migrate status` | Check whether the DB matches migration history. |
-| `npx prisma migrate resolve --applied <x>` | Mark a hand-applied migration as done. |
-
-`migrate dev` is the sharp one: against a drifted database it offers to
-**reset (wipe) it**. Run it only against your own dev database.
-
-Migrations run **before** the new image is deployed, so the schema is always
-ahead of or equal to the running code. Because a rollback reverts code but not
-migrations, **every migration must be backward-compatible with the previous
-release**.
-
----
-
-## Deploy pipeline
-
-```
-push → ci.yml passes → build image → push to ACR
-     → prisma migrate deploy (one-shot Container App Job)
-     → update Container App → health check
-```
-
-If a migration fails the workflow exits non-zero and the old app keeps running
-against the unchanged database.
-
-The production database URL is read from the Container App's own secret store at
-deploy time and **never becomes a GitHub secret**. Any change to the pipeline
-must preserve that property.
-
----
-
-## Safety rails worth knowing
-
-The codebase actively prevents several cross-environment mistakes:
-
-- **`isolation.guard.ts`** refuses to boot a production process whose database,
-  Redis, R2 bucket or URLs are named like dev resources — catching a
-  copy-pasted `DATABASE_URL` at startup rather than at the first request. It
-  inspects hostnames only, never credentials.
-- **`STORAGE_PROVIDER`** is a validated single-value knob, so a deployment still
-  set to `supabase` fails loudly instead of silently resolving media against a
-  bucket that no longer exists.
-- **Verification uploads** are routed by key prefix to a private bucket, so a new
-  call site cannot accidentally publish identity documents.
-- **Supabase Auth templates** are rendered per environment, and the production
-  render fails hard if any dev URL survives into the output.
+Branches: `development` deploys to DEV, `main` deploys to PROD, both
+automatically on merge. Never run `prisma db push`; every schema change ships
+as a committed migration ([docs/DATABASE.md](docs/DATABASE.md)).

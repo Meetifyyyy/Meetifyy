@@ -228,7 +228,7 @@ describe('AuthService.syncProfile — a new account', () => {
 
 /**
  * Signup is no longer college-only, and sign-in no longer links a college.
- * See docs/college-affiliation.md.
+ * See docs/FEATURES_AND_FLOWS.md.
  */
 describe('AuthService — signup without a college', () => {
   let queryRaw: jest.Mock;

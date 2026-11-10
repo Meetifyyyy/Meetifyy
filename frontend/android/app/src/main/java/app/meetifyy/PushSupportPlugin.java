@@ -19,7 +19,7 @@ import com.getcapacitor.annotation.CapacitorPlugin;
  * resources at build time; without them the Firebase SDK is never
  * initialised and PushNotifications.register() throws, so the web layer asks
  * here first and simply reports push as unavailable. See
- * docs/push-notifications.md.
+ * docs/FEATURES_AND_FLOWS.md.
  *
  * openSettings(): this app's notification settings. After two denials on
  * Android 13+ the permission dialog no longer appears, and the system screen

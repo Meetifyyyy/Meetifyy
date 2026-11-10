@@ -211,14 +211,29 @@ meetifyy-security-remediation-report.md
 # docs/rate-limiting.md was first committed as a README link pointing at a file
 # that was never pushed.
 docs/*
-!docs/techstack.md
-!docs/project-structure.md
-!docs/operations.md
-!docs/rate-limiting.md
-!docs/testing-log.md
-!docs/mobile-auth-decision.md
+!docs/README.md
+!docs/PROJECT_OVERVIEW.md
+!docs/ARCHITECTURE.md
+!docs/DEVELOPMENT_GUIDE.md
+!docs/BACKEND_AND_API.md
+!docs/DATABASE.md
+!docs/INFRASTRUCTURE.md
+!docs/SECURITY.md
+!docs/FEATURES_AND_FLOWS.md
+!docs/MOBILE_APP.md
+!docs/OBSERVABILITY.md
+!docs/DECISIONS_AND_GUIDELINES.md
+!docs/ENGINEERING_LOG.md
+# Redirect stubs: these old paths are cited by already-applied migrations,
+# which can never be edited (their checksums are recorded). Content lives in
+# the files above.
 !docs/push-notifications.md
 !docs/email-change-security.md
+!docs/college-affiliation.md
+# Local-only documents (provisioning notes, audits, research). Never committed:
+# the repository is public. Already covered by docs/* above; listed explicitly
+# so a future change to that rule cannot expose them.
+docs/private/
 
 diff_*.txt
 all_files.txt

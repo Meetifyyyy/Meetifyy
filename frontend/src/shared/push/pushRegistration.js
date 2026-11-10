@@ -4,7 +4,7 @@ import { getPushService } from './pushPlatform';
 
 /**
  * Push registration, in one place, for Settings, the opt-in card, sign-in and
- * sign-out. See docs/push-notifications.md.
+ * sign-out. See docs/FEATURES_AND_FLOWS.md.
  *
  * Three separate things, never conflated:
  *  - the OS/browser PERMISSION (granted / denied / prompt / unsupported),

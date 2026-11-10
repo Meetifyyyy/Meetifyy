@@ -164,7 +164,7 @@ export const config = {
 
   integrations: {
     /**
-     * Sentry (docs/sentry.md). Off unless a DSN is configured.
+     * Sentry (docs/OBSERVABILITY.md). Off unless a DSN is configured.
      *
      * The DSN is public by design (it can only submit events), which is why it
      * may live in a VITE_ variable. The auth token used to upload source maps

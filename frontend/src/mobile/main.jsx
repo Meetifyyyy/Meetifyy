@@ -85,7 +85,7 @@ import './mobile.css';
 
 /**
  * Error monitoring (JavaScript and native crashes). A no-op without a DSN; see
- * platform/capacitor/sentryBoot.js and docs/sentry.md. The version is stamped
+ * platform/capacitor/sentryBoot.js and docs/OBSERVABILITY.md. The version is stamped
  * at build time by vite.mobile.config.js.
  *
  * Booted first, so a report or an uncaught error from here on is held; the SDK
@@ -246,7 +246,7 @@ const deepLinks = createCapacitorDeepLinks({
   allowedHosts: [safeHost(config.app.siteUrl)],
 });
 /**
- * Push (docs/push-notifications.md): created before the first render for the
+ * Push (docs/FEATURES_AND_FLOWS.md): created before the first render for the
  * same reason, so a notification tap that cold-started the app is caught and
  * held for the navigator. It registers listeners only; it never prompts and
  * never registers a token on its own.

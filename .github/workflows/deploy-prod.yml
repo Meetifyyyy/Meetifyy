@@ -42,7 +42,7 @@
 #   secret   SENTRY_AUTH_TOKEN   — org auth token with project:releases scope
 #   variable SENTRY_ORG          — Sentry organisation slug
 #   variable SENTRY_PROJECT_API  — the API project's slug (e.g. meetifyy-api)
-# Set them on the `production` environment only. See docs/sentry.md.
+# Set them on the `production` environment only. See docs/OBSERVABILITY.md.
 # ─────────────────────────────────────────────────────────────────────────────
 
 name: Deploy — Production

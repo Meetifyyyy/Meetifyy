@@ -148,7 +148,7 @@ async function bootstrap() {
       // Sentry distributed tracing. Accepted ahead of the clients sending them:
       // the web/app only propagate trace headers once this is deployed
       // everywhere (VITE_SENTRY_PROPAGATE_TRACES), since a preflight that
-      // rejects a header fails the whole request. See docs/sentry.md.
+      // rejects a header fails the whole request. See docs/OBSERVABILITY.md.
       'sentry-trace',
       'baggage',
     ],

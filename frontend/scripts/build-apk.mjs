@@ -69,7 +69,7 @@ const artefactExt = isTesting ? '.aab' : '.apk';
  * not set. A RELEASE build never does this — it reports to the production org,
  * and a dev token there would put production maps in the dev org — so it only
  * uploads with SENTRY_AUTH_TOKEN/SENTRY_ORG/SENTRY_PROJECT_ANDROID exported, or
- * read from local/sentry-release.env (sentryEnvForRelease). See docs/sentry.md.
+ * read from local/sentry-release.env (sentryEnvForRelease). See docs/OBSERVABILITY.md.
  */
 function sentryEnvFromCliLogin() {
   if (isRelease) return {};

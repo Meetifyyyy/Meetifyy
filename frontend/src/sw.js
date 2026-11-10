@@ -297,7 +297,7 @@ function openOutboxDB() {
 
 // ─── Push Notifications ─────────────────────────────────────────────────────
 //
-// See docs/push-notifications.md and shared/push/serviceWorkerPush.js, which
+// See docs/FEATURES_AND_FLOWS.md and shared/push/serviceWorkerPush.js, which
 // holds (and tests) the logic: payloads carry an Intent, never a URL, and a
 // click can only open one of this site's own routes.
 

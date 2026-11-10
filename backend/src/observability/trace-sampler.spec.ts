@@ -9,7 +9,7 @@ import { INSTANT_MATCH_QUEUE } from '../instant-match/instant-match.processor';
 /**
  * Which traces the API keeps. Attribute shapes are the ones the SDK passes for
  * a root span (checked against a real Redis, BullMQ and Postgres: see
- * docs/sentry.md).
+ * docs/OBSERVABILITY.md).
  */
 type Attributes = Record<string, string | number | undefined>;
 

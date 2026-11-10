@@ -259,7 +259,7 @@ export function assertEnvironmentIsolation(): void {
  * push credential carries (a VAPID keypair carries none), so they are what is
  * checked: production must not hold a project named `...-dev`, and development
  * must not hold one named `...-prod`. Like every check here it sees names
- * only; docs/push-notifications.md sets the naming convention it relies on.
+ * only; docs/FEATURES_AND_FLOWS.md sets the naming convention it relies on.
  */
 export function pushIsolationProblems(forbiddenTokens: string[]): string[] {
   const problems: string[] = [];

@@ -2,7 +2,7 @@ import { Intents, parseIntent } from '../../core/navigation/intents';
 
 /**
  * The service worker's push handling, kept out of src/sw.js so it can be
- * tested without a worker. See docs/push-notifications.md.
+ * tested without a worker. See docs/FEATURES_AND_FLOWS.md.
  *
  * The server sends `{ title, body, tag, renotify, data }` where `data` is an
  * Intent in its push wire format (core/navigation/intents.ts

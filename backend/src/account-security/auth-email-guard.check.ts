@@ -38,7 +38,7 @@ export class AuthEmailGuardCheck implements OnApplicationBootstrap {
       if (!row?.hasAuth) return null;
       if (!row.hasTrigger) {
         this.logger.error(
-          'auth.users email guard trigger is MISSING: sign-in emails can be changed through Supabase Auth directly, bypassing reauthentication and the 30-day cooldown. See docs/email-change-security.md.',
+          'auth.users email guard trigger is MISSING: sign-in emails can be changed through Supabase Auth directly, bypassing reauthentication and the 30-day cooldown. See docs/SECURITY.md.',
         );
       }
       return row.hasTrigger;

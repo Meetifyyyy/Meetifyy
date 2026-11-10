@@ -281,7 +281,7 @@ function buildExistingProfile(
     canActivity: row.canActivity,
     isCampusRep: row.isCampusRep,
     gender: row.gender ?? null,
-    // Null without a verified college email. See docs/college-affiliation.md.
+    // Null without a verified college email. See docs/FEATURES_AND_FLOWS.md.
     campusAffiliation: affiliationFromRow(row),
     profileCompletion: profileCompletion({
       email: row.email,
@@ -650,7 +650,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     // No college is derived from the sign-in address any more: campus
     // membership comes only from a verified college email (CollegeAffiliation),
     // whose service maintains `collegeId` on the row. See
-    // docs/college-affiliation.md.
+    // docs/FEATURES_AND_FLOWS.md.
 
     const settings: ProfileSettings | null = row.settings_id
       ? {
@@ -1587,7 +1587,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     // someone's sign-in email. The signup email never grants a college, so the
     // domain is not a gate here; it is reported only as a hint. A personal
     // address equal to another account's verified college email is allowed
-    // as a login (see docs/college-affiliation.md), hence `email` alone.
+    // as a login (see docs/FEATURES_AND_FLOWS.md), hence `email` alone.
     if (!collegeId) {
       const taken = await this.prisma.user.findUnique({
         where: { email: trimmed },

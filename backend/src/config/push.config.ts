@@ -2,7 +2,7 @@ import { bool, invariant, str } from './env';
 
 /**
  * Push notifications: Web Push (VAPID) for the website and FCM for the
- * installed Android app. See docs/push-notifications.md.
+ * installed Android app. See docs/FEATURES_AND_FLOWS.md.
  *
  * Off unless PUSH_ENABLED=true. With it off the dispatcher enqueues nothing and
  * the registration endpoints still answer (so a client can be shipped before a

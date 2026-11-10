@@ -64,7 +64,7 @@ captures/
 # Google Services (e.g. APIs or Firebase)
 # One per environment (app/src/debug = dev project, app/src/release = prod
 # project), kept on the build machine. Not a secret, but it carries a Google
-# API key that secret scans flag. See docs/push-notifications.md.
+# API key that secret scans flag. See docs/FEATURES_AND_FLOWS.md.
 google-services.json
 
 # Freeline

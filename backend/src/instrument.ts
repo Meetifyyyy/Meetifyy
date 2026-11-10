@@ -29,7 +29,7 @@
  * SDK uninitialised. Every Sentry.* call is then a no-op and the API starts
  * exactly as it would without it.
  *
- * See docs/sentry.md.
+ * See docs/OBSERVABILITY.md.
  */
 import * as Sentry from '@sentry/nestjs';
 import { nodeProfilingIntegration } from '@sentry/profiling-node';

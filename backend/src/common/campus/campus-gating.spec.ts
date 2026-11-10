@@ -18,7 +18,7 @@ import { affiliatedWith } from './testing/affiliation.fixture';
 /**
  * Campus surfaces are gated by a verified college email and scoped to the
  * affiliation's college — never the `User.collegeId` mirror, never a request
- * value. See docs/college-affiliation.md.
+ * value. See docs/FEATURES_AND_FLOWS.md.
  */
 describe('campus gating', () => {
   const ME = 'me';

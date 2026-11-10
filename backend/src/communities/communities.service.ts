@@ -1231,7 +1231,7 @@ export class CommunitiesService implements OnModuleInit {
   }
 
   async joinCommunity(communityId: string, userId: string) {
-    // Joining is NOT selfie-gated (docs/college-affiliation.md: only creating
+    // Joining is NOT selfie-gated (docs/FEATURES_AND_FLOWS.md: only creating
     // a community is). A campus community still requires the active
     // affiliation to its college, checked below.
     const community = await this.prisma.community.findUnique({

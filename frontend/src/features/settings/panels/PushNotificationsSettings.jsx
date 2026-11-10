@@ -8,7 +8,7 @@ import styles from '../pages/SettingsRoute.module.css';
 import own from './PushNotificationsSettings.module.css';
 
 /**
- * Settings → Notifications → Push notifications. See docs/push-notifications.md.
+ * Settings → Notifications → Push notifications. See docs/FEATURES_AND_FLOWS.md.
  *
  * Replaces the old "Browser push alerts" checkbox, which saved a boolean and
  * registered nothing. Shows the device's permission honestly and separately
