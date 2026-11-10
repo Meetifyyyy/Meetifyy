@@ -1,7 +1,9 @@
 import StaticDocLayout from './StaticDocLayout';
+import { useForceLightTheme } from '@shared/hooks/useForceLightTheme';
 import styles from './StaticDocLayout.module.css';
 
 export default function AboutPage() {
+  useForceLightTheme();
   return (
     <StaticDocLayout
       title="About Meetifyy"

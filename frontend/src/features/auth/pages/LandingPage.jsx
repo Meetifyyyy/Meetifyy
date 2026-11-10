@@ -4,11 +4,13 @@ import EditorialLanding from '../landing/components/EditorialLanding';
 import SignupJourneyCTA from '../landing/components/SignupJourneyCTA';
 import LandingFooter from '../landing/components/LandingFooter';
 import '../landing/landing.css';
+import { useForceLightTheme } from '@shared/hooks/useForceLightTheme';
 import { warmAuthScreens } from '../routes/authRoutes';
 
 const AUTH_LINK = 'a[href="/login"], a[href="/signup"]';
 
 export default function LandingPage() {
+  useForceLightTheme();
   // Log in / Create account used to fetch their screens only once tapped, so
   // the first tap sat on a blank Suspense fallback for a network round-trip.
   // Warm them once the landing page is idle, and at once on the first sign of
