@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { Fragment, useState, useRef, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useSmartNavigation } from '@shared/hooks/useSmartNavigation';
 import logo from '@assets/images/meetify_logo.webp';
@@ -349,7 +349,7 @@ function entityIcon(type) {
 function renderSection(label, items, type, selectedIndex, activeSuggestions, goToEntity) {
   if (!items || items.length === 0) return null;
   return (
-    <React.Fragment>
+    <Fragment>
       <div className={styles.dropdownHeader}>{label}</div>
       {items.map((entity) => {
         const globalIndex = activeSuggestions.findIndex(s => s.type === type && s.data?.id === entity.id);
@@ -380,6 +380,6 @@ function renderSection(label, items, type, selectedIndex, activeSuggestions, goT
           </div>
         );
       })}
-    </React.Fragment>
+    </Fragment>
   );
 }

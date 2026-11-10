@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { Fragment, useEffect, useMemo, useRef } from 'react';
 import { AlertCircle } from '@shared/components/icons';
 import { useAcademicCatalog } from './useAcademicCatalog';
 import {
@@ -118,7 +118,7 @@ export default function AcademicSelection({
   const isDisabled = disabled || loading;
 
   const renderDivider = (key) => {
-    if (divider) return <React.Fragment key={key}>{divider}</React.Fragment>;
+    if (divider) return <Fragment key={key}>{divider}</Fragment>;
     if (c.divider) return <div key={key} className={c.divider} />;
     return null;
   };

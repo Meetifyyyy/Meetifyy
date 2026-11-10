@@ -89,6 +89,9 @@ export default [
       // Counts identifiers used only inside JSX, without which every imported
       // component looks unused and no-unused-vars becomes pure noise.
       'react/jsx-uses-vars': 'error',
+      // no-undef cannot see JSX element names: <React.Fragment> with no React
+      // import passed lint and crashed the header search in production.
+      'react/jsx-no-undef': 'error',
       'react/jsx-uses-react': 'off', // React 17+ automatic JSX runtime
       'react/react-in-jsx-scope': 'off',
 
