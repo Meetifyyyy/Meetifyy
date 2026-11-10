@@ -3,6 +3,14 @@
  *
  *   npm run mobile:apk            debug   -> local/apk/dev/
  *   npm run mobile:apk -- release release -> local/apk/release/
+ *   npm run mobile:aab:testing    release-signed AAB pointed at the DEV API
+ *                                 -> local/aab/testing/  (Play closed testing)
+ *
+ * The testing variant exists so Play Console's closed-testing users exercise
+ * the development backend, not production. It is signed with the release key
+ * (Play requires it) but built with --mode development. It must NEVER be
+ * promoted to the production track: upload a separate `release` build, with a
+ * higher versionCode, for that.
  *
  * Two variants, two directories, because mixing them up is easy and expensive:
  * a debug APK is signed with a throwaway key every machine generates for
@@ -36,15 +44,21 @@ const root = resolve(frontend, '..');
 const android = resolve(frontend, 'android');
 
 const variant = (process.argv[2] || 'debug').toLowerCase();
-if (!['debug', 'release'].includes(variant)) {
-  console.error(`Unknown variant "${variant}". Use "debug" or "release".`);
+if (!['debug', 'release', 'testing'].includes(variant)) {
+  console.error(`Unknown variant "${variant}". Use "debug", "release" or "testing".`);
   process.exit(1);
 }
 
 const isRelease = variant === 'release';
-const outDir = resolve(root, 'local/apk', isRelease ? 'release' : 'dev');
+const isTesting = variant === 'testing';
+const outDir = isTesting
+  ? resolve(root, 'local/aab/testing')
+  : resolve(root, 'local/apk', isRelease ? 'release' : 'dev');
+// Only the real release reads .env.production; testing deliberately does not.
 const viteMode = isRelease ? 'production' : 'development';
-const gradleTask = isRelease ? 'assembleRelease' : 'assembleDebug';
+const gradleTask = isTesting ? 'bundleRelease' : isRelease ? 'assembleRelease' : 'assembleDebug';
+const gradleVariant = isTesting ? 'release' : variant;
+const artefactExt = isTesting ? '.aab' : '.apk';
 
 /**
  * Sentry source-map upload for DEBUG builds from the developer's own login.
@@ -154,15 +168,17 @@ if (!process.env.JAVA_HOME) {
 run(gradlew, [gradleTask, '--console=plain'], android);
 
 // 4. Collect the artefact.
-const apkDir = resolve(android, 'app/build/outputs/apk', variant);
+const apkDir = isTesting
+  ? resolve(android, 'app/build/outputs/bundle', gradleVariant)
+  : resolve(android, 'app/build/outputs/apk', gradleVariant);
 if (!existsSync(apkDir)) {
   console.error(`Gradle produced no output at ${apkDir}`);
   process.exit(1);
 }
 
-const produced = readdirSync(apkDir).filter((f) => f.endsWith('.apk'));
+const produced = readdirSync(apkDir).filter((f) => f.endsWith(artefactExt));
 if (produced.length === 0) {
-  console.error(`No .apk in ${apkDir}`);
+  console.error(`No ${artefactExt} in ${apkDir}`);
   process.exit(1);
 }
 
@@ -177,7 +193,7 @@ for (const file of produced) {
    * looks installable.
    */
   const unsigned = file.includes('unsigned');
-  const name = `meetifyy-${variant}${unsigned ? '-UNSIGNED' : ''}-${stamp}.apk`;
+  const name = `meetifyy-${variant}${unsigned ? '-UNSIGNED' : ''}-${stamp}${artefactExt}`;
   copyFileSync(resolve(apkDir, file), resolve(outDir, name));
   copied.push({ name, unsigned });
 }
@@ -192,7 +208,9 @@ for (const { name, unsigned } of copied) {
     );
   }
 }
-if (!isRelease) {
+if (isTesting) {
+  console.log('\n  DEV API build for Play closed testing only. Never promote it to production.');
+} else if (!isRelease) {
   console.log('\n  adb install -r ' + resolve(outDir, copied[0].name));
 }
 console.log('');
