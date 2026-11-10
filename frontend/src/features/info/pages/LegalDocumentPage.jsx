@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import StaticDocLayout from './StaticDocLayout';
+import { useForceLightTheme } from '@shared/hooks/useForceLightTheme';
 import styles from './StaticDocLayout.module.css';
 import { LEGAL_DOCUMENTS } from './legalDocuments';
 import { legalApi } from '@shared/api/apiClient';
@@ -69,6 +70,7 @@ export default function LegalDocumentPage({
   fallbackTitle,
   children,
 }) {
+  useForceLightTheme();
   const [searchParams] = useSearchParams();
   const requestedVersion = Number.parseInt(searchParams.get('version') ?? '', 10);
 
@@ -162,10 +164,60 @@ export default function LegalDocumentPage({
 
   const shown = viewingOlder ? older.doc : doc;
 
+  // The document's own section headings, read from the rendered body so the
+  // "On this page" list can never disagree with the text. Each heading gets an
+  // id here because the stored HTML is sanitized and carries none.
+  const [sections, setSections] = useState([]);
+  const [activeSection, setActiveSection] = useState(null);
   useEffect(() => {
     hardenExternalLinks(contentRef.current);
     wrapTablesForScroll(contentRef.current);
+    const headings = contentRef.current
+      ? [...contentRef.current.querySelectorAll('h2')]
+      : [];
+    const seen = new Set();
+    const next = headings.map((heading, index) => {
+      const text = heading.textContent.trim();
+      const base =
+        text
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-|-$/g, '') || `section-${index + 1}`;
+      let id = base;
+      for (let n = 2; seen.has(id); n += 1) id = `${base}-${n}`;
+      seen.add(id);
+      heading.id = id;
+      return { id, text };
+    });
+    setSections(next);
+    setActiveSection(null);
+
+    if (headings.length === 0 || typeof IntersectionObserver === 'undefined') {
+      return undefined;
+    }
+    // A heading is "current" once it has passed under the navbar, until the
+    // next one does.
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+        if (visible[0]) setActiveSection(visible[0].target.id);
+      },
+      { rootMargin: '-80px 0px -65% 0px' },
+    );
+    headings.forEach((heading) => observer.observe(heading));
+    return () => observer.disconnect();
   }, [shown?.content]);
+
+  const goToSection = useCallback((event, id) => {
+    const target = document.getElementById(id);
+    if (!target) return;
+    event.preventDefault();
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    target.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+    setActiveSection(id);
+  }, []);
 
   // Published or archived versions other than the one on screen.
   const previous = history.filter((v) =>
@@ -190,8 +242,28 @@ export default function LegalDocumentPage({
       subtitle={shown?.subtitle || (viewingOlder ? undefined : doc?.subtitle) || undefined}
       effectiveDate={formatLegalDate(lastUpdated)}
       effectiveFrom={formatLegalDate(shown?.effectiveAt)}
-      noHeroCard
-      leftAlign
+      legal
+      aside={
+        sections.length > 2 && (
+          <nav className={styles.toc} aria-label="On this page">
+            <p className={styles.tocTitle}>On this page</p>
+            <ol className={styles.tocList}>
+              {sections.map((section) => (
+                <li key={section.id}>
+                  <a
+                    href={`#${section.id}`}
+                    className={styles.tocLink}
+                    aria-current={activeSection === section.id ? 'location' : undefined}
+                    onClick={(event) => goToSection(event, section.id)}
+                  >
+                    {section.text}
+                  </a>
+                </li>
+              ))}
+            </ol>
+          </nav>
+        )
+      }
     >
       {showOlderBanner && (
         <div className={styles.olderBanner} role="status">
