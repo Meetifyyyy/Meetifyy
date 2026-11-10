@@ -125,4 +125,18 @@
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <uses-feature android:name="android.hardware.camera.front" android:required="false" />
+
+    <!--
+        Instant Match's location step calls navigator.geolocation inside the
+        WebView. BridgeWebChromeClient answers that by requesting these two
+        runtime permissions, and as with the camera Android refuses a request
+        for a permission the manifest does not declare: the step always failed
+        with "Unable to retrieve location" in the app. Asked only when the user
+        taps "Use my location" in Instant Match, never at launch. On Android 12+
+        the user may grant approximate only; Capacitor accepts that too. GPS is
+        not required to install, so Play does not filter devices on it.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
 </manifest>
