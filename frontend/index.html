@@ -84,7 +84,14 @@
   <script>
     (function () {
       var theme = 'light';
+      // Always-light public pages (useForceLightTheme.js), so the reload logo
+      // and its background are light there too. '/' only when signed out:
+      // signed in, that is the feed, which keeps the user's theme.
+      var lightOnly = ['/terms-and-conditions', '/privacy-policy', '/cookie-policy', '/community-guidelines', '/help-and-support', '/about'];
+      var path = window.location.pathname.replace(/\/+$/, '') || '/';
       try {
+        if (lightOnly.indexOf(path) !== -1) throw 0;
+        if (path === '/' && !localStorage.getItem('currentUser')) throw 0;
         var chose = localStorage.getItem('theme_preference_set') === 'true';
         var saved = localStorage.getItem('theme');
         if (chose && (saved === 'light' || saved === 'dark')) {

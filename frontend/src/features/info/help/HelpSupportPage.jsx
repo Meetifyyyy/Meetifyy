@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import StaticDocLayout from '../pages/StaticDocLayout';
+import { useForceLightTheme } from '@shared/hooks/useForceLightTheme';
 import styles from './HelpSupport.module.css';
 import FaqAccordion from './FaqAccordion';
 import { supportApi } from '@shared/api/apiClient';
@@ -56,6 +57,7 @@ const QUICK_LINK_COUNT = 5;
 const linkFor = (view) => `/help-and-support?view=${view}`;
 
 export default function HelpSupportPage() {
+  useForceLightTheme();
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const view = viewFromParams(params);

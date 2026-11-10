@@ -4,12 +4,14 @@ import EditorialLanding from '../landing/components/EditorialLanding';
 import SignupJourneyCTA from '../landing/components/SignupJourneyCTA';
 import LandingFooter from '../landing/components/LandingFooter';
 import '../landing/landing.css';
+import { useForceLightTheme } from '@shared/hooks/useForceLightTheme';
 import { warmAuthScreens } from '../routes/authRoutes';
 import { markSignOutDestinationReady } from '@shared/lib/signOutFlow';
 
 const AUTH_LINK = 'a[href="/login"], a[href="/signup"]';
 
 export default function LandingPage() {
+  useForceLightTheme();
   // Signing out waits under its cover until this screen has painted.
   useEffect(() => {
     const id = requestAnimationFrame(() => markSignOutDestinationReady());
