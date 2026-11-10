@@ -1,59 +1,62 @@
-/* Landing header — wordmark, section links, two sentence-case buttons.
-   Transparent over the page at the top; a soft frosted bar once scrolled. */
+/* The public site's header: wordmark, section links, two buttons.
+   A plain full-width bar. It is clear over the top of a page and takes the
+   page's own surface colour, with a hairline, once the page has scrolled.
+   Colours and the button come from ../landing.css. */
 
 .header {
   position: fixed;
-  inset: 12px 0 auto 0;
   z-index: 50;
-  padding: 0 clamp(12px, 3vw, 40px);
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  pointer-events: none;
+  top: 0;
+  left: 0;
+  right: 0;
+  /* global.css pads every <header> on small screens, which pushed the
+     wordmark and the menu button in from the edge the page and the menu
+     align to, and made the bar taller than the 64px the layout assumes. */
+  padding: 0;
+  border-bottom: 1.5px solid transparent;
+  background: transparent;
+  font-family: var(--lp-display);
+  /* Same length as the menu sheet's fade, so the two cross over together. */
+  transition: background-color 0.22s ease, border-color 0.22s ease;
 }
 
-/* A floating bar: always a soft surface, a little stronger once scrolled. */
+.scrolled {
+  background: var(--lp-nav-surface, var(--color-bg-white));
+  border-bottom-color: var(--lp-line);
+}
+
+/* Menu open: the bar and the sheet are one surface, so the hairline between
+   them goes. The bar's colour is deliberately left alone. */
+.open {
+  border-bottom-color: transparent;
+}
+
 .inner {
-  pointer-events: auto;
-  max-width: 1280px;
-  margin: 0 auto;
-  height: 60px;
-  padding: 0 8px 0 20px;
   display: flex;
   align-items: center;
-  gap: 16px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.78);
-  backdrop-filter: saturate(160%) blur(16px);
-  -webkit-backdrop-filter: saturate(160%) blur(16px);
-  box-shadow: 0 0 0 1px var(--color-border), 0 8px 24px -16px rgba(30, 20, 90, 0.3);
-  transition: box-shadow 0.2s ease, background 0.2s ease;
-}
-
-.scrolled .inner {
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 0 0 1px var(--color-border), 0 12px 32px -14px rgba(30, 20, 90, 0.35);
-}
-
-[data-theme="dark"] .inner {
-  background: rgba(28, 28, 32, 0.78);
-}
-
-[data-theme="dark"] .scrolled .inner {
-  background: rgba(28, 28, 32, 0.92);
+  justify-content: space-between;
+  gap: 24px;
+  box-sizing: border-box;
+  height: 64px;
+  max-width: calc(1320px + 2 * clamp(20px, 4.5vw, 64px));
+  margin: 0 auto;
+  padding: 0 clamp(20px, 4.5vw, 64px);
 }
 
 .brand {
   display: flex;
   align-items: center;
   flex-shrink: 0;
+  min-height: 44px;
 }
 
 .wordmarkImg {
-  height: 1rem;
+  height: 15px;
   width: auto;
   user-select: none;
 }
 
-[data-theme="dark"] .wordmarkImg {
+[data-theme='dark'] .wordmarkImg {
   filter: brightness(0) invert(1);
 }
 
@@ -61,216 +64,176 @@
 
 .nav {
   display: none;
-  margin: 0 auto;
-  padding: 4px;
-  gap: 2px;
-  border-radius: 999px;
-  background: var(--color-bg-alt);
+  align-items: center;
+  gap: clamp(18px, 2.4vw, 34px);
 }
 
 .navLink {
-  padding: 8px 14px;
-  border-radius: 999px;
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: var(--color-text-muted);
+  padding: 12px 0;
+  color: var(--lp-ink);
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
   text-decoration: none;
-  transition: background 0.15s ease, color 0.15s ease;
+  text-underline-offset: 6px;
+  text-decoration-thickness: 1.5px;
 }
 
 .navLink:hover {
-  background: var(--color-bg-white);
-  color: var(--color-text-main);
+  text-decoration: underline;
 }
-
-/* ── Buttons ───────────────────────────────────────────────────── */
 
 .desktopActions {
   display: none;
   align-items: center;
   gap: 8px;
-  margin-left: auto;
 }
 
-.signInBtn,
-.ctaBtn {
-  display: inline-flex;
-  align-items: center;
-  height: 44px;
-  padding: 0 18px;
-  border-radius: 999px;
-  font-size: 0.92rem;
-  font-weight: 650;
-  text-decoration: none;
-  white-space: nowrap;
-  transition: background 0.15s ease, transform 0.12s ease;
-}
-
-.signInBtn {
-  color: var(--color-text-main);
-}
-
-.signInBtn:hover {
-  background: var(--color-bg-alt);
-}
-
-.ctaBtn {
-  background: var(--color-brand-primary);
-  color: #fff;
-}
-
-.ctaBtn:hover {
-  background: var(--color-brand-accent, #4a36e0);
-}
-
-
-/* ── Mobile ────────────────────────────────────────────────────── */
-
-.hamburger {
-  margin-left: auto;
-  display: grid;
-  place-items: center;
-  width: 42px;
-  height: 42px;
-  border: none;
-  border-radius: 999px;
-  background: var(--color-bg-alt);
-  color: var(--color-text-main);
+.menuBtn {
+  min-width: 64px;
+  min-height: 44px;
+  margin-right: -10px;
+  padding: 0 10px;
+  border: 0;
+  background: none;
+  color: var(--lp-ink);
+  font-family: inherit;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-align: right;
   cursor: pointer;
 }
 
-.burger {
-  position: relative;
-  flex-shrink: 0;
-  /* Lines 8px apart: a step that lands on whole device pixels at 1x, 1.25x,
-     1.5x, 1.75x and 2x, so all three render at the same weight. A 6px step
-     put the middle line between pixels on scaled displays and it blurred. */
-  width: 20px;
-  height: 18px;
+.navLink:focus-visible,
+.menuBtn:focus-visible,
+.brand:focus-visible,
+.mobileNavLink:focus-visible {
+  outline: 2px solid var(--lp-violet);
+  outline-offset: 3px;
+  border-radius: 6px;
 }
 
-.burger > span {
-  position: absolute;
-  left: 0;
-  width: 100%;
-  height: 2px;
-  border-radius: 2px;
-  background: currentColor;
-  transition:
-    transform 0.32s cubic-bezier(0.65, 0, 0.35, 1),
-    opacity 0.2s ease;
+@media (min-width: 960px) {
+  .nav,
+  .desktopActions {
+    display: flex;
+  }
+
+  .menuBtn {
+    display: none;
+  }
 }
 
-.burger > span:nth-child(1) { top: 0; }
-.burger > span:nth-child(2) { top: 8px; }
-.burger > span:nth-child(3) { top: 16px; }
-
-/* Outer lines slide to the middle and cross; the middle one fades. */
-.burgerOpen > span:nth-child(1) { transform: translateY(8px) rotate(45deg); }
-.burgerOpen > span:nth-child(2) { opacity: 0; transform: scaleX(0.2); }
-.burgerOpen > span:nth-child(3) { transform: translateY(-8px) rotate(-45deg); }
-
-@media (prefers-reduced-motion: reduce) {
-  .burger > span { transition: none; }
-}
+/* ── Phone menu ────────────────────────────────────────────────── */
 
 .mobileMenu {
   position: fixed;
   z-index: 49;
-  top: 80px;
-  left: clamp(12px, 3vw, 40px);
-  right: clamp(12px, 3vw, 40px);
-  padding: 8px;
-  border-radius: 24px;
-  background: var(--color-bg-white);
-  box-shadow: 0 0 0 1px var(--color-border), 0 24px 48px -20px rgba(20, 10, 80, 0.35);
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  /* From the very top: the bar sits over this sheet's first 64px. */
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 24px;
+  box-sizing: border-box;
+  padding: calc(64px + 16px) clamp(20px, 4.5vw, 64px) calc(24px + env(safe-area-inset-bottom, 0px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  color: var(--lp-ink);
   text-align: left;
+  will-change: opacity;
+}
+
+/* The sheet is the colour the bar already has, so opening the menu never
+   changes the bar. At the top of a page the bar is clear over the page's
+   first panel (--lp-nav-top, set by the page; the plain surface otherwise);
+   once scrolled it is the page surface. */
+.menuTop {
+  background: var(--lp-nav-top, var(--lp-nav-surface, var(--color-bg-white)));
+}
+
+.menuScrolled {
+  background: var(--lp-nav-surface, var(--color-bg-white));
+}
+
+/* The links and buttons rise into place one after another. Transform and
+   opacity only, so the whole entrance runs on the compositor. */
+@keyframes menuRise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 20px, 0);
+  }
+}
+
+.mobileNavLink,
+.mobileActions {
+  animation: menuRise 0.46s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(40ms + var(--i, 0) * 45ms);
+}
+
+.mobileActions {
+  --i: 5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobileNavLink,
+  .mobileActions {
+    animation: none;
+  }
 }
 
 .mobileNav {
   display: flex;
   flex-direction: column;
-  /* A global `nav` rule centres its items; rows must span the card. */
+  /* A global `nav` rule centres its items; the links must span the sheet. */
   align-items: stretch;
   gap: 0;
   margin: 0;
   padding: 0;
-  counter-reset: menu;
 }
 
 .mobileNavLink {
-  counter-increment: menu;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  min-height: 56px;
-  margin: 0;
-  padding: 0 8px 0 12px;
-  border-radius: 14px;
-  font-size: 1.05rem;
-  font-weight: 650;
-  letter-spacing: -0.015em;
-  text-align: left;
-  color: var(--color-text-main);
+  padding: 8px 0;
+  color: var(--lp-ink);
+  font-family: var(--lp-display);
+  font-stretch: 86%;
+  font-size: clamp(40px, 12vw, 64px);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.045em;
   text-decoration: none;
+  text-transform: lowercase;
 }
 
-.mobileNavLink + .mobileNavLink {
-  box-shadow: inset 0 1px 0 var(--color-border);
-}
-
-.mobileNavLink::before {
-  content: counter(menu, decimal-leading-zero);
-  min-width: 1.5em;
-  font-size: 0.75rem;
-  font-weight: 700;
-  color: var(--color-brand-primary);
-}
-
-.mobileNavLink:active {
-  background: var(--color-bg-alt);
+.mobileNavLink:nth-child(even) {
+  font-family: var(--lp-serif);
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: -0.02em;
 }
 
 .mobileActions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin-top: 6px;
-  padding: 10px 6px 6px;
-  border-top: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
-.mobileActions .signInBtn,
-.mobileActions .ctaBtn {
-  justify-content: center;
-  height: 48px;
-}
-
-.mobileActions .signInBtn {
-  background: var(--color-bg-alt);
-}
-
-/* Only one button when signed in — let it take the row. */
-.mobileActions .ctaBtn:only-child {
-  grid-column: span 2;
-}
-
-@media (min-width: 768px) {
-  .desktopActions {
-    display: flex;
+/* On a tablet the buttons sit in a row straight under the links, instead of
+   stretching across the foot of a tall, mostly empty sheet. */
+@media (min-width: 600px) {
+  .mobileMenu {
+    justify-content: flex-start;
+    gap: 36px;
   }
-  .hamburger,
+
+  .mobileActions {
+    flex-direction: row;
+  }
+}
+
+@media (min-width: 960px) {
   .mobileMenu {
     display: none;
-  }
-}
-
-@media (min-width: 1024px) {
-  .nav {
-    display: flex;
-  }
-  .desktopActions {
-    margin-left: 0;
   }
 }

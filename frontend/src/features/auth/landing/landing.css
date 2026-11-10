@@ -1,17 +1,114 @@
 /* ============================================================
-   landing.css — fonts and document scrolling for the landing and info pages
-   Import once from LandingPage.jsx
+   landing.css — shared by the public site: the landing page, its header and
+   footer (which the info pages and public post pages also mount).
+
+   Holds the three things every one of those needs: the fonts, the colour
+   tokens, and the button. Everything else lives in the component modules.
    ============================================================ */
 
-/* Google Fonts used on landing page */
-@import url('https://fonts.googleapis.com/css2?family=Calistoga&family=Changa+One&family=Syne:wght@700;800&family=Caveat:wght@500;700&display=swap');
+/* Bricolage Grotesque sets the headlines, Instrument Serif the italic accents. */
+@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=Instrument+Serif:ital@0;1&display=swap');
 
-/* Display font helper */
+:root {
+  --lp-display: 'Bricolage Grotesque', 'Inter', system-ui, sans-serif;
+  --lp-serif: 'Instrument Serif', 'Iowan Old Style', Georgia, serif;
+  --lp-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+
+  --lp-ink: #1c1838;
+  --lp-ink-soft: #4d4868;
+  --lp-line: rgba(28, 24, 56, 0.16);
+  --lp-cream: #faf5ea;
+  --lp-lilac: #dcd5ff;
+  --lp-butter: #f7e6a6;
+  --lp-sage: #cfe5cb;
+  --lp-peach: #ffd6c2;
+  --lp-violet: #5c47fa;
+  /* The one panel that is dark in both themes: the number, and the footer. */
+  --lp-night: #17142e;
+  --lp-night-ink: #faf5ea;
+  --lp-night-soft: #b6b1d0;
+}
+
+[data-theme='dark'] {
+  --lp-ink: #f4efe3;
+  --lp-ink-soft: #bcb7d2;
+  --lp-line: rgba(244, 239, 227, 0.18);
+  --lp-cream: #131120;
+  --lp-lilac: #262048;
+  --lp-butter: #352e15;
+  --lp-sage: #1b2d21;
+  --lp-peach: #3b231b;
+  --lp-violet: #9d8fff;
+  --lp-night: #0b0a16;
+}
+
+/* The public site's button: a flat pill, solid or outlined. */
+.lp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-sizing: border-box;
+  min-height: 52px;
+  padding: 0 26px;
+  border: 1.5px solid var(--lp-ink);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--lp-ink);
+  font-family: var(--lp-display);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.18s ease, color 0.18s ease, border-color 0.18s ease;
+}
+
+.lp-btn:hover {
+  background: var(--lp-ink);
+  color: var(--lp-cream);
+}
+
+.lp-btn--solid {
+  background: var(--lp-ink);
+  color: var(--lp-cream);
+}
+
+.lp-btn--solid:hover {
+  background: var(--lp-violet);
+  border-color: var(--lp-violet);
+  color: #fff;
+}
+
+.lp-btn:focus-visible {
+  outline: 2px solid var(--lp-violet);
+  outline-offset: 3px;
+}
+
+.lp-btn--small {
+  min-height: 42px;
+  padding: 0 18px;
+  font-size: 15px;
+}
+
+/* Display font helper, used by the info pages' titles. */
 .landing-font-display {
-  font-family: 'Changa One', 'Calistoga', sans-serif;
+  font-family: 'Changa One', sans-serif;
   font-weight: 400 !important;
 }
 
+
+/* --- Landing page surface ---
+   The app paints a blue radial gradient on <html> and <body>, and <html>'s
+   colour is what shows in the window's scrollbar gutter. On the landing page
+   both take the page's own cream instead, so no blue shows behind or beside
+   it. Only the landing page sets this class; the info pages keep theirs. */
+html.landing-poster-surface[data-theme],
+html.landing-poster-surface body {
+  background: var(--lp-cream) !important;
+}
 
 /* --- Thin Scrollbar --- */
 html.landing-scroll-active,
@@ -22,7 +119,7 @@ body.landing-scroll-active {
 /* Light mode scrollbar */
 html.landing-scroll-active,
 body.landing-scroll-active {
-  scrollbar-color: rgba(0, 0, 0, 0.2) rgba(0, 0, 0, 0.05);
+  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
 }
 
 html.landing-scroll-active::-webkit-scrollbar,
@@ -32,7 +129,7 @@ body.landing-scroll-active::-webkit-scrollbar {
 
 html.landing-scroll-active::-webkit-scrollbar-track,
 body.landing-scroll-active::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.04);
+  background: transparent;
 }
 
 html.landing-scroll-active::-webkit-scrollbar-thumb,
@@ -51,12 +148,12 @@ body.landing-scroll-active::-webkit-scrollbar-thumb:hover {
 [data-theme="dark"] body.landing-scroll-active,
 html[data-theme="dark"].landing-scroll-active,
 body[data-theme="dark"].landing-scroll-active {
-  scrollbar-color: rgba(255, 255, 255, 0.2) rgba(255, 255, 255, 0.04);
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
 }
 
 html[data-theme="dark"].landing-scroll-active::-webkit-scrollbar-track,
 body[data-theme="dark"].landing-scroll-active::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.04);
+  background: transparent;
 }
 
 html[data-theme="dark"].landing-scroll-active::-webkit-scrollbar-thumb,

@@ -1,7 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useCookieConsent } from '@shared/context/CookieConsentContext';
-import wordmarkImg from '@assets/images/meetifyy_wordmark_dark.svg';
-import stageLights from '../assets/stage-lights.webp';
+import '../landing.css';
 import styles from './LandingFooter.module.css';
 
 export default function LandingFooter() {
@@ -24,57 +23,45 @@ export default function LandingFooter() {
 
   return (
     <footer id="about" className={styles.footer} role="contentinfo">
-      <div className={styles.container}>
-        <div className={styles.card}>
-          <div className={styles.cardText}>
+      <div className={styles.inner}>
+        <div className={styles.top}>
+          <div className={styles.signoffCopy}>
             <p className={styles.signoff}>
-              See you on <span className={styles.highlight}>campus</span>.
+              see you on <span className={styles.signoffSerif}>campus.</span>
             </p>
-            <p className={styles.cardSub}>
-              Join 300+ students already finding their people.
+            <p className={styles.sub}>
+              The social app for college life. Join 300+ students already
+              finding their people.
             </p>
-            <div className={styles.cardActions}>
-              <Link to="/signup" className={styles.cta}>Create account</Link>
-              <Link to="/login" className={styles.ctaGhost}>Log in</Link>
+            <div className={styles.actions}>
+              <Link to="/signup" className="lp-btn lp-btn--solid">Create account</Link>
+              <Link to="/login" className="lp-btn">Log in</Link>
             </div>
           </div>
-          <img
-            className={styles.cardPhoto}
-            src={stageLights}
-            alt="Hands raised at a concert under blue stage lights"
-            width="1000"
-            height="800"
-            loading="lazy"
-            decoding="async"
-          />
-        </div>
 
-      </div>
-
-      {/* The lower footer: one full-width ink panel in both themes. */}
-      <div className={styles.panel}>
-        <div className={styles.panelInner}>
-        <div className={styles.columns}>
-          <div className={styles.about}>
-            <img src={wordmarkImg} alt="Meetifyy" className={styles.aboutWordmark} />
-            <p className={styles.aboutText}>
-              The social app for college life. Circles,
-              plans and chats with the people around you.
-            </p>
-          </div>
-
-          <div className={styles.col}>
-            {/* h2: the only headings in the contentinfo landmark. */}
-            <h2 className={styles.colTitle}>Company</h2>
-            <ul className={styles.list}>
+          <div className={styles.links}>
+            <div>
+              {/* h2: the only headings in the contentinfo landmark. */}
+              <h2 className={styles.colTitle}>Company</h2>
+              <ul className={styles.list}>
                 <li><Link to="/about" onClick={toTop} className={styles.link}>About us</Link></li>
                 <li><Link to="/help-and-support" onClick={toTop} className={styles.link}>Help &amp; support</Link></li>
-            </ul>
-          </div>
+                <li>
+                  <a href="https://www.instagram.com/meetifyy.app" target="_blank" rel="noopener noreferrer" className={styles.link}>
+                    Instagram
+                  </a>
+                </li>
+                <li>
+                  <a href="https://www.linkedin.com/company/meetifyy/" target="_blank" rel="noopener noreferrer" className={styles.link}>
+                    LinkedIn
+                  </a>
+                </li>
+              </ul>
+            </div>
 
-          <div className={styles.col}>
-            <h2 className={styles.colTitle}>Legal</h2>
-            <ul className={styles.list}>
+            <div>
+              <h2 className={styles.colTitle}>Legal</h2>
+              <ul className={styles.list}>
                 <li><Link to="/privacy-policy" onClick={toTop} className={styles.link}>Privacy policy</Link></li>
                 <li><Link to="/terms-and-conditions" onClick={toTop} className={styles.link}>Terms of service</Link></li>
                 <li><Link to="/community-guidelines" onClick={toTop} className={styles.link}>Community guidelines</Link></li>
@@ -84,49 +71,21 @@ export default function LandingFooter() {
                     Cookie preferences
                   </button>
                 </li>
-            </ul>
-          </div>
-
-          <div className={styles.col}>
-            <h2 className={styles.colTitle}>Follow us</h2>
-            <div className={styles.socials}>
-              <a
-                href="https://www.instagram.com/meetifyy.app"
-                target="_blank"
-                rel="noopener noreferrer"
-                className={styles.social}
-                aria-label="Instagram"
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="2" y="2" width="20" height="20" rx="5" />
-                  <circle cx="12" cy="12" r="4" />
-                  <circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none" />
-                </svg>
-              </a>
-              <a
-                href="https://www.linkedin.com/company/meetifyy/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className={styles.social}
-                aria-label="LinkedIn"
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M16 8a6 6 0 016 6v7h-4v-7a2 2 0 00-2-2 2 2 0 00-2 2v7h-4v-7a6 6 0 016-6zM2 9h4v12H2z" />
-                  <circle cx="4" cy="4" r="2" />
-                </svg>
-              </a>
+              </ul>
             </div>
           </div>
         </div>
 
+        {/* The name, set as wide as the page. Decorative: the line below says it. */}
+        <p className={styles.name} aria-hidden="true">
+          meetif<span className={styles.nameAccent}>yy</span>
+        </p>
+
         <div className={styles.bottom}>
           <p className={styles.legal}>© {new Date().getFullYear()} Meetifyy · Made for students, by students.</p>
-          <button type="button" className={styles.toTop} onClick={toTop} aria-label="Back to top">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M12 19V5M6 11l6-6 6 6" />
-            </svg>
+          <button type="button" className={styles.toTop} onClick={toTop}>
+            Back to top <span aria-hidden="true">↑</span>
           </button>
-        </div>
         </div>
       </div>
     </footer>

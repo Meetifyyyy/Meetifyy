@@ -1,37 +1,12 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowRight, X, Check, Loader2 } from '@shared/components/icons';
+import { X, Check, Loader2 } from '@shared/components/icons';
+import guitar from '../assets/guitar.webp';
+import laptopPair from '../assets/laptop-pair.webp';
+import '../landing.css';
 import styles from './SignupJourneyCTA.module.css';
 import { apiClient } from '@shared/api/apiClient';
-
-const titleVariants = {
-  hidden: { opacity: 0, y: 25 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.6, delay: 0.1 }
-  }
-};
-
-const subtitleVariants = {
-  hidden: { opacity: 0, y: 15 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.6, delay: 0.2 }
-  }
-};
-
-const formVariants = {
-  hidden: { opacity: 0, y: 15 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.6, delay: 0.45 }
-  }
-};
-
 
 /** The one message shown when nothing more specific is safe to say. */
 const GENERIC_ERROR = 'Something went wrong. Please try again.';
@@ -226,80 +201,57 @@ export default function SignupJourneyCTA() {
   };
 
   return (
-    <section
-      id="join"
-      className={styles.section}
-      aria-label="Create your account"
-    >
-      <motion.div
-        className={styles.container}
-        initial="hidden"
-        whileInView="visible"
-        viewport={{ once: true, amount: 0.15 }}
-      >
-        <div className={styles.edHead}>
-          <span className={styles.edNo}>05</span>
-          <span className={styles.edLabel}>Join</span>
-        </div>
-
-        <motion.h2 variants={titleVariants} className={styles.edTitle}>
-          Ready to join<span className={styles.edDot}>?</span>
-        </motion.h2>
+    <section id="join" className={styles.section} aria-labelledby="join-title">
+      <div className={styles.inner}>
+        <p className={styles.kicker}>Join</p>
+        <h2 id="join-title" className={styles.title}>
+          ready when <span className={styles.serif}>you are.</span>
+        </h2>
 
         <div className={styles.joinGrid}>
-          <motion.div variants={subtitleVariants} className={`${styles.joinCard} ${styles.joinYes}`}>
-            <span className={styles.joinTag}>Anyone</span>
-            <h3 className={styles.joinTitle}>Sign up with any email.</h3>
-            <p className={styles.joinText}>
+          <div className={`${styles.block} ${styles.blockInk}`}>
+            <div className={`${styles.blockArt} ${styles.artCircle}`}>
+              <img src={guitar} alt="A student playing an acoustic guitar outdoors" width="1400" height="933" loading="lazy" decoding="async" />
+            </div>
+            <h3 className={styles.blockTitle}>sign up with any email.</h3>
+            <p className={styles.blockText}>
               Personal or college, set up your profile and you are in. Verify
               your college email later to open your Campus.
             </p>
-            <Link to="/signup" className={styles.joinBtn}>Create your account</Link>
-          </motion.div>
+            <Link to="/signup" className={`lp-btn lp-btn--solid ${styles.blockBtn}`}>Create your account</Link>
+          </div>
 
-          <motion.div variants={subtitleVariants} className={`${styles.joinCard} ${styles.joinNo}`}>
-            <span className={styles.joinTag}>Optional</span>
-            <h3 className={styles.joinTitle}>Want your college&apos;s Campus on Meetifyy?</h3>
-            <p className={styles.joinText}>
+          <div className={`${styles.block} ${styles.blockPaper}`}>
+            <div className={`${styles.blockArt} ${styles.artLeaf}`}>
+              <img src={laptopPair} alt="Two students working on a laptop at a cafe" width="800" height="1066" loading="lazy" decoding="async" />
+            </div>
+            <h3 className={styles.blockTitle}>want your college&apos;s Campus on Meetifyy?</h3>
+            <p className={styles.blockText}>
               Tell us where you study. We verify the college&apos;s email domain
               and let you know when its Campus is live.
             </p>
-        {/* Add College Call-To-Action Form Container */}
-            <motion.div
-              variants={formVariants}
-              className={styles.formContainer}
-            >
-              <form onSubmit={handleOpenModal} className={styles.form}>
-                <input
-                  id="cta-college"
-                  name="college"
-                  type="text"
-                  autoComplete="organization"
-                  aria-label="College name"
-                  value={collegeInput}
-                  onChange={(e) => setCollegeInput(e.target.value)}
-                  placeholder="Enter your college name"
-                  className={styles.input}
-                />
-                <button
-                  type="submit"
-                  className={`${styles.submitBtn} ${styles.notSubmitted}`}
-                >
-                  <span className={styles.btnContent}>
-                    <span className={styles.btnTextFull}>Add your college</span>
-                    <span className={styles.btnTextShort}>Add</span>
-                    <ArrowRight size={16} />
-                  </span>
-                </button>
-              </form>
-
-              <p className={styles.disclaimer}>
-                You can sign up today either way. This only adds your college&apos;s Campus.
-              </p>
-            </motion.div>
-          </motion.div>
+            <form onSubmit={handleOpenModal} className={styles.form}>
+              <input
+                id="cta-college"
+                name="college"
+                type="text"
+                autoComplete="organization"
+                aria-label="College name"
+                value={collegeInput}
+                onChange={(e) => setCollegeInput(e.target.value)}
+                placeholder="Enter your college name"
+                className={styles.input}
+              />
+              <button type="submit" className={`lp-btn lp-btn--solid ${styles.submitBtn}`}>
+                Add your college
+              </button>
+            </form>
+            <p className={styles.disclaimer}>
+              You can sign up today either way. This only adds your college&apos;s Campus.
+            </p>
+          </div>
         </div>
-      </motion.div>
+      </div>
 
       {/* Campus Request Modal */}
       <AnimatePresence>
@@ -343,7 +295,7 @@ export default function SignupJourneyCTA() {
                   <p className={styles.successText}>
                     We will verify your college&apos;s details and email <strong>{personalEmail}</strong> when its Campus is live.
                   </p>
-                  <button type="button" onClick={handleCloseModal} className={styles.modalSubmitBtn}>
+                  <button type="button" onClick={handleCloseModal} className={`lp-btn lp-btn--solid ${styles.modalSubmitBtn}`}>
                     Done
                   </button>
                 </div>
@@ -426,7 +378,7 @@ export default function SignupJourneyCTA() {
                   <button
                     type="submit"
                     disabled={isSubmitting}
-                    className={styles.modalSubmitBtn}
+                    className={`lp-btn lp-btn--solid ${styles.modalSubmitBtn}`}
                   >
                     {isSubmitting ? (
                       <>

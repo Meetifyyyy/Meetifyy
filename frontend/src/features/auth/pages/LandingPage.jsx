@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import LandingNavbar from '../landing/components/LandingNavbar';
-import EditorialLanding from '../landing/components/EditorialLanding';
+import PosterLanding from '../landing/components/PosterLanding';
 import SignupJourneyCTA from '../landing/components/SignupJourneyCTA';
 import LandingFooter from '../landing/components/LandingFooter';
 import '../landing/landing.css';
@@ -51,6 +51,8 @@ export default function LandingPage() {
     const rootEl = document.getElementById('root');
 
     htmlEl.classList.add('landing-scroll-active');
+    // Swaps the app's blue page gradient for the landing page's own cream.
+    htmlEl.classList.add('landing-poster-surface');
     bodyEl.classList.add('landing-scroll-active');
     if (rootEl) {
       rootEl.classList.add('landing-scroll-active');
@@ -66,6 +68,7 @@ export default function LandingPage() {
 
     return () => {
       htmlEl.classList.remove('landing-scroll-active');
+      htmlEl.classList.remove('landing-poster-surface');
       bodyEl.classList.remove('landing-scroll-active');
       if (rootEl) {
         rootEl.classList.remove('landing-scroll-active');
@@ -84,10 +87,10 @@ export default function LandingPage() {
     };
   }, []);
   return (
-    <div style={{ background: 'var(--color-bg-white)', minHeight: '100vh' }}>
+    <div style={{ background: 'var(--lp-cream)', minHeight: '100vh', '--lp-nav-surface': 'var(--lp-cream)', '--lp-nav-top': 'var(--lp-lilac)' }}>
       <LandingNavbar />
       <main>
-        <EditorialLanding />
+        <PosterLanding />
         <SignupJourneyCTA />
       </main>
       <LandingFooter />

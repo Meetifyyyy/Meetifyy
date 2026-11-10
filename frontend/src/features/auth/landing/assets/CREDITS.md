@@ -14,3 +14,7 @@ attribution not required — kept here as a courtesy).
 | concert-crowd.webp | Samuel Regan-Asante | h81eW06xr7Y |
 | holi-crowd.webp | Ravi Sharma | fyV0DDeyyho |
 | stage-lights.webp | eldhose kuriyan | a28UkKkNMLU |
+| sky-friends.webp | Sithamshu Manoj | bik_lIl9Nco |
+| guitar.webp | Neel Patel | maRdWIcYeto |
+| table-friends.webp | Sanket Mishra | LCwo5opgr9M |
+| selfie.webp | Ashikul Islam Anik | PbCsWidkf4o |
