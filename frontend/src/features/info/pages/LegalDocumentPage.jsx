@@ -192,6 +192,18 @@ export default function LegalDocumentPage({
     setSections(next);
     setActiveSection(null);
 
+    // A link straight to a section (the Play Console account-deletion URL is
+    // /privacy-policy#how-to-delete-your-meetifyy-account). The browser looked
+    // for the id before it existed, so jump to it now that it does, and again
+    // once web fonts have loaded: they reflow the text above and would
+    // otherwise leave the section a few hundred pixels off.
+    const hashId = decodeURIComponent(window.location.hash.slice(1));
+    if (hashId && next.some((section) => section.id === hashId)) {
+      const jump = () => document.getElementById(hashId)?.scrollIntoView({ block: 'start' });
+      jump();
+      document.fonts?.ready.then(() => requestAnimationFrame(jump));
+    }
+
     if (headings.length === 0 || typeof IntersectionObserver === 'undefined') {
       return undefined;
     }
