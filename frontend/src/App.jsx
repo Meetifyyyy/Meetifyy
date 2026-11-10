@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useMemo } from 'react';
 import { AuthShell, LoginPage, SignupPage, preloadAuthScreens } from './features/auth/routes/authRoutes';
 import SignOutOverlay from '@shared/components/SignOutOverlay/SignOutOverlay';
 import { hasAffiliationField, isAffiliationActive } from '@shared/lib/campusAccess';
-import campusHeroImage from '@assets/images/campus_hero.webp';
+import { warmCampusHero } from './features/campus/lib/heroPreload';
 import { IS_DEV_BUILD, IS_MOBILE_BUILD } from '@config';
 import { isKnownAppRoute, normalisePathname } from '@config/seo';
 import { createBrowserRouter, RouterProvider, Navigate, Outlet, ScrollRestoration, useLocation } from 'react-router-dom';
@@ -241,12 +241,7 @@ function CampusWarmup() {
     const warm = () => {
       if (cancelled) return;
       loadCampusPage().catch(() => {}); // a failure resurfaces on navigation
-      if (unverified) {
-        const img = new Image();
-        img.decoding = 'async';
-        img.src = campusHeroImage;
-        img.decode?.().catch(() => {});
-      }
+      if (unverified) warmCampusHero();
     };
     if (typeof window.requestIdleCallback === 'function') {
       const id = window.requestIdleCallback(warm, { timeout: 6000 });

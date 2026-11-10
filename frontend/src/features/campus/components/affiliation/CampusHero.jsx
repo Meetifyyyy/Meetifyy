@@ -22,7 +22,7 @@ export default function CampusHero() {
           width="1350"
           height="668"
           alt=""
-          decoding="async"
+          fetchpriority="high"
           draggable={false}
         />
       </div>

@@ -4,6 +4,8 @@ import { useMediaQuery } from '@shared/hooks/useMediaQuery';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useSystemBars } from '@shared/hooks/useSystemBars';
 import CollegePicker from './CollegePicker';
+import CampusHero from './CampusHero';
+import { warmCampusHero } from '../../lib/heroPreload';
 import CollegeEmailVerify from './CollegeEmailVerify';
 import styles from './CampusAffiliation.module.css';
 
@@ -135,9 +137,17 @@ export default function CampusJoinFlow({ pending = null, pendingLoading = false,
     return () => window.clearTimeout(id);
   }, [college, verifyShown, leaving, isPhone, slidesIn]);
 
+  // Start decoding now, while the affiliation query is still in flight.
+  warmCampusHero();
+
   if (pendingLoading && !restored) {
     return (
       <div className={styles.screen} aria-busy="true" data-step="loading">
+        {/* The hero sits where the picker will put it, so it is already on
+            screen when the colleges arrive instead of appearing after them. */}
+        <div className={styles.picker}>
+          <CampusHero />
+        </div>
         <div className={styles.screenBody}>
           <div className={styles.skeletonCard} />
         </div>
