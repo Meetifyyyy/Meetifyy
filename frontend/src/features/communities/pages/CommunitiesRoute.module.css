@@ -30,6 +30,15 @@
 .header {
   display: flex;
   flex-direction: column;
+  /* Stays in view while the page scrolls: under the 60px app header on
+     large screens, under the status bar on phones. Opaque, so the lists
+     pass beneath it. Its padding reaches over the box's own. */
+  position: sticky;
+  top: 60px;
+  z-index: 30;
+  background: var(--color-bg-white);
+  margin: 0 -1rem;
+  padding: 0 1rem;
 }
 
 .topBar {
@@ -182,10 +191,14 @@
 .track {
   display: flex;
   width: 100%;
+  /* The page's gutter between two panes, so one pane's right edge never
+     touches the other's left edge while they slide. */
+  gap: var(--pane-gap);
+  --pane-gap: 1rem;
 }
 
 .track[data-moving] {
-  transform: translateX(calc(var(--drag, 0px) - var(--tab-index, 0) * 100%));
+  transform: translateX(calc(var(--drag, 0px) - var(--tab-index, 0) * (100% + var(--pane-gap))));
   transition: transform 300ms cubic-bezier(0.22, 1, 0.36, 1);
   will-change: transform;
 }
@@ -207,6 +220,22 @@
   display: block;
 }
 
+/* Scroll is per tab (CommunitiesRoute): the pane being left is shifted by
+   --leave-shift so it stays put on screen while the window jumps to the other
+   tab's position; the pane arriving eases in from --enter-shift. */
+.track[data-moving] .pane[data-active="false"] {
+  transform: translateY(var(--leave-shift, 0px));
+}
+
+.track[data-moving] .pane[data-active="true"] {
+  transform: translateY(var(--enter-shift, 0px));
+  transition: transform 300ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.track[data-reset] .pane {
+  transition: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .tab,
   .tabs::after,
@@ -219,6 +248,17 @@
   /* Phones: the card becomes the page, edge to edge. */
   /* The page's own surface — pure white / pure black — edge to edge and at
      least a screen tall, with the 0.5rem gutter Crew has inside it. */
+  .header {
+    top: var(--status-bar-inset, 0px);
+    background: var(--color-surface-screen, var(--color-bg-white));
+    margin: 0 -0.5rem;
+    padding: 0 0.5rem;
+  }
+
+  .track {
+    --pane-gap: 0.5rem;
+  }
+
   .box {
     border: none;
     border-radius: 0;
@@ -231,7 +271,7 @@
        nothing to scroll to. Short lists now fill exactly the room that is left. */
     min-height: calc(100dvh - var(--status-bar-inset, 0px) - var(--bottom-nav-clearance, 60px) - 12px);
     margin: 0;
-    gap: 0.75rem;
+    gap: 0.5rem;
   }
 
   /*

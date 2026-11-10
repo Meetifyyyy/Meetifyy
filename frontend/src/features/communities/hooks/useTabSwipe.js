@@ -24,6 +24,8 @@ export function settleAfter(timer, track, tabs) {
       delete track.dataset.moving;
       track.style.removeProperty('--tab-index');
       track.style.removeProperty('--drag');
+      track.style.removeProperty('--leave-shift');
+      track.style.removeProperty('--enter-shift');
     }
     tabs?.style.removeProperty('--tab-progress');
   }, PANE_SLIDE_MS + 40);

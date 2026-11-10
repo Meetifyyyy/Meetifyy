@@ -48,6 +48,10 @@ export default function CommunitiesRoute() {
   const tabsRef = useRef(null);
   const settleTimer = useRef(0);
   const prevTab = useRef(tab);
+  // Each tab keeps its own scroll position. The window scrolls for both, so the
+  // position is remembered per tab and put back when its tab is chosen.
+  const scrollByTab = useRef({ yours: 0, explore: 0 });
+  const activeTabRef = useRef(tab);
   // Explore is built the first time it is wanted (opened, or a swipe towards it
   // starts) and kept after, so it does not load for someone who never goes there.
   const [exploreWanted, setExploreWanted] = useState(tab === 'explore');
@@ -79,12 +83,34 @@ export default function CommunitiesRoute() {
 
   // Choosing a tab (a tap, a link, Back) slides to its pane. A swipe has already
   // started the slide from where the finger let go, so it is only left to finish.
+  useEffect(() => {
+    const onScroll = () => { scrollByTab.current[activeTabRef.current] = window.scrollY; };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
   useLayoutEffect(() => {
-    const from = TABS.findIndex((t) => t.id === prevTab.current);
+    const fromId = prevTab.current;
+    const from = TABS.findIndex((t) => t.id === fromId);
     prevTab.current = tab;
+    activeTabRef.current = tab;
     const track = trackRef.current;
     const tabs = tabsRef.current;
     if (!track || from === tabIndex) return;
+
+    // Back to where this tab was left. Both panes are shown (so the page is tall
+    // enough), the pane being left is shifted so it does not move on screen, and
+    // after a swipe the pane arriving eases from where the drag showed it.
+    const shift = scrollByTab.current[tab] - scrollByTab.current[fromId];
+    const swiped = swipeCommitted.current;
+    track.dataset.moving = '1';
+    track.dataset.reset = '1';
+    track.style.setProperty('--leave-shift', `${shift}px`);
+    track.style.setProperty('--enter-shift', swiped ? `${shift}px` : '0px');
+    window.scrollTo({ top: scrollByTab.current[tab], behavior: 'instant' });
+    void track.offsetWidth;
+    delete track.dataset.reset;
+    track.style.setProperty('--enter-shift', '0px');
     if (swipeCommitted.current) {
       swipeCommitted.current = false;
       return;
