@@ -15,6 +15,10 @@ export default function StaticDocLayout({
   effectiveFrom,
   noHeroCard = false,
   leftAlign = false,
+  // The four legal documents: a quiet document header and a reading column,
+  // with `aside` (the "On this page" list) beside it on wide screens.
+  legal = false,
+  aside = null,
   children,
 }) {
   /*
@@ -74,12 +78,23 @@ export default function StaticDocLayout({
   }, []);
 
   return (
-    <div className={styles.pageWrapper}>
+    <div className={legal ? `${styles.pageWrapper} ${styles.legal}` : styles.pageWrapper}>
       {/* In the app this is a screen, not a website page: an app top bar that
           clears the status bar, and no marketing navbar or footer. */}
       {IS_MOBILE_BUILD ? <AppTopBar title={title} /> : <LandingNavbar />}
       <main className={styles.mainContent}>
-        {noHeroCard ? (
+        {legal ? (
+          <header className={styles.legalHeader}>
+            <h1 className={styles.legalTitle}>{title}</h1>
+            {subtitle && <p className={styles.legalSubtitle}>{subtitle}</p>}
+            {(effectiveDate || effectiveFrom) && (
+              <p className={styles.legalMeta}>
+                {effectiveFrom && <span>Effective {effectiveFrom}</span>}
+                {effectiveDate && <span>Last updated {effectiveDate}</span>}
+              </p>
+            )}
+          </header>
+        ) : noHeroCard ? (
           <div className={leftAlign ? styles.heroNoCardLeft : styles.heroNoCard}>
             {badge && <div className={styles.badge}>{badge}</div>}
             <h1 className={`${leftAlign ? styles.titleNoCardLeft : styles.titleNoCard} landing-font-display`}>{title}</h1>
@@ -110,9 +125,14 @@ export default function StaticDocLayout({
           </div>
         )}
 
-        <div className={styles.bodyContainer}>
-          {children}
-        </div>
+        {legal ? (
+          <div className={styles.legalGrid}>
+            {aside}
+            <div className={styles.legalBody}>{children}</div>
+          </div>
+        ) : (
+          <div className={styles.bodyContainer}>{children}</div>
+        )}
       </main>
       {!IS_MOBILE_BUILD && <LandingFooter />}
     </div>

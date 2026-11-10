@@ -601,95 +601,214 @@
   }
 }
 
-/* ── Admin-managed document body ──
-   The four legal pages render sanitized HTML from the database rather than
-   hand-written JSX, so the styling has to attach to plain tags instead of the
-   class names above. Every rule here mirrors its `clean*` counterpart exactly,
-   so a document served from the database is indistinguishable from the markup
-   it replaced. */
-.docHtml {
+/* ── Legal documents ─────────────────────────────────────────────────────────
+   The four legal pages render sanitized HTML from the database, so the styling
+   attaches to plain tags. The composition is a plain reference document: a
+   sentence-case title, one line of dates, an "On this page" list beside a
+   narrow reading column on wide screens, and nothing decorative. One typeface
+   (Inter), hairline rules instead of cards, and the orange accent only where
+   something is interactive. */
+.legal .mainContent {
+  max-width: 66rem;
+}
+
+.legalHeader {
+  max-width: 44rem;
+  padding-bottom: 1.5rem;
+  margin-bottom: 2rem;
+  border-bottom: 1px solid var(--doc-border);
   font-family: 'Inter', sans-serif;
 }
 
-.docHtml h2 {
-  font-family: 'Changa One', sans-serif;
-  font-size: clamp(1.4rem, 4vw, 2.2rem);
-  font-weight: 400;
+.legalTitle {
+  margin: 0;
+  font-family: 'Inter', sans-serif;
+  font-size: clamp(1.75rem, 4vw, 2.375rem);
+  font-weight: 650;
+  line-height: 1.15;
+  letter-spacing: -0.022em;
   color: var(--doc-heading);
-  margin: 2.25rem 0 0.5rem;
-  letter-spacing: -0.01em;
 }
 
-.docHtml h2:first-child {
+.legalSubtitle {
+  margin: 0.6rem 0 0;
+  font-size: 1rem;
+  line-height: 1.55;
+  color: var(--doc-muted);
+}
+
+.legalMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  margin: 1rem 0 0;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--doc-faint);
+}
+
+/* The dot only where both dates share a line; a phone stacks them, and a
+   wrapped dot would otherwise lead the second line. */
+@media (min-width: 480px) {
+  .legalMeta span + span::before {
+    content: '·';
+    margin-right: 0.75rem;
+  }
+}
+
+@media (max-width: 479px) {
+  .legalMeta {
+    flex-direction: column;
+  }
+}
+
+.legalGrid {
+  display: block;
+}
+
+.legalBody {
+  min-width: 0;
+  max-width: 44rem;
+}
+
+.toc {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  .legalHeader {
+    max-width: none;
+  }
+
+  .legalGrid {
+    display: grid;
+    grid-template-columns: 13.5rem minmax(0, 44rem);
+    column-gap: 4rem;
+    align-items: start;
+  }
+
+  .toc {
+    display: block;
+    position: sticky;
+    top: 5.75rem;
+    max-height: calc(100dvh - 7rem);
+    overflow-y: auto;
+    font-family: 'Inter', sans-serif;
+  }
+}
+
+.tocTitle {
+  margin: 0 0 0.6rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--doc-faint);
+}
+
+.tocList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-left: 1px solid var(--doc-border);
+}
+
+.tocLink {
+  display: block;
+  margin-left: -1px;
+  padding: 0.3rem 0 0.3rem 0.85rem;
+  border-left: 1px solid transparent;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--doc-muted);
+  text-decoration: none;
+}
+
+.tocLink:hover {
+  color: var(--doc-heading);
+}
+
+.tocLink[aria-current='location'] {
+  border-left-color: var(--doc-heading);
+  color: var(--doc-heading);
+  font-weight: 500;
+}
+
+.tocLink:focus-visible {
+  outline: 2px solid var(--doc-accent);
+  outline-offset: 2px;
+}
+
+.docHtml {
+  font-family: 'Inter', sans-serif;
+  font-size: 1rem;
+  line-height: 1.7;
+  color: var(--doc-body);
+}
+
+.docHtml h2 {
+  margin: 2.25rem 0 0.6rem;
+  /* Clears the fixed navbar when a section is jumped to. */
+  scroll-margin-top: 5.5rem;
+  font-family: 'Inter', sans-serif;
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.012em;
+  color: var(--doc-heading);
+}
+
+.docHtml > :first-child {
   margin-top: 0;
 }
 
 .docHtml h3 {
-  font-family: 'Changa One', sans-serif;
-  font-size: 1.25rem;
-  font-weight: 400;
-  color: var(--doc-text);
   margin: 1.5rem 0 0.4rem;
-  letter-spacing: -0.01em;
+  font-family: 'Inter', sans-serif;
+  font-size: 1.0625rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--doc-heading);
+}
+
+.docHtml h4 {
+  margin: 1.25rem 0 0.3rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--doc-text);
 }
 
 .docHtml p {
-  font-size: clamp(0.95rem, 2vw, 1.075rem);
-  line-height: 1.8;
-  /*
-   * The token, not the #374151 that used to be hardcoded here.
-   *
-   * Every paragraph of every legal document goes through this rule, and that
-   * literal is a light-mode grey — so on the dark theme the entire body of the
-   * Terms, the Privacy Policy, the Cookie Policy and the Community Guidelines
-   * rendered as dark grey on a near-black surface. The headings, the list items
-   * and the links beside it were all reading their colour from the palette
-   * already; this one was the paragraph text, which is most of the page.
-   */
-  color: var(--doc-body);
-  margin: 0 0 1rem;
+  margin: 0 0 0.9rem;
 }
 
 .docHtml ul,
 .docHtml ol {
-  list-style: none;
-  padding: 0;
-  margin: 1rem 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
+  margin: 0 0 0.9rem;
+  padding-left: 1.25rem;
 }
 
 .docHtml li {
-  position: relative;
-  padding-left: 1.35rem;
-  font-size: clamp(0.925rem, 2vw, 1rem);
-  line-height: 1.65;
-  color: var(--doc-body);
+  margin: 0 0 0.45rem;
+  padding-left: 0.15rem;
 }
 
-/* The orange dot, which used to be an empty <span> in the JSX. A pseudo-element
-   instead, because the stored HTML is sanitized and must stay free of markup
-   that exists only to be styled. */
-.docHtml li::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0.55rem;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background-color: var(--doc-accent);
+.docHtml li::marker {
+  color: var(--doc-faint);
 }
 
 .docHtml a {
-  color: var(--doc-accent);
+  color: var(--doc-heading);
   font-weight: 500;
-  text-decoration: none;
+  text-decoration: underline;
+  text-decoration-color: var(--doc-faint);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
 }
 
 .docHtml a:hover {
-  text-decoration: underline;
+  color: var(--doc-accent-strong);
+  text-decoration-color: currentColor;
 }
 
 .docHtml strong {
@@ -697,27 +816,65 @@
   font-weight: 600;
 }
 
+.docHtml hr {
+  margin: 2rem 0;
+  border: 0;
+  border-top: 1px solid var(--doc-border);
+}
+
+.docHtml blockquote {
+  margin: 0 0 0.9rem;
+  padding-left: 1rem;
+  border-left: 2px solid var(--doc-border);
+  color: var(--doc-muted);
+}
+
+/* Ruled rows, no boxes: the two-column tables in these documents are lists of
+   definitions, and a full grid makes them heavier than the prose around them. */
 .docHtml table {
   width: 100%;
+  margin: 1rem 0 1.25rem;
   border-collapse: collapse;
-  margin: 1rem 0;
-  font-size: 0.95rem;
+  font-size: 0.9375rem;
+  line-height: 1.6;
 }
 
 .docHtml th,
 .docHtml td {
-  padding: 0.6rem 0.75rem;
-  border: 1px solid var(--doc-border);
+  padding: 0.7rem 1rem 0.7rem 0;
+  border-bottom: 1px solid var(--doc-border);
   text-align: left;
   vertical-align: top;
   color: var(--doc-body);
+}
+
+.docHtml th:last-child,
+.docHtml td:last-child {
+  padding-right: 0;
+}
+
+.docHtml th {
+  padding-top: 0;
+  border-bottom-color: var(--doc-faint);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--doc-faint);
+}
+
+/* The first column names the row, so it reads as a label. */
+.docHtml td:first-child {
+  width: 11rem;
+  font-weight: 600;
+  color: var(--doc-text);
 }
 
 /* Each table sits in a horizontal scroller (wrapTablesForScroll). On a phone a
    column floor keeps a wide table legible and lets it scroll, rather than
    squeezing every column to a word per line. */
 .docHtml [data-doc-table-scroller] {
-  margin: 1rem 0;
+  margin: 1rem 0 1.25rem;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-x: contain;
 }
@@ -739,15 +896,43 @@
   .docHtml th,
   .docHtml td {
     min-width: 7.5rem;
-    padding: 0.55rem 0.65rem;
+  }
+
+  .docHtml td:first-child {
+    width: auto;
   }
 }
 
-.docHtml th {
-  /* Same fix: a near-white literal, on a surface that is not white in dark. */
+/* Page chrome that follows the document body (the Cookie Policy's control). */
+.docExtra {
+  margin-top: 2rem;
+  padding-top: 2rem;
+  border-top: 1px solid var(--doc-border);
+}
+
+.docButton {
+  display: inline-flex;
+  align-items: center;
+  height: 2.25rem;
+  margin-top: 0.25rem;
+  padding: 0 0.9rem;
+  border: 1px solid var(--doc-border);
+  border-radius: 8px;
+  background: var(--doc-surface);
+  color: var(--doc-heading);
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.docButton:hover {
   background: var(--doc-surface-alt);
-  font-weight: 600;
-  color: var(--doc-text);
+}
+
+.docButton:focus-visible {
+  outline: 2px solid var(--doc-accent);
+  outline-offset: 2px;
 }
 
 /* ── Installed app: app top bar instead of the website navbar ── */
@@ -796,60 +981,59 @@
 
 /* ── Older version view and the "Previous versions" list ── */
 .olderBanner {
-  margin: 0 0 2rem;
-  padding: 0.9rem 1.1rem;
-  border: 1px solid var(--doc-accent);
-  border-left-width: 4px;
-  border-radius: 12px;
+  margin: 0 0 1.75rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--doc-border);
+  border-radius: 8px;
   background: var(--doc-surface-alt);
   color: var(--doc-text);
   font-family: 'Inter', sans-serif;
-  font-size: 0.95rem;
-  line-height: 1.6;
+  font-size: 0.875rem;
+  line-height: 1.55;
 }
 
 .olderBannerLink {
-  color: var(--doc-accent);
-  font-weight: 600;
-  text-decoration: none;
+  color: var(--doc-heading);
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
   white-space: nowrap;
 }
 
 .olderBannerLink:hover {
-  text-decoration: underline;
+  color: var(--doc-accent-strong);
 }
 
 .docState {
-  padding: 2rem 0;
+  padding: 1.5rem 0;
   font-family: 'Inter', sans-serif;
-  font-size: 0.95rem;
+  font-size: 0.9375rem;
   color: var(--doc-muted);
 }
 
 .docStateTitle {
-  font-family: 'Changa One', sans-serif;
-  font-size: 1.35rem;
-  font-weight: 400;
+  margin: 0 0 0.4rem;
+  font-family: 'Inter', sans-serif;
+  font-size: 1.125rem;
+  font-weight: 600;
   color: var(--doc-heading);
-  margin: 0 0 0.5rem;
 }
 
 .docSkeletonLine {
   height: 0.9rem;
   margin: 0 0 0.85rem;
   max-width: 34rem;
-  border-radius: 6px;
-  background: linear-gradient(90deg, var(--doc-surface-alt) 25%, var(--doc-border) 37%, var(--doc-surface-alt) 63%);
-  background-size: 400% 100%;
-  animation: docSkeleton 1.4s ease infinite;
+  border-radius: 4px;
+  background: var(--doc-surface-alt);
+  animation: docSkeleton 1.2s ease-in-out infinite alternate;
 }
 
 @keyframes docSkeleton {
-  0% {
-    background-position: 100% 50%;
+  from {
+    opacity: 1;
   }
-  100% {
-    background-position: 0 50%;
+  to {
+    opacity: 0.45;
   }
 }
 
@@ -860,75 +1044,71 @@
 }
 
 .versionsSection {
-  margin-top: 3.5rem;
+  margin-top: 2.5rem;
   padding-top: 2rem;
   border-top: 1px solid var(--doc-border);
+  font-family: 'Inter', sans-serif;
 }
 
 .versionsTitle {
-  font-family: 'Changa One', sans-serif;
-  font-size: clamp(1.25rem, 3vw, 1.6rem);
-  font-weight: 400;
+  margin: 0 0 0.5rem;
+  font-family: 'Inter', sans-serif;
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.012em;
   color: var(--doc-heading);
-  margin: 0 0 1rem;
 }
 
 .versionList {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
 }
 
 .versionItem {
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
-  padding: 0.85rem 1rem;
-  border: 1px solid var(--doc-border);
-  border-radius: 12px;
-  background: var(--doc-surface);
+  gap: 0.2rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--doc-border);
   color: var(--doc-text);
   text-decoration: none;
-  font-family: 'Inter', sans-serif;
-  transition: border-color 0.15s ease, background-color 0.15s ease;
 }
 
-.versionItem:hover,
+.versionItem:hover .versionHead,
+.versionItem:focus-visible .versionHead {
+  color: var(--doc-accent-strong);
+}
+
 .versionItem:focus-visible {
-  border-color: var(--doc-accent);
-  background: var(--doc-surface-alt);
+  outline: 2px solid var(--doc-accent);
+  outline-offset: 2px;
 }
 
 .versionHead {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 0.4rem 0.75rem;
-  font-weight: 600;
-  font-size: 0.95rem;
+  gap: 0.25rem 0.75rem;
+  font-size: 0.9375rem;
+  font-weight: 500;
   color: var(--doc-heading);
 }
 
 .versionDate {
+  font-size: 0.8125rem;
   font-weight: 400;
-  font-size: 0.85rem;
   color: var(--doc-faint);
 }
 
 .versionBadge {
-  font-size: 0.72rem;
-  font-weight: 600;
-  padding: 0.1rem 0.5rem;
-  border-radius: 999px;
-  color: var(--doc-accent-strong);
-  border: 1px solid var(--doc-accent);
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--doc-faint);
 }
 
 .versionSummary {
   font-size: 0.875rem;
   line-height: 1.55;
-  color: var(--doc-body);
+  color: var(--doc-muted);
 }

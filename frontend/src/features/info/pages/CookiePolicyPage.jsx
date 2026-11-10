@@ -19,7 +19,7 @@ export default function CookiePolicyPage() {
       badge="Privacy & Security"
       fallbackTitle="Cookie Policy"
     >
-      <div className={styles.docHtml} style={{ marginTop: '2rem' }}>
+      <div className={`${styles.docHtml} ${styles.docExtra}`}>
         <h2>Your storage preferences</h2>
         <p>
           Every storage category Meetifyy uses is summarised in the panel below,
@@ -28,22 +28,7 @@ export default function CookiePolicyPage() {
         <button
           type="button"
           onClick={openPreferences}
-          style={{
-            marginTop: '1rem',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '0.5rem',
-            height: '38px',
-            padding: '0 1.25rem',
-            borderRadius: '999px',
-            border: '1px solid var(--color-border-dark)',
-            background: 'var(--color-bg-soft)',
-            color: 'var(--color-text-main)',
-            fontSize: '0.825rem',
-            fontWeight: 600,
-            cursor: 'pointer',
-            fontFamily: 'inherit',
-          }}
+          className={styles.docButton}
           aria-label="Open storage preferences detail"
         >
           View Storage Details
