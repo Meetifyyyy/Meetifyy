@@ -1,0 +1,623 @@
+/* =========================================================================
+   PosterLanding — the landing page as a run of flat colour panels.
+
+   Rules the layout keeps to:
+   - one flat colour per panel, no gradients, shadows or blur;
+   - every element sits on the grid, nothing is positioned over anything else;
+   - photographs are cropped into plain shapes with border-radius only;
+   - colours and fonts come from the --lp-* tokens in ../landing.css.
+   ========================================================================= */
+
+.panel {
+  --pad: clamp(20px, 4.5vw, 64px);
+  box-sizing: border-box;
+  width: 100%;
+  padding: clamp(64px, 9vw, 136px) var(--pad);
+  background: var(--lp-cream);
+  color: var(--lp-ink);
+  font-family: var(--lp-body);
+}
+
+.inner {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 1320px;
+  margin: 0 auto;
+}
+
+.panel img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.cream { background: var(--lp-cream); }
+.butter { background: var(--lp-butter); }
+.sage { background: var(--lp-sage); }
+.peach { background: var(--lp-peach); }
+.night { background: var(--lp-night); color: var(--lp-night-ink); }
+
+.serif {
+  font-family: var(--lp-serif);
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ── Section heads ──────────────────────────────────────────────────────── */
+
+.head {
+  margin-bottom: clamp(32px, 5vw, 72px);
+}
+
+.kicker {
+  margin: 0 0 14px;
+  font-family: var(--lp-display);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: var(--lp-ink-soft);
+}
+
+.title {
+  margin: 0;
+  max-width: 14em;
+  font-family: var(--lp-display);
+  font-stretch: 88%;
+  font-size: clamp(40px, 6.6vw, 104px);
+  font-weight: 800;
+  line-height: 0.94;
+  letter-spacing: -0.04em;
+  text-wrap: balance;
+}
+
+.title .serif {
+  font-size: 1.06em;
+}
+
+/* ── Hero ───────────────────────────────────────────────────────────────── */
+
+.hero {
+  background: var(--lp-lilac);
+  /* The fixed header is 64px; the arch stands on the panel's bottom edge. */
+  padding-top: calc(64px + clamp(28px, 5vw, 64px));
+  padding-bottom: 0;
+}
+
+.heroInner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 40px;
+}
+
+.heroCopy {
+  container-type: inline-size;
+}
+
+.headline {
+  margin: 0;
+  font-family: var(--lp-display);
+  font-stretch: 86%;
+  /* "on campus" plus its round photo is the widest line, about 5.9em. */
+  font-size: 16.6cqi;
+  font-weight: 800;
+  line-height: 0.92;
+  letter-spacing: -0.05em;
+}
+
+.line {
+  display: block;
+  white-space: nowrap;
+}
+
+.people {
+  position: relative;
+  display: inline-block;
+  font-family: var(--lp-serif);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 1.1em;
+  line-height: 0.75;
+  letter-spacing: -0.03em;
+}
+
+.squiggle {
+  position: absolute;
+  left: 0;
+  bottom: -0.2em;
+  width: 100%;
+  height: 0.16em;
+  overflow: visible;
+}
+
+.squiggle path {
+  fill: none;
+  stroke: var(--lp-violet);
+  stroke-width: 5;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+/* A photograph set in the line like a word. */
+.chip {
+  display: inline-block;
+  width: 1.5em;
+  height: 0.7em;
+  margin: 0 0.1em 0 0;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--lp-butter);
+  vertical-align: -0.02em;
+}
+
+.chipRound {
+  width: 0.7em;
+  margin: 0 0 0 0.12em;
+  background: var(--lp-peach);
+}
+
+.lead {
+  margin: clamp(28px, 4vw, 44px) 0 0;
+  max-width: 31em;
+  font-size: clamp(17px, 1.45vw, 20px);
+  line-height: 1.55;
+  color: var(--lp-ink);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.proof {
+  margin: 20px 0 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--lp-ink-soft);
+}
+
+.proof strong {
+  color: var(--lp-ink);
+  font-weight: 700;
+}
+
+.heroArch {
+  width: 100%;
+  max-width: 440px;
+  margin: 0 auto;
+  aspect-ratio: 4 / 4.6;
+  overflow: hidden;
+  border-radius: 999px 999px 0 0;
+  background: var(--lp-butter);
+}
+
+@media (min-width: 900px) {
+  .heroInner {
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+    align-items: end;
+    gap: clamp(32px, 5vw, 88px);
+  }
+
+  .heroCopy {
+    padding-bottom: clamp(48px, 6vw, 96px);
+  }
+
+  .heroArch {
+    max-width: none;
+    aspect-ratio: 4 / 5.2;
+  }
+}
+
+/* ── Plans ticker ───────────────────────────────────────────────────────── */
+
+.ticker {
+  position: relative;
+  overflow: hidden;
+  background: var(--lp-night);
+  color: var(--lp-night-ink);
+}
+
+.tickerTrack {
+  display: flex;
+  width: max-content;
+  animation: tickerSlide 48s linear infinite;
+}
+
+.tickerRun {
+  display: flex;
+  flex: none;
+  margin: 0;
+  padding: clamp(14px, 1.8vw, 22px) 0;
+  list-style: none;
+}
+
+.tickerRun li {
+  display: flex;
+  align-items: center;
+  font-family: var(--lp-display);
+  font-size: clamp(20px, 2.6vw, 34px);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  white-space: nowrap;
+}
+
+.tickerRun .tickerSerif {
+  font-family: var(--lp-serif);
+  font-style: italic;
+  font-weight: 400;
+  font-size: clamp(23px, 3vw, 39px);
+  letter-spacing: -0.01em;
+}
+
+.flower {
+  flex: none;
+  width: 0.62em;
+  height: 0.62em;
+  margin: 0 0.8em;
+  fill: var(--lp-butter);
+}
+
+.tickerRun li:nth-child(3n + 2) .flower { fill: #dcd5ff; }
+.tickerRun li:nth-child(3n) .flower { fill: #ffd6c2; }
+
+@keyframes tickerSlide {
+  to { transform: translateX(-50%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tickerTrack { animation: none; }
+}
+
+/* ── How it works ───────────────────────────────────────────────────────── */
+
+.steps {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 28px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.step {
+  display: grid;
+  grid-template-columns: clamp(96px, 28vw, 132px) minmax(0, 1fr);
+  align-items: center;
+  gap: 20px;
+}
+
+.shape {
+  aspect-ratio: 1;
+  overflow: hidden;
+}
+
+.circle { border-radius: 50%; background: var(--lp-lilac); }
+.arch { border-radius: 999px 999px 14% 14%; background: var(--lp-butter); }
+.leaf { border-radius: 50% 0 50% 0; background: var(--lp-sage); }
+
+.stepNo {
+  display: block;
+  font-family: var(--lp-serif);
+  font-style: italic;
+  font-size: clamp(34px, 4.4vw, 60px);
+  line-height: 1;
+  color: var(--lp-violet);
+}
+
+.stepTitle {
+  margin: 6px 0 8px;
+  font-family: var(--lp-display);
+  font-stretch: 90%;
+  font-size: clamp(24px, 2.7vw, 38px);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.035em;
+}
+
+.stepText {
+  margin: 0;
+  max-width: 26em;
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--lp-ink-soft);
+}
+
+@media (min-width: 820px) {
+  .steps {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: clamp(24px, 4vw, 64px);
+  }
+
+  .step {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: 24px;
+  }
+}
+
+/* ── Features ───────────────────────────────────────────────────────────── */
+
+.menu {
+  margin: 0;
+  border-bottom: 1.5px solid var(--lp-ink);
+}
+
+.menuRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  padding: clamp(18px, 2.4vw, 30px) 0;
+  border-top: 1.5px solid var(--lp-ink);
+}
+
+.menuName {
+  font-family: var(--lp-display);
+  font-stretch: 86%;
+  font-size: clamp(38px, 6.2vw, 92px);
+  font-weight: 800;
+  line-height: 0.92;
+  letter-spacing: -0.045em;
+}
+
+.menuRow:nth-child(even) .menuName {
+  font-family: var(--lp-serif);
+  font-style: italic;
+  font-weight: 400;
+  font-size: clamp(42px, 6.8vw, 100px);
+  letter-spacing: -0.025em;
+}
+
+.menuText {
+  margin: 0;
+  max-width: 28em;
+  font-size: clamp(16px, 1.3vw, 18px);
+  line-height: 1.5;
+  color: var(--lp-ink);
+}
+
+@media (min-width: 820px) {
+  .menuRow {
+    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+    align-items: end;
+    gap: 40px;
+  }
+
+  .menuText {
+    padding-bottom: 0.5em;
+  }
+}
+
+/* ── Chai ───────────────────────────────────────────────────────────────── */
+
+.chai {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  gap: 32px;
+}
+
+.chaiPhoto {
+  width: min(100%, 520px);
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--lp-butter);
+}
+
+.chaiLine {
+  margin: 0;
+  font-family: var(--lp-serif);
+  font-style: italic;
+  font-weight: 400;
+  font-size: clamp(84px, 14vw, 228px);
+  line-height: 0.82;
+  letter-spacing: -0.035em;
+  white-space: nowrap;
+}
+
+.chaiText {
+  margin: clamp(20px, 3vw, 36px) 0 0;
+  max-width: 24em;
+  font-size: clamp(17px, 1.5vw, 21px);
+  line-height: 1.5;
+}
+
+@media (min-width: 820px) {
+  .chai {
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+    gap: clamp(40px, 6vw, 96px);
+  }
+}
+
+/* ── Circles ────────────────────────────────────────────────────────────── */
+
+.cloud {
+  --h: clamp(50px, 7vw, 100px);
+  display: flex;
+  flex-wrap: wrap;
+  gap: clamp(8px, 1vw, 14px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cloudName,
+.cloudPhoto {
+  box-sizing: border-box;
+  height: var(--h);
+  border-radius: 999px;
+}
+
+.cloudName {
+  display: flex;
+  align-items: center;
+  padding: 0 calc(var(--h) * 0.38);
+  border: 1.5px solid var(--lp-ink);
+  font-family: var(--lp-display);
+  font-stretch: 90%;
+  font-size: calc(var(--h) * 0.4);
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  white-space: nowrap;
+}
+
+.cloudName:nth-child(4n + 1) {
+  background: var(--lp-ink);
+  color: var(--lp-cream);
+}
+
+.cloudName:nth-child(4n + 2) {
+  font-family: var(--lp-serif);
+  font-style: italic;
+  font-weight: 400;
+  font-size: calc(var(--h) * 0.48);
+  letter-spacing: -0.01em;
+}
+
+.cloudName:nth-child(4n) {
+  background: var(--lp-cream);
+  border-color: var(--lp-cream);
+}
+
+/* A photo pill takes whatever is left of its row, up to a limit. */
+.cloudPhoto {
+  flex: 1 1 calc(var(--h) * 2);
+  max-width: calc(var(--h) * 3.4);
+  overflow: hidden;
+  background: var(--lp-butter);
+}
+
+/* ── The number ─────────────────────────────────────────────────────────── */
+
+.stat {
+  container-type: inline-size;
+}
+
+.statNumber {
+  margin: 0 0 0 -0.03em;
+  font-family: var(--lp-display);
+  font-stretch: 100%;
+  /* "300+" is about 2em wide at this weight, so it spans the column. */
+  font-size: 49cqi;
+  font-weight: 800;
+  line-height: 0.8;
+  letter-spacing: -0.055em;
+  white-space: nowrap;
+  color: #ffb8d2;
+  background-color: #ffb8d2;
+  background-position: center 38%;
+  background-size: cover;
+}
+
+/* The photograph shows through the numerals where the browser can clip it. */
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .statNumber {
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+  }
+}
+
+.statLabel {
+  margin: clamp(24px, 3.4vw, 48px) 0 0;
+  max-width: 17em;
+  font-family: var(--lp-display);
+  font-stretch: 90%;
+  font-size: clamp(26px, 3.6vw, 54px);
+  font-weight: 700;
+  line-height: 1.02;
+  letter-spacing: -0.035em;
+}
+
+.statLabel .serif {
+  font-size: 1.08em;
+  color: var(--lp-butter);
+}
+
+[data-theme='dark'] .statLabel .serif {
+  color: #f7e6a6;
+}
+
+/* ── Voices ─────────────────────────────────────────────────────────────── */
+
+.voices {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 36px;
+}
+
+.voicesPhoto {
+  width: min(100%, 320px);
+  aspect-ratio: 4 / 5;
+  overflow: hidden;
+  border-radius: 999px 999px 0 0;
+  background: var(--lp-sage);
+}
+
+.quote {
+  margin: 0;
+  padding: 0 0 clamp(24px, 3vw, 40px);
+}
+
+.quote + .quote {
+  padding-top: clamp(24px, 3vw, 40px);
+  border-top: 1.5px solid var(--lp-ink);
+}
+
+.quote p {
+  margin: 0;
+  font-family: var(--lp-serif);
+  font-size: clamp(25px, 2.9vw, 42px);
+  line-height: 1.14;
+  letter-spacing: -0.015em;
+  text-wrap: pretty;
+}
+
+.quote footer {
+  margin-top: 16px;
+  font-family: var(--lp-display);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.storyLink {
+  display: inline-block;
+  padding-bottom: 2px;
+  border-bottom: 1.5px solid currentColor;
+  color: var(--lp-ink);
+  font-family: var(--lp-display);
+  font-size: 17px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.storyLink:hover {
+  color: var(--lp-violet);
+}
+
+@media (min-width: 820px) {
+  .voices {
+    grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.6fr);
+    align-items: start;
+    gap: clamp(40px, 6vw, 96px);
+  }
+
+  .voicesPhoto {
+    width: 100%;
+  }
+}

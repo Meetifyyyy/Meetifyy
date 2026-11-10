@@ -1,261 +1,191 @@
-/* Landing footer.
-   A violet sign-off card with a photo and both doors, then a full-width ink
-   panel: wordmark and blurb, link columns, social links, and a bottom row. */
+/* The public site's footer: one panel in the brand violet, in both themes.
+   A sign-off beside the links, then the name set as wide as the page.
+   The --lp-* tokens are re-pointed here so the shared button reads correctly
+   on the violet surface. */
 
 .footer {
-  background: var(--color-bg-white);
-  color: var(--color-text-main);
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --panel: #5c47fa;
+  --paper: #faf5ea;
+  --butter: #f7e6a6;
+  --rule: rgba(250, 245, 234, 0.32);
+  --lp-ink: var(--paper);
+  --lp-cream: var(--panel);
+  --lp-violet: #17142e;
+  --pad: clamp(20px, 4.5vw, 64px);
+
+  box-sizing: border-box;
+  width: 100%;
+  padding: clamp(56px, 8vw, 112px) var(--pad) 0;
   overflow: hidden;
+  background: var(--panel);
+  color: var(--paper);
+  font-family: var(--lp-body);
 }
 
-.container {
-  max-width: 1440px;
+[data-theme='dark'] .footer {
+  --panel: #4534d9;
+}
+
+.inner {
+  container-type: inline-size;
+  max-width: 1320px;
   margin: 0 auto;
-  padding: clamp(24px, 4vw, 48px) clamp(12px, 3vw, 40px) 0;
 }
 
-/* ── Sign-off card ─────────────────────────────────────────────── */
+/* ── Sign-off and links ────────────────────────────────────────── */
 
-.card {
+.top {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 24px;
-  padding: clamp(24px, 4vw, 56px);
-  border-radius: clamp(24px, 3vw, 40px);
-  background: var(--color-brand-primary);
-  color: #fff;
-  overflow: hidden;
-}
-
-.cardText {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 18px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 44px;
 }
 
 .signoff {
   margin: 0;
-  font-size: clamp(44px, 7vw, 104px);
-  font-weight: 900;
+  font-family: var(--lp-display);
+  font-stretch: 86%;
+  font-size: clamp(46px, 6.4vw, 96px);
+  font-weight: 800;
   line-height: 0.9;
-  letter-spacing: -0.06em;
+  letter-spacing: -0.045em;
 }
 
-.highlight {
-  color: #ffd84d;
+.signoffSerif {
+  display: block;
+  font-family: var(--lp-serif);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 1.12em;
+  letter-spacing: -0.03em;
+  color: var(--butter);
 }
 
-.cardSub {
-  margin: 0;
-  max-width: 30ch;
-  font-size: 1.1rem;
-  line-height: 1.45;
-  color: rgba(255, 255, 255, 0.85);
+.sub {
+  margin: clamp(18px, 2.2vw, 28px) 0 0;
+  max-width: 24em;
+  font-size: clamp(16px, 1.3vw, 18px);
+  line-height: 1.5;
 }
 
-.cardActions {
+.actions {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  margin-top: 6px;
+  margin-top: 22px;
 }
 
-.cta,
-.ctaGhost {
-  display: inline-flex;
-  align-items: center;
-  height: 52px;
-  padding: 0 24px;
-  border-radius: 999px;
-  font-size: 0.96rem;
-  font-weight: 700;
-  text-decoration: none;
-  transition: background 0.15s ease;
-}
-
-.cta {
-  background: #fff;
-  color: var(--color-brand-primary);
-}
-
-.ctaGhost {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.14);
-}
-
-.ctaGhost:hover {
-  background: rgba(255, 255, 255, 0.22);
-}
-
-
-.cardPhoto {
-  display: block;
-  width: 100%;
-  height: 100%;
-  min-height: 220px;
-  max-height: 420px;
-  object-fit: cover;
-  border-radius: clamp(18px, 2vw, 28px);
-}
-
-@media (min-width: 900px) {
-  .card {
-    grid-template-columns: 1.3fr 1fr;
-    gap: clamp(32px, 4vw, 64px);
-    align-items: center;
-  }
-}
-
-/* ── Lower panel ───────────────────────────────────────────────── */
-
-.panel {
-  margin-top: clamp(24px, 4vw, 48px);
-  background: #111014;
-  color: #f2f1ee;
-}
-
-.panelInner {
-  max-width: 1440px;
-  margin: 0 auto;
-  padding: clamp(36px, 5vw, 64px) clamp(20px, 4vw, 56px) 0;
-}
-
-.columns {
+.links {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 36px 24px;
-  padding-bottom: clamp(32px, 4vw, 48px);
-}
-
-.about {
-  grid-column: 1 / -1;
-}
-
-.aboutWordmark {
-  display: block;
-  height: 1.2rem;
-  width: auto;
-  margin-bottom: 16px;
-}
-
-.aboutText {
-  margin: 0;
-  max-width: 34ch;
-  line-height: 1.6;
-  color: rgba(242, 241, 238, 0.62);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
 }
 
 .colTitle {
-  margin: 0 0 14px;
-  font-size: 0.9rem;
-  font-weight: 500;
-  color: rgba(242, 241, 238, 0.5);
+  margin: 0 0 10px;
+  font-family: var(--lp-serif);
+  font-style: italic;
+  font-size: 22px;
+  font-weight: 400;
+  color: var(--butter);
 }
 
 .list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .link {
-  position: relative;
-  padding: 0;
-  border: none;
+  display: inline-block;
+  padding: 7px 0;
+  border: 0;
   background: none;
-  font: inherit;
-  font-size: 0.98rem;
-  font-weight: 500;
-  color: #f2f1ee;
-  text-decoration: none;
-  cursor: pointer;
+  color: var(--paper);
+  font-family: var(--lp-display);
+  font-size: clamp(17px, 1.6vw, 22px);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
   text-align: left;
+  text-decoration: none;
+  text-underline-offset: 5px;
+  text-decoration-thickness: 1.5px;
+  cursor: pointer;
 }
 
-/* An underline that draws in from the left on hover. */
-.link::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -3px;
-  height: 1px;
-  background: currentColor;
-  transform: scaleX(0);
-  transform-origin: left;
-  transition: transform 0.25s ease;
+.link:hover {
+  text-decoration: underline;
 }
 
-.link:hover::after {
-  transform: scaleX(1);
+.link:focus-visible,
+.toTop:focus-visible {
+  outline: 2px solid var(--paper);
+  outline-offset: 3px;
+  border-radius: 6px;
 }
 
-.socials {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+@media (min-width: 900px) {
+  .top {
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+    gap: clamp(40px, 6vw, 96px);
+  }
+
+  .links {
+    padding-top: 8px;
+  }
 }
 
-.social {
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 999px;
-  border: 1px solid rgba(242, 241, 238, 0.16);
-  color: #f2f1ee;
-  transition: background 0.2s ease, border-color 0.2s ease;
+/* Four squares in a row. Each is a quarter-circle; the first two round
+   upwards into a dome and the last two round downwards into a bowl, so the
+   row as a whole is one wave. The gap is kept thin so they read together. */
+/* ── The name ──────────────────────────────────────────────────── */
+
+.name {
+  margin: clamp(44px, 6vw, 88px) 0 0 -0.035em;
+  font-family: var(--lp-display);
+  font-stretch: 86%;
+  /* "meetifyy" is about 3em wide here, so it spans the column. */
+  font-size: 33cqi;
+  font-weight: 800;
+  line-height: 0.86;
+  letter-spacing: -0.055em;
+  white-space: nowrap;
+  padding-bottom: 0.1em;
+  user-select: none;
 }
 
-.social:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.28);
+.nameAccent {
+  color: var(--butter);
 }
+
+/* ── Closing line ──────────────────────────────────────────────── */
 
 .bottom {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 20px 0 calc(22px + env(safe-area-inset-bottom, 0px));
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  gap: 4px 24px;
+  margin-top: clamp(16px, 2vw, 28px);
+  padding: 14px 0 calc(16px + env(safe-area-inset-bottom, 0px));
+  border-top: 1.5px solid var(--rule);
 }
 
 .legal {
   margin: 0;
-  font-size: 0.85rem;
-  color: rgba(242, 241, 238, 0.5);
+  font-size: 14px;
 }
 
 .toTop {
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
+  min-height: 44px;
   padding: 0;
-  border: 1px solid rgba(242, 241, 238, 0.16);
-  border-radius: 999px;
-  background: transparent;
-  color: #f2f1ee;
+  border: 0;
+  background: none;
+  color: var(--paper);
+  font-family: var(--lp-display);
+  font-size: 15px;
+  font-weight: 600;
   cursor: pointer;
-  transition: background 0.2s ease;
-}
-
-.toTop:hover {
-  background: rgba(255, 255, 255, 0.14);
-}
-
-@media (min-width: 900px) {
-  .columns {
-    grid-template-columns: 1.6fr repeat(3, minmax(0, 1fr));
-  }
-  .about {
-    grid-column: auto;
-  }
 }
