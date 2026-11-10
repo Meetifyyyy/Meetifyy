@@ -83,7 +83,7 @@ describe('LegalDocumentPage', () => {
     legalApi.listVersions.mockRejectedValue(new Error('offline'));
     await renderPage();
     await waitFor(() => expect(legalApi.getDocument).toHaveBeenCalled());
-    expect(screen.getByText(/Welcome to Meetifyy/)).toBeTruthy();
+    expect(screen.getByText(/These Terms govern your access/)).toBeTruthy();
     expect(screen.queryByText('Previous versions')).toBeNull();
   });
 
