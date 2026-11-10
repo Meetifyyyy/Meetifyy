@@ -30,13 +30,13 @@
   --community-card-min: 16rem;
 }
 
-/* Each community is its own card, with a clearly visible edge: 1.5px in the
-   standard border colour (the light one all but vanished on white). */
+/* Each community is its own card, with a fine edge: 0.375px in the standard
+   border colour (the light one all but vanished on white). */
 .list > * {
   min-width: 0;
   background: var(--color-bg-white);
-  border: 1.5px solid var(--color-border);
-  border-radius: var(--radius-lg);
+  border: 0.375px solid var(--color-border);
+  border-radius: var(--community-card-radius);
 }
 
 /* Phones: one card per row, the full width. */
@@ -53,31 +53,7 @@
 }
 
 .skeletonRow {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  padding: 0.75rem 0.875rem;
-}
-
-.skeletonHead {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-/* The card's icon size: 52px, 44px on large screens. */
-.skeletonAvatar {
-  display: flex;
-  flex-shrink: 0;
-  width: 52px;
-  height: 52px;
-}
-
-.skeletonBody {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
+  height: calc(86px + 1.5rem);
 }
 
 .more {
@@ -147,7 +123,7 @@
 .heading {
   display: block;
   /* Flush with the cards below it (the section no longer bleeds). */
-  padding: 0.75rem 0 1rem;
+  padding: 0.25rem 0 0.75rem;
 }
 
 /* Phones: the page title sits 0.5rem in, and the heading lines up with it. */
@@ -161,7 +137,7 @@
   margin: 0;
   font-size: 1.6rem;
   font-weight: 800;
-  line-height: 1.15;
+  line-height: 1.1;
   letter-spacing: -0.02em;
   color: var(--color-text-main);
 }
@@ -169,7 +145,7 @@
 .headingSubtitle {
   margin: 0.4rem 0 0;
   font-size: 0.95rem;
-  line-height: 1.4;
+  line-height: 1.2;
   color: var(--color-text-muted);
 }
 
@@ -256,12 +232,4 @@
   top: 50%;
   left: 50%;
   margin: -8px 0 0 -8px;
-}
-
-/* Same card as CommunityRow on large screens, so loading does not jump. */
-@media (min-width: 769px) {
-  .skeletonAvatar {
-    width: 44px;
-    height: 44px;
-  }
 }

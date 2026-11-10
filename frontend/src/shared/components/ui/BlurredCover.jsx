@@ -19,25 +19,46 @@ const BITMAP_BLUR_PX = 2;
  * The crop matches CoverImage's `object-fit: cover`. Drawing a cross-origin
  * image into a canvas that is only DISPLAYED is allowed (it taints the canvas
  * for reading, which never happens), so media needs no CORS for this.
+ * `bitmapWidth` and `blurPx` set how soft it is (a wider bitmap with a smaller
+ * blur keeps more of the picture; the defaults are the profile cover's).
  * Gradient and empty covers need no blur: they render as themselves.
  */
-export default function BlurredCover({ cover, className = '' }) {
+export default function BlurredCover({
+  cover,
+  className = '',
+  bitmapWidth = BITMAP_WIDTH,
+  blurPx = BITMAP_BLUR_PX,
+  sources = null,
+  onReady,
+  onFail,
+  onSourceError,
+}) {
   const resolved = getCleanCoverUrl(cover);
   const url = !resolved.isEmpty && !resolved.isGradient ? resolved.url : null;
+  // `sources`: addresses to try in turn (a thumbnail first, then the original),
+  // used instead of `cover` when given. `onReady` is called once the picture
+  // has drawn, `onFail` if none of the addresses loads, `onSourceError(url)` for
+  // each address that did not.
+  const list = sources && sources.length ? sources : url ? [url] : [];
+  const listKey = list.join('|');
   const canvasRef = useRef(null);
+  const callbacks = useRef({ onReady, onFail, onSourceError });
+  callbacks.current = { onReady, onFail, onSourceError };
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!url || !canvas) return undefined;
+    const addresses = listKey ? listKey.split('|') : [];
+    if (!addresses.length || !canvas) return undefined;
     let cancelled = false;
-    const img = new Image();
-    img.decoding = 'async';
+    let img = null;
+    let index = 0;
+    let drawn = false;
 
     const draw = () => {
-      if (cancelled || !img.naturalWidth) return;
+      if (cancelled || !img || !img.naturalWidth) return;
       const box = canvas.getBoundingClientRect();
       const aspect = box.width > 0 && box.height > 0 ? box.height / box.width : 1 / 3;
-      const w = BITMAP_WIDTH;
+      const w = bitmapWidth;
       const h = Math.max(4, Math.round(w * aspect));
       if (canvas.width !== w) canvas.width = w;
       if (canvas.height !== h) canvas.height = h;
@@ -53,27 +74,52 @@ export default function BlurredCover({ cover, className = '' }) {
       const sy = (img.naturalHeight - sh) / 2;
       // Drawn past the edges by the blur radius, so the blur has image to
       // sample there instead of fading to transparent at the border.
-      const m = BITMAP_BLUR_PX * 2;
-      ctx.filter = `blur(${BITMAP_BLUR_PX}px)`;
+      const m = blurPx * 2;
+      ctx.filter = `blur(${blurPx}px)`;
       ctx.drawImage(img, sx, sy, sw, sh, -m, -m, w + m * 2, h + m * 2);
       canvas.dataset.ready = 'true';
+      if (!drawn) {
+        drawn = true;
+        callbacks.current.onReady?.();
+      }
     };
 
-    img.onload = draw;
-    img.src = url;
-    if (img.complete) draw();
+    const load = () => {
+      if (cancelled) return;
+      if (index >= addresses.length) {
+        callbacks.current.onFail?.();
+        return;
+      }
+      const address = addresses[index];
+      const attempt = new Image();
+      img = attempt;
+      attempt.decoding = 'async';
+      attempt.onload = draw;
+      attempt.onerror = () => {
+        if (cancelled || img !== attempt) return;
+        callbacks.current.onSourceError?.(address);
+        index += 1;
+        load();
+      };
+      attempt.src = address;
+      if (attempt.complete && attempt.naturalWidth) draw();
+    };
+    load();
 
     const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(draw) : null;
     observer?.observe(canvas);
     return () => {
       cancelled = true;
-      img.onload = null;
+      if (img) {
+        img.onload = null;
+        img.onerror = null;
+      }
       observer?.disconnect();
     };
-  }, [url]);
+  }, [listKey, bitmapWidth, blurPx]);
 
-  if (resolved.isEmpty) return <div className={`${styles.box} ${styles.empty} ${className}`} />;
-  if (resolved.isGradient) {
+  if (!list.length && resolved.isEmpty) return <div className={`${styles.box} ${styles.empty} ${className}`} />;
+  if (!list.length && resolved.isGradient) {
     return <div className={`${styles.box} ${className}`} style={{ background: resolved.gradient }} />;
   }
   return <canvas ref={canvasRef} className={`${styles.box} ${className}`} aria-hidden="true" />;

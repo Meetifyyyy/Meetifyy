@@ -1,61 +1,120 @@
 /*
- * A community card: icon, name over member count, Join, on one line; the
- * description under all three across the full width, two lines at most.
- * The member count uses the post card's @handle size; the name is a step
- * larger than the post card's author name.
+ * A community card. Without a banner: a plain card on the page's own surface.
+ * With one ([data-cover]): the banner, blurred, under a dark wash, in white text
+ * (--tile-ink), on the community's colour (--tile-ground) until it has drawn.
+ * A large bordered icon on the left and everything else to its right: the name
+ * with the join control, the member count right under it, then the
+ * description. Fixed height, so nothing depends on the text's length.
  */
-.row {
+article.row {
   position: relative;
   display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  padding: 0.75rem 0.875rem;
-  border-radius: var(--radius-md);
-  transition: background var(--transition-fast, 0.15s ease);
-}
-
-.row:hover {
-  background: var(--color-bg-soft);
-}
-
-.row:focus-within {
-  background: var(--color-bg-soft);
-}
-
-.head {
-  display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.75rem;
-  min-width: 0;
+  /* The icon (84px + its 1px border each side) plus the padding above and below,
+     so there is the same space over and under it. */
+  height: calc(86px + 1.5rem);
+  padding: 0.75rem;
+  /* The border is the list's shared one (CommunityList's `.list > *`). */
+  border-radius: var(--community-card-radius);
+  background: var(--color-bg-white);
+  color: var(--color-text-main);
+  overflow: hidden;
+  /* The banner picture and its wash sit at z-index -2 / -1: above the card's own
+     background, below its content, without positioning the content (which would
+     shrink the name's stretched link). */
+  isolation: isolate;
+  transition: background var(--transition-fast, 0.15s ease), filter var(--transition-fast, 0.15s ease);
 }
 
-.titles {
+article.row:hover,
+article.row:focus-within {
+  background: var(--color-bg-soft);
+}
+
+/* A banner card: no border at all (a transparent one would show the background
+   tiled into it, as a sharp line down the card's left and right sides). */
+article.row[data-cover] {
+  border: none;
+  background: var(--tile-ground);
+  color: var(--tile-ink);
+}
+
+article.row[data-cover]:hover,
+article.row[data-cover]:focus-within {
+  background: var(--tile-ground);
+  filter: brightness(0.94);
+}
+
+.cover {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+article.row[data-cover]::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: rgba(0, 0, 0, 0.42);
+  pointer-events: none;
+}
+
+/* The icon, with a very thin border. */
+.avatar {
+  align-self: center;
+  flex-shrink: 0;
+  display: flex;
+  border: 1px solid var(--color-border);
+  border-radius: var(--community-avatar-radius);
+  overflow: hidden;
+}
+
+article.row[data-cover] .avatar {
+  border-color: color-mix(in srgb, var(--tile-ink) 50%, transparent);
+}
+
+/* Over a banner a letter-only icon would vanish: it is drawn in white with the
+   community's deepened colour on it. A picture covers this anyway. */
+article.row[data-cover] .avatar [data-community-avatar] {
+  background: var(--tile-ink) !important;
+  color: var(--tile-accent) !important;
+}
+
+.content {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
 }
 
-.titleLine {
+.titleRow {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  min-width: 0;
+  justify-content: space-between;
+  gap: 0.6rem;
+  min-height: 30px;
 }
 
-/* A step above the post card's author name, so the community's name leads the card. */
 .name {
+  flex: 1;
   min-width: 0;
   font-family: var(--font-family-display);
-  font-size: 1.0625rem;
-  line-height: 1.3;
-  font-weight: 600;
-  color: var(--color-text-main);
+  font-size: 1.25rem;
+  line-height: 1.15;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: inherit;
   text-decoration: none;
   white-space: nowrap;
-  overflow: hidden;
   text-overflow: ellipsis;
+  overflow: hidden;
   outline: none;
 }
 
@@ -68,41 +127,7 @@
 }
 
 .name:focus-visible::after {
-  box-shadow: 0 0 0 2px var(--color-primary);
-}
-
-.privateTag {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  flex-shrink: 0;
-  padding: 0.1rem 0.45rem;
-  border-radius: var(--radius-sm);
-  background: var(--color-bg-soft);
-  border: 1px solid var(--color-border);
-  color: var(--color-text-muted);
-  font-size: 0.72rem;
-  font-weight: 600;
-  line-height: 1.4;
-}
-
-/* Post card @handle (.postTime): members, and the role when shown. */
-.meta {
-  margin: 0;
-  display: flex;
-  min-width: 0;
-  column-gap: 0.3rem;
-  font-size: 0.75rem;
-  line-height: 1.35;
-  font-weight: 500;
-  color: var(--color-text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-}
-
-.meta span + span::before {
-  content: '·';
-  margin-right: 0.3rem;
+  box-shadow: inset 0 0 0 2px var(--tile-ink);
 }
 
 /* Above the stretched link, so the button takes its own clicks. */
@@ -110,17 +135,34 @@
   position: relative;
   z-index: 1;
   flex-shrink: 0;
-  margin-left: auto;
 }
 
-/* Two lines at most. Paragraph breaks are folded into spaces for this
-   summary (a blank line would spend one of the two lines on nothing); the
-   community page shows them. A long unbroken word wraps rather than
-   overflowing the card. */
+.action > * {
+  min-width: 5rem;
+  height: 28px;
+}
+
+/* A white pill on a plain card needs an edge on a light page. */
+article.row:not([data-cover]) .action > button {
+  border-color: var(--color-border);
+}
+
+.meta {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.3;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Two lines at most, right under the member count. */
 .description {
   margin: 0;
-  font-size: 0.875rem;
-  line-height: 1.4;
+  font-size: 0.8125rem;
+  line-height: 1.25;
   color: var(--color-text-muted);
   overflow-wrap: anywhere;
   display: -webkit-box;
@@ -129,24 +171,48 @@
   overflow: hidden;
 }
 
-/* Campus surfaces only (the `highlightOnHover` prop). The same flat card as
-   the Communities page: the shared border (CommunityList's `.list > *`) and
-   no drop shadow. Hover is the plain whole-card highlight every row has
-   (`.row:hover` above). */
-.row.highlight {
-  box-shadow: none;
-  transition: background-color 0.15s ease;
+article.row[data-cover] .meta,
+article.row[data-cover] .description {
+  color: inherit;
+  opacity: 0.88;
 }
 
-/* Large screens: several cards side by side, so a slightly smaller icon. */
-@media (min-width: 769px) {
-  .row [data-community-avatar] {
-    width: 44px !important;
-    height: 44px !important;
-    font-size: 18px !important;
-  }
+/* A banner card waiting for its picture: a placeholder of the same size, with
+   nothing in it to see or tap, so the card appears once, complete. */
+article.row[data-pending] {
+  background: var(--color-bg-soft);
+  border: none;
+  filter: none;
+  pointer-events: none;
+  animation: cardPending 1.2s ease-in-out infinite alternate;
+}
 
+article.row[data-pending] > * {
+  visibility: hidden;
+}
+
+article.row[data-pending]::before {
+  display: none;
+}
+
+@keyframes cardPending {
+  from { opacity: 1; }
+  to { opacity: 0.55; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  article.row[data-pending] {
+    animation: none;
+  }
+}
+
+/* Campus surfaces only (the `highlightOnHover` prop). */
+article.row.highlight {
+  box-shadow: none;
+}
+
+@media (min-width: 769px) {
   .description {
-    font-size: 0.8125rem;
+    font-size: 0.78rem;
   }
 }

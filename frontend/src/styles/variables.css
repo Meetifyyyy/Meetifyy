@@ -132,6 +132,9 @@
   /* Every community icon - rounded square, never a circle (people stay round).
      A percentage so it scales with the icon: 28% of 52px is ~14.5px, of 17px ~4.8px. */
   --community-avatar-radius: 28%;
+  /* A community card's corner, in ratio with its 52px icon (28% = ~14.5px) plus the
+     card's 14px padding: the two corners read as concentric. */
+  --community-card-radius: 22px;
 
   /* === Shadows === */
   --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.05);

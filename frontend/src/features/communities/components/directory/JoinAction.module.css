@@ -50,3 +50,22 @@
     inset: -7px -4px;
   }
 }
+
+/* On a community's colour tile: always a white pill with the tile's deepened
+   colour on it (--tile-deep), whether the tile is dark or light. */
+.onTile.primary {
+  background: #ffffff;
+  color: var(--tile-deep);
+  font-weight: 700;
+}
+
+.onTile.primary:hover:not(:disabled) {
+  background: #ffffff;
+  opacity: 0.92;
+}
+
+.onTile.settled {
+  background: transparent;
+  border-color: var(--tile-ink);
+  color: var(--tile-ink);
+}
