@@ -48,7 +48,8 @@
 .profileCard {
   background: var(--color-bg-white);
   border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-lg);
+  /* The cover on top is square: only the card's bottom corners are rounded. */
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
   overflow: hidden;
   /* 8px to the first post, the same as between posts (.postsContainer). */
   margin-bottom: 8px;
@@ -946,8 +947,7 @@
   box-shadow: none;
 }
 
-/* Rounded bottom corners on the cover (not in the app's collapsing header). */
-:global(html:not([data-collapsing-header])) .coverPhoto {
-  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
-  overflow: hidden;
+/* The cover is square everywhere: no rounded corners on it, on a phone or a wide screen. */
+.coverPhoto {
+  border-radius: 0;
 }

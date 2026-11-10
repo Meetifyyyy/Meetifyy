@@ -454,7 +454,7 @@
   align-items: center;
   gap: 0.85rem;
   background: var(--color-bg-white);
-  border: 1.5px solid var(--color-border);
+  border: 0.75px solid var(--color-border);
   border-radius: var(--radius-lg);
   padding: 0.9rem 1rem;
 }
@@ -617,7 +617,7 @@
    so they look unchanged everywhere else. */
 .resultItem {
   background: var(--color-bg-white);
-  border: 1.5px solid var(--color-border);
+  border: 0.75px solid var(--color-border);
   border-radius: var(--radius-lg);
   overflow: hidden;
   cursor: pointer;

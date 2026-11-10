@@ -106,7 +106,8 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  border-radius: 20px;
+  /* The cover on top is square: only the card's bottom corners are rounded. */
+  border-radius: 0 0 20px 20px;
   margin: 0;
   background: var(--color-bg-white);
   /* The confession card's lift; flat in dark mode (end of file). */
@@ -123,7 +124,7 @@
   min-height: 100px;
   max-height: 165px;
   overflow: hidden;
-  border-radius: 20px 20px 0 0;
+  border-radius: 0;
   /* The tint is see-through, so it is laid over a solid base. Without a picture
      this box is all there is: in the app it pins as the header's background
      (useCollapsingHeader), and a see-through header showed the community's own
@@ -1890,7 +1891,11 @@
     overflow: hidden;
   }
 
-  .heroCover {
+  /* Square cover on a phone, and its loading skeleton and shimmer with it. */
+  .heroCover,
+  .heroCoverImg,
+  .coverSkeleton,
+  .coverPullBlur {
     border-radius: 0;
   }
 
