@@ -77,7 +77,15 @@ export function installSystemBars(systemBars, { readEdges } = {}) {
     }
   } catch (_) {}
   systemBars.getInsets?.().then((insets) => {
-    if (insets) setInsets(insets.top, insets.bottom);
+    if (!insets) return;
+    setInsets(insets.top, insets.bottom);
+    // Saved here as well. The native publish that writes this key can run
+    // before the document exists (measured on the I2208: the key was never
+    // there on a cold start), and without it the first frame laid Home out
+    // under the status bar and moved it down when this answer arrived.
+    if (Number.isFinite(insets.top) && Number.isFinite(insets.bottom)) {
+      try { localStorage.setItem(INSETS_KEY, `${insets.top},${insets.bottom}`); } catch (_) {}
+    }
   });
 
   /**
