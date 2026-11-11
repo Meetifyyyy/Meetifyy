@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useGlobalSocketStore } from '../stores/useGlobalSocketStore';
 import { useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router-dom';
-import NotificationIsland from '../notifications/island/NotificationIsland';
+import NotificationIsland from '../notifications/island/LazyNotificationIsland';
 import { islandNotify, islandDismissForPath } from '../notifications/island/islandStore';
 import { parseConversationRoute } from '../utils/conversationUrl';
 import { messagesApi, getMediaUrl } from '../api/apiClient';
