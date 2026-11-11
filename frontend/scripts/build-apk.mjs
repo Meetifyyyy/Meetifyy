@@ -3,6 +3,8 @@
  *
  *   npm run mobile:apk            debug   -> local/apk/dev/
  *   npm run mobile:apk -- release release -> local/apk/release/
+ *   npm run mobile:apk -- perf    debug, compiled like a release -> local/apk/perf/
+ *                                 (start-up measurement only; see app/build.gradle)
  *   npm run mobile:aab:testing    release-signed AAB pointed at the DEV API
  *                                 -> local/aab/testing/  (Play closed testing)
  *
@@ -44,20 +46,21 @@ const root = resolve(frontend, '..');
 const android = resolve(frontend, 'android');
 
 const variant = (process.argv[2] || 'debug').toLowerCase();
-if (!['debug', 'release', 'testing'].includes(variant)) {
-  console.error(`Unknown variant "${variant}". Use "debug", "release" or "testing".`);
+if (!['debug', 'release', 'testing', 'perf'].includes(variant)) {
+  console.error(`Unknown variant "${variant}". Use "debug", "perf", "release" or "testing".`);
   process.exit(1);
 }
 
 const isRelease = variant === 'release';
 const isTesting = variant === 'testing';
+const isPerf = variant === 'perf';
 const outDir = isTesting
   ? resolve(root, 'local/aab/testing')
-  : resolve(root, 'local/apk', isRelease ? 'release' : 'dev');
+  : resolve(root, 'local/apk', isRelease ? 'release' : isPerf ? 'perf' : 'dev');
 // Only the real release reads .env.production; testing deliberately does not.
 const viteMode = isRelease ? 'production' : 'development';
 const gradleTask = isTesting ? 'bundleRelease' : isRelease ? 'assembleRelease' : 'assembleDebug';
-const gradleVariant = isTesting ? 'release' : variant;
+const gradleVariant = isTesting ? 'release' : isPerf ? 'debug' : variant;
 const artefactExt = isTesting ? '.aab' : '.apk';
 
 /**
@@ -165,7 +168,7 @@ if (!process.env.JAVA_HOME) {
       'build fails with "invalid source release: 21".\n',
   );
 }
-run(gradlew, [gradleTask, '--console=plain'], android);
+run(gradlew, [gradleTask, ...(isPerf ? ['-PmeetifyyPerf'] : []), '--console=plain'], android);
 
 // 4. Collect the artefact.
 const apkDir = isTesting

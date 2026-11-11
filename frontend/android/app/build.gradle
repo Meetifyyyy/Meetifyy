@@ -20,8 +20,25 @@ if (releasePropsFile.exists()) {
     releasePropsFile.withInputStream { releaseProps.load(it) }
 }
 
+/*
+ * `-PmeetifyyPerf`: the debug variant built the way a release is compiled, for
+ * measuring start-up (scripts/build-apk.mjs perf, scripts/measure-startup.mjs).
+ *
+ * Still the development app in every respect that matters for isolation: the
+ * .dev application ID, the debug key, the development API and Firebase project.
+ * It installs over the DEV APP and keeps its sign-in. What changes is that it
+ * is not debuggable, so ART compiles and runs it as it would a release build
+ * (a debuggable app is never run from optimised code), and it is shrunk like
+ * one. The launch log and WebView inspection stay on (BuildConfig.LAUNCH_LOG).
+ * Never ship it: it is signed with a throwaway key and is inspectable.
+ */
+def perfBuild = project.hasProperty('meetifyyPerf')
+
 android {
     namespace = "app.meetifyy"
+    buildFeatures {
+        buildConfig = true
+    }
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
         applicationId "app.meetifyy"
@@ -63,9 +80,15 @@ android {
             // ID in src/debug/google-services.json, or dev push is unavailable.
             applicationIdSuffix ".dev"
             manifestPlaceholders = [appLinkHost: "dev.meetifyy.app"]
+            // The MeetifyyLaunch timings in logcat, and an inspectable WebView.
+            buildConfigField "boolean", "LAUNCH_LOG", "true"
+            if (perfBuild) {
+                debuggable false
+            }
         }
         release {
             manifestPlaceholders = [appLinkHost: "meetifyy.app"]
+            buildConfigField "boolean", "LAUNCH_LOG", "false"
             if (releasePropsFile.exists()) {
                 signingConfig signingConfigs.release
             }

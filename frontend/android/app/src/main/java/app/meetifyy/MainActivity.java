@@ -104,6 +104,10 @@ public class MainActivity extends BridgeActivity {
 
         super.onCreate(savedInstanceState);
 
+        // The perf build is not debuggable, so Capacitor leaves WebView
+        // inspection off; the page's own launch marks are read through it.
+        if (BuildConfig.LAUNCH_LOG) WebView.setWebContentsDebuggingEnabled(true);
+
         // 3a. No grey "play" placeholder over videos (see MeetifyyChromeClient).
         if (getBridge() != null && getBridge().getWebView() != null) {
             getBridge().getWebView().setWebChromeClient(new MeetifyyChromeClient(getBridge()));
@@ -310,8 +314,12 @@ public class MainActivity extends BridgeActivity {
         }
     }
 
+    /**
+     * Whether this build writes its launch timings to logcat: debug builds and
+     * the perf build (see app/build.gradle), never a release.
+     */
     private boolean isDebuggable() {
-        return (getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0;
+        return BuildConfig.LAUNCH_LOG;
     }
 
     /** Milliseconds since this process was forked: a cold start's own clock, for the debug log. */
