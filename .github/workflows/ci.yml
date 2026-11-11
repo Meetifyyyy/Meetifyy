@@ -309,6 +309,14 @@ jobs:
           fi
           echo "no service worker in dist-mobile/"
 
+      # Everything the app's document loads before it can render is compiled
+      # on every cold start (the WebView keeps no code cache for files the app
+      # serves itself), so its size is start-up time. Fails when the entry
+      # bundle outgrows its budget, when Home becomes a lazy route again, or
+      # when the animation library returns to the launch path.
+      - name: Start-up bundle budget
+        run: npm run check:mobile-bundle
+
       # Blocker B1 — the API origin — is guarded by a unit test rather than by
       # grepping the bundle. The first version of this step searched for
       # `localhost:NNNN` and failed on `http://localhost:9999`, a default

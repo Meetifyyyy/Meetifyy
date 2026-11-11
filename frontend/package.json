@@ -8,6 +8,8 @@
     "build:dev": "node scripts/generate-robots.mjs && node scripts/generate-sitemap.mjs && node scripts/generate-version.mjs && vite build --mode development && node scripts/prerender-seo.mjs && node scripts/verify-csp-hashes.mjs",
     "build:mobile": "vite build --config vite.mobile.config.js",
     "build:mobile:dev": "vite build --config vite.mobile.config.js --mode development",
+    "check:mobile-bundle": "node scripts/check-mobile-bundle.mjs",
+    "measure:startup": "node scripts/measure-startup.mjs",
     "dev": "vite",
     "dev:mobile": "vite --config vite.mobile.config.js",
     "lint": "eslint .",
