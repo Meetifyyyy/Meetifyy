@@ -2501,3 +2501,19 @@
   border-radius: 20px;
   overflow: hidden;
 }
+
+/* Installed app: the cover, its photo, its loading skeleton and the pull blur
+   are square at every width, and the card meets it with square top corners.
+   `data-app` is set on <html> by index.mobile.html only, so the website keeps
+   its own shape. Last in the file so it outranks the rounded rule above. */
+:global(html[data-app]) .heroCover,
+:global(html[data-app]) .heroCoverImg,
+:global(html[data-app]) .coverSkeleton,
+:global(html[data-app]) .coverPullBlur {
+  border-radius: 0;
+}
+
+:global(html[data-app]) .heroSection {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}

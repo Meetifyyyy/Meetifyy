@@ -1,12 +1,9 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useAuth } from '@shared/context/AuthContext';
 import { usePageTransition } from '@shared/hooks/usePageTransition';
 import { CENTRE_EFFECT } from '@shared/lib/navigation/centreTransition';
-import { isCommunityMember, isCommunityOwner } from '@shared/utils/community';
 import BlurredCover from '@shared/components/ui/BlurredCover';
 import CommunityAvatar from './CommunityAvatar';
-import JoinAction from './JoinAction';
 import { memberLabel, tileColors } from './communityMeta';
 import { coverSources, hasDrawnCover, noteCoverDrawn, noteCoverSourceError } from './coverSources';
 import { toSummaryText } from '@shared/utils/communityText';
@@ -41,11 +38,8 @@ const ROLE_LABEL = { OWNER: 'Owner', MODERATOR: 'Moderator' };
  * `highlightOnHover` is for the Campus surfaces: no shadow.
  */
 function CommunityRow({ community, from, showMembership = true, highlightOnHover = false }) {
-  const { currentUser } = useAuth();
   const { openFromLink } = usePageTransition({ effect: CENTRE_EFFECT });
   const role = showMembership ? ROLE_LABEL[community.userRole] : null;
-  const joined = isCommunityOwner(community, currentUser) || isCommunityMember(community, currentUser);
-  const showAction = showMembership || !joined;
   const description = community.description && community.description !== community.name
     ? community.description
     : null;
@@ -135,11 +129,6 @@ function CommunityRow({ community, from, showMembership = true, highlightOnHover
           >
             {community.name}
           </Link>
-          {showAction && (
-            <div className={styles.action}>
-              <JoinAction community={community} onTile />
-            </div>
-          )}
         </div>
         <p className={styles.meta}>
           {memberLabel(community)}

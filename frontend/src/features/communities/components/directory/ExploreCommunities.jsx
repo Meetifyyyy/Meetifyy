@@ -1,3 +1,5 @@
+import { useEffect } from 'react';
+import { warmCommunityCovers } from './coverSources';
 import { AlertCircle } from '@shared/components/icons';
 import { useExploreCommunities } from '@shared/hooks/useCommunities';
 import { OfflineState } from '@shared/components/ui/StateViews';
@@ -23,6 +25,8 @@ export default function ExploreCommunities() {
     refetch,
   } = useExploreCommunities();
   const online = useOnlineStatus();
+  // Every card's cover starts downloading as soon as the list is known.
+  useEffect(() => { warmCommunityCovers(communities); }, [communities]);
 
   return (
     <section className={listStyles.section} aria-busy={isFetching} aria-label="Communities">

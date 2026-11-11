@@ -1,4 +1,5 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
+import { warmCommunityCovers } from './coverSources';
 import { AlertCircle } from '@shared/components/icons';
 import { useMyCommunities } from '@shared/hooks/useCommunities';
 import { OfflineState } from '@shared/components/ui/StateViews';
@@ -16,6 +17,8 @@ const YOURS_SUBTITLE = 'Jump back into the groups you’re already part of.';
 export default function YourCommunities() {
   const { myCommunities, isLoading, isError, refetch } = useMyCommunities();
   const sorted = useMemo(() => [...myCommunities].sort(byRecentActivity), [myCommunities]);
+  // Every card's cover starts downloading as soon as the list is known.
+  useEffect(() => { warmCommunityCovers(sorted); }, [sorted]);
   const online = useOnlineStatus();
 
   if (isLoading) {
@@ -29,7 +32,7 @@ export default function YourCommunities() {
   // Offline with nothing saved: not an empty list of communities.
   if (!online && sorted.length === 0) {
     return (
-      <section className={styles.section} aria-label="Your communities">
+      <section className={styles.section} aria-label="Your communities" data-offline-keep="communities">
         <OfflineState message="Your communities will load when you are back online." />
       </section>
     );
@@ -54,14 +57,14 @@ export default function YourCommunities() {
 
   if (sorted.length === 0) {
     return (
-      <section className={styles.section} aria-label="Your communities">
+      <section className={styles.section} aria-label="Your communities" data-offline-keep="communities">
         <SectionHeading title={YOURS_TITLE} subtitle={YOURS_SUBTITLE} />
       </section>
     );
   }
 
   return (
-    <section className={styles.section} aria-label="Your communities">
+    <section className={styles.section} aria-label="Your communities" data-offline-keep="communities">
       <SectionHeading title={YOURS_TITLE} subtitle={YOURS_SUBTITLE} />
       <div className={styles.mobileCard}>
         <div className={styles.list}>

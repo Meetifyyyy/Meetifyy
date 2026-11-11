@@ -951,3 +951,15 @@
 .coverPhoto {
   border-radius: 0;
 }
+
+/* Installed app: the cover and its loading placeholder are square, and the
+   card meets it with square top corners (`data-app`: index.mobile.html). */
+:global(html[data-app]) .coverWrap,
+:global(html[data-app]) .coverPhoto {
+  border-radius: 0;
+}
+
+:global(html[data-app]) .profileCard {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}

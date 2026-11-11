@@ -64,6 +64,14 @@
   opacity: 0.92;
 }
 
+/* Light mode: the card's Join / Request is a black pill with white text.
+   Dark mode keeps the white pill above. */
+:global(html:not([data-theme='dark'])) .onTile.primary,
+:global(html:not([data-theme='dark'])) .onTile.primary:hover:not(:disabled) {
+  background: #000000;
+  color: #ffffff;
+}
+
 .onTile.settled {
   background: transparent;
   border-color: var(--tile-ink);
