@@ -1,130 +1,44 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '../api/apiClient';
-import { Monitor, LogOut, Trash2 } from '../components/icons';
+import { AlertTriangle, CheckCircle, Clock, LogOut, Monitor, RefreshCw, ShieldCheck, X } from '../components/icons';
 import { useAuth } from '../context/AuthContext';
 import { useConfirm } from '../components/ConfirmProvider';
+import { LoadingState } from '../components/LoadingState';
+import './activity.css';
+
+interface AdminSession { id: string; browser?: string | null; os?: string | null; deviceName?: string | null; ip?: string | null; createdAt?: string | null; lastActiveAt?: string | null }
+const dateLabel = (value?: string | null) => value ? new Date(value).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Not recorded';
 
 export const SessionsPage: React.FC = () => {
   const confirm = useConfirm();
   const queryClient = useQueryClient();
   const { logout } = useAuth();
-
-  const { data: sessions, isLoading } = useQuery({
-    queryKey: ['adminSessions'],
-    queryFn: () => apiRequest('/admin/auth/sessions'),
+  const [notice, setNotice] = useState<string | null>(null);
+  const query = useQuery<AdminSession[]>({ queryKey: ['adminSessions'], queryFn: () => apiRequest('/admin/auth/sessions'), refetchOnWindowFocus: false });
+  const revoke = useMutation({
+    mutationFn: (id: string) => apiRequest(`/admin/auth/sessions/${encodeURIComponent(id)}/revoke`, { method: 'POST' }),
+    onSuccess: async () => { setNotice('Session revoked. That device has been signed out.'); await queryClient.invalidateQueries({ queryKey: ['adminSessions'] }); },
   });
-
-  const revokeMutation = useMutation({
-    mutationFn: (sessionId: string) =>
-      apiRequest(`/admin/auth/sessions/${sessionId}/revoke`, { method: 'POST' }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['adminSessions'] }),
-  });
-
-  const logoutAllMutation = useMutation({
-    mutationFn: () => apiRequest('/admin/auth/logout-all', { method: 'POST' }),
-    onSuccess: () => logout(),
-  });
-
+  const revokeAll = useMutation({ mutationFn: () => apiRequest('/admin/auth/logout-all', { method: 'POST' }), onSuccess: () => logout() });
+  const busy = revoke.isPending || revokeAll.isPending;
+  const sessions = query.data ?? [];
   return (
-    <div>
-      <div className="page-header">
-        <div>
-          <h2 className="page-title">Active Sessions</h2>
-          <p className="page-subtitle">Super admin sessions and connected devices.</p>
-        </div>
-        <button
-          onClick={() => confirm({
-            title: 'Revoke every active session?',
-            description: 'All super admin sessions are ended immediately, on every device.',
-            consequences: [
-              'You will be signed out of this session too.',
-              'Anyone currently working in the portal loses their session without warning.',
-            ],
-            severity: 'high',
-            confirmLabel: 'Revoke all',
-            onConfirm: () => logoutAllMutation.mutateAsync(),
-          })}
-          className="btn-danger"
-        >
-          <LogOut size={15} />
-          <span>Revoke All Sessions</span>
-        </button>
-      </div>
-
-      <div className="glass-panel" style={{ padding: '0.75rem' }}>
-        {isLoading ? (
-          <div style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--color-text-dim)', fontSize: '0.8rem' }}>
-            Loading sessions...
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            {sessions?.map((session: any) => (
-              <div
-                key={session.id}
-                style={{
-                  background: 'var(--color-bg-alt)',
-                  border: '1px solid var(--color-border)',
-                  borderRadius: 'var(--radius-sm)',
-                  padding: '0.65rem 0.85rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  flexWrap: 'wrap',
-                  gap: '0.6rem',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flex: '1 1 200px', minWidth: 0 }}>
-                  <div
-                    style={{
-                      width: '28px',
-                      height: '28px',
-                      borderRadius: '6px',
-                      background: 'var(--color-primary-tint)',
-                      border: '1px solid rgba(37, 99, 235, 0.2)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                    }}
-                  >
-                    <Monitor size={14} color="var(--color-primary)" />
-                  </div>
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ fontWeight: 600, fontSize: '0.8rem', color: 'var(--color-text-main)', wordBreak: 'break-word', lineHeight: 1.3 }}>
-                      {session.browser || 'Browser'} on {session.os || 'OS'} ({session.deviceName || 'Device'})
-                    </div>
-                    <div style={{ fontSize: '0.68rem', color: 'var(--color-text-light)', marginTop: '0.1rem', wordBreak: 'break-word' }}>
-                      IP: {session.ip} • Last Active: {new Date(session.lastActiveAt).toLocaleString()}
-                    </div>
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => confirm({
-                    title: 'Revoke this session?',
-                    description: 'That device is signed out of the admin portal immediately.',
-                    severity: 'moderate',
-                    confirmLabel: 'Revoke session',
-                    onConfirm: () => revokeMutation.mutateAsync(session.id),
-                  })}
-                  className="btn-danger"
-                  style={{ padding: '0.22rem 0.55rem', fontSize: '0.7rem', minHeight: '28px' }}
-                >
-                  <Trash2 size={12} />
-                  <span>Revoke</span>
-                </button>
-              </div>
-            ))}
-
-            {sessions?.length === 0 && (
-              <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--color-text-dim)', fontSize: '0.85rem' }}>
-                No active sessions found.
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+    <div className="admin-page sessions-page">
+      <header className="page-header"><div><h2 className="page-title">Active sessions</h2><p className="page-subtitle">Manage the devices signed into your admin account.</p></div><div className="sessions-header-actions"><button type="button" className="btn-secondary activity-refresh" aria-label="Refresh sessions" title="Refresh sessions" onClick={() => query.refetch()} disabled={busy || query.isFetching}><RefreshCw size={17} className={query.isFetching ? 'spin' : undefined} /></button><button type="button" className="btn-danger sessions-revoke-all" disabled={busy || query.isFetching || query.isError || !sessions.length} onClick={() => confirm({ title: 'Revoke all your sessions?', description: 'Your admin account is signed out on every device.', consequences: ['This includes the session you are using now.', 'You will need to sign in again to continue.'], severity: 'high', confirmLabel: 'Revoke all', onConfirm: () => revokeAll.mutateAsync() })}><LogOut size={17} /><span>Revoke all sessions</span></button></div></header>
+      <section className="activity-overview tone-blue" aria-label="Your active sessions"><span className="activity-overview-icon"><ShieldCheck size={25} /></span><div><h3>Signed-in devices</h3><p>Review your sessions and revoke any you no longer use.</p></div><div className="activity-overview-count" aria-live="polite"><strong>{query.isLoading || query.isError ? '—' : sessions.length.toLocaleString()}</strong><span>active sessions</span></div></section>
+      <div className="sessions-section-heading"><h3>Your sessions</h3><span><Clock size={14} />Most recently active first</span></div>
+      {notice && <div className="sessions-notice" role="status"><CheckCircle size={18} /><span>{notice}</span><button type="button" aria-label="Dismiss session update" onClick={() => setNotice(null)}><X size={16} /></button></div>}
+      {query.isLoading ? <LoadingState label="Loading sessions…" /> : query.isError ? <div className="activity-state" role="alert"><AlertTriangle size={30} /><h3>Sessions could not be loaded</h3><p>{(query.error as Error)?.message || 'Try loading your sessions again.'}</p><button type="button" className="btn-secondary" disabled={query.isFetching} onClick={() => query.refetch()}>Try again</button></div> : !sessions.length ? <div className="activity-state"><Monitor size={30} /><h3>No active sessions found</h3><p>Devices signed into your admin account will appear here.</p></div> : (
+        <section className="sessions-panel" aria-label="Your active admin sessions" aria-busy={query.isFetching}><div className="sessions-grid">{sessions.map((session) => (
+          <article key={session.id} className="session-card">
+            <header className="session-device"><span className="session-device-icon" aria-hidden="true"><Monitor size={21} /></span><div className="session-device-copy"><h3>{session.deviceName || 'Browser session'}</h3><p>{session.browser || 'Unknown browser'}</p></div><span className="session-active-label"><span aria-hidden="true">•</span>Active</span></header>
+            <div className="session-platform" data-redundant={!!session.os && !!session.deviceName && session.os.trim().toLowerCase() === session.deviceName.trim().toLowerCase()}>{session.os || 'Unknown operating system'}</div>
+            <dl className="session-metadata"><div><dt>IP address</dt><dd><code>{session.ip || 'Not recorded'}</code></dd></div><div><dt>Signed in</dt><dd>{dateLabel(session.createdAt)}</dd></div><div><dt>Last active</dt><dd>{dateLabel(session.lastActiveAt)}</dd></div></dl>
+            <footer className="session-footer"><button type="button" className="btn-danger session-revoke" disabled={busy || query.isFetching} aria-label={`Revoke session on ${session.deviceName || session.browser || 'this device'}`} onClick={() => { setNotice(null); confirm({ title: 'Revoke this session?', description: 'This device is signed out of your admin account immediately.', consequences: ['If this is your current session, you will need to sign in again.'], severity: 'moderate', confirmLabel: 'Revoke session', onConfirm: () => revoke.mutateAsync(session.id) }); }}><LogOut size={16} /><span>Revoke session</span></button></footer>
+          </article>
+        ))}</div></section>
+      )}
     </div>
   );
 };
