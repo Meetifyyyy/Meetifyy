@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { Sparkles, Shield, KeyRound, Mail, ArrowRight, AlertCircle, Loader2 } from '../components/icons';
+import { Shield, ArrowRight, AlertCircle, Loader2, Eye, EyeOff } from '../components/icons';
+import './login.css';
 
 export const LoginPage: React.FC = () => {
   const { login, verifyOtp, verifyTotp } = useAuth();
@@ -12,6 +13,7 @@ export const LoginPage: React.FC = () => {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [otp, setOtp] = useState('');
   const [totpCode, setTotpCode] = useState('');
 
@@ -73,178 +75,98 @@ export const LoginPage: React.FC = () => {
     }
   };
 
+  const isPassword = step === 'PASSWORD';
+  const isEmailCode = step === 'OTP';
+  const title = isPassword ? 'Welcome back.' : isEmailCode ? 'Check your inbox.' : 'One last step.';
+  const description = isPassword
+    ? 'Sign in to your Meetifyy workspace.'
+    : isEmailCode
+      ? `Enter the 6-digit verification code sent to ${email}.`
+      : 'Enter the 6-digit code from your authenticator app.';
+
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'var(--color-bg-main)',
-        padding: '1rem',
-      }}
-    >
-      <div
-        className="glass-panel"
-        style={{
-          width: '100%',
-          maxWidth: '400px',
-          padding: '2rem 1.5rem',
-          boxShadow: 'var(--shadow-lg)',
-        }}
-      >
-        {/* Brand Header */}
-        <div style={{ textAlign: 'center', marginBottom: '1.75rem' }}>
-          <div
-            style={{
-              width: '46px',
-              height: '46px',
-              borderRadius: '12px',
-              background: 'linear-gradient(135deg, var(--color-primary), var(--color-secondary))',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginBottom: '0.85rem',
-              boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)',
-            }}
-          >
-            <Sparkles size={24} color="#fff" />
+    <main className="admin-login-page">
+      <div className="admin-login-shell">
+        <aside className="admin-login-visual" aria-hidden="true">
+          <div className="admin-login-art" aria-hidden="true">
+            <div className="login-orb login-orb-striped" />
+            <div className="login-orb login-orb-blue" />
+            <div className="login-orb login-orb-glass" />
+            <div className="login-flower">
+              {Array.from({ length: 12 }, (_, index) => (
+                <span key={index} style={{ '--petal-angle': `${index * 30}deg` } as React.CSSProperties} />
+              ))}
+              <div className="login-flower-center"><i /><i /></div>
+            </div>
+            <div className="login-orb login-orb-yellow" />
+            <div className="login-orb login-orb-ring" />
+            <div className="login-art-cube" />
           </div>
-          <h2 style={{ fontSize: '1.35rem', fontWeight: 800 }}>Super Admin</h2>
-          <p style={{ fontSize: '0.82rem', color: 'var(--color-text-light)', marginTop: '0.2rem' }}>
-            {step === 'PASSWORD' && 'Enter master credentials to continue'}
-            {step === 'OTP' && 'Enter 6-digit email verification code'}
-            {step === 'TOTP' && 'Enter Google Authenticator code'}
-          </p>
-        </div>
+        </aside>
 
-        {error && (
-          <div
-            style={{
-              background: 'var(--color-danger-tint)',
-              border: '1px solid rgba(239, 68, 68, 0.3)',
-              color: 'var(--color-danger-hover)',
-              padding: '0.65rem 0.85rem',
-              borderRadius: 'var(--radius-sm)',
-              fontSize: '0.82rem',
-              marginBottom: '1.25rem',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-            }}
-          >
-            <AlertCircle size={15} style={{ flexShrink: 0 }} />
-            <span>{error}</span>
+        <section className="admin-login-panel" aria-labelledby="admin-login-title">
+          <div className="admin-login-form-content">
+            <div className="admin-login-brand">
+              <img src="/admin-avatar.jpg" alt="" width={36} height={36} />
+              <span>Meetifyy <span>Admin</span></span>
+            </div>
+            <header className="admin-login-heading">
+              <h1 id="admin-login-title">{title}</h1>
+              <p>{description}</p>
+            </header>
+
+            {error && (
+              <div className="admin-login-error" role="alert">
+                <AlertCircle size={18} aria-hidden="true" /><span>{error}</span>
+              </div>
+            )}
+
+            <form
+              onSubmit={isPassword ? handlePasswordSubmit : isEmailCode ? handleOtpSubmit : handleTotpSubmit}
+              className="admin-login-form"
+              aria-busy={loading}
+            >
+              {isPassword ? (
+                <>
+                  <div className="admin-login-field">
+                    <label htmlFor="admin-email">Email address</label>
+                    <input id="admin-email" name="email" type="email" autoComplete="username" autoCapitalize="none" spellCheck={false} enterKeyHint="next" required
+                      value={email} onChange={(event) => setEmail(event.target.value)}
+                      placeholder="you@meetifyy.com" disabled={loading} />
+                  </div>
+                  <div className="admin-login-field">
+                    <label htmlFor="admin-password">Password</label>
+                    <div className="admin-login-password">
+                      <input id="admin-password" name="password" type={showPassword ? 'text' : 'password'}
+                        autoComplete="current-password" enterKeyHint="go" required value={password}
+                        onChange={(event) => setPassword(event.target.value)} placeholder="Enter your password" disabled={loading} />
+                      <button type="button" onClick={() => setShowPassword(!showPassword)}
+                        aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword}>
+                        {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                      </button>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="admin-login-field">
+                  <label htmlFor="admin-verification-code">{isEmailCode ? 'Email verification code' : 'Authenticator code'}</label>
+                  <input key={step} id="admin-verification-code" name="code" type="text" inputMode="numeric"
+                    autoComplete="one-time-code" enterKeyHint="done" pattern="[0-9]{6}" minLength={6} maxLength={6} required
+                    value={isEmailCode ? otp : totpCode}
+                    onChange={(event) => (isEmailCode ? setOtp : setTotpCode)(event.target.value.replace(/\D/g, ''))}
+                    placeholder="000000" className="admin-login-code" disabled={loading} />
+                </div>
+              )}
+              <button type="submit" className="admin-login-submit"
+                disabled={loading || (!isPassword && (isEmailCode ? otp : totpCode).length !== 6)}>
+                {loading ? <><Loader2 size={18} className="spin" />{isPassword ? 'Signing in…' : 'Verifying…'}</>
+                  : <>{isPassword ? 'Sign in' : isEmailCode ? 'Verify email' : 'Verify and sign in'}<ArrowRight size={18} /></>}
+              </button>
+            </form>
+            <p className="admin-login-footer"><Shield size={15} aria-hidden="true" />Authorized administrators only</p>
           </div>
-        )}
-
-        {/* Step 1: Email + Password */}
-        {step === 'PASSWORD' && (
-          <form onSubmit={handlePasswordSubmit}>
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--color-text-muted)', marginBottom: '0.35rem' }}>
-                Admin Email
-              </label>
-              <div style={{ position: 'relative' }}>
-                <Mail size={16} color="var(--color-text-dim)" style={{ position: 'absolute', left: '0.85rem', top: '50%', transform: 'translateY(-50%)' }} />
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="admin@example.com"
-                  className="input-control"
-                  style={{ paddingLeft: '2.4rem' }}
-                />
-              </div>
-            </div>
-
-            <div style={{ marginBottom: '1.5rem' }}>
-              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--color-text-muted)', marginBottom: '0.35rem' }}>
-                Master Password
-              </label>
-              <div style={{ position: 'relative' }}>
-                <Shield size={16} color="var(--color-text-dim)" style={{ position: 'absolute', left: '0.85rem', top: '50%', transform: 'translateY(-50%)' }} />
-                <input
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••••••"
-                  className="input-control"
-                  style={{ paddingLeft: '2.4rem' }}
-                />
-              </div>
-            </div>
-
-            <button type="submit" disabled={loading} className="btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '0.75rem' }}>
-              {loading ? <Loader2 size={16} className="spin" /> : <>Sign In <ArrowRight size={16} /></>}
-            </button>
-          </form>
-        )}
-
-        {/* Step 2: Email OTP */}
-        {step === 'OTP' && (
-          <form onSubmit={handleOtpSubmit}>
-            <div style={{ marginBottom: '1.5rem' }}>
-              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--color-text-muted)', marginBottom: '0.35rem' }}>
-                Verification Code
-              </label>
-              <input
-                type="text"
-                maxLength={6}
-                required
-                value={otp}
-                onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
-                placeholder="123456"
-                className="input-control"
-                style={{
-                  fontSize: '1.25rem',
-                  letterSpacing: '6px',
-                  textAlign: 'center',
-                  padding: '0.75rem',
-                }}
-              />
-            </div>
-
-            <button type="submit" disabled={loading || otp.length !== 6} className="btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '0.75rem' }}>
-              {loading ? <Loader2 size={16} className="spin" /> : 'Verify Code'}
-            </button>
-          </form>
-        )}
-
-        {/* Step 3: TOTP */}
-        {step === 'TOTP' && (
-          <form onSubmit={handleTotpSubmit}>
-            <div style={{ marginBottom: '1.5rem' }}>
-              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--color-text-muted)', marginBottom: '0.35rem' }}>
-                Authenticator Code
-              </label>
-              <div style={{ position: 'relative' }}>
-                <KeyRound size={16} color="var(--color-text-dim)" style={{ position: 'absolute', left: '0.85rem', top: '50%', transform: 'translateY(-50%)' }} />
-                <input
-                  type="text"
-                  maxLength={6}
-                  required
-                  value={totpCode}
-                  onChange={(e) => setTotpCode(e.target.value)}
-                  placeholder="000000"
-                  className="input-control"
-                  style={{
-                    paddingLeft: '2.4rem',
-                    letterSpacing: '4px',
-                    fontSize: '1.1rem',
-                  }}
-                />
-              </div>
-            </div>
-
-            <button type="submit" disabled={loading} className="btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '0.75rem' }}>
-              {loading ? <Loader2 size={16} className="spin" /> : 'Authenticate'}
-            </button>
-          </form>
-        )}
+        </section>
       </div>
-    </div>
+    </main>
   );
 };
