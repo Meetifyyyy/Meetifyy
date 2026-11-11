@@ -32,6 +32,27 @@
  */
 // First: keeps a phone in landscape on the mobile layout (see the module).
 import './installLandscapePhoneMedia';
+/*
+ * The Keystore plugin, loaded with the entry instead of on first use.
+ *
+ * platform/capacitor/secureStorage.js imports the plugin dynamically so the
+ * website never carries it, and the plugin in turn registers its Android half
+ * lazily (`android: () => import('./native.js')`). In the app that was two
+ * chunks fetched one after the other at launch, each continuation waiting for
+ * a turn of a main thread that was rendering Home. The launch's credential
+ * read is the plugin's first call, and every request of the launch waits for
+ * it. Measured on the I2208 (2026-11-11): the read was asked for at ~450 ms,
+ * the native call only went out at ~830 ms and was answered at ~1030 ms, so
+ * Home painted and then requested nothing, the feed included, for ~250 ms.
+ *
+ * This import makes the plugin a static dependency of the entry, and
+ * `vendor-native` in vite.mobile.config.js puts its Android half in the same
+ * chunk (a bare import of native.js is dropped by the bundler as unused: the
+ * package is marked side-effect-free). Both dynamic imports then resolve from
+ * modules that are already evaluated, and the Keystore is read while Home
+ * renders. Mobile entry only.
+ */
+import '@aparajita/capacitor-secure-storage';
 import { installLaunchReadiness } from './launchReadiness';
 import { recordLaunchPerf } from './launchPerfLog';
 import { warmSignedInLanding } from './warmSignedInLanding';

@@ -82,6 +82,10 @@ function accessExpiry(token, expiresInSeconds, now) {
     : null;
 }
 
+function mark(name) {
+  try { performance.mark(name); } catch { /* optional */ }
+}
+
 export function createCapacitorSessionSource({ secureStorage, now = () => Date.now() }) {
   let accessToken = '';
   let refreshToken = '';
@@ -227,7 +231,11 @@ export function createCapacitorSessionSource({ secureStorage, now = () => Date.n
     isRecoveryCredential: () => false,
 
     whenReady: () => {
-      if (!readyPromise) readyPromise = restore();
+      if (!readyPromise) {
+        // On the page's timeline: every request at launch waits for this read.
+        mark('meetifyy:credential-read-start');
+        readyPromise = restore().finally(() => mark('meetifyy:credential-read-end'));
+      }
       return readyPromise;
     },
 

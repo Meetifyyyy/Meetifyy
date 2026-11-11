@@ -302,6 +302,14 @@ export default defineConfig({
           'vendor-emoji': ['emoji-mart', '@emoji-mart/react'],
           'vendor-icons': ['@hugeicons/react', '@hugeicons/core-free-icons', '@heroicons/react'],
           'vendor-zustand': ['zustand', 'immer'],
+          // The Keystore plugin with its lazily registered Android half, in
+          // one chunk the entry imports statically (src/mobile/main.jsx), so
+          // the launch's credential read does not wait on two chunk fetches
+          // behind Home's first render. See the comment there.
+          'vendor-native': [
+            '@aparajita/capacitor-secure-storage',
+            '@aparajita/capacitor-secure-storage/dist/esm/native.js',
+          ],
         },
       },
     },
