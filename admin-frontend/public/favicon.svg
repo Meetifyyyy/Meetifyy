@@ -1,12 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" fill="none">
-  <rect width="64" height="64" rx="16" fill="url(#admin-grad)"/>
-  <path d="M32 14L35.5 24.5L46 28L35.5 31.5L32 42L28.5 31.5L18 28L28.5 24.5L32 14Z" fill="#FFFFFF"/>
-  <path d="M44 40L45.5 44.5L50 46L45.5 47.5L44 52L42.5 47.5L38 46L42.5 44.5L44 40Z" fill="#A7F3D0"/>
-  <path d="M20 40L21 43L24 44L21 45L20 48L19 45L16 44L19 43L20 40Z" fill="#FDE047"/>
+  <rect width="64" height="64" rx="16" fill="#10182D"/>
+  <path d="M32 8L52 16V31C52 43 43 51 32 56C21 51 12 43 12 31V16L32 8Z" fill="#1C2545" stroke="#A99BFF" stroke-width="2.5" stroke-linejoin="round"/>
+  <!-- M from the Meetifyy wordmark, in the brand's blue-to-cyan palette. -->
+  <g transform="translate(20 20) scale(.21818 .24)" fill="url(#meetifyy-blue)">
+    <path d="M0 100V0H16L55 60L94 0H110V100H94V30L55 90L16 30V100Z"/>
+  </g>
   <defs>
-    <linearGradient id="admin-grad" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#2563EB"/>
-      <stop offset="1" stop-color="#7C3AED"/>
+    <linearGradient id="meetifyy-blue" x1="0" y1="100" x2="110" y2="0" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#3563FF"/>
+      <stop offset="1" stop-color="#00C3FF"/>
     </linearGradient>
   </defs>
 </svg>

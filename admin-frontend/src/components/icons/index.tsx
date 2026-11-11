@@ -43,6 +43,7 @@ import {
   MailRemove01Icon,
   Megaphone01Icon,
   Menu01Icon,
+  SidebarLeft01Icon,
   RefreshIcon,
   Search01Icon,
   Sent02Icon,
@@ -148,6 +149,7 @@ export const Activity = /*#__PURE__*/ icon(Activity03Icon, 'Activity');
 
 // -- Chrome / navigation
 export const Menu = /*#__PURE__*/ icon(Menu01Icon, 'Menu');
+export const Sidebar = /*#__PURE__*/ icon(SidebarLeft01Icon, 'Sidebar');
 export const Search = /*#__PURE__*/ icon(Search01Icon, 'Search');
 export const Settings = /*#__PURE__*/ icon(Settings02Icon, 'Settings');
 export const Plus = /*#__PURE__*/ icon(Add01Icon, 'Plus');
