@@ -1,5 +1,6 @@
-import React, { useEffect } from 'react';
-import { X } from '../../components/icons';
+import React, { useEffect, useId, useRef } from 'react';
+import { createPortal } from 'react-dom';
+import { AlertTriangle, X } from '../../components/icons';
 import type { AcceptanceStats } from './legalApi';
 import { acceptancePercent, formatCount } from './legalFormat';
 
@@ -60,35 +61,11 @@ export const Field: React.FC<{
   </div>
 );
 
-export const SectionTitle: React.FC<{ children: React.ReactNode; aside?: React.ReactNode }> = ({
-  children,
-  aside,
-}) => (
-  <div
-    style={{
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      gap: '0.75rem',
-      margin: '1.5rem 0 0.75rem',
-    }}
-  >
-    <h3
-      style={{
-        fontSize: '0.78rem',
-        fontWeight: 700,
-        textTransform: 'uppercase',
-        letterSpacing: '0.05em',
-        color: 'var(--color-text-light)',
-      }}
-    >
-      {children}
-    </h3>
-    {aside}
-  </div>
-);
+export const SectionTitle: React.FC<{ children: React.ReactNode; aside?: React.ReactNode }> = ({ children, aside }) => <div className="legal-section-title"><h3>{children}</h3>{aside}</div>;
 
-/** A portal modal: Escape and the backdrop close it unless `busy`. */
+export const LegalError: React.FC<{ message: string; retry?: () => void }> = ({ message, retry }) => <div className="legal-error" role="alert"><AlertTriangle size={22} /><p>{message}</p>{retry && <button type="button" className="btn-secondary" onClick={retry}>Try again</button>}</div>;
+
+/** Dialog content scrolls independently; keyboard focus stays with the workflow. */
 export const LegalModal: React.FC<{
   title: string;
   subtitle?: React.ReactNode;
@@ -97,77 +74,36 @@ export const LegalModal: React.FC<{
   width?: number;
   children: React.ReactNode;
   footer?: React.ReactNode;
-}> = ({ title, subtitle, onClose, busy = false, width = 560, children, footer }) => {
+}> = ({ title, subtitle, onClose, busy = false, width = 640, children, footer }) => {
+  const titleId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const actions = useRef({ busy, onClose });
+  useEffect(() => { actions.current = { busy, onClose }; }, [busy, onClose]);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !busy) onClose();
+    const opener = document.activeElement as HTMLElement | null;
+    const dialog = dialogRef.current;
+    dialog?.querySelector<HTMLElement>('[aria-label="Close"]')?.focus({ preventScroll: true });
+    const onKey = (event: KeyboardEvent) => {
+      if (document.querySelector('[role="alertdialog"], [role="listbox"]')) return;
+      if (event.key === 'Escape' && !actions.current.busy) { event.preventDefault(); actions.current.onClose(); }
+      if (event.key !== 'Tab' || !dialog) return;
+      const controls = Array.from(dialog.querySelectorAll<HTMLElement>('*')).filter((node) => node.matches('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), a[href], [tabindex="0"]') && !node.closest('[hidden]'));
+      const first = controls[0]; const last = controls.at(-1);
+      if (!first) { event.preventDefault(); dialog.focus(); }
+      else if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [busy, onClose]);
-
-  return (
-    <div
-      className="modal-backdrop"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget && !busy) onClose();
-      }}
-    >
-      <div
-        className="modal-content"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="legal-modal-title"
-        style={{ maxWidth: width, display: 'flex', flexDirection: 'column' }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'flex-start',
-            justifyContent: 'space-between',
-            gap: '1rem',
-            padding: '1.1rem 1.25rem 0.9rem',
-            borderBottom: '1px solid var(--color-border)',
-          }}
-        >
-          <div style={{ minWidth: 0 }}>
-            <h2 id="legal-modal-title" style={{ fontSize: '1.02rem', fontWeight: 700 }}>
-              {title}
-            </h2>
-            {subtitle && (
-              <p style={{ marginTop: '0.2rem', fontSize: '0.8rem', color: 'var(--color-text-light)' }}>
-                {subtitle}
-              </p>
-            )}
-          </div>
-          <button
-            type="button"
-            className="legal-tool"
-            onClick={onClose}
-            disabled={busy}
-            aria-label="Close"
-          >
-            <X size={15} />
-          </button>
-        </div>
-        <div style={{ padding: '1.1rem 1.25rem', overflowY: 'auto' }}>{children}</div>
-        {footer && (
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'flex-end',
-              gap: '0.5rem',
-              flexWrap: 'wrap',
-              padding: '0.85rem 1.25rem',
-              borderTop: '1px solid var(--color-border)',
-              background: 'var(--color-bg-alt)',
-            }}
-          >
-            {footer}
-          </div>
-        )}
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('keydown', onKey); if (opener?.isConnected) opener.focus({ preventScroll: true }); };
+  }, []);
+  return createPortal(
+    <div className="modal-backdrop legal-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose(); }}>
+      <div ref={dialogRef} tabIndex={-1} className="modal-content legal-modal" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-busy={busy} style={{ maxWidth: width }}>
+        <header className="legal-modal-header"><div><h2 id={titleId}>{title}</h2>{subtitle && <p>{subtitle}</p>}</div><button type="button" className="legal-tool" onClick={onClose} disabled={busy} aria-label="Close"><X size={18} /></button></header>
+        <div className="legal-modal-body">{children}</div>
+        {footer && <footer className="legal-modal-footer">{footer}</footer>}
       </div>
-    </div>
+    </div>, document.body,
   );
 };
 

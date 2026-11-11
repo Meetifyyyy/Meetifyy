@@ -30,7 +30,8 @@ import {
   type LegalVersionWithContent,
 } from './legalApi';
 import { errorMessage, formatDateTime } from './legalFormat';
-import { DocumentPreview, Field } from './LegalBits';
+import { LoadingState } from '../../components/LoadingState';
+import { DocumentPreview, Field, LegalError } from './LegalBits';
 import { PublishDialog } from './PublishDialog';
 import './legal.css';
 
@@ -44,7 +45,7 @@ export const LegalEditorPage: React.FC = () => {
       </Link>
     );
   }
-  return <Editor documentType={type} />;
+  return <Editor key={type} documentType={type} />;
 };
 
 /** The value, once it has stopped changing for `ms`. */
@@ -81,10 +82,11 @@ const Editor: React.FC<{ documentType: LegalDocumentType }> = ({ documentType })
     setDirtyState(next);
   }, []);
   const [mode, setMode] = useState<Mode>('visual');
+  const [editorView, setEditorView] = useState<'edit' | 'preview'>('edit');
   const [linking, setLinking] = useState<{ url: string; range: Range | null } | null>(null);
   const [publishing, setPublishing] = useState(false);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isFetching, isError, refetch } = useQuery({
     queryKey: ['adminLegalDocument', documentType],
     queryFn: () => legalApi.getDocument(documentType),
   });
@@ -114,9 +116,11 @@ const Editor: React.FC<{ documentType: LegalDocumentType }> = ({ documentType })
   });
   const startedRef = useRef(false);
   useEffect(() => {
-    if (!data || data.draft || startedRef.current) return;
+    // Only opening this editor may create a draft. A refetch after discarding
+    // must not create another one while navigation is still completing.
+    if (!data || startedRef.current) return;
     startedRef.current = true;
-    startDraft.mutate();
+    if (!data.draft) startDraft.mutate();
   }, [data, startDraft]);
 
   // Seed once per draft. A background refetch must not wipe unsaved typing.
@@ -217,7 +221,8 @@ const Editor: React.FC<{ documentType: LegalDocumentType }> = ({ documentType })
     },
   });
 
-  const canSave = !!form.title.trim() && !!form.content.trim() && !save.isPending;
+  const editingBusy = save.isPending || discard.isPending;
+  const canSave = !!form.title.trim() && !!form.content.trim() && !editingBusy;
 
   // Cmd/Ctrl+S saves.
   useEffect(() => {
@@ -233,7 +238,7 @@ const Editor: React.FC<{ documentType: LegalDocumentType }> = ({ documentType })
 
   // Live preview: the server's sanitizer, so it is exactly what will be stored.
   const settled = useDebounced(form.content, 400);
-  const { data: preview, isFetching: previewing } = useQuery({
+  const { data: preview, isFetching: previewing, isError: previewFailed, refetch: retryPreview } = useQuery({
     queryKey: ['adminLegalPreview', settled],
     queryFn: () => legalApi.preview(settled),
     enabled: settled.length > 0,
@@ -273,24 +278,8 @@ const Editor: React.FC<{ documentType: LegalDocumentType }> = ({ documentType })
   // The navigation guard asks about unsaved changes, here as everywhere else.
   const leave = () => navigate(backTo);
 
-  if ((isLoading && !data) || (!draft && startDraft.isPending)) {
-    return (
-      <div style={{ display: 'grid', gap: '1rem' }}>
-        <div className="legal-skeleton" style={{ height: 70 }} />
-        <div className="legal-skeleton" style={{ height: 480 }} />
-      </div>
-    );
-  }
-  if (!data || !draft) {
-    return (
-      <div className="glass-panel" style={{ padding: '2rem', textAlign: 'center' }}>
-        <p style={{ marginBottom: '1rem' }}>The draft could not be opened.</p>
-        <Link to={backTo} className="btn-secondary" style={{ textDecoration: 'none' }}>
-          Back
-        </Link>
-      </div>
-    );
-  }
+  if ((isLoading && !data) || (!draft && (startDraft.isPending || isFetching))) return <LoadingState label="Opening legal draft…" />;
+  if (!data || !draft) return <div className="admin-page legal-page"><Link to={backTo} className="legal-link">Back to document</Link><LegalError message="The draft could not be opened." retry={() => { if (data && !draft) startDraft.mutate(); else void refetch(); }} /></div>;
 
   const tools: { label: string; icon: React.ReactNode; run: () => void }[] = [
     { label: 'Paragraph', icon: <Pilcrow size={15} />, run: () => exec('formatBlock', '<p>') },
@@ -306,7 +295,7 @@ const Editor: React.FC<{ documentType: LegalDocumentType }> = ({ documentType })
   ];
 
   return (
-    <div>
+    <div className="admin-page legal-page">
       <div className="page-header">
         <div>
           <button type="button" className="legal-link" onClick={leave} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
@@ -317,14 +306,15 @@ const Editor: React.FC<{ documentType: LegalDocumentType }> = ({ documentType })
             Editing draft v{draft.versionNumber}
           </h2>
           <p className="page-subtitle">
-            The live version is untouched until you publish. Anything the sanitizer would remove
-            is already gone in the preview.
+            Update the draft and review the preview before publishing.
           </p>
         </div>
       </div>
 
-      <div className="legal-editor-layout">
-        <div className="glass-panel" style={{ padding: '1.1rem' }}>
+      {isError && <LegalError message="The document could not be refreshed. Your draft is still open." retry={() => void refetch()} />}
+      <div className="legal-editor-tabs" role="group" aria-label="Draft workspace"><button type="button" aria-pressed={editorView === 'edit'} onClick={() => setEditorView('edit')}>Editor</button><button type="button" aria-pressed={editorView === 'preview'} onClick={() => setEditorView('preview')}>Preview</button></div>
+      <div className="legal-editor-layout" data-view={editorView}>
+        <fieldset className="legal-editor-panel" disabled={editingBusy} aria-busy={editingBusy}>
           <Field label="Title" htmlFor="legal-title">
             <input id="legal-title" className="input-control" value={form.title} maxLength={200} onChange={(e) => update({ title: e.target.value })} />
           </Field>
@@ -367,7 +357,7 @@ const Editor: React.FC<{ documentType: LegalDocumentType }> = ({ documentType })
           </div>
 
           {linking && (
-            <div style={{ display: 'flex', gap: '0.4rem', padding: '0.5rem', border: '1px solid var(--color-border)', borderBottom: 'none', background: 'var(--color-bg-white)' }}>
+            <div className="legal-link-tools">
               <input
                 className="input-control"
                 autoFocus
@@ -382,7 +372,7 @@ const Editor: React.FC<{ documentType: LegalDocumentType }> = ({ documentType })
                   if (e.key === 'Escape') setLinking(null);
                 }}
               />
-              <button type="button" className="btn-primary" onClick={applyLink}>
+              <button type="button" className="btn-primary" aria-label="Apply link" onClick={applyLink}>
                 <Check size={14} />
               </button>
             </div>
@@ -392,7 +382,7 @@ const Editor: React.FC<{ documentType: LegalDocumentType }> = ({ documentType })
             <div
               ref={editorRef}
               className="legal-editable"
-              contentEditable
+              contentEditable={!editingBusy}
               suppressContentEditableWarning
               role="textbox"
               aria-multiline="true"
@@ -409,9 +399,9 @@ const Editor: React.FC<{ documentType: LegalDocumentType }> = ({ documentType })
               spellCheck={false}
             />
           )}
-        </div>
+        </fieldset>
 
-        <div className="legal-preview-frame" aria-label="Preview">
+        <div className="legal-preview-frame" aria-label="Preview" aria-busy={previewing || settled !== form.content}>
           <div className="legal-preview-bar">
             <span>Preview · as on the website</span>
             {previewing && <Loader2 size={13} className="spin" />}
@@ -422,7 +412,7 @@ const Editor: React.FC<{ documentType: LegalDocumentType }> = ({ documentType })
               <span>Some markup is not allowed and will be removed on save. The preview shows what will be stored.</span>
             </div>
           )}
-          <DocumentPreview title={form.title} subtitle={form.subtitle} html={preview?.html ?? ''} />
+          {previewFailed ? <LegalError message="The preview could not be loaded." retry={() => void retryPreview()} /> : previewing && !preview ? <LoadingState label="Preparing preview…" compact /> : <DocumentPreview title={form.title} subtitle={form.subtitle} html={preview?.html ?? ''} />}
         </div>
       </div>
 
@@ -444,7 +434,7 @@ const Editor: React.FC<{ documentType: LegalDocumentType }> = ({ documentType })
               onConfirm: () => discard.mutateAsync(),
             })
           }
-          disabled={save.isPending}
+          disabled={editingBusy}
         >
           <Trash2 size={14} />
           <span>Discard</span>
@@ -457,7 +447,7 @@ const Editor: React.FC<{ documentType: LegalDocumentType }> = ({ documentType })
           type="button"
           className="btn-primary legal-savebar-publish"
           onClick={() => setPublishing(true)}
-          disabled={dirty || save.isPending}
+          disabled={dirty || editingBusy}
           title={dirty ? 'Save the draft first — publishing ships what is saved' : undefined}
           style={dirty ? { opacity: 0.55 } : undefined}
         >

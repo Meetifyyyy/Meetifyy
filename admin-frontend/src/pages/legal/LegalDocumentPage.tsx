@@ -22,7 +22,8 @@ import {
   type LegalHistoryEntry,
 } from './legalApi';
 import { attribution, errorMessage, formatDate, formatDateTime, publicUrl } from './legalFormat';
-import { AcceptanceBar, SectionTitle } from './LegalBits';
+import { LoadingState } from '../../components/LoadingState';
+import { AcceptanceBar, LegalError, SectionTitle } from './LegalBits';
 import { PublishDialog } from './PublishDialog';
 import { VersionViewer } from './VersionViewer';
 import './legal.css';
@@ -40,7 +41,7 @@ export const LegalDocumentPage: React.FC = () => {
       </div>
     );
   }
-  return <DocumentView documentType={type} />;
+  return <DocumentView key={type} documentType={type} />;
 };
 
 const DocumentView: React.FC<{ documentType: LegalDocumentType }> = ({ documentType }) => {
@@ -50,7 +51,7 @@ const DocumentView: React.FC<{ documentType: LegalDocumentType }> = ({ documentT
   const [viewing, setViewing] = useState<string | null>(null);
   const [publishing, setPublishing] = useState(false);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['adminLegalDocument', documentType],
     queryFn: () => legalApi.getDocument(documentType),
   });
@@ -80,15 +81,8 @@ const DocumentView: React.FC<{ documentType: LegalDocumentType }> = ({ documentT
     },
   });
 
-  if (isLoading && !data) {
-    return (
-      <div style={{ display: 'grid', gap: '1rem' }}>
-        <div className="legal-skeleton" style={{ height: 90 }} />
-        <div className="legal-skeleton" style={{ height: 260 }} />
-      </div>
-    );
-  }
-  if (!data) return null;
+  if (isLoading && !data) return <LoadingState label="Loading document history…" />;
+  if (!data) return <div className="admin-page legal-page"><Link to="/legal" className="legal-link">All documents</Link><LegalError message="The document could not be loaded." retry={() => void refetch()} /></div>;
 
   const { published, draft, history } = data;
 
@@ -103,7 +97,7 @@ const DocumentView: React.FC<{ documentType: LegalDocumentType }> = ({ documentT
     });
 
   return (
-    <div>
+    <div className="admin-page legal-page">
       <div className="page-header">
         <div>
           <Link to="/legal" className="legal-link" style={{ marginBottom: '0.5rem' }}>
@@ -154,14 +148,15 @@ const DocumentView: React.FC<{ documentType: LegalDocumentType }> = ({ documentT
         )}
       </div>
 
+      {isError && <LegalError message="The document could not be refreshed." retry={() => void refetch()} />}
       {draft && (
-        <div className="glass-panel" style={{ padding: '1rem 1.15rem', borderColor: 'rgba(245, 158, 11, 0.45)' }}>
-          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
+        <div className="legal-draft-banner">
+          <div className="legal-draft-row">
             <span className="legal-icon-tile" style={{ background: 'var(--color-warning-tint)', color: '#B45309' }}>
               <FileText size={18} />
             </span>
-            <div style={{ flex: '1 1 240px', minWidth: 0 }}>
-              <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>
+            <div className="legal-draft-content">
+              <div className="legal-draft-title">
                 Draft v{draft.versionNumber}
                 {draft.restoredFromVersionId && (
                   <span className="badge badge-neutral" style={{ marginLeft: '0.5rem' }}>
@@ -173,7 +168,7 @@ const DocumentView: React.FC<{ documentType: LegalDocumentType }> = ({ documentT
                 Last saved {formatDateTime(draft.updatedAt)} · not visible on the website
               </div>
             </div>
-            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <div className="legal-draft-actions">
               <button
                 type="button"
                 className="btn-danger"
@@ -205,7 +200,7 @@ const DocumentView: React.FC<{ documentType: LegalDocumentType }> = ({ documentT
       )}
 
       {published?.requiresAcknowledgement && history[0]?.stats && (
-        <div className="glass-panel" style={{ padding: '1rem 1.15rem', marginTop: '1rem' }}>
+        <div className="legal-acceptance-panel">
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.6rem', fontSize: '0.85rem', fontWeight: 600 }}>
             <Megaphone size={15} style={{ color: 'var(--color-primary)' }} />
             Users are being asked to review version {published.versionNumber}
@@ -238,9 +233,9 @@ const DocumentView: React.FC<{ documentType: LegalDocumentType }> = ({ documentT
             <li key={v.id} className={`legal-timeline-item${v.isCurrent ? ' is-live' : ''}`}>
               <span className="legal-timeline-dot" aria-hidden="true" />
               <div className="glass-panel legal-timeline-card">
-                <div style={{ flex: '1 1 300px', minWidth: 0 }}>
+                <div className="legal-version-info">
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
-                    <span style={{ fontWeight: 700, fontSize: '0.92rem' }}>Version {v.versionNumber}</span>
+                    <span style={{ fontWeight: 600, fontSize: '0.92rem' }}>Version {v.versionNumber}</span>
                     {v.isCurrent ? (
                       <span className="badge badge-success">Live</span>
                     ) : (
@@ -270,7 +265,7 @@ const DocumentView: React.FC<{ documentType: LegalDocumentType }> = ({ documentT
                     <p className="legal-silent-note">Published silently — no acceptance needed</p>
                   )}
                 </div>
-                <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                <div className="legal-version-actions">
                   <button type="button" className="btn-secondary" onClick={() => setViewing(v.id)}>
                     <Eye size={14} />
                     <span>View</span>

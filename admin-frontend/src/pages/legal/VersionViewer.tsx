@@ -3,7 +3,8 @@ import { useQuery } from '@tanstack/react-query';
 import { Clock, ExternalLink } from '../../components/icons';
 import { legalApi } from './legalApi';
 import { formatDate, publicUrl } from './legalFormat';
-import { DocumentPreview, LegalModal } from './LegalBits';
+import { LoadingState } from '../../components/LoadingState';
+import { DocumentPreview, LegalError, LegalModal } from './LegalBits';
 
 /** One version's text, read-only, rendered like the public page. */
 export const VersionViewer: React.FC<{
@@ -14,7 +15,7 @@ export const VersionViewer: React.FC<{
   /** Why Restore is not offered, shown in the footer instead of the button. */
   restoreBlockedReason?: string;
 }> = ({ versionId, path, onClose, onRestore, restoreBlockedReason }) => {
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['adminLegalVersion', versionId],
     queryFn: () => legalApi.getVersion(versionId),
     staleTime: 5 * 60_000,
@@ -29,7 +30,7 @@ export const VersionViewer: React.FC<{
           : undefined
       }
       onClose={onClose}
-      width={860}
+      width={960}
       footer={
         <>
           {!onRestore && restoreBlockedReason && data && !data.isCurrent && data.status !== 'DRAFT' && (
@@ -56,12 +57,8 @@ export const VersionViewer: React.FC<{
         </>
       }
     >
-      {isLoading && <div className="legal-skeleton" />}
-      {isError && (
-        <p style={{ color: 'var(--color-text-light)', fontSize: '0.85rem' }}>
-          This version could not be loaded.
-        </p>
-      )}
+      {isLoading && <LoadingState label="Loading version…" compact />}
+      {isError && <LegalError message="This version could not be loaded." retry={() => void refetch()} />}
       {data && (
         <div style={{ border: '1px solid var(--color-border)', borderRadius: 12 }}>
           <DocumentPreview title={data.title} subtitle={data.subtitle} html={data.content} />
