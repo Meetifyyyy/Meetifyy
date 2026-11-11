@@ -6,8 +6,10 @@ import { render, act, cleanup, waitFor } from '@testing-library/react';
  * The installed app opens on the account it already holds and checks with the
  * server behind it, instead of holding the splash for two round trips.
  *
- * What must stay true: it only does so with a stored credential AND a saved
- * profile; a session the server refuses is torn down completely; and being
+ * What must stay true: the first render is already the saved account (no
+ * undecided frame, so no wait on the Keystore); a launch whose stored
+ * credential turns out to be missing ends signed out without asking the
+ * server; a session the server refuses is torn down completely; and being
  * offline keeps the cached account, as the old fallback did.
  */
 
@@ -99,6 +101,27 @@ describe('installed app: local-first boot', () => {
     expect(seen).not.toContain(AUTH_STATUS.UNAUTHENTICATED);
   });
 
+  it('renders the saved account in its first render, before the stored credential is read', () => {
+    holdsAccount();
+    currentSession.mockReturnValue(new Promise(() => {}));
+
+    render(<AuthProvider><Probe /></AuthProvider>);
+    expect(seen[0]).toBe(AUTH_STATUS.AUTHENTICATED);
+    expect(auth.currentUser.id).toBe('u1');
+    expect(auth.profileFromCache).toBe(true);
+    expect(seen).not.toContain(AUTH_STATUS.INITIALIZING);
+  });
+
+  it('does not treat a saved profile as signed in without the signed-in marker', async () => {
+    localStorage.setItem('currentUser', JSON.stringify(CACHED));
+    mayHaveCookieSession.mockReturnValue(false);
+
+    render(<AuthProvider><Probe /></AuthProvider>);
+    expect(seen[0]).toBe(AUTH_STATUS.INITIALIZING);
+    await waitFor(() => expect(auth.authStatus).toBe(AUTH_STATUS.UNAUTHENTICATED));
+    expect(seen).not.toContain(AUTH_STATUS.AUTHENTICATED);
+  });
+
   it('tears everything down when the server refuses the session', async () => {
     holdsAccount();
     localStorage.setItem('meetifyy_feed_snapshot_v1', '{"userId":"u1"}');
@@ -136,7 +159,7 @@ describe('installed app: local-first boot', () => {
     await waitFor(() => expect(auth.authStatus).toBe(AUTH_STATUS.AUTHENTICATED));
   });
 
-  it('never opens on a saved profile without a stored credential', async () => {
+  it('ends signed out, without asking the server, when the stored credential is missing', async () => {
     localStorage.setItem('currentUser', JSON.stringify(CACHED));
     localStorage.setItem('loggedIn', 'true');
     mayHaveCookieSession.mockReturnValue(false);

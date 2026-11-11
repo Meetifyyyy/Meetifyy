@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const sessionId = { current: '' };
 const accessToken = { current: '' };
+/** What the transport's whenSessionReady returns: null on the web, the Keystore read in the app. */
+const sessionReady = { current: null };
 const ioMock = vi.fn(() => ({ on: vi.fn(), removeAllListeners: vi.fn(), disconnect: vi.fn(), disconnected: false }));
 
 vi.mock('socket.io-client', () => ({ io: (...args) => ioMock(...args) }));
@@ -11,6 +13,7 @@ vi.mock('@shared/api/apiClient', () => ({
   getAccessToken: () => accessToken.current,
   isApiFailoverActive: () => false,
   API_PROXY_PREFIX: '/proxy',
+  whenSessionReady: () => sessionReady.current,
 }));
 
 const { useGlobalSocketStore } = await import('../useGlobalSocketStore');
@@ -75,5 +78,21 @@ describe('useGlobalSocketStore handshake', () => {
     useGlobalSocketStore.getState().disconnect();
     await pending;
     expect(ioMock).not.toHaveBeenCalled();
+  });
+
+  it('waits for the stored credential before the handshake (the app shows its saved account first)', async () => {
+    let loaded;
+    sessionReady.current = new Promise((resolve) => { loaded = resolve; });
+    try {
+      const pending = useGlobalSocketStore.getState().connect(undefined, 'dev-1');
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(ioMock).not.toHaveBeenCalled();
+      accessToken.current = 'from-keystore';
+      loaded(true);
+      await pending;
+      expect(handshake().token).toBe('from-keystore');
+    } finally {
+      sessionReady.current = null;
+    }
   });
 });

@@ -302,6 +302,33 @@ function isValidUser(u) {
   );
 }
 
+/**
+ * The installed app's account as this device last left it, read synchronously
+ * so the first render can already be the signed-in app.
+ *
+ * `loggedIn` is written by `adoptUser` and removed by every sign-out, so it
+ * says the last launch ended signed in. The boot used to wait for the Keystore
+ * read before believing it: about 250 ms of an otherwise idle page on a
+ * mid-range phone, with the splash held over an empty document. The read still
+ * happens and still decides (see the boot effect): a launch whose credential
+ * turns out to be missing signs out exactly as before, only after showing the
+ * saved screen instead of the splash. Nothing is sent on this basis: every
+ * request waits for the stored credential in the transport, as it always did.
+ *
+ * The installed app only. A browser may be a shared machine, and its session
+ * is a cookie that can end without this document hearing of it.
+ */
+function readHeldAccount() {
+  if (!IS_MOBILE_BUILD || !isSupabaseConfigured) return null;
+  try {
+    if (localStorage.getItem('loggedIn') !== 'true') return null;
+    const held = JSON.parse(localStorage.getItem('currentUser') || 'null');
+    return isValidUser(held) ? held : null;
+  } catch (_) {
+    return null;
+  }
+}
+
 export function AuthProvider({ children }) {
   // AuthProvider is mounted inside QueryClientProvider (see main.jsx), so the
   // query cache is available here. This is what lets a profile-image change
@@ -322,7 +349,13 @@ export function AuthProvider({ children }) {
   const queryClientRef = useRef(queryClient);
   queryClientRef.current = queryClient;
 
+  // Read once, before the first render: see readHeldAccount.
+  const heldAccountRef = useRef(undefined);
+  if (heldAccountRef.current === undefined) heldAccountRef.current = readHeldAccount();
+  const heldAccount = heldAccountRef.current;
+
   const [currentUser, setCurrentUser] = useState(() => {
+    if (heldAccount) return heldAccount;
     try {
       const savedUser = localStorage.getItem('currentUser');
       if (savedUser) {
@@ -344,7 +377,9 @@ export function AuthProvider({ children }) {
    * lives in memory it was empty after every reload, which made a refresh
    * indistinguishable from a sign-out.
    */
-  const [session, setSession] = useState(null);
+  const [session, setSession] = useState(() => (
+    heldAccount ? { user: { id: heldAccount.id, email: heldAccount.email || '' } } : null
+  ));
 
   /**
    * The one place the app's answer to "is anybody signed in?" comes from.
@@ -354,7 +389,9 @@ export function AuthProvider({ children }) {
    * what stops two listeners racing to overwrite a valid session with a stale
    * one.
    */
-  const [authStatus, setAuthStatus] = useState(AUTH_STATUS.INITIALIZING);
+  const [authStatus, setAuthStatus] = useState(
+    heldAccount ? AUTH_STATUS.AUTHENTICATED : AUTH_STATUS.INITIALIZING,
+  );
   /**
    * True while the signed-in user is the profile this device saved last time
    * and the server has not yet answered for it (the boot check was 'unknown':
@@ -366,7 +403,7 @@ export function AuthProvider({ children }) {
    * affiliation is the one that matters — read this and wait for the server.
    * Any server-supplied user (adoptUser) clears it.
    */
-  const [profileFromCache, setProfileFromCache] = useState(false);
+  const [profileFromCache, setProfileFromCache] = useState(Boolean(heldAccount));
 
   const loading = authStatus === AUTH_STATUS.INITIALIZING;
   const isLoggedIn = authStatus === AUTH_STATUS.AUTHENTICATED;
@@ -449,7 +486,14 @@ export function AuthProvider({ children }) {
       localStorage.setItem('loggedIn', 'true');
     } catch (_) {}
     setCurrentUser(user);
-    setSession({ user: { id: user.id, email: user.email || '' } });
+    // The same object when nothing in it changed (the app's boot adopts the
+    // account it is already showing), so its consumers do not re-render.
+    setSession((prev) => {
+      const email = user.email || '';
+      const same = prev && Object.keys(prev).length === 1
+        && prev.user?.id === user.id && prev.user?.email === email;
+      return same ? prev : { user: { id: user.id, email } };
+    });
     setAuthStatus(AUTH_STATUS.AUTHENTICATED);
     // Callers adopting the device's saved copy mark it again straight after.
     setProfileFromCache(false);
@@ -785,10 +829,18 @@ export function AuthProvider({ children }) {
        * never be shown before the server agrees.
        */
       if (IS_MOBILE_BUILD) {
+        // The account the first render is already showing, when there was one
+        // (readHeldAccount): the same object, so adopting it changes nothing
+        // on screen. Unless it has been replaced since (a sign-in that
+        // finished while the Keystore was being read).
         let cached = null;
         try {
           cached = JSON.parse(localStorage.getItem('currentUser') || 'null');
         } catch (_) {}
+        const shown = heldAccountRef.current;
+        if (shown && cached?.id === shown.id && currentUserIdRef.current === shown.id) {
+          cached = shown;
+        }
         if (isValidUser(cached) && adoptUser(cached)) {
           setProfileFromCache(true);
           const result = await restoreSession();

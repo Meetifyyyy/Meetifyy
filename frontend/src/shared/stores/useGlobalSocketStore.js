@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { getAccessToken, getBackendUrl, getNativeSessionId, isApiFailoverActive, API_PROXY_PREFIX, sessionsApi } from '@shared/api/apiClient';
+import { getAccessToken, getBackendUrl, getNativeSessionId, isApiFailoverActive, API_PROXY_PREFIX, sessionsApi, whenSessionReady } from '@shared/api/apiClient';
 
 /**
  * socket.io-client, loaded on the first connect rather than with the app.
@@ -59,7 +59,11 @@ export const useGlobalSocketStore = create((set, get) => ({
     }
 
     const seq = ++_connectSeq;
-    return loadIo().then((io) => {
+    // With the stored credential loaded: the installed app shows its saved
+    // account before the Keystore has been read, and a handshake sent in that
+    // window names no token and is refused. Resolves at once on the website.
+    const credentialLoaded = Promise.resolve(whenSessionReady?.()).catch(() => {});
+    return Promise.all([loadIo(), credentialLoaded]).then(([io]) => {
       if (seq !== _connectSeq) return;
       build(io);
     }).catch(() => {
