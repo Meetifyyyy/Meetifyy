@@ -124,6 +124,21 @@ describe('feed snapshot: restoring', () => {
     expect(qc.getQueryState(key('u1')).dataUpdatedAt).toBeLessThan(Date.now() - 60_000);
   });
 
+  it('refetches behind a snapshot saved seconds ago (the app reopened straight after a post was viewed)', async () => {
+    // Viewing a post saves again, so `savedAt` is usually moments before the
+    // app was closed. The restored posts must still not count as a fresh feed.
+    localStorage.setItem(FEED_SNAPSHOT_KEY, keptSnapshot('u1', ['a'], Date.now() - 3_000));
+    expect(restoreFeedSnapshot(qc, 'u1')).toBe(true);
+    expect(qc.getQueryState(key('u1')).dataUpdatedAt).toBeLessThan(Date.now() - 60_000);
+
+    // The launch's own request (warmSignedInLanding) goes out and replaces them.
+    let asked = 0;
+    await qc.prefetchInfiniteQuery({ ...feedQueryOptions('', 'u1'), queryFn: async () => { asked += 1; return page(20); } });
+    expect(asked).toBe(1);
+    expect(qc.getQueryData(key('u1')).pages[0].posts).toHaveLength(20);
+    expect(qc.getQueryData(key('u1')).pages[0].nextCursor).toBe('c1');
+  });
+
   it('ignores an old, unreadable or old-format snapshot', () => {
     localStorage.setItem(FEED_SNAPSHOT_KEY, keptSnapshot('u1', ['a'], Date.now() - 8 * 86_400_000));
     expect(restoreFeedSnapshot(qc, 'u1')).toBe(false);

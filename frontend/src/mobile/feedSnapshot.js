@@ -20,7 +20,7 @@
  * SESSION_SCOPED_KEYS, and cleared by "Clear cached data". Installed app only:
  * this module is reached from the mobile entry, never the website.
  */
-import { feedQueryOptions } from '../features/feed/utils/feedQuery';
+import { feedQueryOptions, FEED_STALE_MS } from '../features/feed/utils/feedQuery';
 import { setOfflineFeedStore } from '../shared/lib/offlineFeed';
 import { isStorableUrl, keepFeedMedia, resolveOfflineMedia } from './offlineFeedMedia';
 
@@ -58,13 +58,21 @@ export function restoreFeedSnapshot(queryClient, userId, { storage = window.loca
 
   const { queryKey } = feedQueryOptions('', userId);
   if (queryClient.getQueryData(queryKey)) return false;
-  // `updatedAt` is when it was saved, so the query counts it stale and
-  // refetches on first use rather than trusting it as fresh. No cursor: a
-  // restored page must not pretend to know where page two starts.
+  // Always stale, so the launch refetches behind it rather than trusting it
+  // as fresh. No cursor: a restored page must not pretend to know where page
+  // two starts.
+  //
+  // Not simply "when it was saved": viewing a post saves again, and the top
+  // post is viewed on every launch, so `savedAt` is usually seconds before the
+  // app was closed. Reopened within the feed's stale time, the kept posts
+  // counted as a fresh feed: nothing was fetched at launch or on mount, and
+  // with no cursor nothing could be paged in either. Home sat on the one or
+  // two posts last looked at until it was pulled to refresh (seen on the
+  // I2208, 2026-11-11: one kept post, no feed request in 7 s).
   queryClient.setQueryData(
     queryKey,
     { pages: [{ posts: inFeedOrder(snap.kept), nextCursor: undefined }], pageParams: [undefined] },
-    { updatedAt: snap.savedAt },
+    { updatedAt: Math.min(snap.savedAt, now - FEED_STALE_MS - 1) },
   );
   return true;
 }

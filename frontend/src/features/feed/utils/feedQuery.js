@@ -11,7 +11,7 @@ import { postsApi } from '@shared/api/apiClient';
  * neither spells them out itself.
  */
 export const FEED_PAGE_SIZE = 20;
-const FEED_STALE_MS = 60_000;
+export const FEED_STALE_MS = 60_000;
 
 export function feedQueryOptions(searchQuery, userId) {
   return {
