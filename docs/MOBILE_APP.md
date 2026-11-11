@@ -358,21 +358,65 @@ devices have not been tested. iOS has not been run at all (needs a Mac).
 
 ## 6. Performance: current state
 
-Measured on the I2208; full numbers, methods and the before/after tables are in
+Measured on the I2208; earlier numbers, methods and before/after tables are in
 [ENGINEERING_LOG.md](ENGINEERING_LOG.md).
 
-| Metric (latest recorded) | Value |
-|---|---|
-| Cold start, Home visible (TTFD) | ≈2.5–2.9 s (debug APK, 2026-10-26) |
-| Warm start, Home fully drawn | ≈0.9 s |
-| Auth decided (page clock) | ≈1.06 s |
-| Entry chunk (production mobile build) | 590.5 KB raw / 186 KB gzip (Sentry lazy, auth-js lazy) |
+### Start-up
 
-The 1-second target is met for warm starts, not cold: ~1.05 s passes before the
-page's first byte (process, `bindApplication`, Firebase/Sentry providers,
-Chromium init ~350 ms on the UI thread), then ~1.3–1.5 s to parse ~1.2 MB of
-JS/CSS **without a V8 code cache** (intercepted responses get none:
-`Code Cache/js` held only ~210-byte markers after a dozen launches).
+Measure start-up on the **perf build**, never the debug APK: a debuggable app
+is not run from optimised code, and the same bundle reveals Home at +2.3 s
+debuggable and +1.36 s compiled like a release.
+
+```
+cd frontend
+npm run mobile:apk -- perf            # dev app, release-compiled, inspectable; keeps the sign-in
+adb install -r ../local/apk/perf/meetifyy-perf-<date>.apk
+npm run measure:startup -- --runs 8   # cold starts; add --warm for warm ones
+npm run check:mobile-bundle           # the start-up bundle budget (also in CI)
+```
+
+`measure:startup` prints `am start -W` TotalTime, `Displayed`, `Fully drawn`,
+the splash reveal (logcat tag `MeetifyyLaunch`) and the page's own marks. The
+in-app number is navigation start → `meetifyy:home-painted`. Setting
+`localStorage.meetifyy_perf = "1"` in the WebView inspector also keeps the
+launch's timings in `window.__meetifyyPerf.entries`. Runs vary by 10–20% with
+device heat: compare builds interleaved, not hours apart.
+
+| Cold start, I2208, perf build, signed in, saved feed | 2026-11-11 before | after |
+|---|---|---|
+| `am start -W` TotalTime (native window) | 572 ms | 565 ms |
+| Process start → page navigation start | 321 ms | 302 ms |
+| In-app: Home in the DOM | 1007 ms | 710 ms |
+| In-app: Home painted | not marked (≈1080) | 782 ms |
+| Process start → splash starts to lift | 1360 ms | 1171 ms |
+| Fully drawn (TTFD) | 1475 ms | 1281 ms |
+| Layout shift (CLS) | 0.005–0.009 | 0 |
+| Warm start TotalTime | 123 ms | 104 ms |
+| Entry chunk (development-mode mobile build) | 786 kB | 847 kB (Home included) |
+
+What the remaining time is, in order (cold):
+
+1. **~300 ms before the page exists.** `bindApplication` ~110 ms, then
+   Chromium's own initialisation inside the WebView's constructor, ~240 ms on
+   the UI thread.
+2. **~235 ms from navigation start to the first request.** The renderer
+   process starting. Nothing of the app's runs in it.
+3. **~100 ms evaluating the entry modules and ~220 ms for the first render**,
+   against 20 ms and 113 ms for the same work on a warm reload. The difference
+   is compilation: the WebView keeps **no V8 code cache** for responses served
+   through `shouldInterceptRequest`: `Code Cache/js` only ever holds
+   ~210-byte markers. (Chromium's loader for such responses sets no response
+   time, which is the likely reason; not confirmed.) Every cold start compiles the
+   bundle from source, which is why the entry bundle has a budget.
+4. **~150 ms from "page ready" to the splash lifting.** The WebView's first
+   content frame takes that long on the render thread. It was the same with
+   the feed hidden, the header, the navigation, the drawer or the background
+   hidden, images removed, or every compositing hint removed; only an empty
+   page avoids it.
+
+The 500 ms in-app target is not met on this phone: items 2 and 3 alone are
+~550 ms. Getting there needs compiled-code caching (serving the bundle over a
+real HTTP loopback server, or a far smaller entry), not more of the same.
 
 Fixed along the way (2026-10-05 → 10-26): serial auth round trips at boot,
 lazy `ReportModal`/image compressor/auth-js/Sentry, invisible
