@@ -1,225 +1,173 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '../api/apiClient';
-import { Eye, X } from '../components/icons';
+import { Eye, X, Search, ShieldCheck, Clock, CheckCircle, AlertCircle, RefreshCw, FileText } from '../components/icons';
+import { Dropdown } from '../components/Dropdown';
 import { Pagination } from '../components/Pagination';
+import { LoadingState } from '../components/LoadingState';
 import { useConfirm } from '../components/ConfirmProvider';
+import { useDebounced } from '../hooks/useDebounced';
+import UserAvatar from '../components/UserAvatar';
+import { formatEnumLabel } from '../utils/formatEnumLabel';
+import { formatDateTime } from './legal/legalFormat';
+import './moderation.css';
 
-export const ReportsPage: React.FC = () => {
+interface ReportRow {
+  id: string; targetType: string; targetId: string; reason: string; priority: string; status: string; description?: string | null; createdAt?: string;
+  reporter?: { username: string; displayName?: string | null; avatar?: string | null; email?: string } | null;
+}
+interface ReportDetail extends ReportRow { internalNotes?: string | null; resolution?: string | null; targetContent?: unknown; }
+const STATUSES = [
+  { id: 'PENDING', label: 'Pending' }, { id: 'UNDER_REVIEW', label: 'Under review' },
+  { id: 'RESOLVED', label: 'Resolved' }, { id: 'REJECTED', label: 'Dismissed' }, { id: '', label: 'All reports' },
+];
+const statusLabel = (status: string) => STATUSES.find((item) => item.id === status)?.label || formatEnumLabel(status);
+const ReportPill: React.FC<{ value: string; priority?: boolean }> = ({ value, priority = false }) => (
+  <span className={`moderation-pill ${priority ? 'priority' : 'status'}-${value.toLowerCase()}`}>{priority ? formatEnumLabel(value) : statusLabel(value)}</span>
+);
+const ModerationError: React.FC<{ message: string; retry: () => void }> = ({ message, retry }) => (
+  <div className="moderation-error" role="alert"><AlertCircle size={18} aria-hidden="true" /><span>{message}</span><button className="btn-secondary" onClick={retry}><RefreshCw size={16} />Try again</button></div>
+);
+
+const ReportReviewEditor: React.FC<{ report: ReportDetail; onClose: () => void }> = ({ report, onClose }) => {
   const confirm = useConfirm();
   const queryClient = useQueryClient();
-  const [statusFilter, setStatusFilter] = useState('PENDING');
-  const [priorityFilter, setPriorityFilter] = useState('');
-  // The endpoint paginates at 20; without this the queue could only ever show
-  // the first 20 reports, with no way to reach the rest.
-  const [page, setPage] = useState(1);
-  useEffect(() => { setPage(1); }, [statusFilter, priorityFilter]);
-  const [selectedReport, setSelectedReport] = useState<any | null>(null);
-  const [internalNotes, setInternalNotes] = useState('');
-  const [resolution, setResolution] = useState('');
-
-  const { data, isLoading } = useQuery({
-    queryKey: ['adminReports', statusFilter, priorityFilter, page],
-    queryFn: () =>
-      apiRequest(
-        `/admin/reports?status=${statusFilter}&priority=${priorityFilter}&page=${page}`,
-      ),
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: ({ id, status, resolution, internalNotes }: any) =>
-      apiRequest(`/admin/reports/${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status, resolution, internalNotes }),
-      }),
+  const [internalNotes, setInternalNotes] = useState(report.internalNotes || '');
+  const [resolution, setResolution] = useState(report.resolution || '');
+  const update = useMutation({
+    mutationFn: (status: 'RESOLVED' | 'REJECTED') => apiRequest(`/admin/reports/${report.id}`, { method: 'PATCH', body: JSON.stringify({ status, resolution, internalNotes }) }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['adminReports'] });
-      setSelectedReport(null);
+      queryClient.invalidateQueries({ queryKey: ['adminReportStats'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboardStats'] });
+      onClose();
     },
   });
+  const requestDecision = (status: 'RESOLVED' | 'REJECTED') => confirm({
+    title: status === 'RESOLVED' ? 'Resolve this report?' : 'Dismiss this report?',
+    description: status === 'RESOLVED' ? 'The report is closed and your resolution and internal notes are saved.' : 'The report is closed without action against the reported content or account.',
+    consequences: status === 'RESOLVED' ? ['This records the outcome. It does not automatically remove content or restrict an account.'] : ['The reporter is not told why it was dismissed.'],
+    severity: 'moderate', confirmLabel: status === 'RESOLVED' ? 'Resolve report' : 'Dismiss report',
+    onConfirm: () => update.mutateAsync(status),
+  });
+  const content = report.targetContent && typeof report.targetContent === 'object' ? report.targetContent as Record<string, unknown> : null;
+  const preview = typeof report.targetContent === 'string' ? report.targetContent : [content?.text, content?.description, content?.bio].find((value): value is string => typeof value === 'string' && Boolean(value));
+  const contentTitle = [content?.displayName, content?.name, content?.username].find((value): value is string => typeof value === 'string' && Boolean(value));
 
-  const handleOpenDetail = async (reportId: string) => {
-    try {
-      const res = await apiRequest(`/admin/reports/${reportId}`);
-      setSelectedReport(res);
-      setInternalNotes(res.internalNotes || '');
-      setResolution(res.resolution || '');
-    } catch (e) {
-      alert('Failed to load report detail');
-    }
-  };
-
-  return (
-    <div>
-      <div className="page-header">
-        <div>
-          <h2 className="page-title">Moderation Queue</h2>
-          <p className="page-subtitle">Content reports and user enforcement actions.</p>
+  return <>
+    <div className="admin-dialog-body moderation-review-body">
+      <section className="moderation-report-content" aria-labelledby="moderation-content-title">
+        <div className="moderation-report-tags"><span className="moderation-target">{formatEnumLabel(report.targetType)}</span><ReportPill value={report.priority} priority /><ReportPill value={report.status} /></div>
+        <p className="moderation-field-caption">Reported for</p><h4 className="moderation-report-reason">{formatEnumLabel(report.reason)}</h4>
+        {report.description && <div className="moderation-description"><h5>Reporter’s description</h5><p>{report.description}</p></div>}
+        <div className="moderation-content-preview"><h4 id="moderation-content-title"><FileText size={17} aria-hidden="true" />Reported content</h4>
+          {report.targetContent == null ? <p className="moderation-muted">Reported content is no longer available.</p> : <>
+            {contentTitle && <strong>{contentTitle}</strong>}
+            {preview && <p className="moderation-content-text">{preview}</p>}
+            {!preview && !contentTitle && <p className="moderation-muted">Content details are available below.</p>}
+            <details className="moderation-content-data"><summary>View content data</summary><pre tabIndex={0} aria-label="Reported content data">{JSON.stringify(report.targetContent, null, 2)}</pre></details>
+          </>}
         </div>
-      </div>
-
-      {/* FILTERS */}
-      <div className="glass-panel admin-filter-bar" style={{ padding: '0.85rem 1rem', marginBottom: '1.25rem', display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="input-control"
-          style={{ width: 'auto', minWidth: '150px' }}
-        >
-          <option value="">All Statuses</option>
-          <option value="PENDING">Pending</option>
-          <option value="UNDER_REVIEW">Under Review</option>
-          <option value="RESOLVED">Resolved</option>
-          <option value="REJECTED">Rejected</option>
-        </select>
-
-        <select
-          value={priorityFilter}
-          onChange={(e) => setPriorityFilter(e.target.value)}
-          className="input-control"
-          style={{ width: 'auto', minWidth: '150px' }}
-        >
-          <option value="">All Priorities</option>
-          <option value="CRITICAL">Critical</option>
-          <option value="HIGH">High</option>
-          <option value="MEDIUM">Medium</option>
-          <option value="LOW">Low</option>
-        </select>
-      </div>
-
-      {/* TABLE */}
-      <div className="glass-panel" style={{ overflow: 'hidden' }}>
-        {isLoading ? (
-          <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--color-text-dim)', fontSize: '0.85rem' }}>
-            Loading reports...
-          </div>
-        ) : (
-          <div className="table-responsive">
-            <table className="admin-table">
-              <thead>
-                <tr>
-                  <th>Target</th>
-                  <th>Reason</th>
-                  <th>Reporter</th>
-                  <th>Priority</th>
-                  <th>Status</th>
-                  <th className="col-actions" style={{ textAlign: 'right' }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data?.data?.map((r: any) => (
-                  <tr key={r.id}>
-                    <td>
-                      <span className="badge badge-info">{r.targetType}</span>
-                    </td>
-                    <td style={{ fontWeight: 600 }}>{r.reason}</td>
-                    <td style={{ fontSize: '0.82rem' }}>@{r.reporter?.username}</td>
-                    <td>
-                      <span className={`badge badge-${r.priority === 'CRITICAL' || r.priority === 'HIGH' ? 'danger' : 'warning'}`}>
-                        {r.priority}
-                      </span>
-                    </td>
-                    <td>
-                      <span className={`badge badge-${r.status === 'RESOLVED' ? 'success' : r.status === 'PENDING' ? 'danger' : 'info'}`}>
-                        {r.status}
-                      </span>
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      <button onClick={() => handleOpenDetail(r.id)} className="btn-secondary" style={{ padding: '0.3rem 0.65rem', fontSize: '0.75rem' }}>
-                        <Eye size={13} />
-                        <span>Review</span>
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-                {data?.data?.length === 0 && (
-                  <tr>
-                    <td colSpan={6} style={{ textAlign: 'center', color: 'var(--color-text-dim)', padding: '2.5rem 1rem' }}>
-                      No reports match your filters.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        <Pagination
-          page={page}
-          totalPages={data?.meta?.totalPages}
-          total={data?.meta?.total}
-          onChange={setPage}
-          label="reports"
-          busy={isLoading}
-        />
-      </div>
-
-      {/* RESOLUTION MODAL */}
-      {selectedReport && (
-        <div className="modal-backdrop" onClick={() => setSelectedReport(null)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ padding: '1.5rem', maxWidth: '580px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-              <h3 style={{ fontSize: '1.1rem', fontWeight: 700 }}>
-                Review Report: {selectedReport.targetType}
-              </h3>
-              <button onClick={() => setSelectedReport(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-dim)' }}>
-                <X size={18} />
-              </button>
-            </div>
-
-            <div style={{ fontSize: '0.82rem', color: 'var(--color-text-light)', marginBottom: '0.85rem' }}>
-              Reporter: @{selectedReport.reporter?.username} • Priority: {selectedReport.priority}
-            </div>
-
-            {selectedReport.description && (
-              <div style={{ background: 'var(--color-bg-soft)', border: '1px solid var(--color-border)', padding: '0.75rem', borderRadius: 'var(--radius-sm)', fontSize: '0.82rem', marginBottom: '0.85rem' }}>
-                <strong>Reasoning:</strong> {selectedReport.description}
-              </div>
-            )}
-
-            {/* Target Content */}
-            <div style={{ background: 'var(--color-primary-tint)', border: '1px solid rgba(37, 99, 235, 0.2)', padding: '0.75rem', borderRadius: 'var(--radius-sm)', fontSize: '0.82rem', marginBottom: '1rem' }}>
-              <strong>Reported Content Data:</strong>
-              <pre style={{ marginTop: '0.35rem', whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: '180px', overflowY: 'auto', fontSize: '0.75rem', color: 'var(--color-text-muted)', fontFamily: 'monospace' }}>
-                {JSON.stringify(selectedReport.targetContent, null, 2)}
-              </pre>
-            </div>
-
-            <div style={{ marginBottom: '0.85rem' }}>
-              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--color-text-muted)', marginBottom: '0.3rem' }}>Internal Admin Notes</label>
-              <textarea value={internalNotes} onChange={(e) => setInternalNotes(e.target.value)} rows={2} className="input-control" />
-            </div>
-
-            <div style={{ marginBottom: '1.25rem' }}>
-              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--color-text-muted)', marginBottom: '0.3rem' }}>Resolution Action</label>
-              <input type="text" value={resolution} onChange={(e) => setResolution(e.target.value)} placeholder="Action taken (e.g. Content removed)" className="input-control" />
-            </div>
-
-            <div className="modal-actions" style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-              <button onClick={() => setSelectedReport(null)} className="btn-secondary">Cancel</button>
-              <button onClick={() => confirm({
-                title: 'Dismiss this report?',
-                description: 'The report is closed with no action taken against the reported content or account.',
-                consequences: ['The reporter is not told why it was dismissed.'],
-                severity: 'moderate',
-                confirmLabel: 'Dismiss report',
-                onConfirm: () => updateMutation.mutateAsync({ id: selectedReport.id, status: 'REJECTED', resolution, internalNotes }),
-              })} className="btn-danger">
-                Reject Report
-              </button>
-              <button onClick={() => confirm({
-                title: 'Resolve this report?',
-                description: 'The report is closed and recorded as actioned.',
-                severity: 'moderate',
-                confirmLabel: 'Resolve report',
-                onConfirm: () => updateMutation.mutateAsync({ id: selectedReport.id, status: 'RESOLVED', resolution, internalNotes }),
-              })} className="btn-primary">
-                Resolve & Enforce
-              </button>
-            </div>
-          </div>
+      </section>
+      <section className="moderation-review-details" aria-labelledby="moderation-decision-title">
+        <div className="moderation-reporter-detail"><span className="moderation-field-caption">Reported by</span>
+          {report.reporter ? <div className="moderation-person"><UserAvatar user={report.reporter} size={36} /><div><strong>{report.reporter.displayName || report.reporter.username}</strong><span>@{report.reporter.username}</span></div></div> : <p className="moderation-muted">Reporter unavailable</p>}
+          <dl className="moderation-case-meta"><div><dt>Submitted</dt><dd>{formatDateTime(report.createdAt)}</dd></div><div><dt>Report ID</dt><dd>{report.id}</dd></div></dl>
         </div>
-      )}
+        <h4 id="moderation-decision-title">Review decision</h4>
+        <div className="moderation-review-field"><label htmlFor="report-admin-notes">Internal admin notes <small>{internalNotes.length}/2,000</small></label><textarea id="report-admin-notes" value={internalNotes} onChange={(event) => setInternalNotes(event.target.value)} maxLength={2000} rows={3} className="input-control" placeholder="Context for the moderation team" disabled={update.isPending} /></div>
+        <div className="moderation-review-field"><label htmlFor="report-resolution">Resolution <small>{resolution.length}/500</small></label><textarea id="report-resolution" value={resolution} onChange={(event) => setResolution(event.target.value)} maxLength={500} rows={2} className="input-control" placeholder="Describe the decision or action already taken" disabled={update.isPending} /><p className="moderation-field-help">Records the outcome; content and account actions are managed separately.</p></div>
+      </section>
     </div>
-  );
+    <div className="modal-actions moderation-review-actions"><button onClick={onClose} className="btn-secondary" disabled={update.isPending}>Cancel</button><button onClick={() => requestDecision('REJECTED')} className="btn-secondary moderation-dismiss" disabled={update.isPending}>Dismiss report</button><button onClick={() => requestDecision('RESOLVED')} className="btn-primary" disabled={update.isPending}>Resolve report</button></div>
+  </>;
+};
+
+const ReportReviewDialog: React.FC<{ reportId: string; onClose: () => void }> = ({ reportId, onClose }) => {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const { data: report, isLoading, isFetching, error, refetch } = useQuery<ReportDetail>({
+    queryKey: ['adminReport', reportId], queryFn: () => apiRequest(`/admin/reports/${reportId}`),
+    gcTime: 0, staleTime: Infinity, refetchOnWindowFocus: false,
+  });
+  useEffect(() => {
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const dialog = dialogRef.current;
+    dialog?.querySelector<HTMLElement>('.dialog-close')?.focus({ preventScroll: true });
+    const keydown = (event: KeyboardEvent) => {
+      if (document.querySelector('[role="alertdialog"]')) return;
+      if (event.key === 'Escape') { event.preventDefault(); onClose(); }
+      if (event.key !== 'Tab' || !dialog) return;
+      // Walk in document order and skip controls hidden inside collapsed content.
+      const controls = Array.from(dialog.querySelectorAll<HTMLElement>('*')).filter((node) =>
+        node.matches('button:not(:disabled), textarea:not(:disabled), input:not(:disabled), summary, [tabindex="0"]') &&
+        !node.closest('[hidden]') && (!node.closest('details:not([open])') || node.tagName === 'SUMMARY'),
+      );
+      const first = controls[0]; const last = controls.at(-1);
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    };
+    document.addEventListener('keydown', keydown);
+    return () => { document.removeEventListener('keydown', keydown); if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true }); };
+  }, [onClose]);
+  return createPortal(<div className="modal-backdrop" onClick={onClose}>
+    <div ref={dialogRef} className="modal-content dialog-form admin-dialog-layout moderation-review-modal" role="dialog" aria-modal="true" aria-labelledby="report-review-title" onClick={(event) => event.stopPropagation()}>
+      <div className="dialog-header"><div><h3 id="report-review-title">Review report</h3><p className="moderation-dialog-reference">Case #{reportId.slice(0, 8)}</p></div><button onClick={onClose} className="dialog-close" aria-label="Close report review"><X size={18} /></button></div>
+      {isLoading || (isFetching && !report) ? <div className="admin-dialog-body"><LoadingState label="Loading report details…" compact /></div> : error || !report ? <div className="admin-dialog-body"><ModerationError message={(error as Error | null)?.message || 'Could not load report details.'} retry={() => refetch()} /></div> : <ReportReviewEditor report={report} onClose={onClose} />}
+    </div>
+  </div>, document.body);
+};
+
+export const ReportsPage: React.FC = () => {
+  const [statusFilter, setStatusFilter] = useState('PENDING');
+  const [priorityFilter, setPriorityFilter] = useState('');
+  const [search, setSearch] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
+  const debouncedSearch = useDebounced(search.trim(), 300);
+  const [page, setPage] = useState(1);
+  const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
+  const closeReview = useCallback(() => setSelectedReportId(null), []);
+  useEffect(() => { setPage(1); }, [statusFilter, priorityFilter, debouncedSearch]);
+  const { data, isLoading, isFetching, error, refetch } = useQuery({
+    queryKey: ['adminReports', statusFilter, priorityFilter, debouncedSearch, page],
+    queryFn: () => {
+      const params = new URLSearchParams({ status: statusFilter, priority: priorityFilter, page: String(page) });
+      if (debouncedSearch) params.set('search', debouncedSearch);
+      return apiRequest(`/admin/reports?${params}`);
+    }, refetchInterval: 30_000,
+  });
+  const { data: stats, isLoading: statsLoading, error: statsError, refetch: refetchStats } = useQuery<{ byStatus: Record<string, number>; total: number }>({ queryKey: ['adminReportStats'], queryFn: () => apiRequest('/admin/reports/stats'), refetchInterval: 30_000 });
+  useEffect(() => { if (data?.meta?.totalPages !== undefined && page > Math.max(1, data.meta.totalPages)) setPage(Math.max(1, data.meta.totalPages)); }, [data?.meta?.totalPages, page]);
+  const reports: ReportRow[] = data?.data ?? [];
+
+  return <div className="admin-page moderation-page">
+    <div className="page-header"><div><h2 className="page-title">Moderation Queue</h2><p className="page-subtitle">Review reported content and record moderation decisions.</p></div></div>
+    <div className="moderation-summary" aria-label="Report totals across all filters">{[
+      { status: 'PENDING', label: 'Pending reports', tone: 'blue', icon: Clock }, { status: 'UNDER_REVIEW', label: 'Under review', tone: 'violet', icon: Eye },
+      { status: 'RESOLVED', label: 'Resolved reports', tone: 'green', icon: ShieldCheck }, { status: 'REJECTED', label: 'Dismissed reports', tone: 'peach', icon: CheckCircle },
+    ].map(({ status, label, tone, icon: Icon }) => <dl key={status} className={`moderation-stat tone-${tone}`}><dt><span>{label}</span><Icon size={20} aria-hidden="true" /></dt><dd>{statsLoading ? '…' : !stats ? '—' : (stats.byStatus[status] ?? 0).toLocaleString()}</dd></dl>)}</div>
+    {statsError && <ModerationError message="Report totals are unavailable." retry={() => refetchStats()} />}
+    <div className="moderation-queue-heading"><h3>Report directory</h3><span role="status">{isFetching ? 'Updating reports…' : !data ? 'Report list unavailable' : `${data.meta.total.toLocaleString()} matching reports`}</span></div>
+    <div className="moderation-status-tabs" aria-label="Filter reports by status">{STATUSES.map((item) => <button key={item.id} onClick={() => { setStatusFilter(item.id); setPage(1); }} aria-pressed={statusFilter === item.id}>{item.label}</button>)}</div>
+    <div className="moderation-toolbar">
+      <div className="moderation-search"><Search size={18} aria-hidden="true" /><input ref={searchRef} type="search" className="input-control" placeholder="Search reports…" aria-label="Search reports by reporter, description, or target ID" autoCapitalize="none" spellCheck={false} value={search} onChange={(event) => setSearch(event.target.value)} />{search && <button aria-label="Clear report search" onClick={() => { setSearch(''); searchRef.current?.focus({ preventScroll: true }); }}><X size={17} /></button>}</div>
+      <div className="moderation-status-filter"><Dropdown aria-label="Filter reports by status" value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPage(1); }}>{STATUSES.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</Dropdown></div>
+      <div className="moderation-priority-filter"><Dropdown aria-label="Filter reports by priority" value={priorityFilter} onChange={(event) => { setPriorityFilter(event.target.value); setPage(1); }}><option value="">All priorities</option>{['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'].map((priority) => <option key={priority} value={priority}>{formatEnumLabel(priority)}</option>)}</Dropdown></div>
+    </div>
+    {error && <ModerationError message={(error as Error).message || 'Could not load reports.'} retry={() => refetch()} />}
+    <div className="moderation-list-panel" aria-busy={isFetching}>
+      {isLoading ? <LoadingState label="Loading reports…" /> : !reports.length ? <div className="moderation-empty"><ShieldCheck size={30} aria-hidden="true" /><h4>{error ? 'Reports unavailable' : 'No matching reports'}</h4><p>{error ? 'Try loading the queue again.' : 'There are no reports matching the selected filters.'}</p></div> : <table className="moderation-table" role="table" aria-label="Moderation reports">
+        <thead role="rowgroup"><tr role="row"><th role="columnheader">Report</th><th role="columnheader">Reporter</th><th role="columnheader">Priority</th><th role="columnheader">Status</th><th role="columnheader">Submitted</th><th role="columnheader">Review</th></tr></thead>
+        <tbody role="rowgroup">{reports.map((report) => <tr role="row" key={report.id}>
+          <td role="cell" className="report-cell-reason"><strong>{formatEnumLabel(report.reason)}</strong><div className="moderation-report-reference"><span className="moderation-target">{formatEnumLabel(report.targetType)}</span><span title={report.id}>#{report.id.slice(0, 8)}</span></div></td>
+          <td role="cell" className="report-cell-reporter">{report.reporter ? <div className="moderation-person"><UserAvatar user={report.reporter} size={32} /><div><strong>{report.reporter.displayName || report.reporter.username}</strong><span>@{report.reporter.username}</span></div></div> : <span className="moderation-muted">Reporter unavailable</span>}</td>
+          <td role="cell" className="report-cell-priority"><ReportPill value={report.priority} priority /></td><td role="cell" className="report-cell-status"><ReportPill value={report.status} /></td>
+          <td role="cell" className="report-cell-date"><time dateTime={report.createdAt}>{formatDateTime(report.createdAt)}</time></td>
+          <td role="cell" className="report-cell-action"><button className="moderation-review-button" onClick={() => setSelectedReportId(report.id)} aria-label={`Review report ${report.id}`} title="Review report"><Eye size={17} aria-hidden="true" /><span>Review</span></button></td>
+        </tr>)}</tbody>
+      </table>}
+      <Pagination page={page} totalPages={data?.meta?.totalPages} total={data?.meta?.total} onChange={setPage} label="reports" busy={isFetching} />
+    </div>
+    {selectedReportId && <ReportReviewDialog reportId={selectedReportId} onClose={closeReview} />}
+  </div>;
 };
