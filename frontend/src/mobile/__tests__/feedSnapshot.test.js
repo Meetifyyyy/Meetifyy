@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
-import { restoreFeedSnapshot, persistFeedSnapshot, FEED_SNAPSHOT_KEY, MAX_KEPT_POSTS } from '../feedSnapshot';
+import { restoreFeedSnapshot, persistFeedSnapshot, FEED_SNAPSHOT_KEY, MAX_KEPT_POSTS, MAX_PAGE_POSTS } from '../feedSnapshot';
 import { feedQueryOptions } from '../../features/feed/utils/feedQuery';
 import { notePostViewed } from '../../shared/lib/offlineFeed';
 
@@ -28,7 +28,7 @@ const row = (avatar) => {
   return el;
 };
 
-describe('feed snapshot: only viewed posts', () => {
+describe('feed snapshot: the first page, and what was viewed below it', () => {
   let qc;
   beforeEach(() => {
     localStorage.clear();
@@ -36,11 +36,26 @@ describe('feed snapshot: only viewed posts', () => {
     delete window.requestIdleCallback; // jsdom: use the timeout path
   });
 
-  it('keeps nothing for posts that were loaded but never viewed', async () => {
+  it('keeps the whole first page as fetched, viewed or not, in feed order', async () => {
     persistFeedSnapshot(qc, 'u1');
     await qc.fetchInfiniteQuery({ ...feedQueryOptions('', 'u1'), queryFn: async () => page(20) });
     await flushIdle();
-    expect(localStorage.getItem(FEED_SNAPSHOT_KEY)).toBeNull();
+    const snap = saved();
+    expect(snap.userId).toBe('u1');
+    expect(snap.kept.map((k) => k.post.id)).toEqual(posts(20).map((post) => post.id));
+    expect(snap.kept.every((k) => k.page === true)).toBe(true);
+
+    // And that is what the next launch paints.
+    const next = new QueryClient();
+    expect(restoreFeedSnapshot(next, 'u1')).toBe(true);
+    expect(next.getQueryData(key('u1')).pages[0].posts).toHaveLength(20);
+  });
+
+  it('keeps no more of the first page than a page', async () => {
+    persistFeedSnapshot(qc, 'u1');
+    await qc.fetchInfiniteQuery({ ...feedQueryOptions('', 'u1'), queryFn: async () => page(30) });
+    await flushIdle();
+    expect(saved().kept).toHaveLength(MAX_PAGE_POSTS);
   });
 
   it('keeps each viewed post whole, with the pictures its row drew', async () => {
@@ -50,25 +65,53 @@ describe('feed snapshot: only viewed posts', () => {
     notePostViewed('p1', row());
     await flushIdle();
     const snap = saved();
-    expect(snap.userId).toBe('u1');
-    expect(snap.kept.map((k) => k.post.id).sort()).toEqual(['p1', 'p3']);
     const p3 = snap.kept.find((k) => k.post.id === 'p3');
     expect(p3.post).toEqual({ id: 'p3', content: 'post 3', likesCount: 3 });
     expect(p3.media).toEqual(['https://cdn.example/a.webp']);
+    expect(p3.viewedAt).toBeGreaterThan(0);
+    // Still one of the first page, not counted against the viewed limit.
+    expect(p3.page).toBe(true);
+    expect(snap.kept.find((k) => k.post.id === 'p5').viewedAt).toBe(0);
   });
 
-  it(`keeps at most the ${MAX_KEPT_POSTS} most recently viewed`, async () => {
+  it(`keeps at most the ${MAX_KEPT_POSTS} most recently viewed posts beyond the first page`, async () => {
     persistFeedSnapshot(qc, 'u1');
-    await qc.fetchInfiniteQuery({ ...feedQueryOptions('', 'u1'), queryFn: async () => page(30) });
-    for (let i = 0; i < 20; i += 1) {
+    // Two pages: p0..p19 is the first, p20..p39 came from scrolling on.
+    await qc.fetchInfiniteQuery({
+      ...feedQueryOptions('', 'u1'),
+      queryFn: async ({ pageParam }) => (pageParam
+        ? { posts: posts(40).slice(20), nextCursor: null }
+        : { posts: posts(40).slice(0, 20), nextCursor: 'c1' }),
+      pages: 2,
+    });
+    for (let i = 20; i < 40; i += 1) {
       notePostViewed(`p${i}`, row());
       await new Promise((r) => setTimeout(r, 2)); // distinct view times
     }
     await flushIdle();
-    const ids = saved().kept.map((k) => k.post.id);
-    expect(ids).toHaveLength(MAX_KEPT_POSTS);
-    expect(ids).not.toContain('p0');
-    expect(ids).toContain('p19');
+    const kept = saved().kept;
+    const below = kept.filter((k) => !k.page).map((k) => k.post.id);
+    expect(kept.filter((k) => k.page)).toHaveLength(20);
+    expect(below).toHaveLength(MAX_KEPT_POSTS);
+    expect(below).not.toContain('p20');
+    expect(below).toContain('p39');
+  });
+
+  it('drops an unviewed post that has left the first page, and keeps a viewed one', async () => {
+    persistFeedSnapshot(qc, 'u1');
+    await qc.fetchInfiniteQuery({ ...feedQueryOptions('', 'u1'), queryFn: async () => page(3) });
+    notePostViewed('p1', row());
+    await flushIdle();
+    // A refresh whose first page no longer has p0, p1 or p2.
+    await qc.fetchInfiniteQuery({
+      ...feedQueryOptions('', 'u1'),
+      staleTime: 0,
+      queryFn: async () => ({ posts: [{ id: 'n0' }, { id: 'n1' }], nextCursor: null }),
+    });
+    await flushIdle();
+    const kept = saved().kept;
+    expect(kept.filter((k) => k.page).map((k) => k.post.id)).toEqual(['n0', 'n1']);
+    expect(kept.filter((k) => !k.page).map((k) => k.post.id)).toEqual(['p1']);
   });
 
   it('refreshes a kept post when the feed fetches it again (counters)', async () => {

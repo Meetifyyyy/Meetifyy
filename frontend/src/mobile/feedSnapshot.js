@@ -3,12 +3,21 @@
  * launch, online or not.
  *
  * WHAT IS KEPT
- * Up to 15 posts, and only posts that were actually viewed (useViewedPosts: on
- * screen long enough to be read), never everything the feed happened to load.
- * Each is the whole post as the feed had it: author name and avatar, text,
- * media details and every counter. Comments are not kept. The pictures it
- * showed (avatar, images, video thumbnails, never video files) are stored by
- * offlineFeedMedia.js so they draw without a network.
+ * Two things, each the whole post as the feed had it (author name and avatar,
+ * text, media details and every counter; comments are not kept):
+ *
+ *  - The feed's first page as last fetched, up to 20 posts, viewed or not.
+ *    This is what a launch paints: a full Home rather than only the one or
+ *    two posts the person happened to dwell on last time (2026-11-11: a phone
+ *    that had only looked at the top post opened on a single post).
+ *  - Beyond that page, up to 15 posts that were actually viewed
+ *    (useViewedPosts: on screen long enough to be read), most recent first,
+ *    so what was read further down is still there offline.
+ *
+ * The pictures a VIEWED post showed (avatar, images, video thumbnails, never
+ * video files) are stored by offlineFeedMedia.js so they draw without a
+ * network. A first-page post that was never on screen has no stored pictures:
+ * online they load as usual, offline it shows without them.
  *
  * HOW IT IS USED
  * Put back into the feed query before the first render as stale data, so a
@@ -20,7 +29,7 @@
  * SESSION_SCOPED_KEYS, and cleared by "Clear cached data". Installed app only:
  * this module is reached from the mobile entry, never the website.
  */
-import { feedQueryOptions, FEED_STALE_MS } from '../features/feed/utils/feedQuery';
+import { feedQueryOptions, FEED_PAGE_SIZE, FEED_STALE_MS } from '../features/feed/utils/feedQuery';
 import { setOfflineFeedStore } from '../shared/lib/offlineFeed';
 import { isStorableUrl, keepFeedMedia, resolveOfflineMedia } from './offlineFeedMedia';
 
@@ -28,8 +37,18 @@ export const FEED_SNAPSHOT_KEY = 'meetifyy_feed_snapshot_v1';
 
 /** Older than this, the kept posts are too stale to be worth painting. */
 const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
-/** The most recently viewed posts kept. */
+/** The most recently viewed posts kept beyond the first page. */
 export const MAX_KEPT_POSTS = 15;
+/** The first page is kept whole. */
+export const MAX_PAGE_POSTS = FEED_PAGE_SIZE;
+
+/** What is saved: the first page in feed order, then the viewed posts beyond it. */
+function entriesToKeep(kept) {
+  const all = [...kept.values()];
+  const page = all.filter((k) => k.page).sort((a, b) => a.order - b.order).slice(0, MAX_PAGE_POSTS);
+  const viewed = all.filter((k) => !k.page).sort((a, b) => b.viewedAt - a.viewedAt).slice(0, MAX_KEPT_POSTS);
+  return [...page, ...viewed];
+}
 
 function read(storage) {
   try {
@@ -41,9 +60,13 @@ function read(storage) {
   }
 }
 
-/** Kept posts in the order the feed showed them. */
+/** Kept posts in the order the feed showed them: the first page, then what was viewed below it. */
 function inFeedOrder(kept) {
-  return [...kept].sort((a, b) => a.order - b.order).map((k) => k.post);
+  const byOrder = (a, b) => a.order - b.order;
+  return [
+    ...kept.filter((k) => k.page).sort(byOrder),
+    ...kept.filter((k) => !k.page).sort(byOrder),
+  ].map((k) => k.post);
 }
 
 /**
@@ -118,9 +141,7 @@ export function persistFeedSnapshot(queryClient, userId = null, { storage = wind
     if (!owner) return;
     // A sign-out in between has cleared the cache: nothing to save.
     if (!homeFeed()) return;
-    const entries = [...kept.values()]
-      .sort((a, b) => b.viewedAt - a.viewedAt)
-      .slice(0, MAX_KEPT_POSTS);
+    const entries = entriesToKeep(kept);
     kept = new Map(entries.map((k) => [String(k.post.id), k]));
     try {
       storage.setItem(FEED_SNAPSHOT_KEY, JSON.stringify({
@@ -174,6 +195,7 @@ export function persistFeedSnapshot(queryClient, userId = null, { storage = wind
       order,
       // Offline the row draws stored copies (blob: URLs); keep what it had.
       media: media.length ? media : (before?.media || []),
+      page: before?.page === true,
     });
     scheduleSave();
   };
@@ -187,12 +209,30 @@ export function persistFeedSnapshot(queryClient, userId = null, { storage = wind
     if (!forOwner) return;
     load(forOwner);
     // Fresh copies of the kept posts (counters, edits), in the new order.
-    const posts = (event.query.state.data?.pages || []).flatMap((p) => p?.posts || []);
+    const pages = event.query.state.data?.pages || [];
+    const posts = pages.flatMap((p) => p?.posts || []);
     let changed = false;
     posts.forEach((post, order) => {
       const k = kept.get(String(post?.id));
       if (!k) return;
       kept.set(String(post.id), { ...k, post, order });
+      changed = true;
+    });
+    // The first page, whole. A post that has left it stays only if it was
+    // viewed (it then counts among the viewed posts, with their limit).
+    const firstPage = (pages[0]?.posts || []).filter((post) => post?.id != null).slice(0, MAX_PAGE_POSTS);
+    const onPage = new Set(firstPage.map((post) => String(post.id)));
+    for (const [id, k] of [...kept]) {
+      if (!k.page || onPage.has(id)) continue;
+      if (k.viewedAt) kept.set(id, { ...k, page: false });
+      else kept.delete(id);
+      changed = true;
+    }
+    firstPage.forEach((post, order) => {
+      const id = String(post.id);
+      const k = kept.get(id);
+      if (k?.page) return;
+      kept.set(id, k ? { ...k, page: true } : { post, viewedAt: 0, order, media: [], page: true });
       changed = true;
     });
     if (changed) scheduleSave();
