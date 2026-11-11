@@ -225,55 +225,57 @@ export const LogoCropDialog: React.FC<Props> = ({ file, onCancel, onApply }) => 
     <div className="logo-crop-backdrop">
       <div ref={dialogRef} className="logo-crop" role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <h2 id={titleId} className="logo-crop-title">Crop logo</h2>
-        <p className="logo-crop-hint">Drag to move, scroll or pinch to zoom. The logo is always square.</p>
+        <div className="logo-crop-body">
+          <p className="logo-crop-hint">Drag to move, scroll or pinch to zoom. The logo is always square.</p>
 
-        <div
-          ref={stageRef}
-          className="logo-crop-stage"
-          tabIndex={0}
-          role="application"
-          aria-label="Crop area. Arrow keys move the image, plus and minus zoom."
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerEnd}
-          onPointerCancel={onPointerEnd}
-          onKeyDown={onStageKey}
-        >
-          <canvas ref={stageCanvas} className="logo-crop-canvas" />
-          <span className="logo-crop-grid" aria-hidden="true" />
-          {!img && !error && <span className="logo-crop-loading">Loading image…</span>}
-        </div>
-
-        <div className="logo-crop-zoom">
-          <button type="button" className="btn-secondary logo-crop-step" aria-label="Zoom out" onClick={() => update((v) => ({ ...v, zoom: v.zoom / 1.15 }))}>−</button>
-          <input
-            type="range"
-            aria-label="Zoom"
-            min={Math.log(range.min)}
-            max={Math.log(range.max)}
-            step={0.005}
-            value={view ? Math.log(clamp(view.zoom, range.min, range.max)) : 0}
-            disabled={!img}
-            onChange={(e) => update((v) => ({ ...v, zoom: Math.exp(Number(e.target.value)) }))}
-          />
-          <button type="button" className="btn-secondary logo-crop-step" aria-label="Zoom in" onClick={() => update((v) => ({ ...v, zoom: v.zoom * 1.15 }))}>+</button>
-          <span className="logo-crop-pct" aria-live="off">{zoomPct}%</span>
-        </div>
-
-        <div className="logo-crop-bottom">
-          <div className="logo-crop-previews" aria-label="Preview">
-            <canvas ref={circleCanvas} className="logo-crop-prev logo-crop-prev-round" style={{ width: PREVIEW_PX, height: PREVIEW_PX }} />
-            <canvas ref={squareCanvas} className="logo-crop-prev logo-crop-prev-square" style={{ width: PREVIEW_PX, height: PREVIEW_PX }} />
+          <div
+            ref={stageRef}
+            className="logo-crop-stage"
+            tabIndex={0}
+            role="application"
+            aria-label="Crop area. Arrow keys move the image, plus and minus zoom."
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerEnd}
+            onPointerCancel={onPointerEnd}
+            onKeyDown={onStageKey}
+          >
+            <canvas ref={stageCanvas} className="logo-crop-canvas" />
+            <span className="logo-crop-grid" aria-hidden="true" />
+            {!img && !error && <span className="logo-crop-loading">Loading image…</span>}
           </div>
-          <div className="logo-crop-info" role="status">
-            {info
-              ? <>{info.width}×{info.height}px · {info.type === 'image/webp' ? 'WebP' : 'PNG'} · {formatBytes(info.blob.size)}</>
-              : img ? 'Calculating size…' : ''}
+
+          <div className="logo-crop-zoom">
+            <button type="button" className="btn-secondary logo-crop-step" aria-label="Zoom out" onClick={() => update((v) => ({ ...v, zoom: v.zoom / 1.15 }))}>−</button>
+            <input
+              type="range"
+              aria-label="Zoom"
+              min={Math.log(range.min)}
+              max={Math.log(range.max)}
+              step={0.005}
+              value={view ? Math.log(clamp(view.zoom, range.min, range.max)) : 0}
+              disabled={!img}
+              onChange={(e) => update((v) => ({ ...v, zoom: Math.exp(Number(e.target.value)) }))}
+            />
+            <button type="button" className="btn-secondary logo-crop-step" aria-label="Zoom in" onClick={() => update((v) => ({ ...v, zoom: v.zoom * 1.15 }))}>+</button>
+            <span className="logo-crop-pct" aria-live="off">{zoomPct}%</span>
           </div>
+
+          <div className="logo-crop-bottom">
+            <div className="logo-crop-previews" aria-label="Preview">
+              <canvas ref={circleCanvas} className="logo-crop-prev logo-crop-prev-round" style={{ width: PREVIEW_PX, height: PREVIEW_PX }} />
+              <canvas ref={squareCanvas} className="logo-crop-prev logo-crop-prev-square" style={{ width: PREVIEW_PX, height: PREVIEW_PX }} />
+            </div>
+            <div className="logo-crop-info" role="status">
+              {info
+                ? <>{info.width}×{info.height}px · {info.type === 'image/webp' ? 'WebP' : 'PNG'} · {formatBytes(info.blob.size)}</>
+                : img ? 'Calculating size…' : ''}
+            </div>
+          </div>
+
+          {error && <div className="logo-crop-error" role="alert">{error}</div>}
+
         </div>
-
-        {error && <div className="logo-crop-error" role="alert">{error}</div>}
-
         <div className="logo-crop-actions">
           <button type="button" className="btn-secondary" disabled={!img} onClick={() => img && setView(initialView(img))}>Reset</button>
           <span style={{ flex: 1 }} />
