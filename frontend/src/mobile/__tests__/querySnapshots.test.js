@@ -56,7 +56,7 @@ describe('main-tab snapshots', () => {
     await flush();
     const saved = disk.get('queries/u1:["conversations"]');
     expect(saved.userId).toBe('u1');
-    expect(saved.data).toHaveLength(30);
+    expect(saved.data).toHaveLength(20);
   });
 
   it('keeps only page one of the notifications list', async () => {

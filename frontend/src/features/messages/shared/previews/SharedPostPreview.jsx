@@ -6,6 +6,7 @@ import Avatar from '@shared/components/avatar/Avatar';
 import PostPreviewSkeleton from '@shared/components/skeletons/PostPreviewSkeleton';
 import { BarChart2, FileX, Play } from '@shared/components/icons';
 import styles from './SharedPostPreview.module.css';
+import PreviewImage from './PreviewImage';
 import { usePostLookup } from '@shared/hooks/usePostLookup';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { getMediaUrl } from '@shared/api/apiClient';
@@ -17,7 +18,6 @@ export function SharedPostPreview({ post, isLoading = false, isMe = false }) {
   const getPostById = usePostLookup();
   const usersMap = useUsersMap();
   const getUserById = (id) => usersMap[id] || null;
-  const [failedImages, setFailedImages] = useState({});
   const [naturalAspects, setNaturalAspects] = useState({});
 
   if (isLoading) {
@@ -118,7 +118,9 @@ export function SharedPostPreview({ post, isLoading = false, isMe = false }) {
   };
 
   const rawMediaList = resolveMediaList();
-  const mediaList = rawMediaList.filter((_, idx) => !failedImages[idx]);
+  // Every picture keeps its box: one that cannot load shows a photo icon in
+  // its place (PreviewImage) rather than disappearing from the card.
+  const mediaList = rawMediaList;
 
   // Extract poll data reliably
   const getOptionText = (o) => {
@@ -227,7 +229,7 @@ export function SharedPostPreview({ post, isLoading = false, isMe = false }) {
           style={clampedAspect ? { aspectRatio: `${clampedAspect}` } : { aspectRatio: '16 / 9' }}
           data-aspect-ratio={clampedAspect || '16 / 9'}
         >
-          <img
+          <PreviewImage
             src={item.url}
             alt=""
             className={styles.mediaCoverImg}
@@ -239,7 +241,6 @@ export function SharedPostPreview({ post, isLoading = false, isMe = false }) {
                 setNaturalAspects(prev => ({ ...prev, 0: nw / nh }));
               }
             }}
-            onError={() => setFailedImages(prev => ({ ...prev, 0: true }))}
           />
           {isVideo && (
             <div className={styles.videoPlayOverlay} aria-label="Video">
@@ -255,12 +256,11 @@ export function SharedPostPreview({ post, isLoading = false, isMe = false }) {
         <div className={styles.mediaTwo}>
           {mediaList.slice(0, 2).map((item, idx) => (
             <div key={idx} className={styles.mediaGridItem}>
-              <img
+              <PreviewImage
                 src={item.url}
                 alt=""
                 className={styles.mediaCoverImg}
                 loading="lazy"
-                onError={() => setFailedImages(prev => ({ ...prev, [idx]: true }))}
               />
               {(item.type === 'video' || item.isVideo) && (
                 <div className={styles.videoPlayOverlay} aria-label="Video">
@@ -277,12 +277,11 @@ export function SharedPostPreview({ post, isLoading = false, isMe = false }) {
       return (
         <div className={styles.mediaThree}>
           <div className={styles.mediaThreeLeft}>
-            <img
+            <PreviewImage
               src={mediaList[0].url}
               alt=""
               className={styles.mediaCoverImg}
               loading="lazy"
-              onError={() => setFailedImages(prev => ({ ...prev, 0: true }))}
             />
             {(mediaList[0].type === 'video' || mediaList[0].isVideo) && (
               <div className={styles.videoPlayOverlay} aria-label="Video">
@@ -293,12 +292,11 @@ export function SharedPostPreview({ post, isLoading = false, isMe = false }) {
           <div className={styles.mediaThreeRight}>
             {mediaList.slice(1, 3).map((item, idx) => (
               <div key={idx + 1} className={styles.mediaGridItem}>
-                <img
+                <PreviewImage
                   src={item.url}
                   alt=""
                   className={styles.mediaCoverImg}
                   loading="lazy"
-                  onError={() => setFailedImages(prev => ({ ...prev, [idx + 1]: true }))}
                 />
                 {(item.type === 'video' || item.isVideo) && (
                   <div className={styles.videoPlayOverlay} aria-label="Video">
@@ -318,12 +316,11 @@ export function SharedPostPreview({ post, isLoading = false, isMe = false }) {
       <div className={styles.mediaFour}>
         {mediaList.slice(0, 4).map((item, idx) => (
           <div key={idx} className={styles.mediaGridItem}>
-            <img
+            <PreviewImage
               src={item.url}
               alt=""
               className={styles.mediaCoverImg}
               loading="lazy"
-              onError={() => setFailedImages(prev => ({ ...prev, [idx]: true }))}
             />
             {(item.type === 'video' || item.isVideo) && (
               <div className={styles.videoPlayOverlay} aria-label="Video">

@@ -39,6 +39,7 @@ import listStyles from '@features/communities/components/directory/CommunityList
  * 100 kB of JavaScript parsed before the first campus event could paint, for a
  * screen most visitors only read.
  */
+import { refuseOffline } from '@shared/lib/offlineGuard';
 const CampusEventForm = lazy(() => import('@features/campus-events/components/CampusEventForm'));
 const CreateCommunityModal = lazy(() => import('@features/communities/components/modals/CreateCommunityModal'));
 
@@ -436,7 +437,7 @@ export default function CampusPage() {
   useWhiteSurface(!isVerifiedHub);
 
   return (
-    <main className={`centre centre-wide ${styles.hubContainer} ${styles.campusPage} ${showJoinFlow ? sharedStyles.hubJoin : ''} ${isVerifiedHub ? styles.campusVerified : ''}`}>
+    <main data-offline-keep="campus" className={`centre centre-wide ${styles.hubContainer} ${styles.campusPage} ${showJoinFlow ? sharedStyles.hubJoin : ''} ${isVerifiedHub ? styles.campusVerified : ''}`}>
       {isChangingCollege ? (
         <CampusJoinFlow onVerified={finishCollegeChange} onCancel={finishCollegeChange} />
       ) : campus.isActive && showOfflineEmpty ? (
@@ -470,7 +471,7 @@ export default function CampusPage() {
                   Create event
                 </MenuItem>
               )}
-              <MenuItem icon={Users} onSelect={() => setIsGroupModalOpen(true)} onClose={plusMenu.close}>
+              <MenuItem icon={Users} onSelect={() => { if (!refuseOffline()) setIsGroupModalOpen(true); }} onClose={plusMenu.close}>
                 Create community
               </MenuItem>
             </Menu>

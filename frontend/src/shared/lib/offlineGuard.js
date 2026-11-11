@@ -92,3 +92,20 @@ export function submitErrorMessage(err, fallback = 'Something went wrong. Try ag
   const message = Array.isArray(err?.message) ? err.message[0] : err?.message;
   return typeof message === 'string' && message.trim() ? message : fallback;
 }
+
+/**
+ * For a button that would START something needing the server (open the photo
+ * picker, start a recording, open a create form, look for a match): offline,
+ * a short centred "You're offline", text only, and nothing starts. True when
+ * it refused:
+ *
+ *   if (refuseOffline()) return;
+ *
+ * Shorter than `blockIfOffline`'s sentences on purpose: it answers the tap the
+ * person just made, before anything was entered that would need explaining.
+ */
+export function refuseOffline() {
+  if (isOnline()) return false;
+  showToast("You're offline", 'default', { position: 'center', duration: 2000 });
+  return true;
+}

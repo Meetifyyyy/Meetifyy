@@ -13,6 +13,7 @@ import styles from './Feed.module.css';
 import { useAuth } from '@shared/context/AuthContext';
 import { addCreatedPostToCaches } from '../utils/postCache';
 import { feedQueryOptions, refreshStaleFeedHead } from '../utils/feedQuery';
+import { useViewedPosts } from '../hooks/useViewedPosts';
 import {
   readSavedFeedScroll,
   saveFeedScroll,
@@ -228,9 +229,30 @@ function Feed({ onPostClick, onCommentClick }) {
     addCreatedPostToCaches(queryClient, created);
   }, [queryClient, postKey]);
 
+  // A pull asks for the newest posts WITHOUT emptying the feed first: what is
+  // on screen (the loaded or the saved feed) stays until the new page lands,
+  // and stays if it does not. `resetQueries` used to clear it to skeletons and
+  // then wait, leaving nothing to read on a slow or failed refresh.
   const handlePullToRefresh = useCallback(() => {
-    return queryClient.resetQueries({ queryKey: ['feed', searchQuery, currentUser?.id] });
+    const queryKey = feedQueryOptions(searchQuery, currentUser?.id).queryKey;
+    return refreshStaleFeedHead(queryClient, queryKey, { force: true })
+      ?? queryClient.refetchQueries({ queryKey, exact: true }, { throwOnError: false });
   }, [queryClient, searchQuery, currentUser?.id]);
+
+  // Back online: fetch the newest posts by themselves, the way a pull would,
+  // keeping what is on screen (the saved feed) until they arrive. Only on the
+  // change from offline to online, not on every render while online.
+  const wasOnlineRef = useRef(online);
+  useEffect(() => {
+    const was = wasOnlineRef.current;
+    wasOnlineRef.current = online;
+    if (online && !was) void handlePullToRefresh();
+  }, [online, handlePullToRefresh]);
+
+  // Home only: the posts actually looked at are what the app keeps for
+  // offline (shared/lib/offlineFeed; nothing listens on the website).
+  const feedRootRef = useRef(null);
+  useViewedPosts(feedRootRef, !searchQuery);
 
   return (
     <PullToRefresh onRefresh={handlePullToRefresh} triggerRef={refreshTriggerRef}>
@@ -242,7 +264,15 @@ function Feed({ onPostClick, onCommentClick }) {
           empty, error or offline state), not a skeleton. The installed app
           reports that moment to Android as the launch being fully drawn
           (mobile/launchReadiness.js); it changes nothing on the page. */}
-      <div className={styles.feed} data-bars-ignore="" data-launch-content={isLoading ? undefined : ''}>
+      <div
+        ref={feedRootRef}
+        className={styles.feed}
+        data-bars-ignore=""
+        data-launch-content={isLoading ? undefined : ''}
+        // Posts to read (the saved feed, offline): "You're offline" would only
+        // interrupt them. See OfflineNotice and PullToRefresh.
+        data-offline-quiet={hasPosts ? '' : undefined}
+      >
         {/* `gap` matches `.feed`'s own, so this occupies no layout space. */}
         <HeaderScrollEdge gap="0.5rem" />
 

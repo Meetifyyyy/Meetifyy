@@ -73,6 +73,8 @@ import { installBackgroundSocket } from './backgroundSocket';
 import { installLinkPressGuard } from './installLinkPressGuard';
 import { config } from '../config';
 import { bootCapacitorSentry } from '../platform/capacitor/sentryBoot';
+import { flushParkedSignOuts } from '@shared/api/apiClient';
+import { installOfflineFeedMedia } from './offlineFeedMedia';
 
 import '../styles/variables.css';
 import '../styles/global.css';
@@ -201,6 +203,28 @@ installNativeBackButton(createCapacitorBackButton(), {
  * Runs after the stylesheets above are imported; reading the variable before
  * them returns nothing and the strips keep their CSS fallback.
  */
+/**
+ * Sign-outs made while offline reach the server at the next chance: now (a
+ * launch after one), and whenever the network comes back. See
+ * `authApi.logoutSession` in shared/api/apiClient.js.
+ */
+void flushParkedSignOuts(); // fire-and-forget: it never throws, nothing waits on it
+
+// The pictures of the Home posts kept for offline (feedSnapshot.js), ready to
+// draw in place of the network whenever the device is offline.
+installOfflineFeedMedia();
+
+// The offline message store keeps only the top chats' newest messages
+// (idbMessages: 15 x 5). Trimmed at launch by the maintenance pass and again
+// whenever the app goes to the background, so it never grows in between.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'hidden') return;
+  void import('../features/messages/shared/utils/idbMessages')
+    .then((m) => m.trimMessageCache())
+    .catch(() => {});
+});
+window.addEventListener('online', () => { void flushParkedSignOuts(); });
+
 const systemBars = createCapacitorSystemBars();
 installSystemBars(systemBars, { readEdges: readPageEdgeColors });
 

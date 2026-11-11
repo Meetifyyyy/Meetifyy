@@ -1,4 +1,5 @@
 import { memo, useMemo, useState } from 'react';
+import { offlineMediaUrl } from '@shared/lib/offlineFeed';
 import { getMediaUrl, deriveThumbnailKey } from '@shared/api/apiClient';
 import { directPublicMediaUrl } from '@core/api/media';
 import { config } from '@config';
@@ -75,7 +76,7 @@ function CommunityAvatar({ community, size = 48 }) {
       {src ? (
         <img
           key={src}
-          src={src}
+          src={offlineMediaUrl(src)}
           alt=""
           width={size}
           height={size}

@@ -1,4 +1,6 @@
 import { forwardRef, useState, useMemo } from 'react';
+import { isOnline as isNetworkOnline, useOnlineStatus } from '@shared/lib/networkStatus';
+import { offlineMediaUrl } from '@shared/lib/offlineFeed';
 import { UsersIcon } from '@heroicons/react/24/solid';
 import { getMediaUrl, normalizeDicebearUrl, deriveThumbnailKey } from '@shared/api/apiClient';
 import { isDicebearUrl, directPublicMediaUrl } from '@core/api/media';
@@ -153,6 +155,8 @@ const Avatar = forwardRef(({
   // The picture came from the cache a frame after it mounted: show it at once
   // instead of fading it in over a skeleton (see shared/utils/imageReveal).
   const [revealInstantly, setRevealInstantly] = useState(false);
+  // Bumped to redraw with an offline copy that became ready after a failure.
+  const [, setOfflineRetry] = useState(0);
 
   // A different picture starts over. Adjusted during render rather than in an
   // effect: an effect also runs after the FIRST render, where it would undo a
@@ -166,6 +170,21 @@ const Avatar = forwardRef(({
       setHasError(true);
       setImgLoading(false);
     } else {
+      setHasError(false);
+      setImgSrc(initialProcessedSrc);
+      setRevealInstantly(false);
+      setImgLoading(!startsLoaded(initialProcessedSrc));
+    }
+  }
+
+  // Back online: a picture that failed while offline gets another go. Its
+  // failure was never remembered (handleError), so nothing else would retry
+  // it, and it kept showing the default glyph until the app restarted.
+  const networkOnline = useOnlineStatus();
+  const [seenNetworkOnline, setSeenNetworkOnline] = useState(networkOnline);
+  if (seenNetworkOnline !== networkOnline) {
+    setSeenNetworkOnline(networkOnline);
+    if (networkOnline && hasError && !failedAvatarCache.has(fullSrc)) {
       setHasError(false);
       setImgSrc(initialProcessedSrc);
       setRevealInstantly(false);
@@ -247,7 +266,7 @@ const Avatar = forwardRef(({
     if (thumbSrc && imgSrc === thumbSrc && firstFullSrc && firstFullSrc !== thumbSrc) {
       // Not while offline: that failure says nothing about the file, and
       // remembering it would load the full-size image all session.
-      const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+      const offline = !isNetworkOnline();
       if (!thumbSrc.includes('/api/media/') && !offline) missingThumbCache.add(thumbSrc);
       setImgSrc(firstFullSrc);
       return;
@@ -259,7 +278,16 @@ const Avatar = forwardRef(({
       setImgSrc(fullSrc);
       return;
     }
-    if (imgSrc) failedAvatarCache.add(imgSrc);
+    // Offline with a stored copy now ready (it may not have been when this
+    // rendered): draw that instead of giving up.
+    if (!isNetworkOnline() && imgSrc && offlineMediaUrl(imgSrc) !== imgSrc) {
+      setOfflineRetry((n) => n + 1);
+      return;
+    }
+    // Remembered as broken only when the network was up: offline, every
+    // picture fails, and caching that marked them all broken for the rest of
+    // the session (the avatars that stayed blank after reconnecting).
+    if (imgSrc && isNetworkOnline()) failedAvatarCache.add(imgSrc);
     setHasError(true);
     setImgLoading(false);
     onError?.();
@@ -278,7 +306,7 @@ const Avatar = forwardRef(({
         )}
         <img
           ref={attachImage}
-          src={imgSrc}
+          src={offlineMediaUrl(imgSrc)}
           alt={name || 'Avatar'}
           loading="lazy"
           decoding="async"

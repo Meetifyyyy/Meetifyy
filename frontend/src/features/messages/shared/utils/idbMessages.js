@@ -257,9 +257,22 @@ export async function idbSaveMessages(conversationId, messages, epoch) {
     }
     
     await committed(tx);
+    // Opening a chat writes all the history it fetched; the store keeps only
+    // the top chats' newest messages (see MAX_MESSAGES_PER_CONVERSATION), so
+    // it is cut back shortly after every write, not just at the next launch.
+    scheduleTrimAfterWrite();
   } catch (err) {
     console.warn('IDB Save failed:', err);
   }
+}
+
+let trimAfterWriteTimer = null;
+function scheduleTrimAfterWrite() {
+  if (trimAfterWriteTimer) return;
+  trimAfterWriteTimer = setTimeout(() => {
+    trimAfterWriteTimer = null;
+    void trimMessageCache();
+  }, 2000);
 }
 
 /**
@@ -530,12 +543,17 @@ export async function idbOutboxAll(userId) {
 
 // ── Bounding the cache ───────────────────────────────────────────────────────
 
-/** Newest messages kept per conversation: a few screens of history, not all of it. */
-export const MAX_MESSAGES_PER_CONVERSATION = 300;
+/**
+ * What the device keeps for offline: the newest 15 messages of the 5 most
+ * recently active chats, nothing of the rest. Online, everything else loads
+ * from the network as before; offline, a kept chat opens on its last 15 with
+ * a spinner above them, and any other chat shows a spinner.
+ */
+export const MAX_MESSAGES_PER_CONVERSATION = 15;
 /** Conversations kept; the least recently active are dropped first. */
-export const MAX_CACHED_CONVERSATIONS = 60;
+export const MAX_CACHED_CONVERSATIONS = 5;
 /** Ceiling across every conversation, whatever the two limits above allow. */
-export const MAX_CACHED_MESSAGES = 5000;
+export const MAX_CACHED_MESSAGES = MAX_MESSAGES_PER_CONVERSATION * MAX_CACHED_CONVERSATIONS;
 /**
  * A row still 'sending' or 'failed' is kept this long even with no outbox entry
  * (a failed send leaves the outbox after OUTBOX_FAILED_KEEP_MS), so a row

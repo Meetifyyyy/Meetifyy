@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import { offlineMediaUrl } from '@shared/lib/offlineFeed';
 import { isImageUrl } from '@shared/utils/avatar';
 import { getMediaUrl } from '@shared/api/apiClient';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
@@ -55,7 +56,7 @@ export function SharedProfilePreview({
       <div className={styles.avatarContainer}>
         {isImageUrl(avatarSrc) ? (
           <img 
-            src={avatarSrc} 
+            src={offlineMediaUrl(avatarSrc)} 
             alt={displayName} 
             className={styles.avatar} 
             onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.svg'; }} 

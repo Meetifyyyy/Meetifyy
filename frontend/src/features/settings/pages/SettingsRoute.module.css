@@ -80,6 +80,34 @@
   display: none;
 }
 
+/* Offline: the categories fold away (height and opacity together), leaving
+   Log Out where it rises into their place. A grid row from 1fr to 0fr
+   animates the real height without measuring it. */
+.offlineFold {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition:
+    grid-template-rows 0.34s cubic-bezier(0.2, 0, 0, 1),
+    opacity 0.2s ease;
+}
+
+.offlineFold[data-folded] {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+
+.offlineFoldInner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .offlineFold {
+    transition: none;
+  }
+}
+
 /* ── Section label ── */
 .sectionHeader {
   display: flex;

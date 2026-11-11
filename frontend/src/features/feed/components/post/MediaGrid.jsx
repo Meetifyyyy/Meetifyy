@@ -37,6 +37,9 @@ function PosterlessVideoStill({ src, repairKey, className, onLoad }) {
   return <img src={poster} alt="" decoding="async" draggable={false} className={className} onLoad={onLoad} />;
 }
 import { safePlaceholder } from '@shared/utils/imagePlaceholder';
+// Offline, the stored copy of a picture a kept Home post showed (installed
+// app only; the URL itself everywhere else).
+import { offlineMediaUrl } from '@shared/lib/offlineFeed';
 import { noteImageStart, loadedQuickly } from '@shared/utils/imageReveal';
 import ImagePlaceholder from '@shared/components/media/ImagePlaceholder';
 import styles from './MediaGrid.module.css';
@@ -334,7 +337,7 @@ const InlineVideoPlayer = memo(function InlineVideoPlayer({
         <video
           ref={videoRef}
           src={src}
-          poster={usablePoster || undefined}
+          poster={offlineMediaUrl(usablePoster) || undefined}
           playsInline
           muted={muted}
           preload="metadata"
@@ -949,7 +952,7 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName, ownMedia 
         return (
           <InlineVideoPlayer
             src={mediaSrc}
-            poster={posterUrl}
+            poster={offlineMediaUrl(posterUrl)}
             isPortrait={isPortrait}
             aspect={aspect}
             handleVideoLoaded={handleVideoLoaded}
@@ -977,7 +980,7 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName, ownMedia 
             {!isLoaded && <div className={styles.skeleton} />}
             {posterUrl ? (
               <img
-                src={posterUrl}
+                src={offlineMediaUrl(posterUrl)}
                 alt="Video thumbnail"
                 loading="lazy"
                 decoding="async"
@@ -1040,7 +1043,7 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName, ownMedia 
             : !isLoaded && <div className={styles.skeleton} />}
           {imageSrc && (
             <img
-              src={imageSrc}
+              src={offlineMediaUrl(imageSrc)}
               alt="Post content"
               loading="lazy"
               decoding="async"
@@ -1188,7 +1191,7 @@ const MediaCarousel = memo(function MediaCarousel({
                 : !loadedStates[keyAt(index)] && <div className={styles.skeleton} />}
               {src && (
                 <img
-                  src={src}
+                  src={offlineMediaUrl(src)}
                   alt={`Media ${index + 1}`}
                   loading={index < 2 ? 'eager' : 'lazy'}
                   decoding="async"

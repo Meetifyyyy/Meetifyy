@@ -17,6 +17,7 @@ import PageHeader from '@layout/PageHeader';
 import CrewCard from '../components/cards/CrewCard';
 import CrewCardSkeleton from '../components/cards/CrewCardSkeleton';
 import InstantMatchCard from '../components/cards/InstantMatchCard';
+import { refuseOffline } from '@shared/lib/offlineGuard';
 import CreateActivityCard from '../components/cards/CreateActivityCard';
 import CrewRightPanel from '../components/layout/CrewRightPanel';
 import { mapActivity } from '@shared/utils/mapActivity';
@@ -327,6 +328,7 @@ export default function FindYourCrewPage() {
       openVerificationModal('Verify with a live selfie to create activities.');
       return;
     }
+    if (refuseOffline()) return;
     openPage('/crew/create');
   }, [currentUser?.verificationStatus, openPage]);
 

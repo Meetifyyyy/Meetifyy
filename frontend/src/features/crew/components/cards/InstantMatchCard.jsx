@@ -4,6 +4,7 @@ import { MeetScene } from '@features/instant-match/components/art/CampusMap';
 import { ArrowRightIcon } from '@features/instant-match/components/art/icons';
 import '@features/instant-match/styles/instant-match.css';
 import styles from './InstantMatchCard.module.css';
+import { refuseOffline } from '@shared/lib/offlineGuard';
 
 /**
  * The crew page's entry point into Instant Match.
@@ -26,7 +27,7 @@ export default function InstantMatchCard({ className = '' }) {
     <button
       type="button"
       className={`${styles.strip} ${className}`}
-      onClick={openSheet}
+      onClick={() => { if (!refuseOffline()) openSheet(); }}
       aria-label="Start an Instant Match"
     >
       <MeetScene variant="match" className={styles.scene} />

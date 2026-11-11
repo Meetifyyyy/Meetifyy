@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useInstantMatch } from '../context/InstantMatchContext';
+import { useOnlineStatus } from '@shared/lib/networkStatus';
 import { MatchMark } from './decor/Decor';
 import { ChatIcon } from './art/icons';
 import '../styles/instant-match.css';
@@ -114,8 +115,11 @@ export default function InstantMatchFAB() {
   const config = STATE_CONFIG[state];
 
   // A live match card owns the screen; the launcher stands down for it.
+  // Offline too: matching needs the server, so it slides away until the
+  // network is back (the same animated hide).
+  const online = useOnlineStatus();
   const hidden =
-    location.pathname !== '/home' || sheetOpen || buttonState === 'responding';
+    location.pathname !== '/home' || sheetOpen || buttonState === 'responding' || !online;
 
   const showHalo = state === 'searching' || state === 'reconnecting';
   // The badge belongs to the matched state and to nothing else: the count is

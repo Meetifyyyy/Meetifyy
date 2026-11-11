@@ -17,6 +17,7 @@ import { clearDraft } from '@shared/lib/drafts';
 import { ALLOWED_IMAGE_ACCEPT, ALLOWED_VIDEO_ACCEPT, validateUploadFile } from '@shared/constants/mediaLimits';
 import { useExpandFlip } from './useExpandFlip';
 import PollEditor from './PollEditor';
+import { refuseOffline } from '@shared/lib/offlineGuard';
 
 
 
@@ -369,6 +370,7 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit, draftScope = '
 
   /** Opens a picker, or explains why not when the post is already full. */
   const openPicker = (inputRef) => {
+    if (refuseOffline()) return;
     if (mediaCountRef.current >= MAX_POST_MEDIA) {
       setLimitNotice(mediaLimitNotice({ selected: 1, added: 0, attachedBefore: mediaCountRef.current }));
       return;

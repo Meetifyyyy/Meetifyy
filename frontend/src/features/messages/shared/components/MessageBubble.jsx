@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, memo } from 'react';
+import { offlineMediaUrl } from '@shared/lib/offlineFeed';
 import { useNavigate } from 'react-router-dom';
 
 import { Reply, MoreVertical, Image as ImageIcon, AlertCircle, Play } from '@shared/components/icons';
@@ -28,7 +29,9 @@ import { describeSendFailure } from '../utils/sendFailure';
 import MediaUnavailable from './MediaUnavailable';
 import { mediaCache } from '@shared/utils/MediaCacheManager';
 import { isOnline } from '@shared/lib/networkStatus';
+import { refuseOffline } from '@shared/lib/offlineGuard';
 import { getMediaUrl } from '@shared/api/apiClient';
+import { createGestureSpring, releaseVelocity, rubberBand } from '@shared/lib/gestureSpring';
 import { normalizeBodyText, truncateBodyText } from '@shared/utils/bodyText';
 import { useUsablePoster } from '@shared/utils/posterCheck';
 import { useGeneratedPoster } from '@shared/utils/generatedPoster';
@@ -41,6 +44,13 @@ const MSG_LIMITS = { maxChars: 300, maxLines: 10 };
 // press from the brief pause everyone makes mid-scroll.
 const LONG_PRESS_DELAY_MS = 600;
 const LONG_PRESS_MOVE_TOLERANCE_PX = 10;
+/** Swipe-to-reply: the bubble follows the finger 1:1 up to here, then stretches. */
+const SWIPE_FREE_PX = 64;
+const SWIPE_STRETCH_PX = 36;
+/** Released past this, or flicked right faster than REPLY_FLICK, it replies. */
+const REPLY_DISTANCE_PX = 52;
+const REPLY_FLICK_PX_S = 500;
+const REPLY_FLICK_MIN_PX = 16;
 
 function MessageHoverActions({ msg, isMe, onReplyTo, onContextMenu }) {
   const handleReply = (e) => {
@@ -267,7 +277,16 @@ function SignedChatImage({ src, fallbackSrc, alt, className, onClick, isStandalo
     if (src) loadedImageUrls.add(src);
   };
 
-  if (error) {
+  // Offline, the stored copy of this photo (by its media key: nothing gets
+  // signed without a network), if this chat's pictures were kept.
+  const isKey = (k) => typeof k === 'string' && k && !/^(blob:|data:|https?:)/.test(k);
+  const mediaKeys = [src, fallbackSrc].filter(isKey);
+  const offlineCopy = signed ? null : mediaKeys.map((k) => offlineMediaUrl(k)).find((u, i) => u && u !== mediaKeys[i]) || null;
+  const usesOfflineCopy = Boolean(offlineCopy);
+  const shownSrc = signed ? offlineMediaUrl(signed) : (usesOfflineCopy ? offlineCopy : null);
+
+  // A failure stands, unless the stored copy is what is being drawn instead.
+  if (error && !usesOfflineCopy) {
     return (
       <MediaUnavailable
         kind="image"
@@ -289,10 +308,13 @@ function SignedChatImage({ src, fallbackSrc, alt, className, onClick, isStandalo
           <ImageIcon size={22} className={styles.msgMediaSkeletonIcon} />
         </div>
       )}
-      {signed && (
+      {shownSrc && (
         <img
           key={attempt}
-          src={signed}
+          src={shownSrc}
+          // The media key, so a photo drawn from a local preview can still be
+          // kept for offline under it (mobile/offlineFeedMedia.js).
+          data-offline-key={mediaKeys[0]}
           alt={alt || ''}
           decoding="async"
           className={`${className} ${!loaded ? styles.msgMediaImgHidden : styles.msgMediaImgVisible}`}
@@ -756,7 +778,33 @@ const MessageBubble = memo(function MessageBubble({
   const touchStartPos = useRef({ x: 0, y: 0 });
   const isSwipingRef = useRef(false);
   const vibratedRef = useRef(false);
-  const [swipeX, setSwipeX] = useState(0);
+  // Swipe-to-reply is painted straight onto these two nodes from the touch
+  // events and the release spring: no React state per move, so a 60-120 Hz
+  // drag never re-renders the bubble.
+  const swipeWrapRef = useRef(null);
+  const swipeArrowRef = useRef(null);
+  const swipeSamples = useRef([]);
+  const swipeSpring = useRef(null);
+  const paintSwipe = useCallback((x) => {
+    const wrap = swipeWrapRef.current;
+    const arrow = swipeArrowRef.current;
+    if (wrap) {
+      wrap.style.transform = x ? `translate3d(${x.toFixed(2)}px, 0, 0)` : '';
+      wrap.style.willChange = x ? 'transform' : '';
+    }
+    if (arrow) {
+      const shown = Math.max(0, x);
+      arrow.style.opacity = String(Math.min(shown / 30, 1));
+      arrow.style.transform = `translate3d(${Math.min(shown - 30, 20).toFixed(2)}px, -50%, 0) scale(${Math.min(shown / 40, 1).toFixed(3)})`;
+    }
+  }, []);
+  const getSwipeSpring = () => {
+    if (!swipeSpring.current) {
+      swipeSpring.current = createGestureSpring(paintSwipe, { stiffness: 700, dampingRatio: 0.82 });
+    }
+    return swipeSpring.current;
+  };
+  useEffect(() => () => swipeSpring.current?.stop(), []);
 
   const handleTouchStart = (e) => {
     if (e.persist) e.persist();
@@ -769,6 +817,13 @@ const MessageBubble = memo(function MessageBubble({
     }
     
     touchStartPos.current = { x: clientX || 0, y: clientY || 0 };
+    // Caught mid snap-back: carry on from where the bubble visibly is.
+    const spring = swipeSpring.current;
+    if (spring?.isMoving()) {
+      touchStartPos.current.x -= spring.value();
+      spring.set(spring.value());
+    }
+    swipeSamples.current = [];
     isSwipingRef.current = false;
     vibratedRef.current = false;
     touchHandled.current = false;
@@ -810,10 +865,15 @@ const MessageBubble = memo(function MessageBubble({
         clearTimeout(longPressTimer.current);
       }
       
-      const distance = Math.min(Math.max(0, deltaX * 0.55), 75);
-      setSwipeX(distance);
+      const pulled = Math.max(0, deltaX);
+      const distance = pulled <= SWIPE_FREE_PX
+        ? pulled
+        : SWIPE_FREE_PX + rubberBand(pulled - SWIPE_FREE_PX, SWIPE_STRETCH_PX);
+      getSwipeSpring().set(distance);
+      swipeSamples.current.push({ x: currentX, t: e.timeStamp });
+      if (swipeSamples.current.length > 12) swipeSamples.current.shift();
 
-      if (distance >= 40 && !vibratedRef.current) {
+      if (distance >= REPLY_DISTANCE_PX && !vibratedRef.current) {
         vibratedRef.current = true;
         try {
           if (navigator.vibrate) navigator.vibrate(15);
@@ -827,10 +887,23 @@ const MessageBubble = memo(function MessageBubble({
       clearTimeout(longPressTimer.current);
       longPressTimer.current = null;
     }
-    if (!isUnsent && swipeX >= 40 && replyHandler) {
-      replyHandler(msg);
+    if (isSwipingRef.current) {
+      const spring = getSwipeSpring();
+      const distance = spring.value();
+      const speed = releaseVelocity(swipeSamples.current);
+      const flicked = speed > REPLY_FLICK_PX_S && distance >= REPLY_FLICK_MIN_PX;
+      if (!isUnsent && replyHandler && (distance >= REPLY_DISTANCE_PX || flicked)) {
+        replyHandler(msg);
+      }
+      // Back home with a spring seeded by the finger's speed. The bubble is
+      // springing back toward the left, so the outward flick speed is not
+      // carried (it would overshoot the wrong way); a slight bounce remains
+      // because a drag applied force. Reduced motion: straight home.
+      spring.to(0, {
+        velocity: Math.min(0, speed),
+        instant: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
+      });
     }
-    setSwipeX(0);
     isSwipingRef.current = false;
     vibratedRef.current = false;
   };
@@ -842,9 +915,16 @@ const MessageBubble = memo(function MessageBubble({
       clearTimeout(longPressTimer.current);
       longPressTimer.current = null;
     }
-    setSwipeX(0);
+    if (isSwipingRef.current) getSwipeSpring().to(0, { velocity: 0 });
     isSwipingRef.current = false;
     vibratedRef.current = false;
+  };
+
+  const guardSharedCardOffline = (e) => {
+    if (isOnline()) return;
+    e.preventDefault();
+    e.stopPropagation();
+    refuseOffline();
   };
 
   const handleContextMenuEvent = (e) => {
@@ -972,6 +1052,9 @@ const MessageBubble = memo(function MessageBubble({
 
   let innerContent = null;
 
+  // A shared post, profile, community, activity/event or group invite: it
+  // opens something that needs the network (see guardSharedCardOffline).
+  let sharedCard = false;
   // 0. Unsent Message
   if (isUnsent) {
     innerContent = (
@@ -988,6 +1071,7 @@ const MessageBubble = memo(function MessageBubble({
       </div>
     );
   } else if (profileData || (inviteData && inviteData.type === 'profileShare')) {
+    sharedCard = true;
     const prof = profileData || inviteData?.profile;
     innerContent = (
       <div className={styles.msgImageCardContainer}>
@@ -1001,6 +1085,7 @@ const MessageBubble = memo(function MessageBubble({
       </div>
     );
   } else if (inviteData && inviteData.type === 'confessionShare') {
+    sharedCard = true;
     // Shared confession: the message holds only its id; the card asks for the
     // confession itself, as this reader (see SharedConfessionPreview).
     innerContent = (
@@ -1012,6 +1097,7 @@ const MessageBubble = memo(function MessageBubble({
       />
     );
   } else if (inviteData && inviteData.type !== 'activityShare' && inviteData.type !== 'profileShare' && inviteData.type !== 'postShare' && inviteData.type !== 'communityShare') {
+    sharedCard = true;
     // 2. Group Invite Card Message
     innerContent = (
       <div className={styles.msgImageCardContainer}>
@@ -1030,6 +1116,7 @@ const MessageBubble = memo(function MessageBubble({
       </div>
     );
   } else if (activityData || (inviteData && inviteData.type === 'activityShare')) {
+    sharedCard = true;
     // 2. Activity Share Card Message
     const act = activityData || inviteData?.activity;
     innerContent = (
@@ -1117,6 +1204,7 @@ const MessageBubble = memo(function MessageBubble({
       </div>
     );
   } else if (communityData) {
+    sharedCard = true;
     // Shared Community Card Message
     innerContent = (
       <div className={styles.msgImageCardContainer}>
@@ -1130,6 +1218,7 @@ const MessageBubble = memo(function MessageBubble({
       </div>
     );
   } else if (postData) {
+    sharedCard = true;
     // Shared Post Card Message
     innerContent = (
       <div className={styles.msgImageCardContainer}>
@@ -1291,38 +1380,35 @@ const MessageBubble = memo(function MessageBubble({
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
       onTouchCancel={handleTouchCancel}
+      // Offline, a shared card says so instead of opening a screen that needs
+      // the network (its picture and text still show, from the device).
+      onClickCapture={sharedCard ? guardSharedCardOffline : undefined}
       onContextMenu={handleContextMenuEvent}
-      style={{ position: 'relative', overflow: 'hidden' }}
+      style={{ position: 'relative', overflow: 'hidden', touchAction: replyHandler ? 'pan-y' : undefined }}
     >
-      {/* Swipe Reply Arrow Indicator */}
-      {swipeX > 0 && (
-        <div 
-          style={{
-            position: 'absolute',
-            left: `${Math.min(swipeX - 30, 20)}px`,
-            top: '50%',
-            transform: `translateY(-50%) scale(${Math.min(swipeX / 40, 1)})`,
-            opacity: Math.min(swipeX / 30, 1),
-            color: 'var(--color-primary, #6366f1)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            pointerEvents: 'none',
-            zIndex: 5,
-            transition: swipeX === 0 ? 'all 0.2s ease-out' : 'none',
-          }}
-        >
-          <Reply size={20} />
-        </div>
-      )}
-
-      <div 
-        className={styles.msgBubbleWrapper}
+      {/* Swipe-to-reply arrow: always mounted, painted by paintSwipe. */}
+      <div
+        ref={swipeArrowRef}
+        aria-hidden="true"
         style={{
-          transform: `translateX(${swipeX}px)`,
-          transition: swipeX === 0 ? 'transform 0.2s ease-out' : 'none',
-          willChange: 'transform',
+          position: 'absolute',
+          left: 0,
+          top: '50%',
+          opacity: 0,
+          color: 'var(--color-primary, #6366f1)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          pointerEvents: 'none',
+          zIndex: 5,
         }}
+      >
+        <Reply size={20} />
+      </div>
+
+      <div
+        ref={swipeWrapRef}
+        className={styles.msgBubbleWrapper}
       >
         {showSenderAvatar && (
           <div className={styles.msgAvatar} onClick={handleSenderProfileClick} style={{ cursor: 'pointer' }} title={`View ${senderName}`}>

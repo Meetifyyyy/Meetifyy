@@ -65,6 +65,9 @@ async function clearImageCaches() {
 function clearFeedSnapshot() {
   try {
     localStorage.removeItem(FEED_SNAPSHOT_KEY);
+    // The offline pictures' index (mobile/offlineFeedMedia.js); its bytes go
+    // with the image caches above.
+    localStorage.removeItem('meetifyy_offline_media_v1');
   } catch {
     // Storage disabled: nothing was written, so nothing needs removing.
   }

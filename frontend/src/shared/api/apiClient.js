@@ -193,6 +193,48 @@ export const rememberSessionTokens = (body) => session.adopt?.(body);
 /** The other half: signing out must destroy the stored credential. */
 export const forgetSessionTokens = () => session.forget?.();
 
+/**
+ * `authApi.logoutSession`: the installed app's sign-out, made to survive being
+ * offline.
+ *
+ * The session's refresh token is parked in the Keystore first (read before the
+ * caller forgets it), then every parked sign-out is sent. One the server takes
+ * is dropped; one that cannot reach it stays parked and goes out on the next
+ * `flushParkedSignOuts` — when the network comes back, or at the next launch
+ * (mobile/main.jsx). The device itself is signed out either way: this only
+ * decides when the server hears about it.
+ *
+ * On web there is nothing to park (the session is an HttpOnly cookie only the
+ * server can clear), so it is the plain request. Wrapped here, before
+ * `authApi` is exported, so every caller gets it.
+ */
+const sendSignOut = endpoints.authApi.logoutSession;
+endpoints.authApi.logoutSession = async () => {
+  if (!session.parkSignOut) {
+    await sendSignOut();
+    return;
+  }
+  await session.parkSignOut();
+  await flushParkedSignOuts();
+};
+
+/** Sends the parked sign-outs, if online. Never throws. */
+export async function flushParkedSignOuts() {
+  if (!session.parkedSignOuts) return;
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+  const parked = await session.parkedSignOuts().catch(() => []);
+  for (const refreshToken of parked) {
+    try {
+      await transport.apiClient.post('/api/auth/session/logout', { refreshToken });
+      await session.dropParkedSignOut(refreshToken);
+    } catch (error) {
+      // An answer from the server (a 4xx: already revoked, unknown) settles it;
+      // no answer at all (offline, unreachable) keeps it for the next try.
+      if (typeof error?.status === 'number') await session.dropParkedSignOut(refreshToken).catch(() => {});
+    }
+  }
+}
+
 export const authApi = endpoints.authApi;
 export const postsApi = endpoints.postsApi;
 export const shareApi = endpoints.shareApi;

@@ -169,6 +169,8 @@ function VirtualFeedList({ posts, onPostClick, onCommentClick }) {
           <div
             key={virtualItem.key}
             data-index={virtualItem.index}
+            // Read by useViewedPosts: which post this row is showing.
+            data-post-id={p.id}
             ref={virtualizer.measureElement}
             style={{
               position: 'absolute',

@@ -1,3 +1,4 @@
+import { idbMessagesEpoch, idbSaveMessages } from './idbMessages';
 /**
  * A conversation's first page of history, fetched before the chat is opened.
  *
@@ -48,6 +49,7 @@ export function prefetchChatHistory(queryClient, chatId, api) {
   if (queryClient.getQueryState(key)?.fetchStatus === 'fetching') return;
 
   inFlight.add(chatId);
+  const epoch = idbMessagesEpoch();
   Promise.resolve()
     .then(() => api.getHistory(chatId))
     .then((res) => {
@@ -55,6 +57,10 @@ export function prefetchChatHistory(queryClient, chatId, api) {
       // The chat opened meanwhile and its own answer is in: that one is newer.
       if (queryClient.getQueryData(key)?.pages?.length) return;
       const page = { ...res, messages: res.messages.map((m) => ({ ...m, status: m.status || 'sent' })) };
+      // On the device too, as the chat itself saves its pages: the top chats
+      // are what the app keeps for offline (idbMessages trims to 15 x 5), so
+      // they open offline even if they were never opened in this session.
+      void idbSaveMessages(chatId, page.messages, epoch).catch(() => {});
       queryClient.setQueryData(key, { pages: [page], pageParams: [undefined] }, { updatedAt: 0 });
     })
     .catch(() => {

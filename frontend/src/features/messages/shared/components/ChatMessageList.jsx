@@ -796,10 +796,14 @@ export default function ChatMessageList({
   // ── RENDER ───────────────────────────────────────────────────────────────
 
   return (
-    <div className={styles.msgChatBody} ref={bodyRef} onScroll={handleScroll}>
+    // The pictures in a chat (avatars, photos, shared previews) are stored for
+    // offline with its messages (mobile/offlineFeedMedia.js).
+    <div className={styles.msgChatBody} ref={bodyRef} onScroll={handleScroll} data-offline-keep="chats">
 
       {/* ── Top loading indicator (loading older messages) ── */}
-      {(hasMore || isLoadingMore) && !isLoading && (
+      {/* Offline, the device keeps only the newest messages of a chat, so the
+          spinner stays above them: older history is waiting for the network. */}
+      {(hasMore || isLoadingMore || (!online && !searchQuery && renderItems.length > 0)) && !isLoading && (
         <div className={styles.topLoadingIndicator}>
           <div className={styles.topLoadingSpinner} role="status" aria-label="Loading older messages" />
         </div>
@@ -891,7 +895,15 @@ export default function ChatMessageList({
       )}
 
       {/* ── Empty state ── */}
-      {!isLoading && !error && renderItems.length === 0 && !isTyping && (
+      {/* Offline with nothing saved for this chat (only the top chats are kept
+          on the device): a spinner, waiting for the network, not a message. */}
+      {!isLoading && !error && renderItems.length === 0 && !isTyping && !online && !(searchQuery || '').trim() && (
+        <div className={styles.topLoadingIndicator}>
+          <div className={styles.topLoadingSpinner} role="status" aria-label="Waiting for the network" />
+        </div>
+      )}
+
+      {!isLoading && !error && renderItems.length === 0 && !isTyping && (online || (searchQuery || '').trim()) && (
         <div className={styles.msgEmptyState}>
           {(searchQuery || '').trim()
             ? `No messages match “${searchQuery.trim()}”.`

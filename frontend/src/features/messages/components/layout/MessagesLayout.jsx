@@ -45,7 +45,9 @@ import sidebarStyles from '../../shared/components/sidebar/ConversationList.modu
 // having to carry two parallel URL shapes around.
 const MESSAGES_BASE = '/messages';
 // How many conversations at the top of the list have their history fetched ahead (app only).
-const HISTORY_PREFETCH_COUNT = 3;
+// The top 5 chats: their newest messages are what the app keeps for offline
+// (idbMessages), so they are fetched ahead, not only when opened.
+const HISTORY_PREFETCH_COUNT = 5;
 
 export default function MessagesLayout() {
   const { param1, param2 } = useParams();
@@ -491,7 +493,9 @@ export default function MessagesLayout() {
 
           </div>
 
-          <div className={sidebarStyles.msgConvScroll}>
+          {/* data-offline-keep: the avatars drawn here are stored for offline
+              (mobile/offlineFeedMedia.js). */}
+          <div className={sidebarStyles.msgConvScroll} data-offline-keep="conversations">
             {isConversationsLoading ? (
               <ConversationSkeleton count={7} />
             ) : filteredConvs.length === 0 && !online && conversations.length === 0 ? (
@@ -529,6 +533,11 @@ export default function MessagesLayout() {
                   />
                 );
               })
+            )}
+            {/* Offline, the device keeps only the first 20 conversations; the
+                rest of the list is shown loading until the network is back. */}
+            {!online && !isConversationsLoading && !searchVal && filteredConvs.length > 0 && (
+              <ConversationSkeleton count={3} />
             )}
           </div>
         </div>

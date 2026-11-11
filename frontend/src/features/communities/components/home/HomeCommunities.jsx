@@ -44,7 +44,8 @@ function HomeCommunities() {
   }
 
   return (
-    <section className={styles.card} aria-label="Your communities" aria-busy={isLoading}>
+    // data-offline-keep: these avatars are stored for offline (mobile/offlineFeedMedia.js).
+    <section className={styles.card} aria-label="Your communities" aria-busy={isLoading} data-offline-keep="communities">
       <div className={styles.header}>
         <h2 className={styles.title}>Your communities</h2>
         <Link to="/communities" className={styles.seeAll} onClick={(e) => openFromLink(e, '/communities')}>See all</Link>

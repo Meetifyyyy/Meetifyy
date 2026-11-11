@@ -20,6 +20,7 @@ import CampusAffiliationGate from '../components/affiliation/CampusAffiliationGa
  * and a 700-line form onto this route's critical path — roughly 80 kB parsed
  * before the first community card could paint.
  */
+import { refuseOffline } from '@shared/lib/offlineGuard';
 const CreateCommunityModal = lazy(() => import('@features/communities/components/modals/CreateCommunityModal'));
 
 /**
@@ -74,7 +75,10 @@ export default function CampusCommunitiesPage() {
     navigate(`/communities/${id}`, { state: { from: location.pathname } });
   }, [navigate, location.pathname]);
 
-  const openCreateModal = useCallback(() => setIsCreateModalOpen(true), []);
+  const openCreateModal = useCallback(() => {
+    if (refuseOffline()) return;
+    setIsCreateModalOpen(true);
+  }, []);
   const closeCreateModal = useCallback(() => setIsCreateModalOpen(false), []);
 
   return (

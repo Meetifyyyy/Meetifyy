@@ -600,7 +600,8 @@ export default function ProfilePage() {
         <div className={s.centerColumn}>
 
           {/* Profile card */}
-      <div className={s.profileCard}>
+      {/* The own profile's avatar and cover are stored for offline. */}
+      <div className={s.profileCard} data-offline-keep={isOwnProfile ? 'profile' : undefined}>
             <div className={s.coverWrap} ref={coverRef}>
               {profileCover}
               {IS_MOBILE_BUILD && (

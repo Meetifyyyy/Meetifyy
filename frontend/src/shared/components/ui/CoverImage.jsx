@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { offlineMediaUrl } from '@shared/lib/offlineFeed';
 import { getMediaUrl } from '@shared/api/apiClient';
 import { IS_MOBILE_BUILD } from '@config';
 import { isImageReady, markImageReady, warmImage } from '@shared/utils/imageWarmup';
@@ -113,7 +114,7 @@ export default function CoverImage({
       ) : (
         <img
           ref={imgRef}
-          src={url}
+          src={offlineMediaUrl(url)}
           alt={alt}
           className={`${styles.coverImg} ${loading ? styles.hidden : styles.visible} ${IS_MOBILE_BUILD ? styles.instant : ''}`}
           onLoad={handleLoad}

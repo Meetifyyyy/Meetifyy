@@ -161,6 +161,9 @@ const SESSION_SCOPED_KEYS = [
   // The installed app's last Home feed page, shown at launch (see
   // mobile/feedSnapshot.js).
   'meetifyy_feed_snapshot_v1',
+  // Which pictures the app keeps for offline, by screen (the bytes are in a
+  // `meetifyy-images…` cache, deleted below). See mobile/offlineFeedMedia.js.
+  'meetifyy_offline_media_v1',
   // Where message catch-up resumes from. Another account must start from its
   // own window, not from the point the previous one had reached.
   'meetifyy_last_socket_sync',
@@ -1643,6 +1646,9 @@ export function AuthProvider({ children }) {
      */
     try {
       await beginSignOut();
+      // Offline too: the app parks the sign-out and sends it once it can
+      // (authApi.logoutSession in shared/api/apiClient.js). The teardown below
+      // never waits on the network.
       const revocation = authApi.logoutSession().catch((e) => {
         console.error('Server sign-out failed; this browser is signed out anyway', e);
       });

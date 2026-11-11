@@ -568,6 +568,28 @@ nav a.active {
   .custom-toast { transition: opacity 0.2s linear; }
 }
 
+/* `position: 'center'`: a short notice in the middle of the screen, text only
+   (pass no type, so no icon). It grows in from slightly smaller rather than
+   sliding, since it has no edge to come from. After the rules above so it
+   wins at every width. */
+.custom-toast.custom-toast-center {
+  top: 50%;
+  bottom: auto;
+  left: 50%;
+  right: auto;
+  transform: translate(-50%, -50%) scale(0.94);
+  text-align: center;
+  justify-content: center;
+  /* As wide as its text, not the screen-wide bar the edge toasts are. */
+  width: max-content;
+  min-width: 0;
+  max-width: calc(100vw - 2rem);
+}
+
+.custom-toast.custom-toast-center.show {
+  transform: translate(-50%, -50%) scale(1);
+}
+
 /* ---------- Centre Layout ---------- */
 .centre {
   display: flex;

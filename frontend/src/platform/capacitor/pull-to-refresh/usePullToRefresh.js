@@ -311,7 +311,11 @@ export function usePullToRefresh({ onRefresh, disabled = false, getScrollTop, on
          * toast, the content left exactly as it is, no spinner.
          */
         if (!isOnline()) {
-          showToast(OFFLINE_MESSAGE, 'info', { duration: 2500 });
+          // Not over a screen that is showing saved content (Home's feed):
+          // the pull simply settles and the posts stay.
+          if (!document.querySelector('[data-offline-quiet]')) {
+            showToast(OFFLINE_MESSAGE, 'info', { duration: 2500 });
+          }
           settle();
           return;
         }

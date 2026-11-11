@@ -47,6 +47,16 @@
 const REFRESH_KEY = 'mf.session.refresh';
 const SESSION_ID_KEY = 'mf.session.id';
 const ACCESS_KEY = 'mf.session.access';
+/**
+ * Sign-outs the server has not heard about yet: the refresh tokens of sessions
+ * this device ended while it could not reach the server (offline). Kept in the
+ * Keystore like the live token, and sent on the next chance (see
+ * `flushParkedSignOuts` in shared/api/apiClient.js) so the session row is
+ * revoked instead of staying live, listed under Devices, for thirty days.
+ */
+const PARKED_SIGN_OUTS_KEY = 'mf.session.parkedSignOuts';
+/** A device that stays offline across many sign-ins keeps only the latest few. */
+const MAX_PARKED_SIGN_OUTS = 5;
 
 /** A stored access token closer to expiry than this is not used at launch. */
 const ACCESS_MIN_REMAINING_MS = 2 * 60 * 1000;
@@ -162,7 +172,42 @@ export function createCapacitorSessionSource({ secureStorage, now = () => Date.n
     await secureStorage.remove(ACCESS_KEY).catch(() => {});
   }
 
+  async function readParked() {
+    try {
+      const list = JSON.parse((await secureStorage.get(PARKED_SIGN_OUTS_KEY)) || '[]');
+      return Array.isArray(list) ? list.filter((t) => typeof t === 'string' && t) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  async function writeParked(list) {
+    if (list.length) await secureStorage.set(PARKED_SIGN_OUTS_KEY, JSON.stringify(list));
+    else await secureStorage.remove(PARKED_SIGN_OUTS_KEY).catch(() => {});
+  }
+
+  /**
+   * Keeps the current session's refresh token for a sign-out the server has
+   * yet to receive. The token is read NOW, synchronously, before the caller
+   * goes on to `forget()` it.
+   */
+  async function parkSignOut() {
+    const token = refreshToken;
+    if (!token) return;
+    const list = (await readParked()).filter((t) => t !== token);
+    list.push(token);
+    await writeParked(list.slice(-MAX_PARKED_SIGN_OUTS));
+  }
+
+  /** Drops one parked sign-out once the server has taken it. */
+  async function dropParkedSignOut(token) {
+    await writeParked((await readParked()).filter((t) => t !== token));
+  }
+
   return {
+    parkSignOut,
+    parkedSignOuts: readParked,
+    dropParkedSignOut,
     getToken: () => accessToken,
     getSessionId: () => sessionId,
     getRefreshToken: () => refreshToken,

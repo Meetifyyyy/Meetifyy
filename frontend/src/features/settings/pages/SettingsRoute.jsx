@@ -33,6 +33,7 @@ import {
 import wordmark from '@assets/images/meetifyy_wordmark.svg';
 import PasswordToggle, { usePasswordVisibility } from '@shared/components/forms/PasswordToggle';
 import styles from './SettingsRoute.module.css';
+import { useOnlineStatus } from '@shared/lib/networkStatus';
 import useDevToolsStore from '@shared/stores/devToolsStore';
 import BlockedContacts from '../panels/BlockedContacts';
 import SettingsVerificationPanel from '../panels/SettingsVerificationPanel';
@@ -528,6 +529,10 @@ export default function SettingsRoute() {
   const notificationLabEnabled = useDevToolsStore((s) => s.notificationLabEnabled);
   const setNotificationLabEnabled = useDevToolsStore((s) => s.setNotificationLabEnabled);
   const { currentUser, updateProfile, updateSettings, updateCurrentUser, changePassword, logout } = useAuth();
+  // Offline, the root folds away to Log Out alone: every other entry needs the
+  // server, and Log Out works without it (the sign-out is parked until the
+  // network is back; see authApi.logoutSession in shared/api/apiClient.js).
+  const online = useOnlineStatus();
   const profileAction = useProfileActionNeeded();
   const { openPreferences: openCookiePreferences } = useCookieConsent();
   const queryClient = useQueryClient();
@@ -1078,6 +1083,8 @@ export default function SettingsRoute() {
    */
   const listPanel = (
     <div className={`${styles.body} animate-in`}>
+      <div className={styles.offlineFold} data-folded={online ? undefined : ''} aria-hidden={online ? undefined : true} inert={online ? undefined : ''}>
+      <div className={styles.offlineFoldInner}>
       <div className={styles.group}>
         {SETTINGS_TREE.map((entry, i) => (
           <div key={entry.slug}>
@@ -1098,6 +1105,8 @@ export default function SettingsRoute() {
           </div>
         ))}
       </div>
+      </div>
+      </div>
 
       <div className={styles.group}>
         {settingsRow({
@@ -1111,7 +1120,7 @@ export default function SettingsRoute() {
 
       {/* Developer section — dev builds only. `IS_DEV_BUILD` folds to a
           build-time constant, so this whole block drops out in production. */}
-      {IS_DEV_BUILD && (
+      {IS_DEV_BUILD && online && (
         <>
           <div className={styles.sectionLabel}>Developer</div>
           <div className={styles.group}>
@@ -1136,8 +1145,12 @@ export default function SettingsRoute() {
         </>
       )}
 
-      <div className={styles.mobileOnlyWelcome}>
-        <SettingsWelcomePanel />
+      <div className={styles.offlineFold} data-folded={online ? undefined : ''} aria-hidden={online ? undefined : true} inert={online ? undefined : ''}>
+        <div className={styles.offlineFoldInner}>
+          <div className={styles.mobileOnlyWelcome}>
+            <SettingsWelcomePanel />
+          </div>
+        </div>
       </div>
     </div>
   );

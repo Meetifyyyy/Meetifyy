@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo } from 'react';
+import OnlineOnlyPage from '@shared/components/OnlineOnlyPage';
 import { AuthShell, LoginPage, SignupPage, preloadAuthScreens } from './features/auth/routes/authRoutes';
 import SignOutOverlay from '@shared/components/SignOutOverlay/SignOutOverlay';
 import { hasAffiliationField, isAffiliationActive } from '@shared/lib/campusAccess';
@@ -615,12 +616,12 @@ export default function App({ homeElement, rootExtras = null }) {
             { path: '/settings/:panel',            element: withBoundary(<SettingsRoute />, <SettingsSkeleton />), handle: { wide: true } },
             { path: '/notifications',              element: withBoundary(<NotificationsRoute />, <NotificationsPageFallback />), handle: { wide: true } },
             { path: '/campus',                     element: withBoundary(<CampusPage />, <CampusSkeleton />), handle: { wide: true } },
-            { path: '/campus/directory',           element: withBoundary(<DirectoryPage />, null), handle: { wide: true } },
-            { path: '/campus/communities',         element: withBoundary(<CampusCommunitiesPage />, null), handle: { wide: true } },
-            { path: '/campus/events',              element: withBoundary(<CampusEventsPage />, null), handle: { wide: true } },
-            { path: '/campus/events/:id',          element: withBoundary(<CampusEventDetailPage />, null), handle: { wide: true } },
-            { path: '/campus/confessions',         element: withBoundary(<ConfessionsPage />, null), handle: { wide: true } },
-            { path: '/campus/confessions/:id',     element: withBoundary(<ConfessionsPage />, null), handle: { wide: true } },
+            { path: '/campus/directory',           element: withBoundary(<OnlineOnlyPage><DirectoryPage /></OnlineOnlyPage>, null), handle: { wide: true } },
+            { path: '/campus/communities',         element: withBoundary(<OnlineOnlyPage><CampusCommunitiesPage /></OnlineOnlyPage>, null), handle: { wide: true } },
+            { path: '/campus/events',              element: withBoundary(<OnlineOnlyPage><CampusEventsPage /></OnlineOnlyPage>, null), handle: { wide: true } },
+            { path: '/campus/events/:id',          element: withBoundary(<OnlineOnlyPage><CampusEventDetailPage /></OnlineOnlyPage>, null), handle: { wide: true } },
+            { path: '/campus/confessions',         element: withBoundary(<OnlineOnlyPage><ConfessionsPage /></OnlineOnlyPage>, null), handle: { wide: true } },
+            { path: '/campus/confessions/:id',     element: withBoundary(<OnlineOnlyPage><ConfessionsPage /></OnlineOnlyPage>, null), handle: { wide: true } },
             { path: '/crew',                       element: withBoundary(<FindYourCrewPage />, <CrewSkeleton />), handle: { wide: true } },
             { path: '/crew/search',                element: withBoundary(<CrewSearchRoute />, null) },
             { path: '/crew/create',                element: withBoundary(<CreateActivityPage />, null), handle: { wide: true } },

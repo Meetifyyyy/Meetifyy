@@ -60,7 +60,9 @@ const record = (data) => (data && typeof data === 'object' && !Array.isArray(dat
 export const SNAPSHOTS = [
   {
     queryKey: ['conversations'],
-    trim: (data) => (Array.isArray(data) ? data.slice(0, 30) : undefined),
+    // The first 20 conversations of the list, for offline; below them the
+    // list shows its loading state until the network is back.
+    trim: (data) => (Array.isArray(data) ? data.slice(0, 20) : undefined),
   },
   {
     // The unfiltered notifications list: page one only, as the infinite query

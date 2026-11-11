@@ -26,6 +26,10 @@ export function createOfflineNotice({
   clearTimer = clearTimeout,
   offlineSettleMs = OFFLINE_SETTLE_MS,
   onlineSettleMs = ONLINE_SETTLE_MS,
+  // True while the screen is showing content that reads fine offline (Home's
+  // saved feed): then going offline is not announced, and so neither is
+  // coming back.
+  isQuiet = () => false,
 }) {
   let timer = null;
   // The offline notice has been shown and "Back online" has not yet followed.
@@ -39,7 +43,7 @@ export function createOfflineNotice({
   return {
     /** The state at start-up: offline is announced at once. */
     start(online) {
-      if (online) return;
+      if (online || isQuiet()) return;
       announcedOffline = true;
       show(OFFLINE_MESSAGE, 'offline');
     },
@@ -58,6 +62,7 @@ export function createOfflineNotice({
       if (announcedOffline) return;
       timer = setTimer(() => {
         timer = null;
+        if (isQuiet()) return;
         announcedOffline = true;
         show(OFFLINE_MESSAGE, 'offline');
       }, offlineSettleMs);

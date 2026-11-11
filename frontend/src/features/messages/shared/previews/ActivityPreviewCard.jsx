@@ -1,4 +1,5 @@
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
+import PreviewImage from './PreviewImage';
 import { MapPin } from '@shared/components/icons';
 import styles from './SharedActivityPreview.module.css';
 
@@ -9,8 +10,7 @@ export default function ActivityPreviewCard({ activity, coverSrc, fallbackCover,
   return (
     <div className={`${styles.activityShareCardNew} ${isMe ? styles.activityShareCardMe : styles.activityShareCardThem} ${className}`} onClick={onClick}>
       <div className={styles.activityShareCoverWrapper}>
-        <img src={coverSrc} loading="lazy" className={styles.activityShareCover} alt={`${activity.title || 'Activity'} cover`}
-          onError={fallbackCover ? (e) => { e.target.onerror = null; e.target.src = fallbackCover; } : undefined} />
+        <PreviewImage src={coverSrc} fallbackSrc={fallbackCover || undefined} loading="lazy" className={styles.activityShareCover} alt={`${activity.title || 'Activity'} cover`} />
       </div>
       <div className={styles.activityShareContentNew}>
         <CalendarIcon date={activity.startDate || activity.date} dateLabel={activity.dateLabel} style={{ border: 'none' }} />

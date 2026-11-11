@@ -16,6 +16,7 @@ import {
   tabToSlug,
 } from '@features/crew/utils/crewTabs';
 import styles from '../../pages/FindYourCrewPage.module.css';
+import { refuseOffline } from '@shared/lib/offlineGuard';
 
 const PLUS_ICON = (
   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -49,6 +50,7 @@ export default function CrewSkeleton() {
       openVerificationModal('Verify with a live selfie to create activities.');
       return;
     }
+    if (refuseOffline()) return;
     navigate('/crew/create');
   }, [currentUser?.verificationStatus, navigate]);
 
