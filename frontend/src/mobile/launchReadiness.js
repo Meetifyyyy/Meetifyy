@@ -59,6 +59,8 @@ export function installLaunchReadiness({
   onRelease = () => {},
   // Told once the first screen shows its content (see FULLY DRAWN). Optional.
   onFullyDrawn = () => {},
+  // Told two frames after that, when the content has been painted. Optional.
+  onPainted = () => {},
   watchContent = watchForContent,
   fullyDrawnMaxMs = 15_000,
 } = {}) {
@@ -78,6 +80,15 @@ export function installLaunchReadiness({
       stop();
       mark('meetifyy:fully-drawn');
       try { onFullyDrawn(); } catch { /* reporting only */ }
+      // The content is in the DOM here; two frames on it has been painted.
+      // This is the start-up number to watch: navigation start to
+      // `meetifyy:home-painted` (scripts/measure-startup.mjs reads it).
+      try {
+        nextFrame(() => nextFrame(() => {
+          mark('meetifyy:home-painted');
+          try { onPainted(); } catch { /* reporting only */ }
+        }));
+      } catch { /* no frames (a test double): the mark is optional */ }
     };
     stop = watchContent(found);
     if (!done) later(() => { done = true; stop(); }, fullyDrawnMaxMs);

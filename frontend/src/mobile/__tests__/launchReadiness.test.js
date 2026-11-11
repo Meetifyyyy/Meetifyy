@@ -86,6 +86,30 @@ describe('launch readiness', () => {
     expect(release).toHaveBeenCalledTimes(1);
   });
 
+  it('marks home painted two frames after the content appears, and tells onPainted', () => {
+    const frames = [];
+    let notify;
+    const onPainted = vi.fn();
+    const onFullyDrawn = vi.fn();
+    const boot = { appReady: false, ready() { boot.appReady = true; } };
+    installLaunchReadiness({
+      boot, now: () => 0, hasSurface: () => true,
+      nextFrame: (cb) => frames.push(cb), later: () => {},
+      onFullyDrawn, onPainted,
+      watchContent: (found) => { notify = found; return () => {}; },
+    });
+    const tick = (n) => { for (let i = 0; i < n; i += 1) frames.shift()?.(); };
+    boot.ready();
+    tick(3); // surface, then the two-frame settle: released, now watching
+    notify();
+    expect(onFullyDrawn).toHaveBeenCalledTimes(1);
+    expect(onPainted).not.toHaveBeenCalled();
+    tick(1);
+    expect(onPainted).not.toHaveBeenCalled();
+    tick(1);
+    expect(onPainted).toHaveBeenCalledTimes(1);
+  });
+
   describe('fully drawn', () => {
     /** A harness whose content watcher is driven by hand. */
     function contentHarness({ contentAtRelease = false } = {}) {

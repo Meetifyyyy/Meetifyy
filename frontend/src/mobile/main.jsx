@@ -33,6 +33,7 @@
 // First: keeps a phone in landscape on the mobile layout (see the module).
 import './installLandscapePhoneMedia';
 import { installLaunchReadiness } from './launchReadiness';
+import { recordLaunchPerf } from './launchPerfLog';
 import { warmSignedInLanding } from './warmSignedInLanding';
 import { installQuerySnapshots } from './querySnapshots';
 import { scheduleStorageMaintenance } from '../shared/lib/storageMaintenance';
@@ -262,6 +263,8 @@ installLaunchReadiness({
     });
     startMonitoringWhenIdle();
   },
+  // The launch's timings, kept for reading when the debug flag is set.
+  onPainted: () => { recordLaunchPerf(); },
 });
 
 /**
