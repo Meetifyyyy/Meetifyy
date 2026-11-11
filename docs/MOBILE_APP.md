@@ -382,17 +382,21 @@ in-app number is navigation start → `meetifyy:home-painted`. Setting
 launch's timings in `window.__meetifyyPerf.entries`. Runs vary by 10–20% with
 device heat: compare builds interleaved, not hours apart.
 
-| Cold start, I2208, perf build, signed in, saved feed | 2026-11-11 before | after |
-|---|---|---|
-| `am start -W` TotalTime (native window) | 572 ms | 565 ms |
-| Process start → page navigation start | 321 ms | 302 ms |
-| In-app: Home in the DOM | 1007 ms | 710 ms |
-| In-app: Home painted | not marked (≈1080) | 782 ms |
-| Process start → splash starts to lift | 1360 ms | 1171 ms |
-| Fully drawn (TTFD) | 1475 ms | 1281 ms |
-| Layout shift (CLS) | 0.005–0.009 | 0 |
-| Warm start TotalTime | 123 ms | 104 ms |
-| Entry chunk (development-mode mobile build) | 786 kB | 847 kB (Home included) |
+| Cold start, I2208, perf build, signed in | 2026-11-11 before | after, one saved post | after, full saved page (20) |
+|---|---|---|---|
+| `am start -W` TotalTime (native window) | 572 ms | 565 ms | — |
+| Process start → page navigation start | 321 ms | 302 ms | ≈305 ms |
+| In-app: Home in the DOM | 1007 ms | 710 ms | 761 ms |
+| In-app: Home painted | not marked (≈1080) | 782 ms | 858 ms |
+| Process start → splash starts to lift | 1360 ms | 1171 ms | ≈1300 ms |
+| Layout shift (CLS) | 0.005–0.009 | 0 | 0 |
+| Warm start TotalTime | 123 ms | 104 ms | — |
+
+Medians of 6–8 runs. The "before" and the middle column were measured while
+the phone's saved feed held a single post; since 2026-11-11 the whole first
+page is saved, and a full Home costs the launch about 50–80 ms more. The last
+column is the state that ships. The feed request now starts ~140 ms after
+Home paints (it was never sent when the app was reopened within a minute).
 
 What the remaining time is, in order (cold):
 
@@ -402,12 +406,14 @@ What the remaining time is, in order (cold):
 2. **~235 ms from navigation start to the first request.** The renderer
    process starting. Nothing of the app's runs in it.
 3. **~100 ms evaluating the entry modules and ~220 ms for the first render**,
-   against 20 ms and 113 ms for the same work on a warm reload. The difference
-   is compilation: the WebView keeps **no V8 code cache** for responses served
-   through `shouldInterceptRequest`: `Code Cache/js` only ever holds
-   ~210-byte markers. (Chromium's loader for such responses sets no response
-   time, which is the likely reason; not confirmed.) Every cold start compiles the
-   bundle from source, which is why the entry bundle has a budget.
+   against 20 ms and 113 ms for the same work on a warm reload. This is NOT
+   compilation, though it looks like it. The WebView keeps no V8 code cache
+   for files served through `shouldInterceptRequest`, so on 2026-11-11 the
+   bundle was served from a loopback HTTP server instead: V8 then reported
+   consuming a 1 MB code cache for the entry (not rejected), and the two tasks
+   were still 108 ms and 217 ms over two interleaved rounds of seven launches.
+   A cold renderer is simply about twice as slow as a warm one here. The
+   loopback server was removed again: it added a listening socket for no gain.
 4. **~150 ms from "page ready" to the splash lifting.** The WebView's first
    content frame takes that long on the render thread. It was the same with
    the feed hidden, the header, the navigation, the drawer or the background
@@ -415,8 +421,9 @@ What the remaining time is, in order (cold):
    page avoids it.
 
 The 500 ms in-app target is not met on this phone: items 2 and 3 alone are
-~550 ms. Getting there needs compiled-code caching (serving the bundle over a
-real HTTP loopback server, or a far smaller entry), not more of the same.
+~550 ms. Code caching does not help (item 3). What is left is doing less in
+the entry and in Home's first render; the bundle budget
+(`npm run check:mobile-bundle`) is there so it does not grow back.
 
 Fixed along the way (2026-10-05 → 10-26): serial auth round trips at boot,
 lazy `ReportModal`/image compressor/auth-js/Sentry, invisible
@@ -434,7 +441,8 @@ PNGs, refresh-rotation sign-outs, tokens in logcat.
 |---|---|
 | Socket.IO WebSocket-first | Rejected: campus proxies hang WebSocket attempts for the full timeout; polling starts after auth and doesn't block UI. |
 | Pull-to-refresh lazily attaching its non-passive `touchmove` | Not changed: Chrome derives blocking from the handler region on commit; needs a device trace. |
-| R8 / `shrinkResources` for release | Open (`minifyEnabled false`; `classes.dex` is 38% of the release APK). Needs an on-device release smoke test. |
+| R8 / `shrinkResources` for release | Open, deferred by the owner on 2026-11-12 (`minifyEnabled false`; `classes.dex` is 38% of the release APK). Expected gain is small (tens of ms of the ~300 ms before the page exists) and unmeasured; needs keep rules for the app's own Capacitor plugins and an on-device release smoke test. **Raise it again whenever code is pushed to `main`.** |
+| Serving the bundle over loopback HTTP for a V8 code cache | Tried 2026-11-11 and removed: the cache was produced and consumed, the launch was no faster (see Start-up, item 3). |
 | Chat thread virtualization | Not done: `content-visibility: auto` on reverse-anchored chat lists causes scroll jitter; real virtualization needs dedicated testing of scroll anchoring. |
 | Skeleton page-CSS splitting | Left: visual-regression risk for a small gain. |
 | Session payload's unbounded follower/following/bookmark arrays | Plan: ship clients that read counts and fetch on demand → raise the minimum version → drop the arrays. |
