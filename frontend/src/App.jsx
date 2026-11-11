@@ -422,12 +422,18 @@ function NotFound() {
  *   sign up — and someone opening the installed app has already done both.
  *   This is the ONLY route the app overrides; every other screen is this same
  *   table, unchanged.
+ * @param {React.ComponentType} [props.feedRoute]
+ *   The `/home` page, already loaded. The website leaves it out and Home is a
+ *   route chunk like every other page. The native build passes the component
+ *   itself: Home is where a signed-in launch opens, and as a lazy route its
+ *   first render suspended on a chunk of some fifty small files, each one a
+ *   round trip to the native asset server, before the first screen could draw.
  * @param {React.ReactNode} [props.rootExtras]
  *   Rendered once inside the router root, beside the app-wide mounts. The
  *   native build uses it for its inbound-link navigator, which needs the
  *   router's `navigate`; the website passes nothing.
  */
-export default function App({ homeElement, rootExtras = null }) {
+export default function App({ homeElement, rootExtras = null, feedRoute = null }) {
   /*
    * The keyboard geometry (`--kb-inset`, `--kb-layout-shift`, `--app-vh`,
    * `data-text-entry`, `data-keyboard-open`), published for every screen.
@@ -443,7 +449,9 @@ export default function App({ homeElement, rootExtras = null }) {
   // nested route elements and hooks (like ProtectedRoute, SocketManager) can
   // safely consume context from AuthProvider, which wraps App in main.jsx.
   // Do not restructure App to wrap AuthProvider; outer context must remain wrapper.
-  const router = useMemo(() => createBrowserRouter([
+  const router = useMemo(() => {
+  const HomeRoute = feedRoute ?? FeedRoute;
+  return createBrowserRouter([
     {
       path: '/',
       element: (
@@ -598,7 +606,7 @@ export default function App({ homeElement, rootExtras = null }) {
             {
               element: <DashboardLayoutWrapper />,
               children: [
-            { path: '/home',                       element: withBoundary(<FeedRoute />, <HomeSkeleton />) },
+            { path: '/home',                       element: withBoundary(<HomeRoute />, <HomeSkeleton />) },
             { path: '/search',                     element: withBoundary(<SearchResultsRoute />, <SearchSkeleton />) },
             { path: '/communities',                element: withBoundary(<CommunitiesRoute />, <CommunitiesPageSkeleton />) },
             { path: '/communities/search',         element: withBoundary(<CommunitySearchRoute />, null) },
@@ -643,7 +651,8 @@ export default function App({ homeElement, rootExtras = null }) {
   future: {
     v7_startTransition: true,
   }
-}), [homeElement, rootExtras]);
+});
+  }, [homeElement, rootExtras, feedRoute]);
 
   return <RouterProvider router={router} />;
 }

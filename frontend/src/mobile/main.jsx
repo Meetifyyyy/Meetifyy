@@ -46,6 +46,10 @@ import { Toaster } from 'sonner';
 
 import App from '../App.jsx';
 import AppOpenScreen from './AppOpenScreen';
+// Home is the screen a signed-in launch opens on, so in the app it is part of
+// the entry bundle rather than a route chunk fetched after it (see App's
+// `feedRoute`).
+import FeedRoute from '../features/feed/pages/FeedRoute';
 import { AuthProvider } from '../shared/context/AuthContext';
 import { CookieConsentProvider } from '../shared/context/CookieConsentContext';
 import { ThemeProvider } from '../shared/context/ThemeContext';
@@ -370,7 +374,7 @@ createRoot(document.getElementById('root')).render(
                   behind it, making requests.
                 */}
                 <UpdateGate>
-                  <App homeElement={<AppOpenScreen />} rootExtras={rootExtras} />
+                  <App homeElement={<AppOpenScreen />} rootExtras={rootExtras} feedRoute={FeedRoute} />
                 </UpdateGate>
                 <MediaViewerHost />
               </UsersMapProvider>

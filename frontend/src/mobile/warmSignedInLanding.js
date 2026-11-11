@@ -2,6 +2,29 @@ import { whenSessionReady, mayHaveCookieSession } from '../shared/api/apiClient'
 import { feedQueryOptions } from '../features/feed/utils/feedQuery';
 import { idbEpoch, idbGet } from '../shared/lib/idb';
 import { restoreFeedSnapshot, persistFeedSnapshot } from './feedSnapshot';
+import { consumeRedirectIntent } from '../shared/utils/redirectIntent';
+
+/**
+ * Starts a signed-in launch on the page it is going to, not on `/`.
+ *
+ * The app's document always loads at `/`, the signed-out opening screen's
+ * route, and a signed-in launch then rendered the router there only to be
+ * redirected to Home by the route gate: a second navigation and a second
+ * render pass before the first screen could begin. The destination is known
+ * before the router exists (the same rule the gate applies: the page asked for
+ * before signing in, else Home), so the address is set first and the router
+ * starts where it will stay. Returns the path it chose, or null.
+ */
+export function startOnSignedInDestination({ location = window.location, history = window.history } = {}) {
+  if (location.pathname !== '/') return null;
+  const to = consumeRedirectIntent() || '/home';
+  try {
+    history.replaceState(history.state, '', to);
+  } catch {
+    return null; // The gate redirects, as before.
+  }
+  return to;
+}
 
 /**
  * Puts the signed-in user's own profile, as last saved on the device, into the
@@ -78,6 +101,10 @@ export function warmSignedInLanding(queryClient, { storage = window.localStorage
   }
   const cachedUserId = cachedUser?.id ?? null;
   if (!cachedUserId) return;
+
+  // The first render is the signed-in app (AuthContext reads the same two
+  // keys): start it on its destination.
+  startOnSignedInDestination();
 
   // The last feed page from this device, so the first frame shows real posts
   // rather than a skeleton waiting on the network; the prefetch below
