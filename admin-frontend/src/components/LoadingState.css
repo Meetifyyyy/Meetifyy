@@ -1,0 +1,7 @@
+.admin-loading-state { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; min-height: 320px; padding: 32px 20px; color: var(--color-text-light); font-size: .875rem; text-align: center; }
+.admin-loading-state.is-compact { min-height: 260px; }
+@media (max-width: 600px) {
+  .admin-loading-state { min-height: 260px; }
+  .admin-loading-state.is-compact { min-height: min(240px, 45dvh); }
+}
+@media (prefers-reduced-motion: reduce) { .admin-loading-state .spin { animation: none; } }

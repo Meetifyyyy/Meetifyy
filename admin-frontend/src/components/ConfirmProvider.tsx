@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useLayoutEffect, useRef, useState } from 'react';
 import { AlertTriangle, Loader2, ShieldAlert, Trash2, X } from './icons';
 
 /**
@@ -192,8 +192,32 @@ const ConfirmDialog: React.FC<{
   // one stray Enter away, and this dialog is often opened from a row where the
   // key is already down.
   const cancelRef = useRef<HTMLButtonElement>(null);
-  React.useEffect(() => {
-    cancelRef.current?.focus();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const dialog = dialogRef.current;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const locked = [document.documentElement, document.body, ...document.querySelectorAll<HTMLElement>('.admin-content-surface')];
+    const previous = locked.map((element) => ({ element, overflow: element.style.overflow }));
+    previous.forEach(({ element }) => { element.style.overflow = 'hidden'; });
+    cancelRef.current?.focus({ preventScroll: true });
+    const trapFocus = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab') return;
+      const controls = Array.from(dialog?.querySelectorAll<HTMLElement>('button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex="0"]') || []);
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (!first) { event.preventDefault(); dialog?.focus({ preventScroll: true }); return; }
+      if (!dialog?.contains(document.activeElement)) { event.preventDefault(); first.focus({ preventScroll: true }); }
+      else if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus({ preventScroll: true }); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus({ preventScroll: true }); }
+    };
+    document.addEventListener('keydown', trapFocus);
+    return () => {
+      const restore = dialog?.contains(document.activeElement) || document.activeElement === document.body;
+      document.removeEventListener('keydown', trapFocus);
+      previous.forEach(({ element, overflow }) => { element.style.overflow = overflow; });
+      // Keep an explicit onCancel focus target (for example the mobile menu).
+      if (restore && opener?.isConnected && !opener.closest('[inert]')) opener.focus({ preventScroll: true });
+    };
   }, []);
 
   return (
@@ -206,7 +230,9 @@ const ConfirmDialog: React.FC<{
       role="presentation"
     >
       <div
-        className="modal-content"
+        ref={dialogRef}
+        tabIndex={-1}
+        className="modal-content confirm-dialog admin-dialog-layout"
         style={{ maxWidth: 'min(460px, 100%)', width: '100%' }}
         onClick={(e) => e.stopPropagation()}
         role="alertdialog"
@@ -214,11 +240,11 @@ const ConfirmDialog: React.FC<{
         aria-labelledby="confirm-title"
         aria-describedby="confirm-description"
       >
-        <div style={{ padding: '1.25rem 1.25rem 0', display: 'flex', alignItems: 'flex-start', gap: '0.875rem' }}>
+        <div className="confirm-dialog-header" style={{ display: 'flex', alignItems: 'flex-start', gap: '0.875rem' }}>
           <div
             aria-hidden="true"
             style={{
-              flexShrink: 0, width: 40, height: 40, borderRadius: 10,
+              flexShrink: 0, width: 40, height: 40, borderRadius: 12,
               background: style.tint, color: style.tone,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}
@@ -229,13 +255,12 @@ const ConfirmDialog: React.FC<{
           <div style={{ minWidth: 0, flex: 1 }}>
             <div
               style={{
-                fontSize: '0.68rem', fontWeight: 700, letterSpacing: '0.06em',
-                textTransform: 'uppercase', color: style.tone, marginBottom: 2,
+                fontSize: '0.75rem', fontWeight: 600, color: style.tone, marginBottom: 2,
               }}
             >
               {style.label}
             </div>
-            <h3 id="confirm-title" style={{ margin: 0, fontSize: '1.02rem', lineHeight: 1.3 }}>
+            <h3 id="confirm-title" style={{ margin: 0, fontSize: '1.125rem', fontWeight: 650, lineHeight: 1.4 }}>
               {request.title}
             </h3>
           </div>
@@ -244,17 +269,13 @@ const ConfirmDialog: React.FC<{
             onClick={onCancel}
             disabled={pending}
             aria-label="Cancel"
-            style={{
-              background: 'none', border: 'none', padding: 4,
-              cursor: pending ? 'not-allowed' : 'pointer',
-              color: 'var(--color-text-dim)', opacity: pending ? 0.4 : 1,
-            }}
+            className="dialog-close"
           >
             <X size={18} />
           </button>
         </div>
 
-        <div style={{ padding: '0.75rem 1.25rem 0' }}>
+        <div className="confirm-dialog-body admin-dialog-body">
           <p
             id="confirm-description"
             style={{ margin: 0, fontSize: '0.875rem', lineHeight: 1.55, color: 'var(--color-text-body, #475569)' }}
@@ -266,7 +287,7 @@ const ConfirmDialog: React.FC<{
             <ul
               style={{
                 margin: '0.75rem 0 0', padding: '0.7rem 0.9rem 0.7rem 2rem',
-                background: style.tint, borderRadius: 8,
+                background: style.tint, borderRadius: 12,
                 fontSize: '0.82rem', lineHeight: 1.6, color: 'var(--color-text-body, #475569)',
               }}
             >
@@ -280,7 +301,7 @@ const ConfirmDialog: React.FC<{
             <div
               role="alert"
               style={{
-                marginTop: '0.75rem', padding: '0.6rem 0.75rem', borderRadius: 8,
+                marginTop: '0.75rem', padding: '0.75rem', borderRadius: 12,
                 background: 'var(--color-danger-tint)', color: 'var(--color-danger)',
                 fontSize: '0.82rem', display: 'flex', gap: '0.5rem', alignItems: 'flex-start',
               }}
@@ -293,10 +314,10 @@ const ConfirmDialog: React.FC<{
 
         {/* Wraps on narrow screens so neither button is ever clipped. */}
         <div
-          className="modal-actions"
+          className="modal-actions confirm-dialog-footer"
           style={{
             display: 'flex', justifyContent: 'flex-end', flexWrap: 'wrap',
-            gap: '0.6rem', padding: '1.1rem 1.25rem 1.25rem',
+            gap: '0.6rem',
           }}
         >
           <button

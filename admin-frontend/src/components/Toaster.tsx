@@ -84,8 +84,8 @@ export const Toaster: React.FC = () => {
               background: 'var(--color-bg-white)',
               border: `1px solid ${isError ? 'rgba(239, 68, 68, 0.35)' : 'rgba(16, 185, 129, 0.35)'}`,
               borderLeft: `3px solid ${isError ? 'var(--color-danger)' : 'var(--color-success)'}`,
-              borderRadius: 'var(--radius-sm)',
-              boxShadow: 'var(--shadow-lg)',
+              borderRadius: 'var(--radius-md)',
+              boxShadow: 'var(--shadow-md)',
               padding: '0.75rem 0.85rem',
               display: 'flex',
               alignItems: 'flex-start',
@@ -101,7 +101,7 @@ export const Toaster: React.FC = () => {
             <button
               onClick={() => dismiss(t.id)}
               aria-label="Dismiss"
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-dim)', padding: 0, flexShrink: 0 }}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-dim)', padding: '4px', minWidth: '28px', minHeight: '28px', flexShrink: 0 }}
             >
               <X size={14} />
             </button>

@@ -23,8 +23,8 @@ export const Pagination: React.FC<{
   if (pages <= 1) return null;
 
   const btn = (disabled: boolean): React.CSSProperties => ({
-    padding: '0.22rem 0.5rem',
-    fontSize: '0.72rem',
+    padding: '0.45rem 0.75rem',
+    fontSize: '0.8125rem',
     opacity: disabled ? 0.45 : 1,
     cursor: disabled ? 'not-allowed' : 'pointer',
   });
@@ -39,12 +39,12 @@ export const Pagination: React.FC<{
         alignItems: 'center',
         justifyContent: 'space-between',
         gap: '0.5rem',
-        padding: '0.5rem 0.75rem',
+        padding: '1rem',
         borderTop: '1px solid var(--color-border)',
         flexWrap: 'wrap',
       }}
     >
-      <div style={{ fontSize: '0.72rem', color: 'var(--color-text-light)', minWidth: '110px' }}>
+      <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-light)', minWidth: '110px' }}>
         Page {page} of {pages}
         {total !== undefined && ` · ${total.toLocaleString()} ${label}`}
       </div>
@@ -53,19 +53,19 @@ export const Pagination: React.FC<{
           onClick={() => onChange(page - 1)}
           disabled={atStart}
           className="btn-secondary"
-          style={{ ...btn(atStart), minHeight: '28px', minWidth: '72px', justifyContent: 'center' }}
+          style={{ ...btn(atStart), minHeight: '42px', minWidth: '72px', justifyContent: 'center' }}
         >
-          <ChevronLeft size={12} />
+          <ChevronLeft size={15} />
           <span>Previous</span>
         </button>
         <button
           onClick={() => onChange(page + 1)}
           disabled={atEnd}
           className="btn-secondary"
-          style={{ ...btn(atEnd), minHeight: '28px', minWidth: '72px', justifyContent: 'center' }}
+          style={{ ...btn(atEnd), minHeight: '42px', minWidth: '72px', justifyContent: 'center' }}
         >
           <span>Next</span>
-          <ChevronRight size={12} />
+          <ChevronRight size={15} />
         </button>
       </div>
     </div>

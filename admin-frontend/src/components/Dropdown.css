@@ -1,0 +1,17 @@
+.admin-dropdown { position: relative; display: inline-block; width: 100%; min-width: 0; vertical-align: middle; }
+.admin-dropdown-native { position: absolute; width: 1px; height: 1px; top: 50%; left: 12px; opacity: 0; pointer-events: none; }
+.admin-dropdown-trigger { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 42px; padding: 9px 12px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-bg-white); color: var(--color-text-main); font: 500 0.8125rem/1.4 var(--font-body); text-align: left; cursor: pointer; transition: border-color 150ms ease, background-color 150ms ease; }
+.admin-dropdown-trigger:hover:not(:disabled) { border-color: var(--color-border-dark); background: var(--color-bg-alt); }
+.admin-dropdown-trigger:focus-visible, .admin-dropdown-trigger[aria-expanded="true"] { outline: none; border-color: var(--color-primary); box-shadow: 0 0 0 3px var(--color-primary-tint); }
+.admin-dropdown-trigger:disabled { cursor: not-allowed; opacity: 0.55; background: var(--color-bg-soft); }
+.admin-dropdown-trigger > svg { flex-shrink: 0; color: var(--color-text-light); }
+.admin-dropdown-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.admin-dropdown-menu { position: fixed; z-index: 300; overflow-y: auto; overscroll-behavior: contain; padding: 5px; border: 1px solid var(--color-border); border-radius: 12px; background: var(--color-bg-white); color: var(--color-text-main); box-shadow: var(--shadow-lg); scrollbar-width: none; -ms-overflow-style: none; }
+.admin-dropdown-menu::-webkit-scrollbar { display: none; width: 0; height: 0; }
+.admin-dropdown-option { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 36px; padding: 8px 10px; border-radius: 7px; font-size: 0.8125rem; line-height: 1.4; cursor: pointer; overflow-wrap: anywhere; }
+.admin-dropdown-option > svg { flex-shrink: 0; }
+.admin-dropdown-option[aria-selected="true"] { color: var(--color-primary); background: var(--color-primary-tint); }
+.admin-dropdown-option.is-highlighted { background: var(--color-bg-soft); }
+.admin-dropdown-option[aria-selected="true"].is-highlighted { background: var(--color-primary-tint); }
+.admin-dropdown-option[aria-disabled="true"] { opacity: 0.45; cursor: not-allowed; }
+@media (pointer: coarse) { .admin-dropdown-option { min-height: 44px; } }

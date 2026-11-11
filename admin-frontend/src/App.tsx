@@ -8,6 +8,7 @@ import {
 } from 'react-router-dom';
 import { QueryClient, QueryClientProvider, MutationCache } from '@tanstack/react-query';
 import './App.css';
+import './components/dialogs.css';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { SessionExpiredError } from './api/apiClient';
 import { AdminLayout } from './components/AdminLayout';

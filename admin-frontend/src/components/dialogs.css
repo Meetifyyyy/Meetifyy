@@ -1,0 +1,54 @@
+/* Shared viewport bounds; modal content owns its scroll, not the document. */
+.modal-backdrop, .logo-crop-backdrop, .media-viewer-backdrop { --dialog-edge-top: max(12px, env(safe-area-inset-top)); --dialog-edge-bottom: max(12px, env(safe-area-inset-bottom)); padding: var(--dialog-edge-top) max(12px, env(safe-area-inset-right)) var(--dialog-edge-bottom) max(12px, env(safe-area-inset-left)); overscroll-behavior: contain; }
+.modal-content .modal-actions > button { min-height: 44px; }
+.modal-content { min-width: 0; max-height: calc(100dvh - var(--dialog-edge-top, 12px) - var(--dialog-edge-bottom, 12px)); }
+.modal-content.admin-dialog-layout { display: flex; flex-direction: column; min-height: 0; padding: 0; overflow: hidden; }
+.admin-dialog-layout > .dialog-header { align-items: center; flex-shrink: 0; gap: 12px; margin: 0; padding: 18px 24px; }
+.admin-dialog-layout > .dialog-header > :first-child { min-width: 0; }
+.admin-dialog-body { flex: 1 1 auto; min-width: 0; min-height: 0; padding: 20px 24px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; overflow-wrap: anywhere; }
+.admin-dialog-body::-webkit-scrollbar { display: none; }
+.admin-dialog-layout > .modal-actions { flex-shrink: 0; margin: 0; padding: 14px 24px; border-top: 1px solid var(--color-border-light); background: var(--color-bg-white); }
+.admin-dialog-layout > .modal-actions > button { min-height: 44px; white-space: normal; }
+.admin-dialog-layout > .modal-actions > div:empty { display: none; }
+.admin-dialog-layout .dialog-close { min-width: 44px; min-height: 44px; font-size: 1.25rem; }
+.confirm-dialog.admin-dialog-layout > .confirm-dialog-header { flex-shrink: 0; padding: 20px 24px 0; }
+.confirm-dialog.admin-dialog-layout > .confirm-dialog-body { padding: 14px 24px; }
+.confirm-dialog.admin-dialog-layout > .confirm-dialog-footer { margin: 0; padding: 14px 24px 20px; }
+.modal-content.legal-modal { min-height: 0; max-height: calc(100dvh - var(--dialog-edge-top, 12px) - var(--dialog-edge-bottom, 12px)); }
+.legal-modal > .legal-modal-body { flex: 1 1 auto; overscroll-behavior: contain; scrollbar-width: none; }
+.legal-modal-body::-webkit-scrollbar { display: none; }
+.legal-modal .legal-modal-footer > button, .legal-modal-header > button { min-height: 44px; }
+.legal-modal-header > button { min-width: 44px; }
+@media (max-width: 600px) {
+  .modal-backdrop, .logo-crop-backdrop, .media-viewer-backdrop { --dialog-edge-top: max(8px, env(safe-area-inset-top)); --dialog-edge-bottom: max(8px, env(safe-area-inset-bottom)); padding: var(--dialog-edge-top) max(8px, env(safe-area-inset-right)) var(--dialog-edge-bottom) max(8px, env(safe-area-inset-left)); }
+  .modal-content, .modal-content.legal-modal { max-height: calc(100dvh - var(--dialog-edge-top, 8px) - var(--dialog-edge-bottom, 8px)); }
+  .admin-dialog-layout > .dialog-header { padding: 14px 16px; }
+  .admin-dialog-body { padding: 16px; }
+  .admin-dialog-layout > .modal-actions { padding: 12px 16px; }
+  .admin-dialog-layout > .modal-actions > button { flex: 1 1 auto; }
+  .confirm-dialog.admin-dialog-layout > .confirm-dialog-header { padding: 16px 16px 0; }
+  .confirm-dialog.admin-dialog-layout > .confirm-dialog-body { padding: 12px 16px; }
+  .confirm-dialog.admin-dialog-layout > .confirm-dialog-footer { padding: 12px 16px 16px; }
+  .modal-content input.input-control, .modal-content textarea.input-control { min-height: 44px; font-size: 1rem; }
+  .modal-content textarea.input-control { min-height: 96px; }
+  .modal-content .admin-dropdown-trigger { min-height: 44px; }
+  .modal-content .btn-primary, .modal-content .btn-secondary, .modal-content .btn-danger { min-height: 44px; }
+  .modal-content.legal-modal .legal-modal-header, .modal-content.legal-modal .legal-modal-body { padding: 16px; }
+  .modal-content.legal-modal .legal-modal-footer { padding: 12px 16px; }
+  .user-detail-row { grid-template-columns: minmax(0, 1fr); gap: 3px; padding: 10px 0; }
+  .media-viewer-tools .media-viewer-button { min-width: 44px; min-height: 44px; }
+}
+@media (max-width: 380px) {
+  .admin-dialog-layout > .modal-actions > button { flex-basis: calc(50% - 8px); }
+  .media-viewer-tools { width: 100%; justify-content: space-between; margin-left: 0; }
+}
+@media (max-height: 500px) {
+  .admin-dialog-layout > .dialog-header { padding-top: 10px; padding-bottom: 10px; }
+  .admin-dialog-body { padding-top: 12px; padding-bottom: 12px; }
+  .admin-dialog-layout > .modal-actions { padding-top: 8px; padding-bottom: 8px; }
+  .confirm-dialog.admin-dialog-layout > .confirm-dialog-header { padding-top: 12px; }
+  .confirm-dialog.admin-dialog-layout > .confirm-dialog-body { padding-top: 10px; padding-bottom: 10px; }
+}
+
+.logo-crop-backdrop .logo-crop { max-height: calc(100dvh - var(--dialog-edge-top) - var(--dialog-edge-bottom)); }
+.media-viewer-backdrop .media-viewer-dialog { height: min(860px, calc(100dvh - var(--dialog-edge-top) - var(--dialog-edge-bottom))); }
