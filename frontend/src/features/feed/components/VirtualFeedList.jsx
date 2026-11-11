@@ -27,7 +27,46 @@ function observeStableWindowRect(instance, cb) {
   });
 }
 
+/** Rows kept rendered beyond each edge of the viewport. */
+const OVERSCAN = 5;
+/** The same, for the launch's first frame only (see useLaunchOverscan). */
+const LAUNCH_OVERSCAN = 1;
+/** Home's first mount in this document: the cold start's own render. */
+let launchRenderPending = IS_MOBILE_BUILD;
+
+/**
+ * Fewer off-screen rows in the app's very first frame.
+ *
+ * At launch the feed is restored from the device (up to a page of posts), and
+ * with the usual overscan the first render built seven posts to show the two
+ * or three that fit on screen. Measured on the I2208 (2026-11-11) that was
+ * 60-80 ms of the cold start, spent under the splash on rows nobody can see.
+ * The launch renders one row beyond the viewport instead, and the usual five
+ * are added once the first screen has painted and the page is idle: well
+ * before a finger can scroll that far. Every later mount (coming back to
+ * Home) starts with the full overscan, as before; so does the website.
+ */
+function useLaunchOverscan() {
+  const [overscan, setOverscan] = useState(() => {
+    const atLaunch = launchRenderPending && typeof window !== 'undefined' && !window.scrollY;
+    launchRenderPending = false;
+    return atLaunch ? LAUNCH_OVERSCAN : OVERSCAN;
+  });
+  useEffect(() => {
+    if (overscan === OVERSCAN) return undefined;
+    const widen = () => setOverscan(OVERSCAN);
+    if (typeof window.requestIdleCallback === 'function') {
+      const id = window.requestIdleCallback(widen, { timeout: 700 });
+      return () => window.cancelIdleCallback?.(id);
+    }
+    const id = setTimeout(widen, 300);
+    return () => clearTimeout(id);
+  }, [overscan]);
+  return overscan;
+}
+
 function VirtualFeedList({ posts, onPostClick, onCommentClick }) {
+  const overscan = useLaunchOverscan();
   // Stable across re-renders (as long as `onPostClick` itself is stable) so
   // <Post> — wrapped in React.memo — can actually bail out on unrelated
   // re-renders instead of every visible row re-rendering because it received
@@ -79,7 +118,7 @@ function VirtualFeedList({ posts, onPostClick, onCommentClick }) {
       if (p.text && p.text.length > 200) height += 60;
       return height;
     },
-    overscan: 5,
+    overscan,
     // Start from where the window really is. With the defaults (offset 0, no
     // viewport) the first render after arriving on an already-scrolled Home
     // (back from a scrolled Profile) had no rows in view: for ~4 frames the
