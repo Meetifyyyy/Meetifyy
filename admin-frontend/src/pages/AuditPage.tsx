@@ -1,207 +1,86 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../api/apiClient';
-import { FileText, ShieldAlert, Key } from '../components/icons';
+import { AlertTriangle, Clock, FileText, Key, RefreshCw, ShieldAlert } from '../components/icons';
 import { Pagination } from '../components/Pagination';
+import { LoadingState } from '../components/LoadingState';
+import { formatEnumLabel } from '../utils/formatEnumLabel';
+import './activity.css';
+
+type AuditTab = 'AUDIT' | 'SECURITY' | 'LOGIN';
+const sections = [
+  { value: 'AUDIT', label: 'Admin actions', title: 'Admin operations', description: 'Recorded changes made in the admin portal.', endpoint: 'logs', key: 'adminAuditLogs', icon: FileText },
+  { value: 'SECURITY', label: 'Security events', title: 'Security events', description: 'Recorded security signals and their event details.', endpoint: 'security-events', key: 'adminSecurityEvents', icon: ShieldAlert },
+  { value: 'LOGIN', label: 'Sign-in history', title: 'Sign-in history', description: 'Successful and unsuccessful attempts to access the admin portal.', endpoint: 'login-audits', key: 'adminLoginAudits', icon: Key },
+] as const;
+interface AuditEntry {
+  id: string;
+  createdAt: string;
+  ip?: string | null;
+  action?: string;
+  type?: string;
+  admin?: { name?: string | null; email?: string | null } | null;
+  adminId?: string | null;
+  targetType?: string | null;
+  targetId?: string | null;
+  metadata?: unknown;
+  email?: string;
+  success?: boolean;
+  failureReason?: string | null;
+  browser?: string | null;
+  os?: string | null;
+  deviceName?: string | null;
+}
+interface AuditResponse { data: AuditEntry[]; meta: { total: number; page: number; totalPages: number } }
+const columns = {
+  AUDIT: ['Action', 'Administrator', 'Target', 'IP address', 'Recorded'],
+  SECURITY: ['Event', 'IP address', 'Details', 'Recorded'],
+  LOGIN: ['Account', 'Result', 'Device', 'IP address', 'Recorded'],
+};
+const recordedAt = (value: string) => new Date(value).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+const reasonLabel = (reason?: string | null) => reason ? /^[A-Z0-9_]+$/.test(reason) ? formatEnumLabel(reason) : reason : 'No reason recorded';
+
+function EntryCells({ entry, tab }: { entry: AuditEntry; tab: AuditTab }) {
+  const ip = <code className="activity-code">{entry.ip || 'Not recorded'}</code>;
+  const recorded = <time dateTime={entry.createdAt}>{recordedAt(entry.createdAt)}</time>;
+  if (tab === 'AUDIT') return <>
+    <td data-label="Action"><span className="activity-badge tone-blue" title={entry.action}>{formatEnumLabel(entry.action) || 'Unknown action'}</span></td>
+    <td data-label="Administrator"><strong className="audit-actor">{entry.admin?.name || entry.admin?.email || entry.adminId || 'Not recorded'}</strong></td>
+    <td data-label="Target"><span className="audit-target-type">{formatEnumLabel(entry.targetType) || 'Not recorded'}</span>{entry.targetId && <code className="activity-code audit-target-id">{entry.targetId}</code>}</td>
+    <td data-label="IP address">{ip}</td><td data-label="Recorded">{recorded}</td>
+  </>;
+  if (tab === 'SECURITY') return <>
+    <td data-label="Event"><span className="activity-badge tone-violet" title={entry.type}>{formatEnumLabel(entry.type) || 'Security event'}</span></td>
+    <td data-label="IP address">{ip}</td>
+    <td data-label="Details">{entry.metadata == null ? <span className="activity-muted">No metadata recorded</span> : <details className="audit-event-details"><summary>View metadata</summary><pre tabIndex={0} aria-label="Event metadata">{JSON.stringify(entry.metadata, null, 2)}</pre></details>}</td>
+    <td data-label="Recorded">{recorded}</td>
+  </>;
+  return <>
+    <td data-label="Account"><strong className="audit-actor">{entry.email || entry.admin?.email || 'Email not recorded'}</strong>{entry.admin?.name && <small className="audit-secondary">{entry.admin.name}</small>}</td>
+    <td data-label="Result"><span className={`activity-badge ${entry.success ? 'tone-green' : 'tone-rose'}`}>{entry.success ? 'Successful' : 'Failed'}</span>{!entry.success && <small className="audit-secondary">{reasonLabel(entry.failureReason)}</small>}</td>
+    <td data-label="Device"><span>{entry.browser || 'Unknown browser'}</span><small className="audit-secondary">{entry.os || 'Unknown system'}</small></td>
+    <td data-label="IP address">{ip}</td><td data-label="Recorded">{recorded}</td>
+  </>;
+}
 
 export const AuditPage: React.FC = () => {
-  const [tab, setTab] = useState<'AUDIT' | 'SECURITY' | 'LOGIN'>('AUDIT');
-  // All three endpoints paginate at 20. Without a page control the audit trail
-  // was only ever readable 20 rows deep — the oldest entries were unreachable.
+  const [tab, setTab] = useState<AuditTab>('AUDIT');
   const [page, setPage] = useState(1);
-  useEffect(() => { setPage(1); }, [tab]);
-
-  const { data: auditLogs, isLoading: auditLoading } = useQuery({
-    queryKey: ['adminAuditLogs', tab, page],
-    queryFn: () => apiRequest(`/admin/audit/logs?page=${page}`),
-    enabled: tab === 'AUDIT',
-  });
-
-  const { data: securityEvents, isLoading: securityLoading } = useQuery({
-    queryKey: ['adminSecurityEvents', tab, page],
-    queryFn: () => apiRequest(`/admin/audit/security-events?page=${page}`),
-    enabled: tab === 'SECURITY',
-  });
-
-  const { data: loginAudits, isLoading: loginLoading } = useQuery({
-    queryKey: ['adminLoginAudits', tab, page],
-    queryFn: () => apiRequest(`/admin/audit/login-audits?page=${page}`),
-    enabled: tab === 'LOGIN',
-  });
-
+  const section = sections.find((item) => item.value === tab)!;
+  const Icon = section.icon;
+  const query = useQuery<AuditResponse>({ queryKey: [section.key, page], queryFn: () => apiRequest(`/admin/audit/${section.endpoint}?page=${page}`) });
+  useEffect(() => { if (query.data && page > Math.max(1, query.data.meta.totalPages)) setPage(Math.max(1, query.data.meta.totalPages)); }, [query.data, page]);
   return (
-    <div>
-      <div className="page-header">
-        <div>
-          <h2 className="page-title">Audit Logs</h2>
-          <p className="page-subtitle">Security events, admin operations, and authentication history.</p>
-        </div>
-      </div>
-
-      {/* TABS */}
-      <div className="admin-tab-bar" style={{ display: 'flex', gap: '0.35rem', marginBottom: '0.85rem', flexWrap: 'wrap' }}>
-        <button
-          onClick={() => setTab('AUDIT')}
-          className={tab === 'AUDIT' ? 'btn-primary' : 'btn-secondary'}
-          style={{ padding: '0.3rem 0.65rem', fontSize: '0.74rem' }}
-        >
-          <FileText size={13} />
-          <span>Audit Logs</span>
-        </button>
-        <button
-          onClick={() => setTab('SECURITY')}
-          className={tab === 'SECURITY' ? 'btn-primary' : 'btn-secondary'}
-          style={{ padding: '0.3rem 0.65rem', fontSize: '0.74rem' }}
-        >
-          <ShieldAlert size={13} />
-          <span>Security Events</span>
-        </button>
-        <button
-          onClick={() => setTab('LOGIN')}
-          className={tab === 'LOGIN' ? 'btn-primary' : 'btn-secondary'}
-          style={{ padding: '0.3rem 0.65rem', fontSize: '0.74rem' }}
-        >
-          <Key size={13} />
-          <span>Sign-In History</span>
-        </button>
-      </div>
-
-      {/* Tab 1: Audit Logs */}
-      {tab === 'AUDIT' && (
-        <div className="glass-panel" style={{ overflow: 'hidden', padding: 0 }}>
-          {auditLoading ? (
-            <div style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--color-text-dim)', fontSize: '0.8rem' }}>Loading audit logs...</div>
-          ) : (
-            <div className="table-responsive">
-              <table className="admin-table">
-                <thead>
-                  <tr>
-                    <th>Action</th>
-                    <th>Admin</th>
-                    <th>Target</th>
-                    <th>IP Address</th>
-                    <th style={{ textAlign: 'right' }}>Timestamp</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {auditLogs?.data?.map((log: any) => (
-                    <tr key={log.id}>
-                      <td><span className="badge badge-info">{log.action}</span></td>
-                      <td style={{ fontWeight: 600, color: 'var(--color-text-main)', fontSize: '0.74rem' }}>{log.admin?.name || log.adminId}</td>
-                      <td style={{ fontSize: '0.72rem', color: 'var(--color-text-light)' }}>{log.targetType}: {log.targetId}</td>
-                      <td style={{ fontSize: '0.7rem', fontFamily: 'monospace', color: 'var(--color-text-muted)' }}>{log.ip || '—'}</td>
-                      <td style={{ fontSize: '0.68rem', color: 'var(--color-text-dim)', textAlign: 'right' }}>{new Date(log.createdAt).toLocaleString()}</td>
-                    </tr>
-                  ))}
-                  {auditLogs?.data?.length === 0 && (
-                    <tr><td colSpan={5} style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--color-text-dim)', fontSize: '0.75rem' }}>No audit logs recorded.</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          <Pagination
-            page={page}
-            totalPages={auditLogs?.meta?.totalPages}
-            total={auditLogs?.meta?.total}
-            onChange={setPage}
-            label="entries"
-          />
-        </div>
+    <div className="admin-page audit-page">
+      <header className="page-header"><div><h2 className="page-title">Audit Logs</h2><p className="page-subtitle">Admin operations, security events, and sign-in history.</p></div><button type="button" className="btn-secondary activity-refresh" aria-label="Refresh audit logs" title="Refresh logs" onClick={() => query.refetch()} disabled={query.isFetching}><RefreshCw size={17} className={query.isFetching ? 'spin' : undefined} /><span>Refresh logs</span></button></header>
+      <section className={`activity-overview ${tab === 'SECURITY' ? 'tone-violet' : tab === 'LOGIN' ? 'tone-green' : 'tone-blue'}`} aria-label={section.title}>
+        <span className="activity-overview-icon"><Icon size={25} /></span><div><h3>{section.title}</h3><p>{section.description}</p></div><div className="activity-overview-count" aria-live="polite"><strong>{query.isLoading || query.isError ? '—' : (query.data?.meta.total ?? 0).toLocaleString()}</strong><span>recorded entries</span></div>
+      </section>
+      <div className="audit-toolbar"><div className="audit-section-tabs" role="group" aria-label="Audit category">{sections.map(({ value, label }) => <button type="button" key={value} aria-pressed={tab === value} onClick={() => { setTab(value); setPage(1); }}>{label}</button>)}</div><span className="activity-sort"><Clock size={14} />Newest first</span></div>
+      {query.isLoading ? <LoadingState label={`Loading ${section.label.toLowerCase()}…`} /> : query.isError ? <div className="activity-state" role="alert"><AlertTriangle size={30} /><h3>Logs could not be loaded</h3><p>{(query.error as Error)?.message || 'Try loading these entries again.'}</p><button type="button" className="btn-secondary" onClick={() => query.refetch()} disabled={query.isFetching}>Try again</button></div> : !query.data?.data.length ? <div className="activity-state"><Icon size={30} /><h3>No entries recorded</h3><p>{section.label} will appear here as events are recorded.</p></div> : (
+        <div className="audit-table-wrap" aria-busy={query.isFetching}><table className={`audit-table is-${tab.toLowerCase()}`} aria-label={section.label}><thead><tr>{columns[tab].map((label) => <th key={label}>{label}</th>)}</tr></thead><tbody>{query.data.data.map((entry) => <tr key={entry.id}><EntryCells entry={entry} tab={tab} /></tr>)}</tbody></table></div>
       )}
-
-      {/* Tab 2: Security Events */}
-      {tab === 'SECURITY' && (
-        <div className="glass-panel" style={{ overflow: 'hidden', padding: 0 }}>
-          {securityLoading ? (
-            <div style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--color-text-dim)', fontSize: '0.8rem' }}>Loading security events...</div>
-          ) : (
-            <div className="table-responsive">
-              <table className="admin-table">
-                <thead>
-                  <tr>
-                    <th>Type</th>
-                    <th>IP Address</th>
-                    <th>Metadata</th>
-                    <th style={{ textAlign: 'right' }}>Timestamp</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {securityEvents?.data?.map((evt: any) => (
-                    <tr key={evt.id}>
-                      <td><span className="badge badge-danger">{evt.type}</span></td>
-                      <td style={{ fontFamily: 'monospace', fontSize: '0.72rem' }}>{evt.ip || '—'}</td>
-                      <td style={{ fontSize: '0.7rem', fontFamily: 'monospace', color: 'var(--color-text-muted)' }}>{JSON.stringify(evt.metadata)}</td>
-                      <td style={{ fontSize: '0.68rem', color: 'var(--color-text-dim)', textAlign: 'right' }}>{new Date(evt.createdAt).toLocaleString()}</td>
-                    </tr>
-                  ))}
-                  {securityEvents?.data?.length === 0 && (
-                    <tr><td colSpan={4} style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--color-text-dim)', fontSize: '0.75rem' }}>No security events recorded.</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          <Pagination
-            page={page}
-            totalPages={securityEvents?.meta?.totalPages}
-            total={securityEvents?.meta?.total}
-            onChange={setPage}
-            label="events"
-          />
-        </div>
-      )}
-
-      {/* Tab 3: Login Audits */}
-      {tab === 'LOGIN' && (
-        <div className="glass-panel" style={{ overflow: 'hidden', padding: 0 }}>
-          {loginLoading ? (
-            <div style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--color-text-dim)', fontSize: '0.8rem' }}>Loading sign-in history...</div>
-          ) : (
-            <div className="table-responsive">
-              <table className="admin-table">
-                <thead>
-                  <tr>
-                    <th>Email</th>
-                    <th>Result</th>
-                    <th>Device</th>
-                    <th>IP Address</th>
-                    <th style={{ textAlign: 'right' }}>Timestamp</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {loginAudits?.data?.map((l: any) => (
-                    <tr key={l.id}>
-                      <td style={{ fontWeight: 600, color: 'var(--color-text-main)', fontSize: '0.74rem' }}>{l.email}</td>
-                      <td>
-                        <span className={`badge badge-${l.success ? 'success' : 'danger'}`}>
-                          {l.success ? 'SUCCESS' : l.failureReason || 'FAILED'}
-                        </span>
-                      </td>
-                      <td style={{ fontSize: '0.72rem', color: 'var(--color-text-light)' }}>{l.browser} on {l.os}</td>
-                      <td style={{ fontFamily: 'monospace', fontSize: '0.7rem', color: 'var(--color-text-muted)' }}>{l.ip}</td>
-                      <td style={{ fontSize: '0.68rem', color: 'var(--color-text-dim)', textAlign: 'right' }}>{new Date(l.createdAt).toLocaleString()}</td>
-                    </tr>
-                  ))}
-                  {loginAudits?.data?.length === 0 && (
-                    <tr><td colSpan={5} style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--color-text-dim)', fontSize: '0.75rem' }}>No sign-in history recorded.</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          <Pagination
-            page={page}
-            totalPages={loginAudits?.meta?.totalPages}
-            total={loginAudits?.meta?.total}
-            onChange={setPage}
-            label="sign-ins"
-          />
-        </div>
-      )}
+      {!query.isError && <div className="activity-pagination"><Pagination page={page} totalPages={query.data?.meta.totalPages} total={query.data?.meta.total} onChange={setPage} label="entries" busy={query.isFetching} /></div>}
     </div>
   );
 };
