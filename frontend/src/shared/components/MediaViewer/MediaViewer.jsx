@@ -12,6 +12,7 @@ import { hasReportedTarget, markTargetReported, reportKey } from '@shared/utils/
 import { forwardableMediaUrl } from './forwardSource';
 import { useViewerFocus } from './useViewerFocus';
 import { motionTransition, prefersReducedMotion } from './viewerMotion';
+import { createGestureSpring, releaseVelocity, rubberBand } from '@shared/lib/gestureSpring';
 import styles from './MediaViewer.module.css';
 import ReportModal from '@shared/components/modals/ReportModal/LazyReportModal';
 import { useMessageActions } from '@shared/hooks/useMessageActions';
@@ -123,16 +124,14 @@ function dismissRadius(progress, scale) {
 
 /** Vertical: fraction of viewport height that triggers dismiss. */
 const DISMISS_DISTANCE_THRESHOLD = 0.30;
-/** Vertical: pointer speed (px/ms) that triggers dismiss. */
-const DISMISS_VELOCITY_THRESHOLD = 0.70;
+/** Vertical: release speed (px/s) that triggers dismiss. */
+const DISMISS_VELOCITY_THRESHOLD = 700;
 /** Vertical: minimum absolute distance (px) before velocity alone can dismiss. */
 const DISMISS_MIN_FOR_VELOCITY = 40;
-/** Vertical: damping applied to raw drag delta during dismiss gesture. */
-const DISMISS_DRAG_DAMPEN = 0.88;
+/** Vertical: the dismiss fly-out leaves at least this fast (px/s). */
+const DISMISS_MIN_EXIT_SPEED = 1600;
 /** Keyboard: how far one arrow press pans a zoomed image (px). */
 const KEY_PAN_STEP = 80;
-/** How long the snap-back transition runs before its inline styles are cleared (ms). */
-const SNAPBACK_CLEANUP_MS = 340;
 
 /**
  * One mounted instance per OPEN of the viewer.
@@ -287,6 +286,8 @@ function MediaViewerSession() {
       barsFollowPageRef.current = false;
       setClosing(false);
       setControlsVisible(true);
+      trackSpringRef.current?.stop();
+      dismissSpringRef.current?.stop();
       if (trackRef.current) {
         trackRef.current.style.transition = 'none';
         trackRef.current.style.transform = `translate3d(-${indexRef.current * 100}%, 0, 0)`;
@@ -301,6 +302,8 @@ function MediaViewerSession() {
   // Sync track position smoothly when index changes
   useEffect(() => {
     if (!open) return;
+    // A swipe's own spring is already carrying the strip there.
+    if (trackSpringRef.current?.isMoving()) return;
     if (trackRef.current && !gestureRef.current.active) {
       trackRef.current.style.transition = motionTransition('transform', 0.32);
       trackRef.current.style.transform  = `translate3d(-${index * 100}%, 0, 0)`;
@@ -424,62 +427,125 @@ function MediaViewerSession() {
     window.dispatchEvent(new Event('meetifyy:system-bars-resample'));
   }, []);
 
+  // ── Release springs ─────────────────────────────────────────────────────────
+  // While a finger is down everything follows it 1:1. When it lifts, a spring
+  // seeded with the finger's speed finishes the motion: the strip of slides
+  // (paging) and the dragged picture (snap-back or dismiss). Either can be
+  // caught by the next touch and continues from where it visibly is.
+
+  /** The picture's box for the clip, measured once per vertical drag. */
+  const clipBoxRef = useRef(undefined);
+
   /**
-   * Put the dragged media element and the backdrop back after a vertical drag.
-   *
-   * The animated form clears its inline styles once the transition has run, so
-   * the stylesheet takes over again. That cleanup is TRACKED: it captures the
-   * elements it was scheduled for, and a newer gesture, a close or an unmount
-   * cancels it. It used to be a bare timeout that wrote through the live refs
-   * 340 ms later, which erased whatever the user had started in the meantime
-   * (a second drag, the dismiss fly-out, the next slide's transform).
+   * Everything a vertical drag moves, derived from ONE value (the picture's
+   * offset): its position, the shrink, the rounded corners and the backdrop's
+   * fade. Linked this way they can never drift apart, mid-drag, mid-spring or
+   * when the user reverses.
    */
-  const resetGestureTransforms = useCallback((animated = true) => {
-    cancelSnapbackCleanup();
-    setBarsFollowPage(false);
-    const animate = animated && !prefersReducedMotion();
+  const paintDismiss = useCallback((y) => {
+    const vh = window.visualViewport?.height || window.innerHeight;
+    const progress = Math.min(Math.abs(y) / (vh * 0.55), 1);
+    // Shrinks a little as it is pulled away, so the drag reads as the photo
+    // being lifted off rather than the page sliding.
+    const scale = 1 - progress * 0.12;
+    const media = mediaElRef.current;
+    if (media) {
+      if (clipBoxRef.current === undefined) clipBoxRef.current = pictureBox(media);
+      media.style.transition = 'none';
+      media.style.willChange = 'transform';
+      media.style.transform = `translate3d(0, ${y.toFixed(2)}px, 0) scale(${scale.toFixed(4)})`;
+      // The corners round as it is lifted away (see pictureClip).
+      media.style.clipPath = pictureClip(media, dismissRadius(progress, scale), clipBoxRef.current);
+    }
+    if (backdropRef.current) {
+      backdropRef.current.style.transition = 'none';
+      backdropRef.current.style.opacity = String(1 - progress * 0.85);
+    }
+  }, []);
+
+  const dismissSpringRef = useRef(null);
+  const getDismissSpring = useCallback(() => {
+    if (!dismissSpringRef.current) {
+      dismissSpringRef.current = createGestureSpring((y) => paintDismiss(y), { stiffness: 420, dampingRatio: 0.9 });
+    }
+    return dismissSpringRef.current;
+  }, [paintDismiss]);
+
+  const trackSpringRef = useRef(null);
+  const getTrackSpring = useCallback(() => {
+    if (!trackSpringRef.current) {
+      trackSpringRef.current = createGestureSpring((x) => {
+        const track = trackRef.current;
+        if (!track) return;
+        track.style.transition = 'none';
+        track.style.transform = `translate3d(${x.toFixed(2)}px, 0, 0)`;
+      }, { stiffness: 340, dampingRatio: 1 });
+    }
+    return trackSpringRef.current;
+  }, []);
+
+  /** Spring the strip to slide `to`, starting at `velocity` px/s. */
+  const springTrackTo = useCallback((to, velocity) => {
+    const track = trackRef.current;
+    if (!track) return;
+    const vw = stageRef.current?.clientWidth || window.visualViewport?.width || window.innerWidth;
+    const spring = getTrackSpring();
+    spring.to(-to * vw, {
+      velocity,
+      instant: prefersReducedMotion(),
+      // At rest it goes back to the % form the stylesheet and resizes expect.
+      done: () => {
+        track.style.transform = `translate3d(-${to * 100}%, 0, 0)`;
+      },
+    });
+  }, [getTrackSpring]);
+
+  useEffect(() => () => {
+    trackSpringRef.current?.stop();
+    dismissSpringRef.current?.stop();
+  }, []);
+
+  /** Clear the vertical drag's inline styles so the stylesheet takes over. */
+  const clearDismissStyles = useCallback(() => {
+    clipBoxRef.current = undefined;
     const media = mediaElRef.current;
     const backdrop = backdropRef.current;
+    const overlay = overlayRef.current;
     if (media) {
-      media.style.transition = animate
-        ? `${motionTransition('transform', 0.32)}, clip-path 0.32s ease`
-        : 'none';
-      media.style.transform  = '';
+      media.style.transition = '';
+      media.style.transform = '';
+      media.style.clipPath = '';
       media.style.willChange = '';
-      // Square again with the snap-back. A clip-path only animates to another
-      // inset(), so it goes to radius 0 first and is cleared afterwards.
-      if (media.style.clipPath) media.style.clipPath = animate ? pictureClip(media, 0) : '';
     }
     if (backdrop) {
-      backdrop.style.transition = animate ? 'opacity 0.32s ease' : 'none';
+      backdrop.style.transition = '';
       backdrop.style.opacity = '';
     }
-    const overlay = overlayRef.current;
-    // Clear after transition so CSS classes take over again
-    if (animate) {
-      snapbackTimerRef.current = setTimeout(() => {
-        snapbackTimerRef.current = null;
-        if (media) {
-          media.style.transition = '';
-          media.style.transform  = '';
-          media.style.clipPath   = '';
-        }
-        if (backdrop) {
-          backdrop.style.transition = '';
-          backdrop.style.opacity    = '';
-        }
-        // The backdrop is fully black again: give the colour back to the
-        // overlay, where the system bars read it.
-        if (overlay) {
-          overlay.style.transition = '';
-          overlay.style.background = '';
-        }
-      }, SNAPBACK_CLEANUP_MS);
-    } else if (overlay) {
+    // The backdrop is fully black again: give the colour back to the overlay,
+    // where the system bars read it.
+    if (overlay) {
       overlay.style.transition = '';
       overlay.style.background = '';
     }
-  }, [cancelSnapbackCleanup, setBarsFollowPage]);
+  }, []);
+
+  /**
+   * Put the dragged picture and the backdrop back after a vertical drag: a
+   * spring from where it is, at the speed it was released (`velocity`, px/s),
+   * with a slight settle because the drag applied force. Its cleanup runs
+   * only when the spring comes to rest, and a newer gesture or a close stops
+   * the spring first, so it can never erase what they wrote.
+   */
+  const resetGestureTransforms = useCallback((animated = true, velocity = 0) => {
+    cancelSnapbackCleanup();
+    setBarsFollowPage(false);
+    const spring = getDismissSpring();
+    spring.to(0, {
+      velocity,
+      instant: !animated || prefersReducedMotion(),
+      done: clearDismissStyles,
+    });
+  }, [cancelSnapbackCleanup, setBarsFollowPage, getDismissSpring, clearDismissStyles]);
 
   /** Check whether the pointer-down target is inside a video control zone. */
   const isVideoControl = (target) => {
@@ -508,6 +574,23 @@ function MediaViewerSession() {
     // about to write the same elements, so that cleanup must not run over it.
     cancelSnapbackCleanup();
 
+    // Caught mid-flight: the next drag continues from where things visibly
+    // are, on the axis they were already moving along.
+    const track = trackSpringRef.current;
+    const dismiss = dismissSpringRef.current;
+    let axis = null;
+    let baseX = null;
+    let baseY = 0;
+    if (track?.isMoving()) {
+      baseX = track.value();
+      track.stop();
+      axis = 'h';
+    } else if (dismiss?.isMoving()) {
+      baseY = dismiss.value();
+      dismiss.stop();
+      axis = 'v';
+    }
+
     gestureRef.current = {
       startX: clientX,
       startY: clientY,
@@ -515,7 +598,10 @@ function MediaViewerSession() {
       lastY: clientY,
       startTime: Date.now(),
       lastTime: Date.now(),
-      axis: null,
+      samples: [],
+      baseX,
+      baseY,
+      axis,
       active: true,
     };
   }, [isVid, cancelSnapbackCleanup]);
@@ -544,43 +630,22 @@ function MediaViewerSession() {
       const len = itemsLenRef.current;
       const atLeft  = idx === 0;
       const atRight = idx === len - 1;
-      let translateX = dx;
+      const vw = stageRef.current?.clientWidth || window.visualViewport?.width || window.innerWidth;
+      const rest = -idx * vw;
+      // From where the strip was picked up (mid-spring) or its resting place.
+      let offset = (g.baseX ?? rest) - rest + dx;
 
-      // Boundary resistance: rubber-band at first/last item
-      if ((atLeft && dx > 0) || (atRight && dx < 0)) {
-        translateX = dx * BOUNDARY_RESISTANCE;
-      }
+      // Past the first or last slide it stretches instead of stopping dead.
+      if (atLeft && offset > 0) offset = rubberBand(offset, vw * BOUNDARY_RESISTANCE * 0.5);
+      else if (atRight && offset < 0) offset = -rubberBand(-offset, vw * BOUNDARY_RESISTANCE * 0.5);
 
-      if (trackRef.current) {
-        const vw = stageRef.current?.clientWidth || window.visualViewport?.width || window.innerWidth;
-        const totalX = -idx * vw + translateX;
-        trackRef.current.style.transition = 'none';
-        trackRef.current.style.transform  = `translate3d(${totalX}px, 0, 0)`;
-      }
+      getTrackSpring().set(rest + offset);
     } else if (g.axis === 'v') {
-      // ── Vertical: move only the media element ────────────────────────────
-      const dampened = dy * DISMISS_DRAG_DAMPEN;
-      const vh       = window.visualViewport?.height || window.innerHeight;
-      const progress = Math.min(Math.abs(dampened) / (vh * 0.55), 1);
-      const bgOpacity = 1 - (progress * 0.85);
-      // Shrinks a little as it is pulled away, so the drag reads as the photo
-      // being lifted off rather than the page sliding.
-      const scale = 1 - progress * 0.12;
-
-      if (mediaElRef.current) {
-        // Where the picture sits in the element: measured once per drag,
-        // before the first transform (nothing about it changes while dragging).
-        if (g.clipBox === undefined) g.clipBox = pictureBox(mediaElRef.current);
-        mediaElRef.current.style.transition = 'none';
-        mediaElRef.current.style.willChange = 'transform';
-        mediaElRef.current.style.transform  = `translate3d(0, ${dampened}px, 0) scale(${scale})`;
-        // The corners round as it is lifted away (see pictureClip).
-        mediaElRef.current.style.clipPath   = pictureClip(mediaElRef.current, dismissRadius(progress, scale), g.clipBox);
-      }
-      if (backdropRef.current) {
-        backdropRef.current.style.transition = 'none';
-        backdropRef.current.style.opacity    = String(bgOpacity);
-      }
+      // ── Vertical: move only the media element, 1:1 with the finger ───────
+      const y = g.baseY + dy;
+      getDismissSpring().set(y);
+      const vh = window.visualViewport?.height || window.innerHeight;
+      const bgOpacity = 1 - Math.min(Math.abs(y) / (vh * 0.55), 1) * 0.85;
       // Hand the black over to the backdrop layer: one repaint at the start of
       // the drag, then only opacity changes.
       if (overlayRef.current && overlayRef.current.style.background !== 'transparent') {
@@ -596,7 +661,7 @@ function MediaViewerSession() {
         setGestureHidesControls(true);
       }
     }
-  }, [setBarsFollowPage]);
+  }, [setBarsFollowPage, getTrackSpring, getDismissSpring]);
 
   /**
    * Abandon the gesture in progress WITHOUT deciding anything.
@@ -625,9 +690,8 @@ function MediaViewerSession() {
     if (stageRef.current) stageRef.current.style.willChange = '';
     if (trackRef.current) trackRef.current.style.willChange = '';
 
-    if (axis === 'h' && trackRef.current) {
-      trackRef.current.style.transition = motionTransition('transform', 0.32);
-      trackRef.current.style.transform  = `translate3d(-${indexRef.current * 100}%, 0, 0)`;
+    if (axis === 'h') {
+      springTrackTo(indexRef.current, 0);
     } else if (axis === 'v') {
       resetGestureTransforms(true);
     }
@@ -636,7 +700,7 @@ function MediaViewerSession() {
       setControlsVisible(true);
       setGestureHidesControls(false);
     }
-  }, [resetGestureTransforms]);
+  }, [resetGestureTransforms, springTrackTo]);
 
   const onGestureEnd = useCallback(() => {
     if (rafIdRef.current) {
@@ -652,11 +716,15 @@ function MediaViewerSession() {
     if (stageRef.current) stageRef.current.style.willChange = '';
     if (trackRef.current) trackRef.current.style.willChange = '';
 
-    const dx  = g.lastX - g.startX;
-    const dy  = g.lastY - g.startY;
-    const dt  = Math.max(g.lastTime - g.startTime, 1);
-    const vx  = Math.abs(dx) / dt;  // px/ms
-    const vy  = Math.abs(dy) / dt;
+    // Release speed (px/s) from the last ~100 ms of the drag: a flick is
+    // judged by how the finger left, not by the gesture's average.
+    const velX = releaseVelocity(g.samples.map((p) => ({ x: p.x, t: p.t })));
+    const velY = releaseVelocity(g.samples.map((p) => ({ x: p.y, t: p.t })));
+    const vw0  = stageRef.current?.clientWidth || window.visualViewport?.width || window.innerWidth;
+    // Distance travelled, counted from where a caught spring was picked up.
+    const dx  = g.lastX - g.startX + (g.baseX != null ? g.baseX + indexRef.current * vw0 : 0);
+    const dy  = g.lastY - g.startY + g.baseY;
+    const vx  = Math.abs(velX) / 1000; // px/ms, as the thresholds are written
     const idx = indexRef.current;
     const len = itemsLenRef.current;
 
@@ -668,63 +736,45 @@ function MediaViewerSession() {
       const pastDist       = Math.abs(dx) > distThreshold;
       const pastVelocity   = vx > SWIPE_VELOCITY_THRESHOLD && Math.abs(dx) > 30;
 
-      if ((pastDist || pastVelocity) && swipeLeft && idx < len - 1) {
-        if (trackRef.current) {
-          trackRef.current.style.transition = motionTransition('transform', 0.32);
-          trackRef.current.style.transform  = `translate3d(-${(idx + 1) * 100}%, 0, 0)`;
-        }
-        navigate(1);
-      } else if ((pastDist || pastVelocity) && swipeRight && idx > 0) {
-        if (trackRef.current) {
-          trackRef.current.style.transition = motionTransition('transform', 0.32);
-          trackRef.current.style.transform  = `translate3d(-${(idx - 1) * 100}%, 0, 0)`;
-        }
-        navigate(-1);
-      } else {
-        if (trackRef.current) {
-          trackRef.current.style.transition = motionTransition('transform', 0.32);
-          trackRef.current.style.transform  = `translate3d(-${idx * 100}%, 0, 0)`;
-        }
-      }
+      let to = idx;
+      if ((pastDist || pastVelocity) && swipeLeft && idx < len - 1) to = idx + 1;
+      else if ((pastDist || pastVelocity) && swipeRight && idx > 0) to = idx - 1;
+      // The strip leaves at the finger's speed and settles on the slide.
+      springTrackTo(to, velX);
+      if (to !== idx) navigate(to - idx);
     } else if (g.axis === 'v') {
       const vh            = window.visualViewport?.height || window.innerHeight;
       const distThreshold = vh * DISMISS_DISTANCE_THRESHOLD;
       const absDy         = Math.abs(dy);
       const pastDist      = absDy > distThreshold;
-      const pastVelocity  = vy > DISMISS_VELOCITY_THRESHOLD && absDy > DISMISS_MIN_FOR_VELOCITY;
+      const pastVelocity  = Math.abs(velY) > DISMISS_VELOCITY_THRESHOLD
+        && Math.sign(velY) === Math.sign(dy) && absDy > DISMISS_MIN_FOR_VELOCITY;
 
       if (pastDist || pastVelocity) {
-        // Dismiss
-        const sign    = dy > 0 ? 1 : -1;
-        const finishY = sign * vh;
-        if (mediaElRef.current) {
-          mediaElRef.current.style.transition = `${motionTransition('transform', 0.24)}, clip-path 0.24s ease`;
-          // Keeps the shrink the drag reached, so the fly-out continues it.
-          const endProgress = Math.min(Math.abs(dy * DISMISS_DRAG_DAMPEN) / (vh * 0.55), 1);
-          const endScale = 1 - endProgress * 0.12;
-          mediaElRef.current.style.transform  = `translate3d(0, ${finishY}px, 0) scale(${endScale})`;
-          // A fast flick may leave before the corners finished rounding:
-          // they complete on the way out, never snapping.
-          mediaElRef.current.style.clipPath   = pictureClip(mediaElRef.current, DISMISS_CORNER_RADIUS / endScale, g.clipBox);
-        }
-        if (backdropRef.current) {
-          backdropRef.current.style.transition = prefersReducedMotion() ? 'none' : 'opacity 0.24s ease';
-          backdropRef.current.style.opacity    = '0';
-        }
+        // Dismiss: the picture keeps going the way it was thrown, at least
+        // briskly, with the backdrop fading from the same value.
+        const sign = dy > 0 ? 1 : -1;
+        const exit = sign * Math.max(Math.abs(velY), DISMISS_MIN_EXIT_SPEED);
+        getDismissSpring().to(sign * vh * 1.1, {
+          velocity: exit,
+          dampingRatio: 1,
+          instant: prefersReducedMotion(),
+          until: (y) => Math.abs(y) >= vh,
+        });
         handleClose();
       } else {
         // Snap back
         controlsHiddenByGesture.current = false;
         setControlsVisible(true);
         setGestureHidesControls(false);
-        resetGestureTransforms(true);
+        resetGestureTransforms(true, velY);
       }
     }
     // No axis: the finger never moved far enough to mean anything - a tap.
     // Nothing was transformed, so there is nothing to put back, and in
     // particular the media element's transform is not touched: for an image
     // that is its zoom.
-  }, [navigate, handleClose, resetGestureTransforms]);
+  }, [navigate, handleClose, resetGestureTransforms, springTrackTo, getDismissSpring]);
 
   // ── Touch events (touch-only: desktop mouse drag navigation is disabled) ──
   const handleStageTouchStart = useCallback((e) => {
@@ -753,6 +803,8 @@ function MediaViewerSession() {
     g.lastX    = t.clientX;
     g.lastY    = t.clientY;
     g.lastTime = Date.now();
+    g.samples.push({ x: t.clientX, y: t.clientY, t: e.timeStamp });
+    if (g.samples.length > 12) g.samples.shift();
 
     // Only prevent-default once we've locked an axis or moved enough — avoids blocking scroll
     // on tiny taps, and allows the page underneath to handle ambiguous starts.
@@ -762,9 +814,9 @@ function MediaViewerSession() {
       e.preventDefault();
     }
 
-    if (!rafIdRef.current) {
-      rafIdRef.current = requestAnimationFrame(applyGestureTransform);
-    }
+    // Painted now, not on the next frame: Android delivers one touchmove per
+    // frame already, and deferring put the picture a frame behind the finger.
+    applyGestureTransform();
   }, [applyGestureTransform, cancelGesture]);
 
   const handleStageTouchEnd = useCallback((e) => {

@@ -86,7 +86,8 @@ describe('swipe and dismiss gestures', () => {
     frame();
     fire(stage, 'touchcancel', []);
     expect(viewer.navigate).not.toHaveBeenCalled();
-    // The track went back to the current slide rather than staying mid-drag.
+    // The track springs back to the current slide rather than staying mid-drag.
+    act(() => vi.advanceTimersByTime(3000));
     expect(track.style.transform).toBe('translate3d(-100%, 0, 0)');
   });
 
@@ -166,9 +167,11 @@ describe('snap-back cleanup', () => {
     fire(stage, 'touchmove', [touch(300, 900)]);
     frame();
     fire(stage, 'touchend', []);
-    const flying = media().style.transform;
+    const yOf = (t) => Number(/translate3d\(0, (-?[\d.]+)px, 0\)/.exec(t)?.[1]);
+    const flying = yOf(media().style.transform);
     act(() => vi.advanceTimersByTime(300));
-    expect(media().style.transform).toBe(flying);
+    // Still leaving (never reset by the first drag's snap-back cleanup).
+    expect(yOf(media().style.transform)).toBeGreaterThanOrEqual(flying);
   });
 
   it('clears the inline styles once the transition has run', () => {
@@ -176,9 +179,11 @@ describe('snap-back cleanup', () => {
     fire(stage, 'touchmove', [touch(300, 340)]);
     frame();
     fire(stage, 'touchend', []);
-    expect(media().style.transition).toMatch(/transform/);
-    act(() => vi.advanceTimersByTime(340));
+    // Springing back from where it was released.
+    expect(media().style.transform).toMatch(/translate3d/);
+    act(() => vi.advanceTimersByTime(3000));
     expect(media().style.transition).toBe('');
+    expect(media().style.transform).toBe('');
   });
 });
 

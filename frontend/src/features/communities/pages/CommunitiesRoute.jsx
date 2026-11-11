@@ -12,6 +12,7 @@ import { useWhiteSurface } from '@shared/hooks/useWhiteSurface';
 import { settleAfter, useTabSwipe } from '../hooks/useTabSwipe';
 
 const CreateCommunityModal = lazy(() => import('../components/modals/CreateCommunityModal'));
+import { refuseOffline } from '@shared/lib/offlineGuard';
 
 const SCROLL_KEY = 'meetifyy_communities_scrollY';
 
@@ -77,7 +78,21 @@ export default function CommunitiesRoute() {
     index: tabIndex,
     count: TABS.length,
     timer: settleTimer,
-    onStart: () => setExploreWanted(true),
+    onStart: () => {
+      setExploreWanted(true);
+      // The pane coming in is shown at ITS OWN scroll position from the first
+      // frame of the drag (each tab keeps its own, scrollByTab), not at this
+      // one's: the window is still scrolled for the current tab, so the other
+      // pane is offset by the difference. When the swipe commits, the window
+      // takes that pane's position and the offset goes, with nothing moving
+      // on screen. It used to slide in at the wrong height and then jump.
+      const track = trackRef.current;
+      const other = TABS.find((t) => t.id !== activeTabRef.current);
+      if (track && other) {
+        const peek = window.scrollY - (scrollByTab.current[other.id] ?? 0);
+        track.style.setProperty('--leave-shift', `${peek}px`);
+      }
+    },
     onCommit: (i) => setTab(TABS[i].id),
   });
 
@@ -99,14 +114,14 @@ export default function CommunitiesRoute() {
     if (!track || from === tabIndex) return;
 
     // Back to where this tab was left. Both panes are shown (so the page is tall
-    // enough), the pane being left is shifted so it does not move on screen, and
-    // after a swipe the pane arriving eases from where the drag showed it.
+    // enough), and the pane being left is shifted so it does not move on screen.
     const shift = scrollByTab.current[tab] - scrollByTab.current[fromId];
-    const swiped = swipeCommitted.current;
     track.dataset.moving = '1';
     track.dataset.reset = '1';
     track.style.setProperty('--leave-shift', `${shift}px`);
-    track.style.setProperty('--enter-shift', swiped ? `${shift}px` : '0px');
+    // 0 for a swipe too: the drag already showed the incoming pane at this
+    // tab's own scroll position (see onStart), so it has nothing to ease from.
+    track.style.setProperty('--enter-shift', '0px');
     window.scrollTo({ top: scrollByTab.current[tab], behavior: 'instant' });
     void track.offsetWidth;
     delete track.dataset.reset;
@@ -153,6 +168,7 @@ export default function CommunitiesRoute() {
       openVerificationModal('Verify with a live selfie to create a community.');
       return;
     }
+    if (refuseOffline()) return;
     setShowCreate(true);
   }, [currentUser?.verificationStatus]);
 

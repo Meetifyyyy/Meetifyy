@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { createGestureSpring, releaseVelocity, rubberBand } from '@shared/lib/gestureSpring';
 
 /** How long the slide between two panes takes (CommunitiesRoute.module.css matches). */
 export const PANE_SLIDE_MS = 300;
@@ -7,17 +8,17 @@ export const PANE_SLIDE_MS = 300;
 const START_SLOP_PX = 8;
 /** Past this share of the width, a release switches panes. */
 const SWITCH_FRACTION = 0.25;
-/** Or a flick at least this fast (px per ms). */
-const SWITCH_SPEED = 0.45;
-/** At the first or last pane the drag is held back to this share of the finger. */
-const EDGE_RESISTANCE = 0.3;
+/** Or a flick at least this fast (px per second). */
+const SWITCH_SPEED = 450;
+/** Past the first or last pane the strip stretches at most this share of the width. */
+const EDGE_STRETCH = 0.18;
 
 /**
  * Ends a slide: both panes stop being shown, the inline offsets go, and the
  * resting layout (only the active pane, no transform) takes over. Called after
  * the transition; `timer` is the caller's ref so a newer slide cancels it.
  */
-export function settleAfter(timer, track, tabs) {
+export function settleAfter(timer, track, tabs, delay = PANE_SLIDE_MS + 40) {
   window.clearTimeout(timer.current);
   timer.current = window.setTimeout(() => {
     if (track) {
@@ -28,17 +29,22 @@ export function settleAfter(timer, track, tabs) {
       track.style.removeProperty('--enter-shift');
     }
     tabs?.style.removeProperty('--tab-progress');
-  }, PANE_SLIDE_MS + 40);
+  }, delay);
 }
 
 /**
  * Swiping the content sideways switches between the panes beside it.
  *
- * The strip of panes (`trackRef`) follows the finger, and the tab indicator
- * (`tabsRef`, through `--tab-progress`) follows it too; on release the strip
- * eases to whichever pane the swipe was heading for, or back. Only the CSS
- * variables move per frame, written once per animation frame, so nothing
- * re-renders while dragging.
+ * Two phases, as a gesture should have:
+ * - While the finger is down the strip of panes (`trackRef`) moves with it
+ *   1:1: its `transform` is written directly on every move. Not a CSS custom
+ *   property — those inherit, so changing one on the track restyled every
+ *   community card inside it on every frame. The tab indicator still follows
+ *   through `--tab-progress`, which only the two-tab strip inherits.
+ * - On release a spring carries the strip to the pane the swipe chose (or
+ *   back), starting at the finger's own speed: a flick lands fast, a slow drag
+ *   settles gently. A touch that lands while it is still moving picks the
+ *   strip up exactly where it is.
  *
  * The viewport has `touch-action: pan-y`: the browser keeps vertical scrolling
  * and leaves horizontal movement to this code, so a sideways swipe is not
@@ -60,26 +66,53 @@ export function useTabSwipe({ viewportRef, trackRef, tabsRef, index, count, onSt
     const viewport = viewportRef.current;
     if (!viewport || typeof window === 'undefined') return undefined;
 
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
     let pointerId = null;
     let mode = 'idle'; // idle | pending | drag
     let startX = 0;
     let startY = 0;
-    let lastX = 0;
-    let lastT = 0;
-    let velocity = 0;
-    let dx = 0;
+    let samples = [];
     let width = 1;
-    let frame = 0;
+    /** Distance between two panes' resting positions (pane width + gap). */
+    let stride = 1;
+    /** The strip's offset when this drag picked it up, relative to its pane. */
+    let pickedUp = 0;
+    let dx = 0;
 
-    const paint = () => {
-      frame = 0;
-      trackRef.current?.style.setProperty('--drag', `${dx}px`);
-      tabsRef.current?.style.setProperty('--tab-progress', String(indexRef.current - dx / width));
+    /** Strip position in px (0 = first pane), painted onto the elements. */
+    const paint = (x) => {
+      const track = trackRef.current;
+      if (track) track.style.transform = `translate3d(${x.toFixed(2)}px, 0, 0)`;
+      tabsRef.current?.style.setProperty('--tab-progress', (-x / stride).toFixed(4));
+    };
+    const spring = createGestureSpring(paint, { stiffness: 380, dampingRatio: 1 });
+
+    const finish = () => {
+      const track = trackRef.current;
+      if (track) {
+        delete track.dataset.dragging;
+        track.style.transform = '';
+      }
+      tabsRef.current?.removeAttribute('data-dragging');
+      // A short grace so a commit render that lands after an instant (reduced
+      // motion) settle still finds its slide state to clear.
+      settleAfter(timer, track, tabsRef.current, 40);
+    };
+
+    const measure = () => {
+      width = viewport.clientWidth || 1;
+      const track = trackRef.current;
+      const gap = track ? Number.parseFloat(getComputedStyle(track).columnGap) || 0 : 0;
+      stride = width + gap;
     };
 
     const begin = () => {
       mode = 'drag';
-      width = viewport.clientWidth || 1;
+      const wasMoving = spring.isMoving();
+      measure();
+      // Caught mid-slide: continue from where the strip visibly is.
+      pickedUp = wasMoving ? spring.value() + indexRef.current * stride : 0;
+      spring.stop();
       callbacks.current.onStart?.();
       window.clearTimeout(timer.current);
       const track = trackRef.current;
@@ -87,9 +120,9 @@ export function useTabSwipe({ viewportRef, trackRef, tabsRef, index, count, onSt
         track.dataset.moving = '1';
         track.dataset.dragging = '1';
         track.style.setProperty('--tab-index', String(indexRef.current));
-        track.style.setProperty('--drag', '0px');
       }
       tabsRef.current?.setAttribute('data-dragging', '');
+      spring.set(-indexRef.current * stride + pickedUp);
       try { viewport.setPointerCapture(pointerId); } catch { /* the pointer is already gone */ }
     };
 
@@ -97,10 +130,8 @@ export function useTabSwipe({ viewportRef, trackRef, tabsRef, index, count, onSt
       if (e.pointerType === 'mouse' || !e.isPrimary) return;
       pointerId = e.pointerId;
       startX = e.clientX;
-      lastX = e.clientX;
       startY = e.clientY;
-      lastT = e.timeStamp;
-      velocity = 0;
+      samples = [];
       dx = 0;
       mode = 'pending';
     };
@@ -111,18 +142,22 @@ export function useTabSwipe({ viewportRef, trackRef, tabsRef, index, count, onSt
       const my = e.clientY - startY;
       if (mode === 'pending') {
         if (Math.abs(mx) < START_SLOP_PX && Math.abs(my) < START_SLOP_PX) return;
-        if (Math.abs(mx) > Math.abs(my) * 1.2) begin();
-        else { mode = 'idle'; pointerId = null; return; }
+        if (Math.abs(mx) > Math.abs(my) * 1.2) {
+          begin();
+          // Measured from here, so the strip does not jump by the slop.
+          startX = e.clientX;
+        } else { mode = 'idle'; pointerId = null; return; }
       }
       if (mode !== 'drag') return;
-      const dt = e.timeStamp - lastT;
-      if (dt > 0) velocity = 0.8 * velocity + 0.2 * ((e.clientX - lastX) / dt);
-      lastX = e.clientX;
-      lastT = e.timeStamp;
+      samples.push({ x: e.clientX, t: e.timeStamp });
+      if (samples.length > 12) samples.shift();
       const i = indexRef.current;
-      const holdBack = (i === 0 && mx > 0) || (i === count - 1 && mx < 0);
-      dx = holdBack ? mx * EDGE_RESISTANCE : mx;
-      if (!frame) frame = requestAnimationFrame(paint);
+      const raw = pickedUp + (e.clientX - startX);
+      // Past the first or last pane it stretches instead of stopping dead.
+      if (i === 0 && raw > 0) dx = rubberBand(raw, width * EDGE_STRETCH);
+      else if (i === count - 1 && raw < 0) dx = -rubberBand(-raw, width * EDGE_STRETCH);
+      else dx = raw;
+      spring.set(-i * stride + dx);
     };
 
     const onEnd = (e, cancelled) => {
@@ -130,7 +165,7 @@ export function useTabSwipe({ viewportRef, trackRef, tabsRef, index, count, onSt
       pointerId = null;
       if (mode !== 'drag') { mode = 'idle'; return; }
       mode = 'idle';
-      if (frame) { cancelAnimationFrame(frame); frame = 0; }
+      const velocity = cancelled ? 0 : releaseVelocity(samples); // px/s
       const i = indexRef.current;
       let target = i;
       if (!cancelled) {
@@ -138,18 +173,10 @@ export function useTabSwipe({ viewportRef, trackRef, tabsRef, index, count, onSt
         else if ((dx > width * SWITCH_FRACTION || velocity > SWITCH_SPEED) && i > 0) target = i - 1;
       }
       const track = trackRef.current;
-      const tabs = tabsRef.current;
-      // Let go of the drag: the strip's transition now carries it from where
-      // the finger left it to the pane it is heading for.
-      if (track) {
-        delete track.dataset.dragging;
-        track.style.setProperty('--tab-index', String(target));
-        track.style.setProperty('--drag', '0px');
-      }
-      tabs?.removeAttribute('data-dragging');
-      tabs?.style.setProperty('--tab-progress', String(target));
+      if (track) track.style.setProperty('--tab-index', String(target));
+      tabsRef.current?.style.setProperty('--tab-progress', String(target));
       dx = 0;
-      settleAfter(timer, track, tabs);
+      spring.to(-target * stride, { velocity, instant: reduceMotion?.matches, done: finish });
       if (target !== i) {
         committed.current = true;
         callbacks.current.onCommit?.(target);
@@ -168,7 +195,7 @@ export function useTabSwipe({ viewportRef, trackRef, tabsRef, index, count, onSt
       viewport.removeEventListener('pointermove', onMove);
       viewport.removeEventListener('pointerup', up);
       viewport.removeEventListener('pointercancel', cancel);
-      if (frame) cancelAnimationFrame(frame);
+      spring.stop();
     };
   }, [viewportRef, trackRef, tabsRef, count, timer]);
 

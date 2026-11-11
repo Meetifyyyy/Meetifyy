@@ -186,6 +186,9 @@
   /* The browser keeps vertical scrolling; sideways movement is for the swipe. */
   touch-action: pan-y;
   overflow-x: clip;
+  /* Fills the rest of the page (.box is a full-height column), so a swipe
+     works from the empty space under a short list too, not only on the cards. */
+  flex: 1 1 auto;
 }
 
 .track {
@@ -222,14 +225,19 @@
 
 /* Scroll is per tab (CommunitiesRoute): the pane being left is shifted by
    --leave-shift so it stays put on screen while the window jumps to the other
-   tab's position; the pane arriving eases in from --enter-shift. */
+   tab's position; the pane arriving takes its place in the same frame. */
 .track[data-moving] .pane[data-active="false"] {
   transform: translateY(var(--leave-shift, 0px));
 }
 
 .track[data-moving] .pane[data-active="true"] {
   transform: translateY(var(--enter-shift, 0px));
-  transition: transform 300ms cubic-bezier(0.22, 1, 0.36, 1);
+  /* No transition. The handover is one frame: the window takes this tab's
+     scroll position and the pane's offset drops to 0 together, so nothing
+     moves. Easing it (as this did) let the pane glide from its drag-time
+     offset while the page had already scrolled: a visible slide down and back
+     up after every swipe. The drag itself already shows the pane at its own
+     scroll position (CommunitiesRoute, onStart). */
 }
 
 .track[data-reset] .pane {

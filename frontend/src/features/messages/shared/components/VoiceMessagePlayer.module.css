@@ -95,8 +95,17 @@
   height: 22px;
   cursor: pointer;
   outline: none;
-  touch-action: none;
+  /* Vertical swipes still scroll the chat; sideways is the scrub. */
+  touch-action: pan-y;
   position: relative;
+}
+
+/* A 44px-tall touch target around the 22px waveform, without changing the
+   bubble's layout. */
+.waveformContainer::before {
+  content: '';
+  position: absolute;
+  inset: -11px 0;
 }
 
 .waveformContainer:focus-visible {

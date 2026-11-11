@@ -93,7 +93,10 @@ describe('useSheetDrag', () => {
       act(() => { vi.advanceTimersToNextTimer(); });
     }
     expect(onClose).toHaveBeenCalledTimes(1);
-    expect(getByTestId('sheet').style.transform).toBe('translate3d(0, 424px, 0)');
+    // Wholly below the screen (height 400 + 24), wherever the spring was
+    // when it got there.
+    const y = Number(/translate3d\(0, ([\d.]+)px, 0\)/.exec(getByTestId('sheet').style.transform)?.[1]);
+    expect(y).toBeGreaterThanOrEqual(424);
   });
 
   it('closes on a short fast flick', () => {

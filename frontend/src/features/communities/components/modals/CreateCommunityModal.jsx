@@ -22,6 +22,7 @@ import {
   ALLOWED_IMAGE_ACCEPT,
 } from '@shared/constants/mediaLimits';
 import { generateInitialAvatarFile } from '@shared/utils/generateAvatarImage';
+import { createGestureSpring, rubberBand } from '@shared/lib/gestureSpring';
 import { useCampusAffiliation } from '@shared/hooks/useCampusAffiliation';
 
 const colors26 = [
@@ -145,16 +146,13 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
   const [avatarFile, setAvatarFile] = useState(null);
   const [cropState, setCropState] = useState({ x: 0, y: 0, zoom: 1 });
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
-  const [dragStart, setDragStart] = useState(null);
 
   // Fixed gradient background for letter avatar fallback
   const [gradient] = useState(() => colors26[Math.floor(Math.random() * colors26.length)]);
 
   const fileInputRef = useRef(null);
   const nameInputRef = useRef(null);
-  // The cropper's touchstart must be non-passive so preventDefault() can block
-  // the page scroll while the user drags to crop. React 17+ registers
-  // onTouchStart as passive, which silently swallows any preventDefault call.
+  // The crop area: its pointer handlers are below (Crop drag).
   const cropperRef = useRef(null);
   // The avatar this submission already uploaded, keyed by what produced it
   // ({ signature, finalAvatar, hasCustomAvatar }). A retry after a lost
@@ -171,25 +169,6 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
       nameInputRef.current.focus();
     }
   }, [step]);
-
-  // Drag logic for custom cropper — defined before the useEffect below that
-  // registers it as a non-passive touchstart listener.
-  const handleDragStart = useCallback((e) => {
-    e.preventDefault();
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    setDragStart({ x: clientX - cropState.x, y: clientY - cropState.y });
-  }, [cropState.x, cropState.y]);
-
-  // Attach touchstart as non-passive so the drag handler can call preventDefault
-  // (which blocks page scroll while the user crop-drags). Must be done
-  // imperatively — React's onTouchStart is passive and ignores preventDefault.
-  useEffect(() => {
-    const el = cropperRef.current;
-    if (!el) return;
-    el.addEventListener('touchstart', handleDragStart, { passive: false });
-    return () => el.removeEventListener('touchstart', handleDragStart);
-  }, [handleDragStart]);
 
   // Validations
   const isCategoryValid = useMemo(() => {
@@ -247,29 +226,6 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
   };
 
 
-  const handleDragMove = (e) => {
-    if (!dragStart) return;
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    
-    const rawX = clientX - dragStart.x;
-    const rawY = clientY - dragStart.y;
-    
-    const currentW = baseDimensions.w * cropState.zoom;
-    const currentH = baseDimensions.h * cropState.zoom;
-    const maxX = Math.max(0, (currentW - 150) / 2);
-    const maxY = Math.max(0, (currentH - 150) / 2);
-
-    const clampedX = Math.max(-maxX, Math.min(maxX, rawX));
-    const clampedY = Math.max(-maxY, Math.min(maxY, rawY));
-
-    setCropState(prev => ({
-      ...prev,
-      x: clampedX,
-      y: clampedY
-    }));
-  };
-
   const handleZoomChange = (newZoom) => {
     const currentW = baseDimensions.w * newZoom;
     const currentH = baseDimensions.h * newZoom;
@@ -283,10 +239,6 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
     }));
   };
 
-  const handleDragEnd = () => {
-    setDragStart(null);
-  };
-
   const baseDimensions = useMemo(() => {
     if (!imageSize.width || !imageSize.height) return { w: 150, h: 150 };
     const aspect = imageSize.width / imageSize.height;
@@ -296,6 +248,98 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
       return { w: 150, h: 150 / aspect };
     }
   }, [imageSize]);
+
+  // ── Crop drag ──────────────────────────────────────────────────────────────
+  // While the finger is down the picture follows it 1:1, written straight onto
+  // the <img> (no React render per move). Past the edge of the crop it
+  // stretches instead of stopping dead; on release it springs back inside and
+  // the final position is committed to state once.
+  const cropImgRef = useRef(null);
+  const cropDrag = useRef(null);
+  const cropLive = useRef({ x: 0, y: 0 });
+  const cropSprings = useRef(null);
+
+  const paintCrop = useCallback(() => {
+    const img = cropImgRef.current;
+    if (!img) return;
+    const { x, y } = cropLive.current;
+    img.style.transform = `translate(-50%, -50%) translate3d(${x.toFixed(2)}px, ${y.toFixed(2)}px, 0) scale(${cropState.zoom})`;
+  }, [cropState.zoom]);
+
+  const cropBounds = useCallback(() => ({
+    maxX: Math.max(0, (baseDimensions.w * cropState.zoom - 150) / 2),
+    maxY: Math.max(0, (baseDimensions.h * cropState.zoom - 150) / 2),
+  }), [baseDimensions, cropState.zoom]);
+
+  const getCropSprings = () => {
+    if (!cropSprings.current) {
+      cropSprings.current = {
+        x: createGestureSpring((v) => { cropLive.current.x = v; paintCropRef.current(); }, { stiffness: 600 }),
+        y: createGestureSpring((v) => { cropLive.current.y = v; paintCropRef.current(); }, { stiffness: 600 }),
+      };
+    }
+    return cropSprings.current;
+  };
+  const paintCropRef = useRef(paintCrop);
+  useEffect(() => { paintCropRef.current = paintCrop; }, [paintCrop]);
+  useEffect(() => () => { cropSprings.current?.x.stop(); cropSprings.current?.y.stop(); }, []);
+
+  /** Inside the bounds 1:1; past them, a rubber band. */
+  const stretchCrop = (v, max) => {
+    if (v > max) return max + rubberBand(v - max, 40);
+    if (v < -max) return -max - rubberBand(-max - v, 40);
+    return v;
+  };
+
+  const handleCropPointerDown = (e) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    const springs = getCropSprings();
+    // Caught while springing back: continue from where it visibly is.
+    const from = springs.x.isMoving() || springs.y.isMoving()
+      ? { x: springs.x.value(), y: springs.y.value() }
+      : { x: cropState.x, y: cropState.y };
+    springs.x.stop();
+    springs.y.stop();
+    cropLive.current = from;
+    cropDrag.current = { id: e.pointerId, x0: e.clientX - from.x, y0: e.clientY - from.y };
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  };
+
+  const handleCropPointerMove = (e) => {
+    const d = cropDrag.current;
+    if (!d || d.id !== e.pointerId) return;
+    const { maxX, maxY } = cropBounds();
+    cropLive.current = {
+      x: stretchCrop(e.clientX - d.x0, maxX),
+      y: stretchCrop(e.clientY - d.y0, maxY),
+    };
+    paintCrop();
+  };
+
+  const handleCropPointerEnd = (e) => {
+    const d = cropDrag.current;
+    if (!d || d.id !== e.pointerId) return;
+    cropDrag.current = null;
+    const { maxX, maxY } = cropBounds();
+    const { x, y } = cropLive.current;
+    const end = {
+      x: Math.max(-maxX, Math.min(maxX, x)),
+      y: Math.max(-maxY, Math.min(maxY, y)),
+    };
+    // State gets the final position once. Stretched past an edge, a spring
+    // carries the picture back first and commits when it lands, so React's
+    // own render of the transform never cuts the spring short.
+    const commit = () => setCropState((prev) => ({ ...prev, ...end }));
+    if (end.x === x && end.y === y) { commit(); return; }
+    const springs = getCropSprings();
+    const instant = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    let landed = 0;
+    const both = () => { landed += 1; if (landed === 2) commit(); };
+    springs.x.set(x);
+    springs.y.set(y);
+    springs.x.to(end.x, { instant, done: both });
+    springs.y.to(end.y, { instant, done: both });
+  };
 
   // Unverified users get nothing — but this bail-out has to sit BELOW every
   // hook. It used to run before the useState calls, so the moment
@@ -612,14 +656,16 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
                     <div
                       ref={cropperRef}
                       className={styles.cropperWrapper}
-                      onMouseDown={handleDragStart}
-                      onMouseMove={handleDragMove}
-                      onMouseUp={handleDragEnd}
-                      onMouseLeave={handleDragEnd}
-                      onTouchMove={handleDragMove}
-                      onTouchEnd={handleDragEnd}
+                      // The drag owns every touch here: no page scroll, no zoom.
+                      style={{ touchAction: 'none' }}
+                      onPointerDown={handleCropPointerDown}
+                      onPointerMove={handleCropPointerMove}
+                      onPointerUp={handleCropPointerEnd}
+                      onPointerCancel={handleCropPointerEnd}
                     >
                       <img
+                        ref={cropImgRef}
+                        draggable={false}
                         src={avatarPreview}
                         alt="Crop preview"
                         className={styles.cropperImage}

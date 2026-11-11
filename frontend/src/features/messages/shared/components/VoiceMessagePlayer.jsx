@@ -354,37 +354,67 @@ export default function VoiceMessagePlayer({ src, audioUrl, duration: initialDur
     }
   };
 
-  const seekFromPointerEvent = (e) => {
-    if (!waveformRef.current) return;
-    const rect = waveformRef.current.getBoundingClientRect();
-    if (rect.width <= 0) return;
-    const clickX = e.clientX - rect.left;
-    seekToRatio(clickX / rect.width);
+  // ── Scrubbing ──────────────────────────────────────────────────────────────
+  // The fill follows the finger 1:1 (painted directly, no seek per move: an
+  // audio seek on every pointermove made the decoder thrash). The audio seeks
+  // once, on release. The waveform's box is measured once per press.
+  //
+  // The container is `touch-action: pan-y`, so a vertical swipe that starts on
+  // a voice note still scrolls the chat: the browser then cancels the pointer
+  // and the scrub is undone, back to where playback was.
+  const scrubRef = useRef(null);
+
+  const ratioAt = (clientX) => {
+    const s = scrubRef.current;
+    if (!s || s.width <= 0) return 0;
+    return Math.max(0, Math.min(1, (clientX - s.left) / s.width));
+  };
+
+  const previewRatio = (ratio) => {
+    const d = durationRef.current || 0;
+    paintProgress(ratio);
+    const whole = Math.floor(ratio * d);
+    setDisplaySec((prev) => (prev === whole ? prev : whole));
   };
 
   const handlePointerDown = (e) => {
-    if (!isValidSource) return;
+    if (!isValidSource || !waveformRef.current) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    const rect = waveformRef.current.getBoundingClientRect();
+    scrubRef.current = { id: e.pointerId, left: rect.left, width: rect.width, from: currentTimeRef.current, ratio: 0 };
     isDraggingRef.current = true;
-    try {
-      e.currentTarget.setPointerCapture(e.pointerId);
-    } catch (_) {}
-    seekFromPointerEvent(e);
+    const ratio = ratioAt(e.clientX);
+    scrubRef.current.ratio = ratio;
+    previewRatio(ratio);
   };
 
   const handlePointerMove = (e) => {
-    if (isDraggingRef.current) {
-      seekFromPointerEvent(e);
+    const s = scrubRef.current;
+    if (!s || s.id !== e.pointerId) return;
+    // Captured only once the finger really moves sideways, so a tap or a
+    // vertical scroll is never swallowed by the scrubber.
+    if (!s.captured) {
+      s.captured = true;
+      try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* pointer already gone */ }
     }
+    s.ratio = ratioAt(e.clientX);
+    previewRatio(s.ratio);
   };
 
-  const handlePointerUp = (e) => {
-    if (isDraggingRef.current) {
-      isDraggingRef.current = false;
-      try {
-        e.currentTarget.releasePointerCapture(e.pointerId);
-      } catch (_) {}
+  const endScrub = (e, commit) => {
+    const s = scrubRef.current;
+    if (!s || s.id !== e.pointerId) return;
+    scrubRef.current = null;
+    isDraggingRef.current = false;
+    if (s.captured) {
+      try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* already released */ }
     }
+    if (commit) seekToRatio(s.ratio);
+    else syncTime(s.from); // the gesture became a scroll: undo the preview
   };
+
+  const handlePointerUp = (e) => endScrub(e, true);
+  const handlePointerCancel = (e) => endScrub(e, false);
 
   const handleKeyDown = (e) => {
     if (!isValidSource) return;
@@ -459,7 +489,7 @@ export default function VoiceMessagePlayer({ src, audioUrl, duration: initialDur
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
-          onPointerCancel={handlePointerUp}
+          onPointerCancel={handlePointerCancel}
           onKeyDown={handleKeyDown}
           role="slider"
           aria-label="Audio playback scrubber"
