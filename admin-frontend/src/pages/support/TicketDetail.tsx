@@ -1,3 +1,5 @@
+import { LoadingState } from '../../components/LoadingState';
+import { Dropdown } from '../../components/Dropdown';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -128,16 +130,14 @@ export const TicketDetail: React.FC<{
 
   if (isLoading) {
     return (
-      <div style={centered}>
-        <Loader2 size={18} className="spin" />
-        <span>Loading ticket</span>
-      </div>
+      <div className="support-detail-state">{onBack && <button type="button" className="btn-secondary support-back" onClick={onBack}><ChevronLeft size={16} />Back to tickets</button>}<LoadingState label="Loading ticket" /></div>
     );
   }
 
   if (isError) {
     return (
-      <div style={centered}>
+      <div className="support-empty">
+        {onBack && <button type="button" className="btn-secondary support-back" onClick={onBack}><ChevronLeft size={16} />Back to tickets</button>}
         <AlertTriangle size={20} color="var(--color-danger)" />
         <span>{(error as any)?.message || 'This ticket could not be loaded.'}</span>
         <button className="btn-secondary" onClick={() => refetch()}>
@@ -151,10 +151,10 @@ export const TicketDetail: React.FC<{
   const busy = statusMutation.isPending || priorityMutation.isPending || assignMutation.isPending;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+    <div className="support-ticket-detail">
       {/* ── Header ───────────────────────────────────────────────────────── */}
-      <div style={header}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', marginBottom: '0.15rem' }}>
+      <div className="support-detail-header">
+        <div className="support-ticket-badges">
           <span style={ticketRef}>{ticket.ticketNumber}</span>
           <span className={`badge ${STATUS_BADGE[ticket.status] ?? 'badge-neutral'}`}>{statusLabel(ticket.status)}</span>
           {(ticket.priority === 'HIGH' || ticket.priority === 'URGENT') && (
@@ -166,23 +166,15 @@ export const TicketDetail: React.FC<{
           <button
             type="button"
             onClick={onBack}
-            className="btn-secondary"
-            style={{
-              padding: '0.22rem 0.5rem',
-              fontSize: '0.72rem',
-              marginBottom: '0.45rem',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '0.25rem',
-            }}
+            className="btn-secondary support-back"
           >
             <ChevronLeft size={13} />
             <span>Back to tickets</span>
           </button>
         )}
-        <h3 style={subjectStyle}>{ticket.subject}</h3>
+        <h3 className="support-detail-subject">{ticket.subject}</h3>
 
-        <div style={requesterLine}>
+        <div className="support-requester">
           {ticket.type === 'IDEA' ? 'Idea · ' : ''}
           {categoryLabel(ticket.category)} ·{' '}
           <a href={`mailto:${ticket.email}`} style={{ color: 'inherit' }}>
@@ -193,7 +185,7 @@ export const TicketDetail: React.FC<{
       </div>
 
       {/* ── Triage row ───────────────────────────────────────────────────── */}
-      <div style={triageRow}>
+      <div className="support-triage">
         <CompactSelect
           value={ticket.status}
           disabled={busy}
@@ -223,7 +215,7 @@ export const TicketDetail: React.FC<{
 
         {busy && <Loader2 size={13} className="spin" style={{ color: 'var(--color-text-dim)' }} />}
 
-        <button type="button" style={detailsToggle} onClick={() => setShowDetails((v) => !v)} aria-expanded={showDetails}>
+        <button type="button" className="support-details-toggle" onClick={() => setShowDetails((v) => !v)} aria-expanded={showDetails}>
           <span>Details</span>
           <ChevronDown
             size={12}
@@ -236,7 +228,7 @@ export const TicketDetail: React.FC<{
         <div style={banner.tone === 'error' ? bannerError : bannerOk} role="status">
           {banner.tone === 'error' ? <AlertTriangle size={14} /> : <CheckCircle size={14} />}
           <span style={{ flex: 1 }}>{banner.text}</span>
-          <button type="button" onClick={() => setBanner(null)} style={iconOnly} aria-label="Dismiss">
+          <button type="button" onClick={() => setBanner(null)} className="support-icon-button" aria-label="Dismiss">
             <X size={13} />
           </button>
         </div>
@@ -253,8 +245,7 @@ export const TicketDetail: React.FC<{
             The confirmation email was not delivered{ticket.emailError ? `: ${ticket.emailError}` : ''}.
           </span>
           <button
-            className="btn-secondary"
-            style={tinyBtn}
+            className="btn-secondary support-small-button"
             disabled={resendConfirmation.isPending}
             onClick={() => confirm({
               title: 'Resend the confirmation email?',
@@ -272,7 +263,7 @@ export const TicketDetail: React.FC<{
       )}
 
       {showDetails && (
-        <div style={detailsPanel}>
+        <div className="support-ticket-details">
           <Meta label="Submitted" value={formatDateTime(ticket.createdAt)} />
           <Meta label="Last update" value={formatDateTime(ticket.updatedAt)} />
           {ticket.resolvedAt && <Meta label="Resolved" value={formatDateTime(ticket.resolvedAt)} />}
@@ -289,7 +280,7 @@ export const TicketDetail: React.FC<{
           )}
           {attachments.length > 0 && (
             <div style={{ gridColumn: '1 / -1' }}>
-              <div style={metaLabel}>Attachments</div>
+              <div className="support-field-label">Attachments</div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', marginTop: '0.25rem' }}>
                 {attachments.map((file: any) => (
                   <a
@@ -299,10 +290,11 @@ export const TicketDetail: React.FC<{
                     href={file.url ?? undefined}
                     target="_blank"
                     rel="noopener noreferrer"
-                    style={attachmentChip}
+                    className="support-attachment"
+                    aria-disabled={!file.url}
                   >
                     <Paperclip size={11} />
-                    <span>{file.filename || file.mimeType?.split('/')[1]?.toUpperCase() || 'FILE'}</span>
+                    <span>{file.filename || file.mimeType?.split('/')[1]?.toUpperCase() || 'FILE'}{!file.url ? ' · Link unavailable' : ''}</span>
                     <span style={{ color: 'var(--color-text-light)' }}>{Math.round((file.size ?? 0) / 1024)} KB</span>
                   </a>
                 ))}
@@ -313,7 +305,7 @@ export const TicketDetail: React.FC<{
       )}
 
       {/* ── Conversation ─────────────────────────────────────────────────── */}
-      <div style={thread}>
+      <div className="support-conversation">
         {ticket.messages?.map((message: any) => {
           const isAdmin = message.authorType === 'ADMIN';
           const isNote = message.isInternal;
@@ -321,24 +313,9 @@ export const TicketDetail: React.FC<{
           return (
             <div
               key={message.id}
-              style={{
-                alignSelf: isAdmin ? 'flex-end' : 'flex-start',
-                maxWidth: '82%',
-                background: isNote
-                  ? 'var(--color-warning-tint, rgba(245,158,11,0.08))'
-                  : isAdmin
-                    ? 'var(--color-primary-tint)'
-                    : 'var(--color-bg-soft)',
-                border: isNote
-                  ? '1px solid rgba(245, 158, 11, 0.35)'
-                  : isAdmin
-                    ? '1px solid rgba(37, 99, 235, 0.2)'
-                    : '1px solid var(--color-border)',
-                padding: '0.45rem 0.65rem',
-                borderRadius: 'var(--radius-sm)',
-              }}
+              className={`support-message ${isNote ? 'is-note' : isAdmin ? 'is-admin' : 'is-user'}`}
             >
-              <div style={messageMeta}>
+              <div className="support-message-meta">
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.28rem', fontWeight: 600 }}>
                   {isNote ? <Lock size={10} /> : isAdmin ? <Mail size={10} /> : <UserIcon size={10} />}
                   {isNote
@@ -359,11 +336,11 @@ export const TicketDetail: React.FC<{
                   value is already the safe one. Rendering it as markup is what
                   makes the thread show what the user actually received.
                 */
-                <div style={messageBody} dangerouslySetInnerHTML={{ __html: message.body }} />
+                <div className="support-message-body" dangerouslySetInnerHTML={{ __html: message.body }} />
               ) : (
                 // User text and internal notes are plain text and stay plain
                 // text, rendered as a text node and never as markup.
-                <div style={{ ...messageBody, whiteSpace: 'pre-wrap' }}>{message.body}</div>
+                <div className="support-message-body is-plain">{message.body}</div>
               )}
 
               {isAdmin && !isNote && (
@@ -390,7 +367,7 @@ export const TicketDetail: React.FC<{
   );
 };
 
-/** A select styled as a quiet inline control rather than a labelled form field. */
+/** Ticket metadata uses the shared dropdown with its existing value handlers. */
 const CompactSelect: React.FC<{
   value: string;
   disabled?: boolean;
@@ -398,19 +375,19 @@ const CompactSelect: React.FC<{
   options: Array<{ value: string; label: string }>;
   'aria-label': string;
 }> = ({ value, disabled, onChange, options, ...rest }) => (
-  <select
+  <Dropdown
     value={value}
     disabled={disabled}
     onChange={(e) => onChange(e.target.value)}
     aria-label={rest['aria-label']}
-    style={compactSelect}
+    className="support-triage-select"
   >
     {options.map((o) => (
       <option key={o.value} value={o.value}>
         {o.label}
       </option>
     ))}
-  </select>
+  </Dropdown>
 );
 
 /**
@@ -439,7 +416,7 @@ const DeliveryStatus: React.FC<{ message: any; onResend: () => void; pending: bo
       <div style={{ ...deliveryRow, color: 'var(--color-danger)', alignItems: 'center' }}>
         <MailWarning size={10} />
         <span style={{ flex: 1 }}>Not delivered{message.emailError ? `: ${message.emailError}` : ''}</span>
-        <button className="btn-secondary" style={tinyBtn} onClick={onResend} disabled={pending}>
+        <button className="btn-secondary support-small-button" onClick={onResend} disabled={pending}>
           {pending ? <Loader2 size={10} className="spin" /> : <RefreshCw size={10} />}
           <span>Resend</span>
         </button>
@@ -457,150 +434,20 @@ const DeliveryStatus: React.FC<{ message: any; onResend: () => void; pending: bo
 
 const Meta: React.FC<{ label: string; value: React.ReactNode }> = ({ label, value }) => (
   <div>
-    <div style={metaLabel}>{label}</div>
-    <div style={{ fontSize: '0.76rem', color: 'var(--color-text-main)', wordBreak: 'break-word' }}>{value}</div>
+    <div className="support-field-label">{label}</div>
+    <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-main)', wordBreak: 'break-word' }}>{value}</div>
   </div>
 );
 
 // ── Styles ─────────────────────────────────────────────────────────────────
-// Inline objects, matching how the other admin pages style themselves.
-
-const centered: React.CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'center',
-  justifyContent: 'center',
-  gap: '0.6rem',
-  flex: 1,
-  height: '100%',
-  color: 'var(--color-text-dim)',
-  fontSize: '0.85rem',
-};
-
-const header: React.CSSProperties = {
-  padding: '0.65rem 0.85rem 0.55rem',
-  borderBottom: '1px solid var(--color-border)',
-  flexShrink: 0,
-};
+// Delivery and feedback tones are shared by the message states.
 
 const ticketRef: React.CSSProperties = {
   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-  fontSize: '0.7rem',
-  fontWeight: 700,
-  letterSpacing: '0.04em',
-  color: 'var(--color-text-light)',
-};
-
-const subjectStyle: React.CSSProperties = {
-  fontSize: '0.9rem',
-  fontWeight: 700,
-  margin: '0.15rem 0 0.05rem 0',
-  wordBreak: 'break-word',
-  color: 'var(--color-text-main)',
-};
-
-const requesterLine: React.CSSProperties = {
-  fontSize: '0.7rem',
-  color: 'var(--color-text-light)',
-  marginTop: '0.15rem',
-};
-
-const triageRow: React.CSSProperties = {
-  display: 'flex',
-  flexWrap: 'wrap',
-  alignItems: 'center',
-  gap: '0.3rem',
-  padding: '0.35rem 0.75rem',
-  borderBottom: '1px solid var(--color-border)',
-  background: 'var(--color-bg-alt)',
-  flexShrink: 0,
-};
-
-const compactSelect: React.CSSProperties = {
-  padding: '0.22rem 0.45rem',
-  fontFamily: 'inherit',
-  fontSize: '0.7rem',
-  color: 'var(--color-text-main)',
-  background: 'var(--color-bg-white)',
-  border: '1px solid var(--color-border)',
-  borderRadius: 'var(--radius-sm)',
-  cursor: 'pointer',
-  flex: '1 1 100px',
-  maxWidth: '100%',
-};
-
-const detailsToggle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: '0.2rem',
-  padding: '0.2rem 0.4rem',
-  fontFamily: 'inherit',
-  fontSize: '0.68rem',
-  color: 'var(--color-text-light)',
-  background: 'none',
-  border: '1px solid transparent',
-  borderRadius: 'var(--radius-sm)',
-  cursor: 'pointer',
-};
-
-const detailsPanel: React.CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fit, minmax(8rem, 1fr))',
-  gap: '0.5rem 0.75rem',
-  padding: '0.6rem 0.85rem',
-  borderBottom: '1px solid var(--color-border)',
-  background: 'var(--color-bg-soft)',
-  flexShrink: 0,
-};
-
-const metaLabel: React.CSSProperties = {
-  fontSize: '0.6rem',
-  fontWeight: 700,
-  textTransform: 'uppercase',
-  letterSpacing: '0.04em',
-  color: 'var(--color-text-light)',
-};
-
-const attachmentChip: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: '0.25rem',
-  padding: '0.2rem 0.45rem',
-  fontSize: '0.65rem',
+  fontSize: '0.75rem',
   fontWeight: 600,
-  textDecoration: 'none',
-  color: 'var(--color-text-main)',
-  background: 'var(--color-bg-white)',
-  border: '1px solid var(--color-border)',
-  borderRadius: 'var(--radius-sm)',
-};
-
-const thread: React.CSSProperties = {
-  // The conversation is the only element allowed to grow, so it takes whatever
-  // height the fixed chrome above and below does not.
-  flex: 1,
-  minHeight: 0,
-  padding: '0.65rem 0.75rem',
-  overflowY: 'auto',
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '0.5rem',
-};
-
-const messageMeta: React.CSSProperties = {
-  display: 'flex',
-  justifyContent: 'space-between',
-  gap: '0.75rem',
-  fontSize: '0.62rem',
+  letterSpacing: '0.02em',
   color: 'var(--color-text-light)',
-  marginBottom: '0.25rem',
-};
-
-const messageBody: React.CSSProperties = {
-  fontSize: '0.76rem',
-  lineHeight: 1.45,
-  color: 'var(--color-text-main)',
-  wordBreak: 'break-word',
 };
 
 const deliveryRow: React.CSSProperties = {
@@ -609,7 +456,7 @@ const deliveryRow: React.CSSProperties = {
   marginTop: '0.45rem',
   paddingTop: '0.35rem',
   borderTop: '1px solid rgba(0,0,0,0.06)',
-  fontSize: '0.66rem',
+  fontSize: '0.75rem',
 };
 
 const bannerBase: React.CSSProperties = {
@@ -617,7 +464,7 @@ const bannerBase: React.CSSProperties = {
   alignItems: 'center',
   gap: '0.45rem',
   padding: '0.5rem 1rem',
-  fontSize: '0.76rem',
+  fontSize: '0.8125rem',
   borderBottom: '1px solid var(--color-border)',
   flexShrink: 0,
 };
@@ -633,14 +480,3 @@ const bannerOk: React.CSSProperties = {
   background: 'var(--color-success-tint, rgba(22,163,74,0.07))',
   color: 'var(--color-success)',
 };
-
-const iconOnly: React.CSSProperties = {
-  display: 'inline-flex',
-  border: 'none',
-  background: 'none',
-  color: 'inherit',
-  cursor: 'pointer',
-  padding: 0,
-};
-
-const tinyBtn: React.CSSProperties = { padding: '0.18rem 0.45rem', fontSize: '0.66rem' };

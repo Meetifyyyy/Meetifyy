@@ -1,199 +1,79 @@
 import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { BookOpen, Inbox, ShieldAlert } from '../components/icons';
-
 import { TicketQueue } from './support/TicketQueue';
 import { TicketDetail } from './support/TicketDetail';
 import { HelpContentManager } from './support/HelpContentManager';
+import { supportApi } from './support/supportApi';
+import './support/support.css';
 
 type Tab = 'tickets' | 'appeals' | 'help';
+const sections = [
+  { id: 'tickets', label: 'Tickets', icon: Inbox },
+  { id: 'appeals', label: 'Suspension appeals', icon: ShieldAlert },
+  { id: 'help', label: 'Help content', icon: BookOpen },
+] as const;
 
-/**
- * Suspension appeals are support tickets in their own category, so they get
- * their own section here rather than a parallel inbox — the reply, assignment
- * and status workflow are identical, and a suspended user waiting on a decision
- * should not be buried in ordinary support volume.
- */
-const APPEAL_CATEGORY = 'SUSPENSION_APPEAL';
-
-/**
- * The Admin Dashboard's Support section.
- *
- * Two tabs on one route rather than two nav entries: support requests and the
- * help content that exists to prevent them are the same job, and the admin who
- * answers a question five times is the one who should turn it into an article.
- * Keeping both here also means the section keeps its single place in the
- * sidebar, its existing permissions and its existing audit classification.
- *
- * The selected ticket lives in the query string so the admin-notification email
- * can deep-link straight to it (`/support?ticket=<id>`), and so a reload or a
- * shared link lands back on the same ticket.
- */
 export const SupportPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [tab, setTab] = useState<Tab>('tickets');
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-
   const selectedTicketId = searchParams.get('ticket');
-
-  useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth < 768);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
-  // A deep link carrying ?ticket= is a link to a ticket, so it must open the
-  // tickets tab even if the admin was last on the help tab.
-  useEffect(() => {
-    if (selectedTicketId && tab === 'help') {
-      setTab('tickets');
-    }
-  }, [selectedTicketId, tab]);
+  const stats = useQuery({ queryKey: ['adminSupportStats'], queryFn: supportApi.getStats, staleTime: 30_000 });
 
   const selectTicket = (id: string | null) => {
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev);
-        if (id) next.set('ticket', id);
-        else next.delete('ticket');
-        return next;
-      },
-      // Browsing the queue should not fill the back stack with one entry per
-      // ticket the admin glanced at.
-      { replace: true },
-    );
+    setSearchParams((previous) => {
+      const next = new URLSearchParams(previous);
+      if (id) next.set('ticket', id);
+      else next.delete('ticket');
+      return next;
+    }, { replace: true });
+  };
+  // Preserve incoming email deep links, including navigation from Help content.
+  useEffect(() => { if (selectedTicketId) setTab((current) => current === 'help' ? 'tickets' : current); }, [selectedTicketId]);
+  const switchSection = (next: Tab) => {
+    if (next === tab) return;
+    selectTicket(null);
+    setTab(next);
   };
 
   return (
-    <div>
-      <div className="page-header">
-        <div>
-          <h2 className="page-title">Support</h2>
-          <p className="page-subtitle">
-            Support requests from users, and the public Help &amp; Support content that answers them.
-          </p>
-        </div>
+    <div className="admin-page support-page">
+      <header className="page-header">
+        <div><h2 className="page-title">Support</h2><p className="page-subtitle">Manage requests, review appeals, and keep your help centre up to date.</p></div>
+      </header>
+      <p className="support-summary-caption">Across all support queues</p>
+      <dl className="support-summary" aria-label="Support totals across all queues" aria-busy={stats.isLoading}>
+        {[
+          { key: 'OPEN', label: 'New requests', tone: 'blue' },
+          { key: 'IN_PROGRESS', label: 'In progress', tone: 'violet' },
+          { key: 'WAITING_FOR_USER', label: 'Awaiting user', tone: 'peach' },
+          { key: 'RESOLVED', label: 'Resolved', tone: 'green' },
+        ].map(({ key, label, tone }) => <div key={key} className={`support-summary-card is-${tone}`}><dt>{label}</dt><dd>{stats.isLoading || stats.isError ? '—' : (stats.data?.byStatus?.[key] ?? 0).toLocaleString()}</dd></div>)}
+      </dl>
+      {stats.isError && <div className="support-stats-error" role="status">Support totals are unavailable. <button type="button" onClick={() => stats.refetch()}>Retry totals</button></div>}
+      <div className="support-section-tabs" role="tablist" aria-label="Support sections" onKeyDown={(event) => {
+        const index = sections.findIndex((section) => section.id === tab);
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? sections.length - 1 : event.key === 'ArrowRight' ? (index + 1) % sections.length : event.key === 'ArrowLeft' ? (index + sections.length - 1) % sections.length : null;
+        if (next === null) return;
+        event.preventDefault(); switchSection(sections[next].id);
+        event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
+      }}>
+        {sections.map(({ id, label, icon: Icon }) => <button key={id} type="button" role="tab" id={`support-tab-${id}`} aria-controls="support-panel" aria-selected={tab === id} tabIndex={tab === id ? 0 : -1} onClick={() => switchSection(id)}><Icon size={18} /><span>{label}</span></button>)}
       </div>
-
-      <div style={tabBar} role="tablist" aria-label="Support sections">
-        <TabButton active={tab === 'tickets'} onClick={() => setTab('tickets')} icon={<Inbox size={14} />}>
-          Tickets
-        </TabButton>
-        <TabButton active={tab === 'appeals'} onClick={() => setTab('appeals')} icon={<ShieldAlert size={14} />}>
-          Suspension appeals
-        </TabButton>
-        <TabButton active={tab === 'help'} onClick={() => setTab('help')} icon={<BookOpen size={14} />}>
-          Help content
-        </TabButton>
-      </div>
-
-      {tab === 'tickets' || tab === 'appeals' ? (
-        <div className="ticket-layout">
-          {(!isMobile || !selectedTicketId) && (
-            <TicketQueue
-              // Remounted when the section changes so the appeals queue starts
-              // from its own filter state rather than inheriting the last search
-              // the admin ran on the full queue.
-              key={tab}
-              selectedId={selectedTicketId}
-              onSelect={selectTicket}
-              lockedCategory={tab === 'appeals' ? APPEAL_CATEGORY : undefined}
-            />
-          )}
-
-          {(!isMobile || selectedTicketId) && (
-            <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div id="support-panel" role="tabpanel" aria-labelledby={`support-tab-${tab}`}>
+        {tab === 'help' ? <HelpContentManager /> : (
+          <div className="support-workspace" data-selected={!!selectedTicketId}>
+            <TicketQueue key={tab} selectedId={selectedTicketId} onSelect={selectTicket} lockedCategory={tab === 'appeals' ? 'SUSPENSION_APPEAL' : undefined} />
+            <section className="support-detail-panel" aria-label="Ticket conversation">
               {selectedTicketId ? (
-                // Keyed on the id so switching tickets remounts the detail pane.
-                // Without it the reply composer would carry a half-written reply
-                // from one ticket into another.
-                <TicketDetail
-                  key={selectedTicketId}
-                  ticketId={selectedTicketId}
-                  onBack={isMobile ? () => selectTicket(null) : undefined}
-                />
-              ) : (
-                <div style={emptyDetail}>
-                  {tab === 'appeals' ? <ShieldAlert size={24} /> : <Inbox size={24} />}
-                  <span style={{ fontWeight: 600 }}>
-                    {tab === 'appeals' ? 'Select an appeal' : 'Select a ticket'}
-                  </span>
-                  <span style={{ fontSize: '0.78rem' }}>
-                    {tab === 'appeals'
-                      ? 'Choose an appeal to read it, reply, or decide the outcome.'
-                      : 'Choose a request from the queue to read it, reply, or change its status.'}
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      ) : (
-        <HelpContentManager />
-      )}
+                // A draft must never carry over to a different recipient.
+                <TicketDetail key={selectedTicketId} ticketId={selectedTicketId} onBack={() => selectTicket(null)} />
+              ) : <div className="support-empty"><Inbox size={32} /><h3>{tab === 'appeals' ? 'Select an appeal' : 'Select a ticket'}</h3><p>Choose a request to read the conversation, assign it, or send a reply.</p></div>}
+            </section>
+          </div>
+        )}
+      </div>
     </div>
   );
-};
-
-const TabButton: React.FC<{
-  active: boolean;
-  onClick: () => void;
-  icon: React.ReactNode;
-  children: React.ReactNode;
-}> = ({ active, onClick, icon, children }) => (
-  <button
-    type="button"
-    role="tab"
-    aria-selected={active}
-    onClick={onClick}
-    style={{
-      ...tabButton,
-      color: active ? 'var(--color-primary)' : 'var(--color-text-light)',
-      borderBottomColor: active ? 'var(--color-primary)' : 'transparent',
-      fontWeight: active ? 700 : 600,
-    }}
-  >
-    {icon}
-    <span>{children}</span>
-  </button>
-);
-
-// ── Styles ─────────────────────────────────────────────────────────────────
-
-const tabBar: React.CSSProperties = {
-  display: 'flex',
-  gap: '0.25rem',
-  marginBottom: '0.85rem',
-  borderBottom: '1px solid var(--color-border)',
-  overflowX: 'auto',
-  whiteSpace: 'nowrap',
-  scrollbarWidth: 'none',
-};
-
-const tabButton: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: '0.35rem',
-  padding: '0.32rem 0.6rem',
-  fontSize: '0.74rem',
-  fontFamily: 'inherit',
-  background: 'none',
-  border: 'none',
-  borderBottom: '2px solid transparent',
-  cursor: 'pointer',
-  marginBottom: '-1px',
-};
-
-
-const emptyDetail: React.CSSProperties = {
-  display: 'flex',
-  flex: 1,
-  flexDirection: 'column',
-  alignItems: 'center',
-  justifyContent: 'center',
-  gap: '0.5rem',
-  textAlign: 'center',
-  padding: '2rem',
-  color: 'var(--color-text-dim)',
-  fontSize: '0.85rem',
 };

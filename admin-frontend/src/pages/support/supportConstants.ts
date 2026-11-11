@@ -77,7 +77,7 @@ export const HELP_STATUS_BADGE: Record<string, string> = {
   ARCHIVED: 'badge-warning',
 };
 
-export const categoryLabel = (value: string) => CATEGORY_LABELS[value] ?? value;
+export const categoryLabel = (value: string) => value === 'SUSPENSION_APPEAL' ? 'Suspension appeal' : CATEGORY_LABELS[value] ?? value;
 export const statusLabel = (value: string) => STATUS_LABELS[value] ?? value;
 export const priorityLabel = (value: string) => PRIORITY_LABELS[value] ?? value;
 

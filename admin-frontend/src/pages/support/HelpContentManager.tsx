@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import { LoadingState } from '../../components/LoadingState';
+import { Dropdown } from '../../components/Dropdown';
+import React, { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
@@ -11,6 +13,7 @@ import {
   FileText,
   Loader2,
   Plus,
+  Pencil,
   RefreshCw,
   Search,
   Star,
@@ -41,6 +44,8 @@ export const HelpContentManager: React.FC = () => {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<Editing>(null);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => { const timer = setTimeout(() => setDebouncedSearch(search), 300); return () => clearTimeout(timer); }, [search]);
   const [statusFilter, setStatusFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [banner, setBanner] = useState<{ tone: 'error' | 'ok' | 'warn'; text: string } | null>(null);
@@ -51,8 +56,8 @@ export const HelpContentManager: React.FC = () => {
   });
 
   const articlesQuery = useQuery({
-    queryKey: ['adminHelpArticles', { search, statusFilter, categoryFilter }],
-    queryFn: () => helpApi.listArticles({ search, status: statusFilter, categoryId: categoryFilter }),
+    queryKey: ['adminHelpArticles', { search: debouncedSearch, statusFilter, categoryFilter }],
+    queryFn: () => helpApi.listArticles({ search: debouncedSearch, status: statusFilter, categoryId: categoryFilter }),
     placeholderData: (previous) => previous,
   });
 
@@ -85,10 +90,11 @@ export const HelpContentManager: React.FC = () => {
         run(
           () => (kind === 'category' ? helpApi.deleteCategory(id) : helpApi.deleteArticle(id)),
           'Deleted.',
+          true,
         ),
     });
 
-  const run = async (fn: () => Promise<any>, okText: string) => {
+  const run = async (fn: () => Promise<any>, okText: string, propagateError = false) => {
     setBanner(null);
     try {
       const result = await fn();
@@ -96,8 +102,11 @@ export const HelpContentManager: React.FC = () => {
       // Some endpoints answer with an advisory rather than a plain success -
       // publishing an article whose category is still a draft, for instance.
       setBanner(result?.warning ? { tone: 'warn', text: result.warning } : { tone: 'ok', text: okText });
+      return true;
     } catch (e: any) {
       setBanner({ tone: 'error', text: e?.message || 'That change could not be saved.' });
+      if (propagateError) throw e;
+      return false;
     }
   };
 
@@ -135,37 +144,34 @@ export const HelpContentManager: React.FC = () => {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+    <div className="support-help">
       {banner && (
         <div style={bannerStyle(banner.tone)} role="status">
           {banner.tone === 'error' ? <AlertTriangle size={15} /> : banner.tone === 'warn' ? <AlertTriangle size={15} /> : <CheckCircle size={15} />}
           <span style={{ flex: 1 }}>{banner.text}</span>
-          <button type="button" onClick={() => setBanner(null)} style={iconButton} aria-label="Dismiss">
+          <button type="button" onClick={() => setBanner(null)} className="support-help-icon" aria-label="Dismiss">
             <X size={13} />
           </button>
         </div>
       )}
 
       {/* ── Categories ───────────────────────────────────────────────────── */}
-      <section className="glass-panel" style={{ overflow: 'hidden' }}>
-        <div style={sectionHeader}>
+      <section className="support-help-section">
+        <div className="support-help-header">
           <div>
-            <h3 style={sectionTitle}>Help categories</h3>
-            <p style={sectionSubtitle}>Order here is the order on the public page.</p>
+            <h3 className="support-help-title">Help categories</h3>
+            <p className="support-help-subtitle">Order here is the order on the public page.</p>
           </div>
-          <button className="btn-primary" onClick={() => setEditing({ kind: 'category', value: null })}>
+          <button className="btn-primary" onClick={() => { setBanner(null); setEditing({ kind: 'category', value: null }); }}>
             <Plus size={14} />
             <span>New category</span>
           </button>
         </div>
 
         {categoriesQuery.isLoading ? (
-          <div style={centered}>
-            <Loader2 size={16} className="spin" />
-            <span>Loading categories…</span>
-          </div>
+          <LoadingState label="Loading help categories" compact />
         ) : categoriesQuery.isError ? (
-          <div style={centered}>
+          <div className="support-empty">
             <AlertTriangle size={18} color="var(--color-danger)" />
             <span>Categories could not be loaded.</span>
             <button className="btn-secondary" onClick={() => categoriesQuery.refetch()}>
@@ -174,29 +180,30 @@ export const HelpContentManager: React.FC = () => {
             </button>
           </div>
         ) : categories.length === 0 ? (
-          <div style={centered}>
+          <div className="support-empty">
             <FileText size={18} />
             <span>No categories yet. Create one to start building the help centre.</span>
           </div>
         ) : (
-          <div className="table-responsive">
-            <table className="admin-table">
+          <div className="support-help-table-wrap">
+            <table className="admin-table support-help-table support-category-table" aria-label="Help categories">
+              <colgroup><col className="help-order-column" /><col /><col className="help-count-column" /><col className="help-status-column" /><col className="help-actions-column" /></colgroup>
               <thead>
                 <tr>
-                  <th style={{ width: '4.5rem' }}>Order</th>
+                  <th>Order</th>
                   <th>Category</th>
                   <th>Articles</th>
                   <th>Status</th>
-                  <th className="col-actions" style={{ textAlign: 'right' }}>Actions</th>
+                  <th className="support-help-actions-heading">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {categories.map((category: any, index: number) => (
                   <tr key={category.id}>
-                    <td>
-                      <div style={{ display: 'flex', gap: '0.15rem' }}>
+                    <td data-label="Order">
+                      <div className="support-entry-order">
                         <button
-                          style={iconButton}
+                          className="support-help-icon"
                           disabled={index === 0}
                           onClick={() => move(categories, index, -1, 'category')}
                           aria-label={`Move ${category.title} up`}
@@ -204,7 +211,7 @@ export const HelpContentManager: React.FC = () => {
                           <ArrowUp size={13} />
                         </button>
                         <button
-                          style={iconButton}
+                          className="support-help-icon"
                           disabled={index === categories.length - 1}
                           onClick={() => move(categories, index, 1, 'category')}
                           aria-label={`Move ${category.title} down`}
@@ -213,26 +220,25 @@ export const HelpContentManager: React.FC = () => {
                         </button>
                       </div>
                     </td>
-                    <td>
-                      <div style={{ fontWeight: 600 }}>{category.title}</div>
-                      <div style={mutedSmall}>/{category.slug}</div>
+                    <td data-label="Category">
+                      <div className="support-entry-title"><span>{category.title}</span></div>
+                      <div className="support-entry-slug" title={`/${category.slug}`}>/{category.slug}</div>
                     </td>
-                    <td style={mutedSmall}>
-                      {category.publishedArticleCount} published
-                      {category.articleCount !== category.publishedArticleCount
-                        ? ` · ${category.articleCount - category.publishedArticleCount} draft/archived`
-                        : ''}
+                    <td data-label="Articles">
+                      <div className="support-entry-count"><strong>{category.publishedArticleCount}</strong><span>published</span></div>
+                      {category.articleCount > category.publishedArticleCount && <div className="support-entry-secondary">{category.articleCount - category.publishedArticleCount} draft / archived</div>}
                     </td>
-                    <td>
+                    <td data-label="Status">
                       <span className={`badge ${HELP_STATUS_BADGE[category.status]}`}>
                         {HELP_STATUS_LABELS[category.status]}
                       </span>
                     </td>
-                    <td>
-                      <div style={actionCell}>
+                    <td data-label="Actions">
+                      <div className="support-help-actions">
                         <button
-                          className="btn-secondary"
-                          style={smallButton}
+                          className="btn-secondary support-help-button support-publish-button"
+                          aria-label={`${category.status === 'PUBLISHED' ? 'Unpublish' : 'Publish'} ${category.title}`}
+                          title={category.status === 'PUBLISHED' ? 'Unpublish' : 'Publish'}
                           onClick={() =>
                             run(
                               () =>
@@ -248,31 +254,32 @@ export const HelpContentManager: React.FC = () => {
                           <span>{category.status === 'PUBLISHED' ? 'Unpublish' : 'Publish'}</span>
                         </button>
                         <button
-                          className="btn-secondary"
-                          style={smallButton}
-                          onClick={() => setEditing({ kind: 'category', value: category })}
+                          className="btn-secondary support-help-button"
+                          aria-label={`Edit ${category.title}`}
+                          title="Edit"
+                          onClick={() => { setBanner(null); setEditing({ kind: 'category', value: category }); }}
                         >
-                          Edit
+                          <Pencil size={15} /><span>Edit</span>
                         </button>
                         {category.status !== 'ARCHIVED' && (
                           <button
-                            className="btn-secondary"
-                            style={smallButton}
+                            className="btn-secondary support-help-button"
                             onClick={() =>
                               run(() => helpApi.archiveCategory(category.id), 'Category and its articles archived.')
                             }
-                            title="Archive this category and everything in it"
+                            aria-label={`Archive ${category.title} and its articles`}
+                            title="Archive category and articles"
                           >
                             <Archive size={12} />
                           </button>
                         )}
                         <button
-                          className="btn-danger"
-                          style={smallButton}
+                          className="btn-danger support-help-button"
                           onClick={() =>
                             confirmDeletion('category', category.id, category.title)
                           }
                           aria-label={`Delete ${category.title}`}
+                          title="Delete category"
                         >
                           <Trash2 size={12} />
                         </button>
@@ -287,38 +294,37 @@ export const HelpContentManager: React.FC = () => {
       </section>
 
       {/* ── Articles ─────────────────────────────────────────────────────── */}
-      <section className="glass-panel" style={{ overflow: 'hidden' }}>
-        <div style={sectionHeader}>
+      <section className="support-help-section">
+        <div className="support-help-header">
           <div>
-            <h3 style={sectionTitle}>Help articles</h3>
-            <p style={sectionSubtitle}>Featured articles appear in the FAQ list at the top of the public page.</p>
+            <h3 className="support-help-title">Help articles</h3>
+            <p className="support-help-subtitle">Featured articles appear in the FAQ list at the top of the public page.</p>
           </div>
           <button
             className="btn-primary"
             disabled={categories.length === 0}
             title={categories.length === 0 ? 'Create a category first' : undefined}
-            onClick={() => setEditing({ kind: 'article', value: null })}
+            onClick={() => { setBanner(null); setEditing({ kind: 'article', value: null }); }}
           >
             <Plus size={14} />
             <span>New article</span>
           </button>
         </div>
 
-        <div style={filterBar}>
-          <div style={{ position: 'relative', flex: '1 1 12rem' }}>
+        <div className="support-help-filters">
+          <div style={{ position: 'relative', flex: '1 1 12rem', minWidth: 0 }}>
             <Search size={14} style={searchIcon} />
             <input
               className="input-control"
-              style={{ paddingLeft: '2rem', fontSize: '0.78rem', width: '100%' }}
+              style={{ paddingLeft: '2rem', fontSize: '0.8125rem', width: '100%' }}
               placeholder="Search questions, answers and keywords…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               aria-label="Search help articles"
             />
           </div>
-          <select
-            className="input-control"
-            style={filterSelect}
+          <Dropdown
+            className="input-control support-help-filter"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
             aria-label="Filter by status"
@@ -329,10 +335,9 @@ export const HelpContentManager: React.FC = () => {
                 {label}
               </option>
             ))}
-          </select>
-          <select
-            className="input-control"
-            style={filterSelect}
+          </Dropdown>
+          <Dropdown
+            className="input-control support-help-filter"
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}
             aria-label="Filter by category"
@@ -343,16 +348,13 @@ export const HelpContentManager: React.FC = () => {
                 {category.title}
               </option>
             ))}
-          </select>
+          </Dropdown>
         </div>
 
         {articlesQuery.isLoading ? (
-          <div style={centered}>
-            <Loader2 size={16} className="spin" />
-            <span>Loading articles…</span>
-          </div>
+          <LoadingState label="Loading help articles" compact />
         ) : articlesQuery.isError ? (
-          <div style={centered}>
+          <div className="support-empty">
             <AlertTriangle size={18} color="var(--color-danger)" />
             <span>Articles could not be loaded.</span>
             <button className="btn-secondary" onClick={() => articlesQuery.refetch()}>
@@ -361,30 +363,31 @@ export const HelpContentManager: React.FC = () => {
             </button>
           </div>
         ) : articles.length === 0 ? (
-          <div style={centered}>
+          <div className="support-empty">
             <FileText size={18} />
             <span>{search || statusFilter || categoryFilter ? 'No articles match these filters.' : 'No articles yet.'}</span>
           </div>
         ) : (
-          <div className="table-responsive">
-            <table className="admin-table">
+          <div className="support-help-table-wrap">
+            <table className="admin-table support-help-table support-article-table" aria-label="Help articles">
+              <colgroup><col className="help-order-column" /><col /><col className="help-category-column" /><col className="help-status-column" /><col className="help-updated-column" /><col className="help-actions-column" /></colgroup>
               <thead>
                 <tr>
-                  <th style={{ width: '4.5rem' }}>Order</th>
+                  <th>Order</th>
                   <th>Question</th>
                   <th>Category</th>
                   <th>Status</th>
                   <th>Updated</th>
-                  <th className="col-actions" style={{ textAlign: 'right' }}>Actions</th>
+                  <th className="support-help-actions-heading">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {articles.map((article: any, index: number) => (
                   <tr key={article.id}>
-                    <td>
-                      <div style={{ display: 'flex', gap: '0.15rem' }}>
+                    <td data-label="Order">
+                      <div className="support-entry-order">
                         <button
-                          style={iconButton}
+                          className="support-help-icon"
                           // Reordering is only meaningful within one category;
                           // the arrows are disabled unless the list is filtered
                           // to a single one, where "up" and "down" have an
@@ -397,7 +400,7 @@ export const HelpContentManager: React.FC = () => {
                           <ArrowUp size={13} />
                         </button>
                         <button
-                          style={iconButton}
+                          className="support-help-icon"
                           disabled={!categoryFilter || index === articles.length - 1}
                           title={!categoryFilter ? 'Filter to one category to reorder' : undefined}
                           onClick={() => move(articles, index, 1, 'article')}
@@ -407,25 +410,26 @@ export const HelpContentManager: React.FC = () => {
                         </button>
                       </div>
                     </td>
-                    <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontWeight: 600 }}>
-                        {article.isFeatured && <Star size={12} fill="currentColor" color="var(--color-warning, #f59e0b)" />}
-                        {article.question}
+                    <td data-label="Question">
+                      <div className="support-entry-title">
+                        {article.isFeatured && <span className="support-entry-featured" title="Featured article" aria-label="Featured article"><Star size={14} fill="currentColor" /></span>}
+                        <span>{article.question}</span>
                       </div>
-                      <div style={mutedSmall}>/{article.slug}</div>
+                      <div className="support-entry-slug" title={`/${article.slug}`}>/{article.slug}</div>
                     </td>
-                    <td style={mutedSmall}>{article.category?.title ?? '-'}</td>
-                    <td>
+                    <td data-label="Category"><span className="support-entry-category">{article.category?.title ?? 'Uncategorised'}</span></td>
+                    <td data-label="Status">
                       <span className={`badge ${HELP_STATUS_BADGE[article.status]}`}>
                         {HELP_STATUS_LABELS[article.status]}
                       </span>
                     </td>
-                    <td style={mutedSmall}>{formatDateTime(article.updatedAt)}</td>
-                    <td>
-                      <div style={actionCell}>
+                    <td data-label="Updated"><time className="support-entry-updated" dateTime={article.updatedAt}>{formatDateTime(article.updatedAt)}</time></td>
+                    <td data-label="Actions">
+                      <div className="support-help-actions">
                         <button
-                          className="btn-secondary"
-                          style={smallButton}
+                          className="btn-secondary support-help-button support-publish-button"
+                          aria-label={`${article.status === 'PUBLISHED' ? 'Unpublish' : 'Publish'} ${article.question}`}
+                          title={article.status === 'PUBLISHED' ? 'Unpublish' : 'Publish'}
                           onClick={() =>
                             run(
                               () =>
@@ -441,30 +445,32 @@ export const HelpContentManager: React.FC = () => {
                           <span>{article.status === 'PUBLISHED' ? 'Unpublish' : 'Publish'}</span>
                         </button>
                         <button
-                          className="btn-secondary"
-                          style={smallButton}
+                          className="btn-secondary support-help-button"
                           onClick={() =>
                             run(
                               () => helpApi.updateArticle(article.id, { isFeatured: !article.isFeatured }),
                               article.isFeatured ? 'Removed from the FAQ list.' : 'Added to the FAQ list.',
                             )
                           }
+                          aria-label={`${article.isFeatured ? 'Unfeature' : 'Feature'} ${article.question}`}
+                          aria-pressed={article.isFeatured}
                           title={article.isFeatured ? 'Remove from FAQ list' : 'Feature in FAQ list'}
                         >
                           <Star size={12} fill={article.isFeatured ? 'currentColor' : 'none'} />
                         </button>
                         <button
-                          className="btn-secondary"
-                          style={smallButton}
-                          onClick={() => setEditing({ kind: 'article', value: article })}
+                          className="btn-secondary support-help-button"
+                          aria-label={`Edit ${article.question}`}
+                          title="Edit"
+                          onClick={() => { setBanner(null); setEditing({ kind: 'article', value: article }); }}
                         >
-                          Edit
+                          <Pencil size={15} /><span>Edit</span>
                         </button>
                         <button
-                          className="btn-danger"
-                          style={smallButton}
+                          className="btn-danger support-help-button"
                           onClick={() => confirmDeletion('article', article.id, article.question)}
                           aria-label={`Delete ${article.question}`}
+                          title="Delete article"
                         >
                           <Trash2 size={12} />
                         </button>
@@ -482,13 +488,14 @@ export const HelpContentManager: React.FC = () => {
         <CategoryModal
           category={editing.value}
           saving={saveCategory.isPending}
+          error={banner?.tone === 'error' ? banner.text : null}
           onClose={() => setEditing(null)}
           onSave={async (payload) => {
-            await run(
+            const saved = await run(
               () => saveCategory.mutateAsync({ id: editing.value?.id, payload }),
               editing.value ? 'Category updated.' : 'Category created.',
             );
-            setEditing(null);
+            if (saved) setEditing(null);
           }}
         />
       )}
@@ -498,13 +505,14 @@ export const HelpContentManager: React.FC = () => {
           article={editing.value}
           categories={categories}
           saving={saveArticle.isPending}
+          error={banner?.tone === 'error' ? banner.text : null}
           onClose={() => setEditing(null)}
           onSave={async (payload) => {
-            await run(
+            const saved = await run(
               () => saveArticle.mutateAsync({ id: editing.value?.id, payload }),
               editing.value ? 'Article updated.' : 'Article created.',
             );
-            setEditing(null);
+            if (saved) setEditing(null);
           }}
         />
       )}
@@ -514,12 +522,40 @@ export const HelpContentManager: React.FC = () => {
 
 // ── Modals ─────────────────────────────────────────────────────────────────
 
+function useEditorKeyboard(onClose: () => void, saving: boolean) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const handlers = useRef({ onClose, saving });
+  useEffect(() => { handlers.current = { onClose, saving }; }, [onClose, saving]);
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    if (!dialog?.contains(document.activeElement)) dialog?.querySelector<HTMLInputElement>('input')?.focus({ preventScroll: true });
+    const keydown = (event: KeyboardEvent) => {
+      if (!dialog || document.querySelector('[role="alertdialog"], [role="listbox"]')) return;
+      if (event.key === 'Escape' && !handlers.current.saving) { event.preventDefault(); handlers.current.onClose(); }
+      if (event.key !== 'Tab') return;
+      const controls = Array.from(dialog.querySelectorAll<HTMLElement>('*')).filter((node) => node.matches('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), [tabindex="0"]') && !node.closest('[hidden]'));
+      const first = controls[0]; const last = controls.at(-1);
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    };
+    document.addEventListener('keydown', keydown);
+    return () => {
+      document.removeEventListener('keydown', keydown);
+      if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
+    };
+  }, []);
+  return dialogRef;
+}
+
 const CategoryModal: React.FC<{
   category: any | null;
   saving: boolean;
+  error: string | null;
   onClose: () => void;
   onSave: (payload: HelpCategoryPayload) => void;
-}> = ({ category, saving, onClose, onSave }) => {
+}> = ({ category, saving, error, onClose, onSave }) => {
+  const dialogRef = useEditorKeyboard(onClose, saving);
   const [form, setForm] = useState({
     title: category?.title ?? '',
     slug: category?.slug ?? '',
@@ -528,46 +564,46 @@ const CategoryModal: React.FC<{
   });
 
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={category ? 'Edit category' : 'New category'}>
-      <div className="modal-content" style={{ padding: '1.5rem' }}>
-        <h3 style={modalTitle}>{category ? 'Edit category' : 'New category'}</h3>
+    <div className="modal-backdrop support-help-dialog">
+      <div ref={dialogRef} className="modal-content dialog-form admin-dialog-layout" role="dialog" aria-modal="true" aria-labelledby="help-category-title">
+        <div className="dialog-header"><h3 id="help-category-title">{category ? 'Edit category' : 'New category'}</h3><button type="button" className="dialog-close" aria-label="Close category editor" onClick={onClose} disabled={saving}>×</button></div>
+        <div className="admin-dialog-body">
+          {error && <p className="support-editor-error" role="alert">{error}</p>}
+          <Field label="Title">
+            <input
+              className="input-control"
+              value={form.title}
+              onChange={(e) => setForm({ ...form, title: e.target.value })}
+            />
+          </Field>
 
-        <Field label="Title">
-          <input
-            className="input-control"
-            value={form.title}
-            onChange={(e) => setForm({ ...form, title: e.target.value })}
-            autoFocus
-          />
-        </Field>
+          <Field label="URL slug" hint={category ? 'Changing this breaks existing links to the category.' : 'Left blank, one is generated from the title.'}>
+            <input
+              className="input-control"
+              value={form.slug}
+              placeholder="account-login"
+              onChange={(e) => setForm({ ...form, slug: e.target.value })}
+            />
+          </Field>
 
-        <Field label="URL slug" hint={category ? 'Changing this breaks existing links to the category.' : 'Left blank, one is generated from the title.'}>
-          <input
-            className="input-control"
-            value={form.slug}
-            placeholder="account-login"
-            onChange={(e) => setForm({ ...form, slug: e.target.value })}
-          />
-        </Field>
+          <Field label="Description">
+            <textarea
+              className="input-control"
+              rows={2}
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+            />
+          </Field>
 
-        <Field label="Description">
-          <textarea
-            className="input-control"
-            rows={2}
-            value={form.description}
-            onChange={(e) => setForm({ ...form, description: e.target.value })}
-          />
-        </Field>
-
-        <Field label="Icon" hint="One of: KeyRound, UserCog, MessageCircle, Users, FileText, CalendarDays, Bell, ShieldCheck, Wrench.">
-          <input
-            className="input-control"
-            value={form.icon}
-            placeholder="ShieldCheck"
-            onChange={(e) => setForm({ ...form, icon: e.target.value })}
-          />
-        </Field>
-
+          <Field label="Icon" hint="One of: KeyRound, UserCog, MessageCircle, Users, FileText, CalendarDays, Bell, ShieldCheck, Wrench.">
+            <input
+              className="input-control"
+              value={form.icon}
+              placeholder="ShieldCheck"
+              onChange={(e) => setForm({ ...form, icon: e.target.value })}
+            />
+          </Field>
+        </div>
         <div style={modalActions} className="modal-actions">
           <button className="btn-secondary" onClick={onClose} disabled={saving}>
             Cancel
@@ -597,9 +633,11 @@ const ArticleModal: React.FC<{
   article: any | null;
   categories: any[];
   saving: boolean;
+  error: string | null;
   onClose: () => void;
   onSave: (payload: HelpArticlePayload) => void;
-}> = ({ article, categories, saving, onClose, onSave }) => {
+}> = ({ article, categories, saving, error, onClose, onSave }) => {
+  const dialogRef = useEditorKeyboard(onClose, saving);
   const [form, setForm] = useState({
     categoryId: article?.categoryId ?? categories[0]?.id ?? '',
     question: article?.question ?? '',
@@ -611,108 +649,115 @@ const ArticleModal: React.FC<{
   });
   const [preview, setPreview] = useState<{ html: string; wasModified: boolean } | null>(null);
   const [previewing, setPreviewing] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
 
   const runPreview = async () => {
     setPreviewing(true);
+    setPreviewError(null);
     try {
       const result = await helpApi.previewArticle(form.body);
       setPreview({ html: result.html, wasModified: result.wasModified });
-    } catch {
+    } catch (error: any) {
       setPreview(null);
+      setPreviewError(error?.message || 'The preview could not be loaded. Try again.');
     } finally {
       setPreviewing(false);
     }
   };
 
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={article ? 'Edit article' : 'New article'}>
-      <div className="modal-content" style={{ padding: '1.5rem', maxWidth: '640px' }}>
-        <h3 style={modalTitle}>{article ? 'Edit article' : 'New article'}</h3>
+    <div className="modal-backdrop support-help-dialog">
+      <div ref={dialogRef} className="modal-content dialog-form admin-dialog-layout" role="dialog" aria-modal="true" aria-labelledby="help-article-title" >
+        <div className="dialog-header"><h3 id="help-article-title">{article ? 'Edit article' : 'New article'}</h3><button type="button" className="dialog-close" aria-label="Close article editor" onClick={onClose} disabled={saving}>×</button></div>
+        <div className="admin-dialog-body">
+          {error && <p className="support-editor-error" role="alert">{error}</p>}
+          <Field label="Category" htmlFor="help-article-category">
+            <Dropdown
+              id="help-article-category"
+              className="input-control"
+              aria-label="Article category"
+              value={form.categoryId}
+              onChange={(e) => setForm({ ...form, categoryId: e.target.value })}
+            >
+              {categories.map((category: any) => (
+                <option key={category.id} value={category.id}>
+                  {category.title}
+                </option>
+              ))}
+            </Dropdown>
+          </Field>
 
-        <Field label="Category">
-          <select
-            className="input-control"
-            value={form.categoryId}
-            onChange={(e) => setForm({ ...form, categoryId: e.target.value })}
+          <Field label="Question">
+            <input
+              className="input-control"
+              value={form.question}
+              placeholder="How do I reset my password?"
+              onChange={(e) => setForm({ ...form, question: e.target.value })}
+            />
+          </Field>
+
+          <Field label="URL slug" hint={article ? 'Changing this breaks existing links to the article.' : 'Left blank, one is generated from the question.'}>
+            <input
+              className="input-control"
+              value={form.slug}
+              onChange={(e) => setForm({ ...form, slug: e.target.value })}
+            />
+          </Field>
+
+          <Field label="Summary" hint="Shown in search results in place of an extract.">
+            <input
+              className="input-control"
+              value={form.summary}
+              onChange={(e) => setForm({ ...form, summary: e.target.value })}
+            />
+          </Field>
+
+          <Field label="Answer" hint="Basic HTML is allowed - p, ul, ol, li, strong, em, a, h2-h4. Anything else is stripped on save.">
+            <textarea
+              className="input-control"
+              rows={9}
+              style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}
+              value={form.body}
+              onChange={(e) => setForm({ ...form, body: e.target.value })}
+            />
+          </Field>
+
+          <Field
+            label="Search keywords"
+            hint="Comma-separated. Words users would type that the answer itself does not contain."
           >
-            {categories.map((category: any) => (
-              <option key={category.id} value={category.id}>
-                {category.title}
-              </option>
-            ))}
-          </select>
-        </Field>
+            <input
+              className="input-control"
+              value={form.keywords}
+              placeholder="cant login, locked out, password"
+              onChange={(e) => setForm({ ...form, keywords: e.target.value })}
+            />
+          </Field>
 
-        <Field label="Question">
-          <input
-            className="input-control"
-            value={form.question}
-            placeholder="How do I reset my password?"
-            onChange={(e) => setForm({ ...form, question: e.target.value })}
-          />
-        </Field>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', margin: '0.5rem 0' }}>
+            <input
+              type="checkbox"
+              checked={form.isFeatured}
+              onChange={(e) => setForm({ ...form, isFeatured: e.target.checked })}
+            />
+            Feature in the FAQ list at the top of the public page
+          </label>
 
-        <Field label="URL slug" hint={article ? 'Changing this breaks existing links to the article.' : 'Left blank, one is generated from the question.'}>
-          <input
-            className="input-control"
-            value={form.slug}
-            onChange={(e) => setForm({ ...form, slug: e.target.value })}
-          />
-        </Field>
-
-        <Field label="Summary" hint="Shown in search results in place of an extract.">
-          <input
-            className="input-control"
-            value={form.summary}
-            onChange={(e) => setForm({ ...form, summary: e.target.value })}
-          />
-        </Field>
-
-        <Field label="Answer" hint="Basic HTML is allowed - p, ul, ol, li, strong, em, a, h2-h4. Anything else is stripped on save.">
-          <textarea
-            className="input-control"
-            rows={9}
-            style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '0.78rem' }}
-            value={form.body}
-            onChange={(e) => setForm({ ...form, body: e.target.value })}
-          />
-        </Field>
-
-        <Field
-          label="Search keywords"
-          hint="Comma-separated. Words users would type that the answer itself does not contain."
-        >
-          <input
-            className="input-control"
-            value={form.keywords}
-            placeholder="cant login, locked out, password"
-            onChange={(e) => setForm({ ...form, keywords: e.target.value })}
-          />
-        </Field>
-
-        <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', margin: '0.5rem 0' }}>
-          <input
-            type="checkbox"
-            checked={form.isFeatured}
-            onChange={(e) => setForm({ ...form, isFeatured: e.target.checked })}
-          />
-          Feature in the FAQ list at the top of the public page
-        </label>
-
-        {preview && (
-          <div style={{ ...previewBox, marginBottom: '0.75rem' }}>
-            <div style={previewHeader}>Preview - exactly what will be published</div>
-            {preview.wasModified && (
-              <div style={{ ...bannerStyle('warn'), marginBottom: '0.5rem' }}>
-                <AlertTriangle size={13} />
-                <span>Some markup was removed. The version below is what will be saved.</span>
-              </div>
-            )}
-            {/* Server-sanitized output rendered back - not the raw textarea. */}
-            <div style={previewBody} dangerouslySetInnerHTML={{ __html: preview.html }} />
-          </div>
-        )}
-
+          {previewError && <p className="support-editor-error" role="alert">{previewError}</p>}
+          {preview && (
+            <div style={{ ...previewBox, marginBottom: '0.75rem' }}>
+              <div style={previewHeader}>Preview - exactly what will be published</div>
+              {preview.wasModified && (
+                <div style={{ ...bannerStyle('warn'), marginBottom: '0.5rem' }}>
+                  <AlertTriangle size={13} />
+                  <span>Some markup was removed. The version below is what will be saved.</span>
+                </div>
+              )}
+              {/* Server-sanitized output rendered back - not the raw textarea. */}
+              <div style={previewBody} dangerouslySetInnerHTML={{ __html: preview.html }} />
+            </div>
+          )}
+        </div>
         <div style={modalActions} className="modal-actions">
           <button className="btn-secondary" onClick={runPreview} disabled={!form.body.trim() || previewing}>
             {previewing ? <Loader2 size={13} className="spin" /> : <Eye size={13} />}
@@ -749,43 +794,19 @@ const ArticleModal: React.FC<{
   );
 };
 
-const Field: React.FC<{ label: string; hint?: string; children: React.ReactNode }> = ({ label, hint, children }) => (
-  <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginBottom: '0.75rem' }}>
-    <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-main)' }}>{label}</span>
-    {children}
-    {hint && <span style={{ fontSize: '0.7rem', color: 'var(--color-text-light)' }}>{hint}</span>}
-  </label>
-);
+const Field: React.FC<{ label: string; hint?: string; htmlFor?: string; children: React.ReactNode }> = ({ label, hint, htmlFor, children }) => {
+  const Wrapper = htmlFor ? 'div' : 'label';
+  const labelStyle = { fontSize: '0.8125rem', fontWeight: 600, color: 'var(--color-text-main)' };
+  return (
+    <Wrapper style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginBottom: '0.75rem' }}>
+      {htmlFor ? <label htmlFor={htmlFor} style={labelStyle}>{label}</label> : <span style={labelStyle}>{label}</span>}
+      {children}
+      {hint && <span style={{ fontSize: '0.75rem', color: 'var(--color-text-light)' }}>{hint}</span>}
+    </Wrapper>
+  );
+};
 
 // ── Styles ─────────────────────────────────────────────────────────────────
-
-const sectionHeader: React.CSSProperties = {
-  display: 'flex',
-  flexWrap: 'wrap',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  gap: '0.75rem',
-  padding: '0.85rem 1rem',
-  borderBottom: '1px solid var(--color-border)',
-  background: 'var(--color-bg-alt)',
-};
-
-const sectionTitle: React.CSSProperties = { margin: 0, fontSize: '0.92rem', fontWeight: 700 };
-const sectionSubtitle: React.CSSProperties = {
-  margin: '0.15rem 0 0',
-  fontSize: '0.75rem',
-  color: 'var(--color-text-light)',
-};
-
-const filterBar: React.CSSProperties = {
-  display: 'flex',
-  flexWrap: 'wrap',
-  gap: '0.4rem',
-  padding: '0.6rem 1rem',
-  borderBottom: '1px solid var(--color-border)',
-};
-
-const filterSelect: React.CSSProperties = { padding: '0.3rem 0.45rem', fontSize: '0.74rem', flex: '0 1 10rem' };
 
 const searchIcon: React.CSSProperties = {
   position: 'absolute',
@@ -796,65 +817,24 @@ const searchIcon: React.CSSProperties = {
   pointerEvents: 'none',
 };
 
-const centered: React.CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'center',
-  gap: '0.5rem',
-  padding: '2.25rem 1.25rem',
-  textAlign: 'center',
-  color: 'var(--color-text-dim)',
-  fontSize: '0.8rem',
-};
-
-const mutedSmall: React.CSSProperties = { fontSize: '0.72rem', color: 'var(--color-text-light)' };
-
-const actionCell: React.CSSProperties = {
-  display: 'flex',
-  gap: '0.25rem',
-  justifyContent: 'flex-end',
-  flexWrap: 'wrap',
-};
-
-const smallButton: React.CSSProperties = { padding: '0.25rem 0.5rem', fontSize: '0.7rem' };
-
-const iconButton: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  width: '1.5rem',
-  height: '1.5rem',
-  border: '1px solid var(--color-border)',
-  borderRadius: 'var(--radius-sm)',
-  background: 'var(--color-bg-white)',
-  color: 'var(--color-text-main)',
-  cursor: 'pointer',
-};
-
-const modalTitle: React.CSSProperties = { margin: '0 0 1rem', fontSize: '1rem', fontWeight: 700 };
 
 const modalActions: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   flexWrap: 'wrap',
   gap: '0.5rem',
-  marginTop: '1rem',
-  paddingTop: '0.85rem',
-  borderTop: '1px solid var(--color-border)',
 };
 
 const previewBox: React.CSSProperties = {
   padding: '0.75rem 0.9rem',
   background: 'var(--color-bg-soft)',
-  border: '1px dashed var(--color-border)',
+  border: '1px solid var(--color-border)',
   borderRadius: 'var(--radius-sm)',
 };
 
 const previewHeader: React.CSSProperties = {
-  fontSize: '0.68rem',
-  fontWeight: 700,
-  textTransform: 'uppercase',
-  letterSpacing: '0.05em',
+  fontSize: '0.75rem',
+  fontWeight: 600,
   color: 'var(--color-text-light)',
   marginBottom: '0.5rem',
 };

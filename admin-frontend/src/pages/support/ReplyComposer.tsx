@@ -1,3 +1,4 @@
+import { Dropdown } from '../../components/Dropdown';
 import React, { useEffect, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { AlertTriangle, Bold, CheckCircle, Eye, Italic, List, Loader2, Lock, Send, X } from '../../components/icons';
@@ -32,6 +33,7 @@ export const ReplyComposer: React.FC<{
   onSent: () => void;
 }> = ({ ticketId, currentStatus, onSent }) => {
   const editorRef = useRef<HTMLDivElement>(null);
+  const statusControlId = React.useId();
   const [expanded, setExpanded] = useState(false);
   const [isEmpty, setIsEmpty] = useState(true);
   const [status, setStatus] = useState(currentStatus);
@@ -74,7 +76,7 @@ export const ReplyComposer: React.FC<{
       // the user has actually received it, so the two outcomes look different.
       setNotice(
         result?.emailQueued
-          ? { tone: 'ok', text: 'Reply sent to the user.' }
+          ? { tone: 'ok', text: 'Reply saved and email queued.' }
           : { tone: 'warn', text: 'Reply saved, but the email could not be queued. Use Resend on the reply below.' },
       );
       onSent();
@@ -109,7 +111,7 @@ export const ReplyComposer: React.FC<{
   const statusChanged = status !== currentStatus;
 
   return (
-    <div style={wrap}>
+    <div className="support-reply">
       {(error || notice) && (
         <div style={error ? bannerError : notice!.tone === 'ok' ? bannerOk : bannerWarn} role="status">
           {error ? <AlertTriangle size={14} /> : notice!.tone === 'ok' ? <CheckCircle size={14} /> : <AlertTriangle size={14} />}
@@ -120,7 +122,7 @@ export const ReplyComposer: React.FC<{
               setError(null);
               setNotice(null);
             }}
-            style={iconOnly}
+            className="support-icon-button"
             aria-label="Dismiss"
           >
             <X size={13} />
@@ -129,22 +131,22 @@ export const ReplyComposer: React.FC<{
       )}
 
       {!expanded ? (
-        <button type="button" style={collapsedBar} onClick={() => setExpanded(true)}>
+        <button type="button" className="support-reply-open" onClick={() => setExpanded(true)}>
           <Send size={14} style={{ color: 'var(--color-text-dim)' }} />
           <span>Write a reply to the user</span>
         </button>
       ) : (
-        <div style={panel}>
-          <div style={toolbar}>
-            <button type="button" style={toolButton} onClick={() => format('bold')} title="Bold" aria-label="Bold">
+        <fieldset className="support-reply-panel" disabled={replyMutation.isPending} aria-busy={replyMutation.isPending}>
+          <div className="support-reply-toolbar">
+            <button type="button" className="support-format-button" onClick={() => format('bold')} title="Bold" aria-label="Bold">
               <Bold size={13} />
             </button>
-            <button type="button" style={toolButton} onClick={() => format('italic')} title="Italic" aria-label="Italic">
+            <button type="button" className="support-format-button" onClick={() => format('italic')} title="Italic" aria-label="Italic">
               <Italic size={13} />
             </button>
             <button
               type="button"
-              style={toolButton}
+              className="support-format-button"
               onClick={() => format('insertUnorderedList')}
               title="Bulleted list"
               aria-label="Bulleted list"
@@ -156,36 +158,37 @@ export const ReplyComposer: React.FC<{
 
             <button
               type="button"
-              style={linkButton}
+              className="support-reply-link"
               disabled={isEmpty || previewMutation.isPending}
               onClick={() => previewMutation.mutate()}
             >
               {previewMutation.isPending ? <Loader2 size={12} className="spin" /> : <Eye size={12} />}
               <span>Preview</span>
             </button>
-            <button type="button" style={iconOnly} onClick={collapse} aria-label="Discard reply">
+            <button type="button" className="support-icon-button" onClick={collapse} aria-label="Discard reply">
               <X size={14} />
             </button>
           </div>
 
           <div
             ref={editorRef}
-            contentEditable
+
+            contentEditable={!replyMutation.isPending}
             role="textbox"
             aria-multiline="true"
             aria-label="Reply to the user"
             data-placeholder="Write your reply. This will be emailed to the user."
-            style={editor}
+            className="admin-rich-text-input support-reply-editor"
             onInput={syncEmptiness}
             onBlur={syncEmptiness}
             suppressContentEditableWarning
           />
 
           {preview && (
-            <div style={previewBox}>
-              <div style={previewHeader}>
+            <div className="support-preview">
+              <div className="support-preview-header">
                 <span>What the user will see</span>
-                <button type="button" onClick={() => setPreview(null)} style={iconOnly} aria-label="Close preview">
+                <button type="button" onClick={() => setPreview(null)} className="support-icon-button" aria-label="Close preview">
                   <X size={12} />
                 </button>
               </div>
@@ -196,13 +199,13 @@ export const ReplyComposer: React.FC<{
                 </div>
               )}
               {/* Server-sanitized output shown back, not raw editor content. */}
-              <div style={previewBody} dangerouslySetInnerHTML={{ __html: preview.html }} />
+              <div className="support-message-body" dangerouslySetInnerHTML={{ __html: preview.html }} />
             </div>
           )}
 
           {showNote ? (
             <div>
-              <label style={noteLabel} htmlFor="internal-note">
+              <label className="support-note-label" htmlFor="internal-note">
                 <Lock size={11} />
                 Internal note, not sent to the user
               </label>
@@ -210,25 +213,26 @@ export const ReplyComposer: React.FC<{
                 id="internal-note"
                 className="input-control"
                 rows={2}
-                style={{ width: '100%', fontSize: '0.78rem', marginTop: '0.25rem' }}
+                style={{ width: '100%', marginTop: '0.25rem' }}
                 placeholder="Context for the team."
                 value={internalNote}
                 onChange={(e) => setInternalNote(e.target.value)}
               />
             </div>
           ) : (
-            <button type="button" style={linkButton} onClick={() => setShowNote(true)}>
+            <button type="button" className="support-reply-link" onClick={() => setShowNote(true)}>
               <Lock size={11} />
               Add an internal note
             </button>
           )}
 
-          <div style={actions}>
-            <label style={statusControl}>
-              Then set to
-              <select
+          <div className="support-reply-actions">
+            <div className="support-reply-status">
+              <label htmlFor={statusControlId}>Then set to</label>
+              <Dropdown
+                id={statusControlId}
                 className="input-control"
-                style={{ padding: '0.25rem 0.4rem', fontSize: '0.75rem' }}
+                aria-label="Ticket status after reply"
                 value={status}
                 onChange={(e) => setStatus(e.target.value)}
               >
@@ -237,23 +241,22 @@ export const ReplyComposer: React.FC<{
                     {statusLabel(value)}
                   </option>
                 ))}
-              </select>
-            </label>
+              </Dropdown>
+            </div>
 
             <div style={{ flex: 1, minWidth: '0.5rem' }} />
 
             {confirming ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                <span style={{ fontSize: '0.73rem', color: 'var(--color-text-light)' }}>
+              <div className="support-reply-confirm" role="group" aria-label="Confirm email reply">
+                <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-light)' }}>
                   Email this reply{statusChanged ? ` and set to ${statusLabel(status)}` : ''}?
                 </span>
-                <button type="button" className="btn-secondary" style={smallBtn} onClick={() => setConfirming(false)}>
+                <button type="button" className="btn-secondary support-small-button" onClick={() => setConfirming(false)}>
                   Cancel
                 </button>
                 <button
                   type="button"
-                  className="btn-primary"
-                  style={smallBtn}
+                  className="btn-primary support-small-button"
                   disabled={replyMutation.isPending}
                   onClick={() => replyMutation.mutate()}
                 >
@@ -264,8 +267,7 @@ export const ReplyComposer: React.FC<{
             ) : (
               <button
                 type="button"
-                className="btn-primary"
-                style={smallBtn}
+                className="btn-primary support-small-button"
                 disabled={isEmpty}
                 // Confirmed rather than sent outright: this is an email to a
                 // real person and cannot be recalled once it leaves.
@@ -280,7 +282,7 @@ export const ReplyComposer: React.FC<{
               </button>
             )}
           </div>
-        </div>
+        </fieldset>
       )}
     </div>
   );
@@ -288,123 +290,12 @@ export const ReplyComposer: React.FC<{
 
 // ── Styles ─────────────────────────────────────────────────────────────────
 
-const wrap: React.CSSProperties = {
-  borderTop: '1px solid var(--color-border)',
-  background: 'var(--color-bg-alt)',
-  padding: '0.7rem 1rem',
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '0.5rem',
-  flexShrink: 0,
-};
-
-const collapsedBar: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: '0.5rem',
-  width: '100%',
-  padding: '0.6rem 0.8rem',
-  fontFamily: 'inherit',
-  fontSize: '0.82rem',
-  color: 'var(--color-text-dim)',
-  textAlign: 'left',
-  background: 'var(--color-bg-white)',
-  border: '1px solid var(--color-border)',
-  borderRadius: 'var(--radius-sm)',
-  cursor: 'text',
-};
-
-const panel: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: '0.5rem' };
-
-const toolbar: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: '0.25rem' };
-
-const toolButton: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  width: '1.6rem',
-  height: '1.6rem',
-  border: '1px solid var(--color-border)',
-  borderRadius: 'var(--radius-sm)',
-  background: 'var(--color-bg-white)',
-  color: 'var(--color-text-main)',
-  cursor: 'pointer',
-};
-
-const editor: React.CSSProperties = {
-  minHeight: '4.5rem',
-  maxHeight: '11rem',
-  overflowY: 'auto',
-  padding: '0.6rem 0.75rem',
-  fontSize: '0.83rem',
-  lineHeight: 1.6,
-  color: 'var(--color-text-main)',
-  background: 'var(--color-bg-white)',
-  border: '1px solid var(--color-border)',
-  borderRadius: 'var(--radius-sm)',
-  outline: 'none',
-};
-
-const previewBox: React.CSSProperties = {
-  padding: '0.7rem 0.8rem',
-  background: 'var(--color-bg-white)',
-  border: '1px dashed var(--color-border)',
-  borderRadius: 'var(--radius-sm)',
-};
-
-const previewHeader: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  fontSize: '0.65rem',
-  fontWeight: 700,
-  textTransform: 'uppercase',
-  letterSpacing: '0.05em',
-  color: 'var(--color-text-light)',
-  marginBottom: '0.4rem',
-};
-
-const previewBody: React.CSSProperties = { fontSize: '0.83rem', lineHeight: 1.6, color: 'var(--color-text-main)' };
-
-const noteLabel: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: '0.3rem',
-  fontSize: '0.68rem',
-  fontWeight: 600,
-  color: 'var(--color-warning, #b45309)',
-};
-
-const linkButton: React.CSSProperties = {
-  alignSelf: 'flex-start',
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: '0.3rem',
-  padding: 0,
-  border: 'none',
-  background: 'none',
-  fontFamily: 'inherit',
-  fontSize: '0.72rem',
-  color: 'var(--color-text-light)',
-  cursor: 'pointer',
-};
-
-const actions: React.CSSProperties = { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.5rem', width: '100%' };
-
-const statusControl: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: '0.3rem',
-  fontSize: '0.72rem',
-  color: 'var(--color-text-light)',
-};
-
 const bannerBase: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   gap: '0.4rem',
   padding: '0.45rem 0.6rem',
-  fontSize: '0.75rem',
+  fontSize: '0.8125rem',
   borderRadius: 'var(--radius-sm)',
 };
 
@@ -424,20 +315,4 @@ const bannerWarn: React.CSSProperties = {
   ...bannerBase,
   background: 'var(--color-warning-tint, rgba(245,158,11,0.08))',
   color: 'var(--color-warning, #b45309)',
-};
-
-const iconOnly: React.CSSProperties = {
-  display: 'inline-flex',
-  border: 'none',
-  background: 'none',
-  color: 'inherit',
-  cursor: 'pointer',
-  padding: 0,
-};
-
-const smallBtn: React.CSSProperties = {
-  padding: '0.35rem 0.75rem',
-  fontSize: '0.76rem',
-  minHeight: '34px',
-  justifyContent: 'center',
 };
