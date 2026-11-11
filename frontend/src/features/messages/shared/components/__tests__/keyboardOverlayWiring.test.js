@@ -83,9 +83,12 @@ describe('Messages chat with an overlaying keyboard', () => {
 
   it('keeps the composer\'s navigation-bar padding while panning instead of dropping it twice', () => {
     const input = squash(read('src/features/messages/shared/components/ChatInputAreaStyles.module.css'));
-    expect(input).toContain(':global(html[data-keyboard-open]) .msgChatInputWrap { padding-bottom: 0.6rem; }');
+    // One variable carries the navigation-bar room; the padding and the
+    // floating container's bottom edge are both computed from it.
+    expect(input).toContain('padding: 0.375rem 0.875rem calc(0.375rem + var(--composer-safe));');
+    expect(input).toContain(':global(html[data-keyboard-open]) .msgChatInputWrap { --composer-safe: 0px; }');
     expect(input).toContain(
-      ':global(html[data-keyboard-open] .chat-pans-keyboard) .msgChatInputWrap { padding-bottom: calc(0.6rem + env(safe-area-inset-bottom, 0px)); }',
+      ':global(html[data-keyboard-open] .chat-pans-keyboard) .msgChatInputWrap { --composer-safe: env(safe-area-inset-bottom, 0px); }',
     );
   });
 

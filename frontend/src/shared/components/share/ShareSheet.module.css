@@ -219,15 +219,20 @@
 }
 
 .personName {
+  /* One line, always: a long name ends in "…" instead of wrapping, so every
+     tile is the same height and picking someone (which makes the name bolder,
+     and so wider) can never push it onto a second line and shift the grid. */
+  display: block;
+  width: 100%;
   max-width: 100%;
+  min-width: 0;
   font-size: 0.78rem;
   line-height: 1.25;
+  height: 1.25em;
   text-align: center;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  white-space: nowrap;
   overflow: hidden;
-  word-break: break-word;
+  text-overflow: ellipsis;
 }
 
 .picked .personName {

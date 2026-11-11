@@ -5,6 +5,7 @@ import LazyEmojiPicker, { preloadEmojiPicker } from '@shared/components/ui/LazyE
 import styles from './ChatInputAreaStyles.module.css';
 import { useVoiceRecorder } from '@features/messages/hooks/useVoiceRecorder';
 import { showToast } from '@shared/utils/toast';
+import { refuseOffline } from '@shared/lib/offlineGuard';
 import { ALLOWED_MEDIA_ACCEPT, validateUploadFile } from '@shared/constants/mediaLimits';
 import ReplyPreviewContent from './ReplyPreviewContent';
 import LiveWaveform from './LiveWaveform';
@@ -194,9 +195,25 @@ export default function ChatInputArea({
     showToast: (msg) => showToast(msg, 'error'),
   });
 
+  /**
+   * Offline, the composer's actions say so instead of starting something that
+   * cannot reach the server: the photo picker, a recording, a send. The typed
+   * text and a stopped recording are kept, ready for when the network is back.
+   */
   const handleAttachClick = () => {
     if (disabled) return;
+    if (refuseOffline()) return;
     fileInputRef.current?.click();
+  };
+
+  const handleStartRecording = () => {
+    if (refuseOffline()) return;
+    startRecording();
+  };
+
+  const handleSendRecording = () => {
+    if (refuseOffline()) return;
+    sendRecording();
   };
 
   const handleFileChange = async (e) => {
@@ -250,6 +267,7 @@ export default function ChatInputArea({
     // Belt to the overlay's braces: the overlay replaces the composer, but a
     // queued draft or an offline replay can still reach this handler.
     if (conversation?.targetUserUnavailable || conversation?.targetUser?.isDeleted) return;
+    if (refuseOffline()) return;
 
     if (stopTypingNow) stopTypingNow();
 
@@ -459,11 +477,11 @@ export default function ChatInputArea({
                 <button 
                   type="button" 
                   className={styles.msgRecordingSendBtn} 
-                  onClick={sendRecording}
+                  onClick={handleSendRecording}
                   disabled={isUploadingVoice}
                   title="Send Voice Message"
                 >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
                   </svg>
                 </button>
@@ -598,7 +616,7 @@ export default function ChatInputArea({
                   onMouseDown={(e) => e.preventDefault()}
                   title="Send"
                 >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
                   </svg>
                 </button>
@@ -606,10 +624,10 @@ export default function ChatInputArea({
                 <button 
                   type="button"
                   className={styles.msgMicBtn} 
-                  onClick={startRecording}
+                  onClick={handleStartRecording}
                   title="Record Voice"
                 >
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
                     <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
                     <line x1="12" y1="19" x2="12" y2="22" />

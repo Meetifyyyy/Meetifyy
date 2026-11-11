@@ -2,12 +2,25 @@
   position: relative;
   display: flex;
   align-items: flex-end;
-  gap: 0.5rem;
-  padding: 0.6rem 1rem;
-  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
-  border-top: 1px solid var(--color-border);
+  gap: 0.375rem;
+  /*
+   * Floating composer: this box stays a transparent shell on the chat's own
+   * background (the keyboard lift and the navigation-bar padding are tuned on
+   * it), and the visible container is its ::before, inset from the screen
+   * edges. --composer-safe is the navigation-bar room under the container;
+   * every state below changes only it, so the padding and the container's
+   * bottom edge can never disagree.
+   */
+  --composer-safe: 0px;
+  --composer-inset-x: 0.625rem;
+  --composer-inset-y: 0.375rem;
+  /* Vertical padding equals the container's inset, so the mic / send button
+     beside it is exactly the container's height. */
+  padding: 0.375rem 0.875rem calc(0.375rem + var(--composer-safe));
+  border-radius: 0;
+  border-top: none;
   flex-shrink: 0;
-  min-height: 60px;
+  min-height: 58px;
   box-sizing: border-box;
   /*
    * Room for the reply bar, which sits above the composer (see .msgReplyPreview).
@@ -19,6 +32,44 @@
    * there is no bar.
    */
   margin-top: var(--reply-bar-h, 0px);
+}
+
+/* The floating container itself. Behind the controls, which are lifted above
+   it below; a light grey on light, a dark grey on dark, both distinct from
+   the chat background, with a hairline border. */
+.msgChatInputWrap::before {
+  content: '';
+  position: absolute;
+  top: var(--composer-inset-y);
+  left: var(--composer-inset-x);
+  /* Ends before the mic / send button, which sits outside it on the right:
+     the wrap's right padding, the button, and the gap between them. */
+  right: calc(0.875rem + 46px + 0.375rem);
+  bottom: calc(var(--composer-inset-y) + var(--composer-safe));
+  border-radius: 26px;
+  background: var(--composer-bg, #f2f2f4);
+  border: 1px solid var(--composer-border, rgba(0, 0, 0, 0.06));
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+  pointer-events: none;
+  z-index: 0;
+}
+
+:global([data-theme='dark']) .msgChatInputWrap {
+  --composer-bg: #1d1d20;
+  --composer-border: rgba(255, 255, 255, 0.07);
+}
+
+.msgChatInputWrap:focus-within {
+  --composer-border: rgba(0, 0, 0, 0.12);
+}
+
+:global([data-theme='dark']) .msgChatInputWrap:focus-within {
+  --composer-border: rgba(255, 255, 255, 0.14);
+}
+
+.msgChatInputWrap > :not(.msgReplyPreview):not(.msgBlockedInputOverlay) {
+  position: relative;
+  z-index: 1;
 }
 
 /*
@@ -42,8 +93,8 @@
 .msgReplyPreview {
   position: absolute;
   bottom: 100%;
-  left: 1rem;
-  right: 1rem;
+  left: calc(var(--composer-inset-x) + 0.75rem);
+  right: calc(var(--composer-inset-x) + 0.75rem);
   background: var(--color-bg-card, #ffffff);
   border: 1px solid var(--color-border, #e4e4e7);
   border-bottom: none;
@@ -111,12 +162,14 @@
   gap: 2px;
   flex-shrink: 0;
   align-self: flex-end;
-  height: 42px;
+  height: 36px;
+  /* Centred in the 46px container. */
+  margin: 5px 0;
 }
 
 .msgEmojiBtn {
   width: 34px;
-  height: 42px;
+  height: 36px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -135,7 +188,7 @@
 
 .msgAttachBtn {
   width: 34px;
-  height: 42px;
+  height: 36px;
   max-width: 34px;
   border-radius: 50%;
   display: flex;
@@ -168,13 +221,37 @@
    on desktop the conversation list is always beside the thread, so there is
    nothing to go back to however narrow the pane gets. */
 @container chatpane (max-width: 768px) {
+  /* The emoji button is not shown here, so the image button is the only one
+     on the left: inset a little from the container's edge, where the emoji
+     slot would have given it room. */
+  .leftActions {
+    gap: 0;
+    margin-left: 0.25rem;
+    transition: margin 0.3s cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  /* Typing hides the image button. It shrinks to nothing and fades on the same
+     curve the text field widens on, so the text glides left with it rather
+     than jumping. Nothing negative: the composer's own gap stays as the text's
+     left margin, so where the text lands is where it would be laid out. */
+  .leftActions:has(> .attachBtnHidden) {
+    margin-left: 0;
+  }
+
+  .msgAttachBtn {
+    transition:
+      max-width 0.3s cubic-bezier(0.2, 0, 0, 1),
+      width 0.3s cubic-bezier(0.2, 0, 0, 1),
+      opacity 0.2s ease,
+      transform 0.3s cubic-bezier(0.2, 0, 0, 1),
+      color 0.15s ease;
+  }
+
   .attachBtnHidden {
     max-width: 0 !important;
     width: 0 !important;
     opacity: 0 !important;
-    transform: scale(0.8) !important;
-    margin-right: -8px !important;
-    margin-left: 0 !important;
+    transform: scale(0.6) !important;
     padding: 0 !important;
     pointer-events: none !important;
     overflow: hidden !important;
@@ -195,36 +272,31 @@
   align-items: center;
   flex: 1;
   min-width: 0;
-  background: var(--color-bg-subtle, #f4f4f5);
-  border: 1px solid var(--color-border-light, #e4e4e7);
+  /* Flat: the floating container behind it is the surface now. */
+  background: transparent;
+  border: 1px solid transparent;
   border-radius: 24px;
-  min-height: 42px;
-  padding: 0 8px 0 14px;
+  min-height: 36px;
+  margin: 5px 0;
+  /* Close to the attach icon: the container is the surface, not this. */
+  padding: 0 8px 0 2px;
   gap: 2px;
   box-sizing: border-box;
   transition: border-color 0.18s ease, background-color 0.18s ease;
 }
 
-[data-theme='dark'] .inputBar {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.08);
-}
-
-.inputBar:focus-within {
-  border-color: var(--color-border, #d4d4d8);
-  box-shadow: none;
-  background: var(--color-bg-main, #ffffff);
-}
-
+[data-theme='dark'] .inputBar,
+.inputBar:focus-within,
 [data-theme='dark'] .inputBar:focus-within {
-  background: #18181b;
-  border-color: rgba(255, 255, 255, 0.15);
+  background: transparent;
+  border-color: transparent;
   box-shadow: none;
 }
 
 .msgInput {
   flex: 1;
-  padding: 0.5rem 0.2rem 0.5rem 0;
+  /* One line fits the 36px bar exactly, so the container is the mic's 46px. */
+  padding: 0.3rem 0.2rem 0.3rem 0;
   font-family: var(--font-family-sans);
   font-size: 0.9rem;
   color: var(--color-text-main);
@@ -253,8 +325,11 @@
 
 .rightActionContainer {
   position: relative;
-  width: 42px;
-  height: 42px;
+  /* Outside the floating container, clear of its right edge (::before), and
+     as tall as it (46px). */
+  margin-left: 0.375rem;
+  width: 46px;
+  height: 46px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -302,11 +377,12 @@
 
 .msgBlockedInputOverlay {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: var(--color-bg-white);
+  /* Exactly over the floating container. */
+  top: var(--composer-inset-y, 0px);
+  left: var(--composer-inset-x, 0px);
+  right: var(--composer-inset-x, 0px);
+  bottom: calc(var(--composer-inset-y, 0px) + var(--composer-safe, 0px));
+  background: var(--composer-bg, #f2f2f4);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -315,7 +391,7 @@
   font-weight: 500;
   color: var(--color-text-muted);
   z-index: 10;
-  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  border-radius: 26px;
   gap: 0.5rem;
 }
 
@@ -430,28 +506,23 @@
      native bar height). With the keyboard up the bar is behind it, and the
      extra padding would only leave a gap. */
   .msgChatInputWrap {
-    padding: 0.6rem 1rem calc(0.6rem + env(safe-area-inset-bottom, 0px));
+    --composer-safe: env(safe-area-inset-bottom, 0px);
     margin-bottom: 0;
     border-radius: 0;
-    border-top: 1px solid var(--color-border-light);
+    border-top: none;
   }
 
   /* "You can't message this person" replaces the composer. The overlay used
      to fill the whole bar, the navigation-bar padding included, so its text
      was centred partly behind the Android navigation bar and looked empty.
-     It now stops above that padding, and the bar keeps its usual 60px of
+     It now stops above that padding, and the bar keeps its usual 54px of
      content on top of it. */
   .msgChatInputWrap:has(> .msgBlockedInputOverlay) {
-    min-height: calc(60px + env(safe-area-inset-bottom, 0px));
-  }
-
-  .msgBlockedInputOverlay {
-    bottom: env(safe-area-inset-bottom, 0px);
-    border-radius: 0;
+    min-height: calc(58px + env(safe-area-inset-bottom, 0px));
   }
 
   :global(html[data-keyboard-open]) .msgChatInputWrap {
-    padding-bottom: 0.6rem;
+    --composer-safe: 0px;
   }
 
   /* Android app: the composer keeps its navigation-bar padding with the
@@ -459,7 +530,7 @@
      global.css), so the padding ends up behind the keyboard's top edge, the
      content sits on it, and nothing changes size. */
   :global(html[data-keyboard-open] .chat-pans-keyboard) .msgChatInputWrap {
-    padding-bottom: calc(0.6rem + env(safe-area-inset-bottom, 0px));
+    --composer-safe: env(safe-area-inset-bottom, 0px);
   }
 
   .msgChatHeader {
@@ -1157,7 +1228,11 @@
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  padding: 0.2rem 0.5rem;
+  /* The same 46px row as the text composer: the dot, timer, waveform and
+     delete sit inside the floating container (::before), the blue send
+     button outside it, exactly where the mic is. */
+  min-height: 46px;
+  padding: 0 0 0 0.625rem;
   box-sizing: border-box;
   animation: fadeIn 0.15s ease;
 }
@@ -1242,7 +1317,9 @@
 .msgRecordingActions {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  /* Delete ends inside the container; send starts outside it, with the same
+     space either side of the container's edge as the mic has. */
+  gap: 0.75rem;
 }
 
 .msgRecordingDeleteBtn {
@@ -1250,7 +1327,9 @@
   border: none;
   color: var(--color-text-muted);
   cursor: pointer;
-  padding: 0.5rem;
+  width: 36px;
+  height: 36px;
+  padding: 0;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -1269,8 +1348,9 @@
 }
 
 .msgRecordingSendBtn {
-  width: 36px;
-  height: 36px;
+  width: 46px;
+  height: 46px;
+  flex-shrink: 0;
   border-radius: 50%;
   display: flex;
   align-items: center;

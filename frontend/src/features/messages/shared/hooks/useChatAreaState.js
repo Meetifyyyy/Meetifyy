@@ -12,6 +12,8 @@ import { messagesApi } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
 import { useUrlState } from '@shared/hooks/useUrlState';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { closePage, openPage, withPageTransition } from '@shared/lib/navigation/pageTransition';
+import { SLIDE_EFFECT } from '@shared/lib/navigation/slideTransition';
 
 /**
  * Shared state + handlers for all ChatArea variants (DM, Group).
@@ -32,7 +34,7 @@ export function useChatAreaState(conversation) {
   // instead of closing the thread outright, and keeps the panel open across a
   // reload. Selecting another conversation navigates to a path without the
   // param, so the panel closes on its own — no manual reset needed.
-  const [detailsView, setDetailsView] = useUrlState('view', '', {
+  const [detailsView] = useUrlState('view', '', {
     allowed: ['details'],
     push: true,
   });
@@ -72,13 +74,19 @@ export function useChatAreaState(conversation) {
   const setShowDetails = useCallback(
     (next) => {
       if (next) {
+        if (showDetails) return;
         pushedDetailsRef.current = true;
-        setDetailsView('details');
+        // Slides in like a page (see useSlidePage): the entry carries the
+        // slide's mark, so the phone's Back slides it back out.
+        const params = new URLSearchParams(location.search);
+        params.set('view', 'details');
+        const to = { pathname: location.pathname, search: `?${params.toString()}` };
+        openPage(() => navigate(to, { state: withPageTransition(null, SLIDE_EFFECT) }), SLIDE_EFFECT);
         return;
       }
       if (pushedDetailsRef.current) {
         pushedDetailsRef.current = false;
-        navigate(-1);
+        closePage(() => navigate(-1));
         return;
       }
       // Deep-linked open or already at target: drop the param in place
@@ -87,7 +95,7 @@ export function useChatAreaState(conversation) {
       const search = params.toString();
       navigate({ pathname: location.pathname, search: search ? `?${search}` : '' }, { replace: true });
     },
-    [setDetailsView, navigate, location.pathname, location.search]
+    [showDetails, navigate, location.pathname, location.search]
   );
 
   const openSearch = useCallback(() => {

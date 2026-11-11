@@ -18,6 +18,7 @@ import GroupChangeOwnerPage from './GroupChangeOwnerPage';
 import GroupEditPage from './GroupEditPage';
 import GroupSettingsPage from './GroupSettingsPage';
 import GroupJoinRequestsPage from './GroupJoinRequestsPage';
+import { useSlidePage } from '../../hooks/useSlidePage';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { useGroupActions } from '@shared/hooks/useGroupActions';
 import { useMessageActions } from '@shared/hooks/useMessageActions';
@@ -72,9 +73,11 @@ export default function ChatDetailsPanel({
   const fileInputRef = useRef(null);
 
   // Settings page states
-  const [showSettingsPage, setShowSettingsPage] = useState(false);
+  // Settings and the gallery are pages of their own (?page=…): they slide in
+  // and out like any page, and Back steps out of them one at a time.
+  const [showSettingsPage, openSettingsPage, closeSettingsPage] = useSlidePage('page', 'settings');
   const [showEditGroupPage, setShowEditGroupPage] = useState(false);
-  const [showGalleryPage, setShowGalleryPage] = useState(false);
+  const [showGalleryPage, openGalleryPage, closeGalleryPage] = useSlidePage('page', 'gallery');
   const [showChangeOwnerPage, setShowChangeOwnerPage] = useState(false);
   // Opened on the Join requests page by an admin's push for a request, or
   // the Review on a request line in the timeline.
@@ -95,8 +98,6 @@ export default function ChatDetailsPanel({
     if (shownConversationRef.current === conversation.id) return;
     shownConversationRef.current = conversation.id;
     setShowEditGroupPage(false);
-    setShowSettingsPage(false);
-    setShowGalleryPage(false);
     setShowChangeOwnerPage(false);
     setShowRequestsPage(false);
   }, [conversation.id]);
@@ -319,7 +320,7 @@ export default function ChatDetailsPanel({
     return (
       <ChatGalleryPage
         conversationId={conversation.id}
-        onBack={() => setShowGalleryPage(false)}
+        onBack={closeGalleryPage}
       />
     );
   }
@@ -330,7 +331,7 @@ export default function ChatDetailsPanel({
         members={sortedParticipants}
         ownerId={groupDetails?.ownerId || conversation.ownerId}
         onBack={() => setShowChangeOwnerPage(false)}
-        onInvite={!isClosed && isMember ? () => { setShowChangeOwnerPage(false); setShowSettingsPage(false); setShowInviteModal(true); } : undefined}
+        onInvite={!isClosed && isMember ? () => { setShowChangeOwnerPage(false); closeSettingsPage(); setShowInviteModal(true); } : undefined}
         targetUserId={targetUserId}
         showConfirm={showConfirm && confirmType === 'changeOwner'}
         onChoose={(uid) => {
@@ -436,7 +437,7 @@ export default function ChatDetailsPanel({
         onChangeWhoCanJoin={(value) => updateGroupSettings(conversation.id, { whoCanJoin: value })}
         onChangeEditPermission={(value) => updateGroupEditPermission(conversation.id, value)}
         onResetInviteLinks={() => resetInviteLinks(conversation.id)}
-        onBack={() => setShowSettingsPage(false)}
+        onBack={closeSettingsPage}
         onGoToEdit={() => setShowEditGroupPage(true)}
         onGoToChangeOwner={() => setShowChangeOwnerPage(true)}
       />
@@ -651,7 +652,7 @@ export default function ChatDetailsPanel({
 
             <GalleryPreview
               conversationId={conversation.id}
-              onOpen={() => setShowGalleryPage(true)}
+              onOpen={openGalleryPage}
             />
           </div>
         )}
@@ -668,14 +669,14 @@ export default function ChatDetailsPanel({
 
             <GalleryPreview
               conversationId={conversation.id}
-              onOpen={() => setShowGalleryPage(true)}
+              onOpen={openGalleryPage}
             />
 
             {isMember && (
               <button
                 type="button"
                 className={styles.settingsBtn}
-                onClick={() => setShowSettingsPage(true)}
+                onClick={openSettingsPage}
               >
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '6px' }}>
                   <circle cx="12" cy="12" r="3" />
