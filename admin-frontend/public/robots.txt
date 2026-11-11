@@ -16,7 +16,7 @@
 #
 # Discovery is a given here: every TLS certificate is published to Certificate
 # Transparency logs, so both admin hostnames are public knowledge from the
-# moment they are issued (docs/operations.md, "Security posture"). Hiding the
+# moment they are issued (docs/INFRASTRUCTURE.md, "Access control on hosts"). Hiding the
 # URL was never available. Making the removal directive readable is.
 #
 # Allowing the fetch costs nothing: without a valid admin session this origin
