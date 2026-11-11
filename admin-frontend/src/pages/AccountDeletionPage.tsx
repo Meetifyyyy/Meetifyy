@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '../api/apiClient';
+import { LoadingState } from '../components/LoadingState';
+import './account-deletion.css';
 import { Pagination } from '../components/Pagination';
 import { pushToast } from '../components/Toaster';
 import { useDebounced } from '../hooks/useDebounced';
@@ -51,12 +53,13 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: 'all', label: 'All' },
 ];
 
-const STATUS_STYLE: Record<string, { bg: string; fg: string; label: string }> = {
-  pending: { bg: 'rgba(234, 179, 8, 0.18)', fg: '#eab308', label: 'In recovery window' },
-  due: { bg: 'rgba(249, 115, 22, 0.18)', fg: '#f97316', label: 'Due for deletion' },
-  failed: { bg: 'rgba(239, 68, 68, 0.18)', fg: '#ef4444', label: 'Purge failed' },
-  completed: { bg: 'rgba(148, 163, 184, 0.18)', fg: '#94a3b8', label: 'Deleted' },
-};
+const STATUS_LABELS = { pending: 'Recovery window', due: 'Due for deletion', failed: 'Purge failed', completed: 'Deleted' };
+interface DeletionResponse {
+  requests: DeletionRequest[];
+  counts: { pending: number; dueNow: number; failed: number; completed: number };
+  pagination: { page: number; totalPages: number; total: number };
+  recoveryWindowDays: number;
+}
 
 /**
  * Account Deletion — the 30-day retention queue.
@@ -73,7 +76,7 @@ export const AccountDeletionPage: React.FC = () => {
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState('');
   const search = useDebounced(searchInput, 300);
-  const { data, isLoading, isFetching } = useQuery({
+  const { data, isLoading, isFetching, isError, error, refetch } = useQuery<DeletionResponse>({
     queryKey: ['adminAccountDeletion', filter, page, search],
     queryFn: () => {
       const params = new URLSearchParams({ filter, page: String(page) });
@@ -87,7 +90,7 @@ export const AccountDeletionPage: React.FC = () => {
 
   const restore = useMutation({
     mutationFn: (userId: string) =>
-      apiRequest(`/admin/account-deletion/${userId}/restore`, { method: 'POST' }),
+      apiRequest(`/admin/account-deletion/${encodeURIComponent(userId)}/restore`, { method: 'POST' }),
     onSuccess: () => {
       pushToast('Account restored', 'success');
       invalidate();
@@ -100,7 +103,7 @@ export const AccountDeletionPage: React.FC = () => {
 
   const purgeNow = useMutation({
     mutationFn: (userId: string) =>
-      apiRequest(`/admin/account-deletion/${userId}/purge`, { method: 'POST' }),
+      apiRequest(`/admin/account-deletion/${encodeURIComponent(userId)}/purge`, { method: 'POST' }),
     onSuccess: () => {
       pushToast('Permanent deletion completed', 'success');
       invalidate();
@@ -124,21 +127,22 @@ export const AccountDeletionPage: React.FC = () => {
 
   const requests: DeletionRequest[] = data?.requests || [];
   const counts = data?.counts;
-  const busy = restore.isPending || purgeNow.isPending;
+  const busy = restore.isPending || purgeNow.isPending || runSweep.isPending;
+  useEffect(() => { if (data && page > data.pagination.totalPages) setPage(Math.max(1, data.pagination.totalPages)); }, [data, page]);
 
   return (
-    <div>
+    <div className="admin-page deletion-page">
       <div className="page-header">
         <div>
           <h2 className="page-title">Account Deletion</h2>
           <p className="page-subtitle">
-            Deletion requests and the {data?.recoveryWindowDays ?? 30}-day recovery window. Accounts are permanently deleted automatically once the window closes.
+            Accounts have a {data?.recoveryWindowDays ?? 30}-day recovery window before automatic permanent deletion.
           </p>
         </div>
         <button
           onClick={() => confirm({
             title: 'Run the purge sweep now?',
-            description: 'Every account whose 30-day recovery window has closed is permanently deleted immediately, rather than on the next scheduled run.',
+            description: `Every account whose ${data?.recoveryWindowDays ?? 30}-day recovery window has closed is permanently deleted immediately, rather than on the next scheduled run.`,
             consequences: [
               'This affects all due accounts at once, not one person.',
               'Posts, activities and uploaded media are removed and cannot be recovered.',
@@ -147,70 +151,41 @@ export const AccountDeletionPage: React.FC = () => {
             confirmLabel: 'Run sweep',
             onConfirm: () => runSweep.mutateAsync(),
           })}
-          disabled={runSweep.isPending}
-          className="btn-secondary"
-          style={{
-            cursor: runSweep.isPending ? 'not-allowed' : 'pointer',
-            opacity: runSweep.isPending ? 0.6 : 1,
-          }}
+          disabled={busy || isFetching || !data || isError}
+          className="btn-secondary deletion-sweep"
           title="Runs the scheduled purge sweep immediately instead of waiting for the next one"
         >
           <RefreshCw size={15} />
-          <span>{runSweep.isPending ? 'Running sweep…' : 'Run purge sweep now'}</span>
+          <span>{runSweep.isPending ? 'Running sweep…' : 'Run purge sweep'}</span>
         </button>
       </div>
 
-      {counts && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 140px), 1fr))', gap: '0.75rem', marginBottom: '1.25rem' }}>
-          <StatTile icon={<Clock size={15} />} label="In recovery window" value={counts.pending} />
-          <StatTile icon={<Trash2 size={15} />} label="Due for deletion" value={counts.dueNow} tone="#f97316" />
-          <StatTile icon={<AlertTriangle size={15} />} label="Needs attention" value={counts.failed} tone="#ef4444" />
-          <StatTile icon={<CheckCircle size={15} />} label="Deleted" value={counts.completed} tone="#94a3b8" />
-        </div>
-      )}
-
-      <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.25rem', flexWrap: 'wrap', alignItems: 'center' }}>
-        <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
-          {FILTERS.map((f) => (
-            <button
-              key={f.key}
-              onClick={() => { setFilter(f.key); setPage(1); }}
-              className={filter === f.key ? 'btn-primary' : 'btn-secondary'}
-              style={{ padding: '0.35rem 0.75rem', fontSize: '0.78rem' }}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
-        <div style={{ position: 'relative', flex: '1 1 220px', maxWidth: '100%' }}>
-          <Search size={15} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-dim)' }} />
-          <input
-            value={searchInput}
-            onChange={(e) => { setSearchInput(e.target.value); setPage(1); }}
-            placeholder="Search username, email or user ID"
-            className="input-control"
-            style={{ width: '100%', paddingLeft: '2.2rem' }}
-          />
-        </div>
+      <p className="deletion-summary-caption">Across all deletion requests</p>
+      <dl className="deletion-summary" aria-label="Account deletion totals" aria-busy={isLoading}>
+        <StatTile icon={<Clock size={17} />} label="Pending deletion" value={counts?.pending} tone="blue" />
+        <StatTile icon={<Trash2 size={17} />} label="Due for deletion" value={counts?.dueNow} tone="peach" />
+        <StatTile icon={<AlertTriangle size={17} />} label="Needs attention" value={counts?.failed} tone="violet" />
+        <StatTile icon={<CheckCircle size={17} />} label="Deleted" value={counts?.completed} tone="green" />
+      </dl>
+      <div className="deletion-status-filters" role="group" aria-label="Deletion request status">
+        {FILTERS.map((item) => <button type="button" key={item.key} aria-pressed={filter === item.key} onClick={() => { setFilter(item.key); setPage(1); }}>{item.label}</button>)}
+      </div>
+      <div className="deletion-toolbar">
+        <div className="deletion-search"><Search size={18} /><input value={searchInput} onChange={(event) => { setSearchInput(event.target.value); setPage(1); }} placeholder="Search deletion requests…" aria-label="Search deletion requests" title="Search by username, email or user ID" className="input-control" /></div>
+        <span className="deletion-result-count" role="status">{isFetching && !isLoading ? 'Updating requests…' : data ? `${data.pagination.total.toLocaleString()} matching requests` : ''}</span>
       </div>
 
-      {isLoading ? (
-        <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--color-text-dim)', fontSize: '0.85rem' }}>Loading requests…</div>
+      {isLoading ? <LoadingState label="Loading deletion requests…" /> : isError ? (
+        <div className="deletion-empty" role="alert"><AlertTriangle size={32} /><h3>Requests could not be loaded</h3><p>{(error as Error)?.message || 'Try loading the deletion queue again.'}</p><button type="button" className="btn-secondary" onClick={() => refetch()} disabled={isFetching}>Try again</button></div>
       ) : requests.length === 0 ? (
-        <div className="glass-panel" style={{ padding: '3rem 1.5rem', textAlign: 'center' }}>
-          <CheckCircle size={44} style={{ color: 'var(--color-success)', margin: '0 auto 0.75rem', opacity: 0.6 }} />
-          <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--color-text-main)', marginBottom: '0.35rem' }}>Nothing here</h3>
-          <p style={{ color: 'var(--color-text-light)', fontSize: '0.85rem' }}>
-            No account-deletion requests match this filter.
-          </p>
-        </div>
+        <div className="deletion-empty"><CheckCircle size={34} /><h3>No matching requests</h3><p>No account-deletion requests match these filters.</p></div>
       ) : (
-        <div style={{ display: 'grid', gap: '0.75rem', opacity: isFetching ? 0.7 : 1 }}>
+        <div className="deletion-list" aria-busy={busy || isFetching}>
           {requests.map((req) => (
             <RequestRow
               key={req.userId}
               request={req}
-              busy={busy}
+              busy={busy || isFetching}
               onRestore={() => confirm({
                 title: 'Restore this account?',
                 description: `This cancels the pending deletion for @${req.username} and makes the account active and visible again.`,
@@ -241,139 +216,32 @@ export const AccountDeletionPage: React.FC = () => {
         total={data?.pagination?.total}
         onChange={setPage}
         label="requests"
-        busy={isFetching}
+        busy={busy || isFetching}
       />
     </div>
   );
 };
 
-const StatTile: React.FC<{ icon: React.ReactNode; label: string; value: number; tone?: string }> = ({
-  icon, label, value, tone,
-}) => (
-  <div className="glass-panel" style={{ padding: '0.85rem 1rem' }}>
-    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: tone || 'var(--color-text-light)', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
-      {icon}
-      <span>{label}</span>
-    </div>
-    <div style={{ marginTop: '0.35rem', fontSize: '1.4rem', fontWeight: 700, color: 'var(--color-text-main)' }}>
-      {value}
-    </div>
-  </div>
+const StatTile: React.FC<{ icon: React.ReactNode; label: string; value?: number; tone: string }> = ({ icon, label, value, tone }) => (
+  <div className={`deletion-stat tone-${tone}`}><dt><span>{label}</span>{icon}</dt><dd>{value == null ? '—' : value.toLocaleString()}</dd></div>
 );
 
-const RequestRow: React.FC<{
-  request: DeletionRequest;
-  busy: boolean;
-  onRestore: () => void;
-  onPurge: () => void;
-}> = ({ request, busy, onRestore, onPurge }) => {
-  const style = STATUS_STYLE[request.status] ?? STATUS_STYLE.pending;
-
-  return (
-    <div
-      className="glass-panel"
-      style={{
-        padding: '1.1rem 1.25rem',
-        display: 'flex', gap: '1rem', justifyContent: 'space-between',
-        alignItems: 'flex-start', flexWrap: 'wrap',
-      }}
-    >
-      <div style={{ minWidth: 0, flex: '1 1 min(100%, 260px)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--color-text-main)' }}>
-            @{request.username}
-          </span>
-          <span style={{ padding: '0.2rem 0.6rem', borderRadius: '9999px', fontSize: '0.72rem', fontWeight: 600, background: style.bg, color: style.fg }}>
-            {style.label}
-          </span>
-          {request.purgeInProgress && (
-            <span style={{ fontSize: '0.72rem', color: 'var(--color-text-light)' }}>
-              purge in progress
-            </span>
-          )}
-        </div>
-
-        <div style={{ marginTop: '0.4rem', fontSize: '0.82rem', color: 'var(--color-text-light)', display: 'grid', gap: '0.15rem' }}>
-          <span style={{ wordBreak: 'break-all' }}>{request.email}</span>
-          {request.college && <span>{request.college}</span>}
-          <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '0.74rem', opacity: 0.75 }}>
-            {request.userId}
-          </span>
-        </div>
-
-        <div style={{ marginTop: '0.6rem', display: 'flex', gap: '1.25rem', flexWrap: 'wrap', fontSize: '0.8rem', color: 'var(--color-text-light)' }}>
-          <Field label="Requested" value={formatDate(request.deletionRequestedAt)} />
-          {request.status === 'completed' ? (
-            <Field label="Deleted" value={formatDate(request.purgeCompletedAt)} />
-          ) : (
-            <>
-              <Field label="Scheduled deletion" value={formatDate(request.scheduledPurgeAt)} />
-              <Field
-                label="Remaining"
-                value={
-                  request.dueNow
-                    ? 'Due now'
-                    : request.daysRemaining === null
-                      ? '—'
-                      : `${request.daysRemaining} day${request.daysRemaining === 1 ? '' : 's'}`
-                }
-              />
-            </>
-          )}
-        </div>
-
-        {request.purgeLastError && (
-          <div style={{
-            marginTop: '0.7rem', padding: '0.55rem 0.7rem', borderRadius: '8px',
-            background: 'var(--color-danger-tint)', color: 'var(--color-danger)',
-            fontSize: '0.78rem', wordBreak: 'break-word',
-          }}>
-            Last failure ({request.purgeAttempts} attempt{request.purgeAttempts === 1 ? '' : 's'}): {request.purgeLastError}
-          </div>
-        )}
-      </div>
-
-      {/* Actions render only when the backend says they can succeed, so this
-          panel never carries a control that does nothing when pressed. */}
-      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-        {request.canRestore && (
-          <button onClick={onRestore} disabled={busy} style={actionStyle('#22c55e', busy)}>
-            <UserCheck size={15} />
-            Restore account
-          </button>
-        )}
-        {request.canPurgeNow && (
-          <button onClick={onPurge} disabled={busy} style={actionStyle('#ef4444', busy)}>
-            <Trash2 size={15} />
-            Delete permanently
-          </button>
-        )}
-      </div>
-    </div>
-  );
-};
-
-const Field: React.FC<{ label: string; value: string }> = ({ label, value }) => (
-  <span style={{ display: 'grid', gap: '0.1rem' }}>
-    <span style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.04em', opacity: 0.7 }}>{label}</span>
-    <span style={{ color: 'var(--color-text-main)' }}>{value}</span>
-  </span>
+const RequestRow: React.FC<{ request: DeletionRequest; busy: boolean; onRestore: () => void; onPurge: () => void }> = ({ request, busy, onRestore, onPurge }) => (
+  <article className="deletion-card" aria-label={`Deletion request for ${request.username || request.userId}`}>
+    <header className="deletion-card-header">
+      <div className="deletion-person"><h3>{request.username ? `@${request.username}` : 'Deleted account'}</h3><p>{request.email || 'Email unavailable'}</p>{request.college && <span>{request.college}</span>}</div>
+      <div className="deletion-state"><span className={`deletion-status is-${request.status}`}>{STATUS_LABELS[request.status]}</span>{request.status !== 'completed' && <small>{request.purgeInProgress ? 'Deletion in progress' : request.dueNow ? 'Due now' : request.daysRemaining == null ? 'No deadline recorded' : `${request.daysRemaining} day${request.daysRemaining === 1 ? '' : 's'} left`}</small>}</div>
+    </header>
+    <dl className="deletion-dates"><Field label="Requested" value={formatDate(request.deletionRequestedAt)} /><Field label={request.status === 'completed' ? 'Deleted' : 'Scheduled deletion'} value={formatDate(request.status === 'completed' ? request.purgeCompletedAt : request.scheduledPurgeAt)} /></dl>
+    <div className="deletion-user-id"><span>User ID</span><code>{request.userId}</code></div>
+    {request.purgeLastError && <details className="deletion-failure"><summary><AlertTriangle size={15} />Last failure · {request.purgeAttempts} attempt{request.purgeAttempts === 1 ? '' : 's'}</summary><p>{request.purgeLastError}</p></details>}
+    {(request.canRestore || request.canPurgeNow) && <footer className="deletion-card-actions">
+      {request.canRestore && <button type="button" onClick={onRestore} disabled={busy} className="btn-secondary"><UserCheck size={17} /><span>Restore account</span></button>}
+      {request.canPurgeNow && <button type="button" onClick={onPurge} disabled={busy} className="btn-danger"><Trash2 size={17} /><span>Delete permanently</span></button>}
+    </footer>}
+  </article>
 );
-
-const actionStyle = (color: string, busy: boolean): React.CSSProperties => ({
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: '0.4rem',
-  padding: '0.5rem 0.9rem',
-  borderRadius: '8px',
-  border: `1px solid ${color}55`,
-  background: `${color}1a`,
-  color,
-  fontSize: '0.82rem',
-  fontWeight: 600,
-  cursor: busy ? 'not-allowed' : 'pointer',
-  opacity: busy ? 0.6 : 1,
-});
+const Field: React.FC<{ label: string; value: string }> = ({ label, value }) => <div><dt>{label}</dt><dd>{value}</dd></div>;
 
 function formatDate(value: string | null): string {
   if (!value) return '—';
