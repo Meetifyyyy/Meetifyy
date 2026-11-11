@@ -103,10 +103,15 @@
   border-radius: var(--community-avatar-radius);
 }
 
+/* The name is one 0.75rem line at line-height 1.25 (0.9375rem) under the
+   tile's 0.4rem gap, above its 0.35rem padding. The bar is 0.75rem tall, so
+   the half-leading goes on each side; without it the loaded strip was 6px
+   taller than the loading one and pushed the feed down as it arrived. */
 .ghostName {
   width: 48px;
   height: 0.75rem;
-  margin-top: 0.55rem;
+  margin-top: calc(0.4rem + 0.09375rem);
+  margin-bottom: calc(0.35rem + 0.09375rem);
   border-radius: 4px;
 }
 
