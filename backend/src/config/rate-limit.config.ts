@@ -924,10 +924,15 @@ export type RateLimitPolicyName = keyof typeof RATE_LIMIT_POLICIES;
  * MEASURED against production on 2026-09-05. Do not change without repeating
  * the measurement — reasoning about this was wrong twice.
  *
- * `api.meetifyy.app` is a Cloudflare CNAME set to DNS-only (grey cloud), so
- * Cloudflare is not in the request path. Azure Container Apps is, and it adds
- * TWO entries to X-Forwarded-For, not one: the client, then its own internal
- * envoy hop. Those envoy addresses rotate per TCP connection.
+ * At that time `api.meetifyy.app` was DNS-only, so Cloudflare was not in the
+ * request path. Azure Container Apps was, and it adds TWO entries to
+ * X-Forwarded-For, not one: the client, then its own internal envoy hop. Those
+ * envoy addresses rotate per TCP connection.
+ *
+ * RE-MEASURED on 2026-11-12 with `api` proxied through Cloudflare: 2 is still
+ * right (requests key on the real client, a forged header does not move the
+ * bucket). The same test found the direct Azure hostname honouring a forged
+ * header, so the origin now accepts Cloudflare's addresses only.
  *
  * With hops=1 Express took the rightmost entry — the rotating envoy address —
  * so 60 requests from ONE machine produced 16 different buckets and every

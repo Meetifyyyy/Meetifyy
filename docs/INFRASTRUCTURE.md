@@ -251,6 +251,11 @@ Configuration traps:
   "dev". Leave it unset.
 - `ADMIN_URL` is added to CORS automatically, so never leave a localhost value
   in a deployed environment.
+- `ORIGIN_AUTH_SECRET` (at least 32 characters) makes the API refuse any
+  request without a matching `x-origin-auth` header, `/health` excepted. Set it
+  only where Cloudflare proxies the API **and** the zone rule that adds the
+  header already exists; anywhere else it refuses every request. See
+  [Origin protection](#origin-protection-production-api).
 - `REDIS_QUEUE_PREFIX` defaults to `bull:<APP_ENV>` and `RATE_LIMIT_KEY_PREFIX`
   to `rl:<APP_ENV>`; override only to separate two deployments of the same
   environment.
@@ -281,6 +286,7 @@ Workflows (`.github/workflows/`):
 | `ci.yml` | Jobs `backend`, `frontend`, `mobile`, `admin-frontend`, and the aggregate `validate` check. |
 | `deploy-dev.yml` | On push to `development`: waits for CI, builds, migrates, deploys DEV. |
 | `deploy-prod.yml` | On push to `main`: the same against PROD. |
+| `origin-allowlist-check.yml` | Weekly (and on demand): compares the production origin's allow-list with Cloudflare's published ranges and fails when they differ. Changes nothing. |
 
 - **CI gate.** The deploy workflows and CI start from the same push and run
   independently, so a commit whose tests failed used to be built, migrated and
@@ -321,7 +327,10 @@ Workflows (`.github/workflows/`):
 - **Deploy** sets the new image and `GIT_COMMIT_SHA` (reported by `/health`,
   which `await-backend.sh` waits on).
 - **Health check:** `https://<fqdn>/health` must return 200 within 3 minutes
-  (18 tries, 10 s apart), or the job fails. It prints the rollback command:
+  (18 tries, 10 s apart), or the job fails. In production the origin accepts
+  Cloudflare's addresses only, so the step first allows the runner's own
+  address (ingress rule `ci-health-<run id>`) and removes it on exit; a rule
+  left behind by a cancelled run is removed by hand. It prints the rollback command:
   `az containerapp update --name <app> --resource-group <rg> --image <acr>/meetifyy-api:<PREVIOUS_PROD_TAG>`
   — an owner decision, not something to run unasked. Rolling back the image
   does not roll back migrations.
@@ -568,19 +577,70 @@ new token, new buckets.
 - A **CNAME cannot coexist with A/AAAA records at the same name**. The apex
   previously held proxied A/AAAA records pointing at Cloudflare's own IPs,
   which produced Error 1000 ("DNS points to prohibited IP") and served nothing.
-- Vercel hostnames should stay **grey-clouded permanently**: Vercel already
-  fronts the site with its own CDN, so proxying adds a second hop for no gain,
-  and certificate issuance needs to reach the origin directly.
-- `api.meetifyy.app` is a CNAME set to **DNS-only (grey cloud)**. If the orange
-  cloud is ever enabled for `api`, `TRUST_PROXY_HOPS` must change from 2 to 3
-  at the same moment ([BACKEND_AND_API.md](BACKEND_AND_API.md#trust_proxy_hops)).
+- **What is proxied (audited 2026-11-12).** `meetifyy.app`, `www`, `dev`,
+  `admin`, `dev-admin`, `api` and `cdn` are orange-clouded;
+  `dev-api.meetifyy.app` and every mail record are DNS-only. An earlier version
+  of this document said the Vercel hostnames and `api` were grey: they are not,
+  and Cloudflare Access depends on the web hosts being proxied.
+- `TRUST_PROXY_HOPS` stays **2** with `api` proxied — measured, see
+  [BACKEND_AND_API.md](BACKEND_AND_API.md#trust_proxy_hops). Before proxying
+  `dev-api`, run the same measurement on dev; do not assume.
+- The zone holds **both** environments' hostnames, so zone-wide settings (SSL
+  mode, Browser Cache TTL, bot settings) apply to dev and production together.
+  Only hostname-scoped rules can be tried on one first.
+
+### Cloudflare edge configuration
+
+Applied to the `meetifyy.app` zone (Free plan) on 2026-11-12. Rules live in
+Cloudflare, not in this repository.
+
+| Setting / rule | Value | Why |
+|---|---|---|
+| SSL mode, minimum TLS | Full (strict), TLS 1.2 | unchanged |
+| Always Use HTTPS | on | |
+| Browser Cache TTL | **Respect existing headers** | The 4-hour default was stamped on every cacheable response, including a **404 for a missing chunk** — the stale-chunk trap below, created at the edge. |
+| Response header rule | `Cache-Control: public, max-age=31536000, immutable` on `/assets/*.{js,css,woff2}` for `meetifyy.app`, `www`, `dev`, **only when the status is 200** | Hashed files never change; the status condition is what a `vercel.json` header rule cannot express. |
+| Cache rule | the same hashed assets are kept at the edge for a year, **200s only**; a 404 is revalidated every time | Vercel sends `max-age=0`, so the edge otherwise asks Vercel about every asset request. Hashed names make deploys invalidate themselves. |
+| Smart Tiered Cache | on | Fewer edge locations fetch from Vercel. |
+| Cache rule | bypass for `api`/`dev-api` hosts and `/api/`, `/_api/`, `/socket.io/` on any host | Authenticated and personal responses are never stored at the edge. |
+| WAF custom rule | block `.php`/`.asp`/`.aspx`/`.jsp`/`.cgi`, `/.env`, `/.git/`, `/.aws/`, `/wp-*`, `/phpmyadmin`, `/cgi-bin/` | Scanner noise; no Meetifyy host serves such a path. |
+| Rate limiting rule (the plan allows one) | 30 POSTs / 10 s per IP on `api.meetifyy.app` `/api/auth/*` (not `session`, `events`, `sync`) and `/admin/auth/*`, then blocked 10 s | A flood guard far above every application limit; the NestJS limits still decide for real users. An edge 429 carries no CORS headers, so a browser reports it as a network error. |
+| Bot Fight Mode | **off** | It challenged datacentre callers of `api`: the Vercel `/_api` failover and `scripts/await-backend.sh` both got a 403 challenge page. The Free plan cannot exempt a path. Never put a challenge in front of `api`: the installed app and Vercel cannot answer one. |
+| Managed Free ruleset, L7 DDoS | on (Cloudflare defaults) | |
+
+Test a new edge rule against one address or an unused path first, then widen
+it; a rule that is saved has not been shown to work.
+
+### Origin protection (production API)
+
+The Container App `meetifyy-api` accepts **only Cloudflare's IPv4 ranges**
+(ingress IP restrictions `cloudflare-01` … `cloudflare-15`, set 2026-11-12).
+Its `*.azurecontainerapps.io` hostname answers 403 to everyone else. Before
+this, that hostname bypassed the edge entirely, and a forged
+`X-Forwarded-For` sent to it minted a fresh rate-limit bucket per request.
+
+- The deploy health check reaches the origin by allowing its own runner's
+  address for the length of the check (`deploy-prod.yml`).
+- `origin-allowlist-check.yml` compares the list with Cloudflare's published
+  ranges weekly and fails when they differ. It never edits the list.
+- Cloudflare's ranges are shared by every Cloudflare customer.
+  `ORIGIN_AUTH_SECRET` closes that: a zone transform rule adds the
+  `x-origin-auth` header and the API refuses requests without it (`/health`
+  exempt). **Not active until the secret is set on the Container App and the
+  rule exists** — set the rule first, then the secret, or every request is
+  refused.
+- To remove the restriction in an emergency, set the app's
+  `ipSecurityRestrictions` to an empty list.
+- Development is not covered: `dev-api` is DNS-only and unrestricted.
 
 ### Vercel caching and stale chunks
 
 - Do not apply a year-long immutable `Cache-Control` header to `/assets/*` by
   pathname alone. Vercel header rules also match requests for missing files, so
   that rule can give an error response the same cache lifetime as a valid
-  bundle. Leave asset caching to Vercel's static-file defaults. This applies to
+  bundle. Leave asset caching to Vercel's static-file defaults; the immutable
+  header is added at the Cloudflare edge, where it can be limited to 200s
+  ([Cloudflare edge configuration](#cloudflare-edge-configuration)). This applies to
   the admin's `vercel.json` too. Both website config copies (`vercel.json` and
   `frontend/vercel.json`) must agree.
 - Upstream Cloudflare cache rules can override origin policy; verify actual
@@ -621,7 +681,7 @@ makes a production call *look* different at the moment you approve it.
 | Host | Who can reach it |
 |---|---|
 | `meetifyy.app` (+ `www.` redirect) | Public. |
-| `api.meetifyy.app` | Public API (CORS-restricted, DNS-only). |
+| `api.meetifyy.app` | Public API (CORS-restricted, proxied through Cloudflare; the Azure origin accepts Cloudflare only). |
 | `dev.meetifyy.app` | **Cloudflare Access** only. |
 | `dev-admin.meetifyy.app` | **Cloudflare Access** only. |
 | `admin.meetifyy.app` | **Cloudflare Access** only. |

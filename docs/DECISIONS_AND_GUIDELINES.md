@@ -123,7 +123,8 @@ confirmed; the evidence is in the linked document or
 | Access token persisted in Keystore beside the refresh token (2026-10-05) | Reversed the earlier "fewer copies of a secret" design after measuring cold-start cost and rotation sign-outs; no added exposure | [SECURITY.md](SECURITY.md#what-was-built-option-a) |
 | Lost-rotation recovery: immediate parent only, unused successor, < 60 s | Lost responses are indistinguishable from theft; stricter than a reuse window | [SECURITY.md](SECURITY.md#2-sessions) |
 | Rate-limit values are literals, identical in every environment; `shadow` mode refused in production | Env-var limits get weakened in incidents | [BACKEND_AND_API.md](BACKEND_AND_API.md#9-rate-limiting) |
-| `TRUST_PROXY_HOPS=2` (3 if Cloudflare ever proxies `api`) | Measured | [BACKEND_AND_API.md](BACKEND_AND_API.md#trust_proxy_hops) |
+| `TRUST_PROXY_HOPS=2`, with `api` proxied through Cloudflare | Measured (2026-11-12); the earlier "3 when proxied" was reasoning and was wrong | [BACKEND_AND_API.md](BACKEND_AND_API.md#trust_proxy_hops) |
+| Production origin accepts Cloudflare's ranges only; Bot Fight Mode off | The Azure hostname bypassed the edge and honoured forged client addresses; Bot Fight Mode challenged Vercel's calls to the API | [INFRASTRUCTURE.md](INFRASTRUCTURE.md#origin-protection-production-api) |
 | Reauthentication grants + 30-day cooldowns + `auth.users` trigger for email changes | A client could otherwise change its auth email directly at Supabase | [SECURITY.md](SECURITY.md#8-email-change-security) |
 | SVG logos rejected | `/api/media/*` serves from the API origin with no sanitizer | [BACKEND_AND_API.md](BACKEND_AND_API.md#admin-colleges-and-affiliation) |
 | CSP hashes maintained by hand + test, never patched by the build; build stamp in a meta tag | The patching plugin silently never ran | [SECURITY.md](SECURITY.md#inline-scripts-must-be-byte-identical-across-builds) |

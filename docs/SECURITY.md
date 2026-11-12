@@ -317,6 +317,8 @@ carries a per-request ray id and timestamp, so no hash can ever match it.
 Cloudflare's documented support is a **nonce in the CSP response header**, which
 it copies onto what it injects; it does not work with hashes or with a
 `<meta>` CSP, and JS Detections cannot be switched off under Bot Fight Mode.
+Bot Fight Mode was turned off on 2026-11-12, so JS Detections can now be
+switched off in the dashboard (Security → Bots); it was still on that day.
 Decide first: a per-request nonce (edge middleware, which ends static caching
 of the HTML), turning JS Detections off (Super Bot Fight Mode only), or
 accepting that it is blocked.
@@ -530,6 +532,8 @@ log, commit message or document; mask it.
 | Item | State |
 |---|---|
 | CSP `script-src` / `connect-src` enforcement | Report-only; blocked on the Cloudflare JS Detections decision (§7). |
+| Origin header check (`ORIGIN_AUTH_SECRET`) | Code shipped 2026-11-12, **not active**: needs the secret on the production Container App and the Cloudflare rule that adds the header. Until then the origin trusts any request arriving from a Cloudflare address, including another customer's zone. ([INFRASTRUCTURE.md](INFRASTRUCTURE.md#origin-protection-production-api)) |
+| Development API at the edge | `dev-api.meetifyy.app` is DNS-only: no WAF, no edge rate limit, origin open. |
 | Chat media uploaded before commit `bc60f39` | Still on the public CDN and reachable by URL. New uploads go private; old objects do not move themselves. Closing it means copying them into the private bucket and repointing their `media` rows, or removing the public bucket's host. Infrastructure action. |
 | Old Supabase project `aqeivtmrdyabfaddpjon` | Confirm it is deleted. Its anon key is in git history (commit `6f117e2`, removed in `770c257`); low severity unless a live project with weak RLS sits behind it. |
 | Legacy bearer path | `@AllowBearerToken` remains on the two signup-handover routes; the original audit noted the pre-cookie bearer path was kept so old clients were not signed out on deploy, to be removed once traffic moved over. Verify current state before changing. |

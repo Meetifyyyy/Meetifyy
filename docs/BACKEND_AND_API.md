@@ -482,10 +482,13 @@ addresses — per-address keying would hand an IPv6 client unlimited buckets.
 **Production is 2. This was measured, not reasoned about, and reasoning about
 it was wrong twice.**
 
-`api.meetifyy.app` is a Cloudflare CNAME set to **DNS-only (grey cloud)**, so
-Cloudflare is not in the request path. Azure Container Apps is, and it adds
-**two** entries to `X-Forwarded-For`: the client, then its own internal envoy
-hop. Those envoy addresses **rotate per TCP connection**.
+`api.meetifyy.app` is **proxied through Cloudflare** and the origin accepts
+Cloudflare's addresses only ([INFRASTRUCTURE.md](INFRASTRUCTURE.md#origin-protection-production-api)).
+Re-measured on 2026-11-12 with `hops=2`: requests through Cloudflare key on the
+real client, one bucket counting down, and a forged `X-Forwarded-For` does not
+move it. (The measurements below were taken when the host was DNS-only, where
+Azure Container Apps added **two** entries: the client, then its own internal
+envoy hop, whose address **rotates per TCP connection**.)
 
 With `hops=1` Express took the rightmost entry — the rotating envoy address —
 so **60 requests from one machine produced 16 different buckets**, and every
@@ -516,9 +519,13 @@ done | sort -n | uniq -c
 Many values appearing once = correct. Values repeating = multiple buckets =
 hop count wrong.
 
-> **If Cloudflare's orange cloud is ever enabled for `api`, this must become 3
-> at the same moment.** Enabling proxying without changing it collapses every
-> user into one bucket and 429s anonymous traffic platform-wide.
+> **An earlier note here said this must become 3 once Cloudflare proxies
+> `api`. That was reasoning, and the measurement disagrees:** with the proxy on
+> and `hops=2`, direct and proxied requests from one machine shared one bucket.
+> What the same test did show is that the *direct* Azure hostname honoured a
+> forged `X-Forwarded-For` (a fresh bucket per forged value) — which is why the
+> origin is now closed to everything but Cloudflare. Re-run the check above
+> after any change to the path, and run it on dev before proxying `dev-api`.
 
 #### Known gap: the Vercel failover path
 
@@ -591,7 +598,7 @@ above.
 | **Search / directory daily quotas** | The campus directory is the obvious scraping target. A per-minute limit still permits full extraction, just slowly. |
 | **Concurrent socket connection cap per user** | We limit how *fast* you connect, not how *many* at once. Needs cross-replica connection state in Redis with cleanup on disconnect — and if a process crashes, stale entries lock that user out. Deliberately deferred rather than shipped fragile. |
 | **Email daily ceiling enforcement** | `EmailUsageService` counts sends per provider per day but never refuses. Should reserve headroom so password resets survive a spike. |
-| **Edge/WAF layer** | Every request the app rejects still costs a TLS handshake and a Redis round-trip. Volumetric junk should be dropped before it reaches Node. |
+| **Edge/WAF layer — partly done (2026-11-12).** Cloudflare drops scanner paths and auth floods on production ([INFRASTRUCTURE.md](INFRASTRUCTURE.md#cloudflare-edge-configuration)); the Free plan allows one rate-limit rule, and dev is not behind the edge. | Every request the app rejects still costs a TLS handshake and a Redis round-trip. |
 | **Dashboards + alerts** | The KQL is manual. Nothing pages anyone today. |
 
 ### What will bite as the user base grows
