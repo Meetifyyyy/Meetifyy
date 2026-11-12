@@ -672,8 +672,27 @@ describe('Activity access enforcement (service level)', () => {
       expect(prisma.activityDiscussionMessage.create).not.toHaveBeenCalled();
     });
 
-    it('allows a same-college member to read and post', async () => {
+    it('lets a same-college user read, but post only once they have joined', async () => {
+      // Viewing is the access policy; posting is for people taking part.
       activityRow = baseActivity('COLLEGE_ONLY');
+      prisma.crewActivity.findFirst.mockImplementation(() =>
+        Promise.resolve(activityRow),
+      );
+      await expect(
+        discussion.getMessages('act-1', 'user-same'),
+      ).resolves.toMatchObject({ messages: [] });
+      await expect(
+        discussion.sendMessage('act-1', 'user-same', 'hi'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prisma.activityDiscussionMessage.create).not.toHaveBeenCalled();
+    });
+
+    it('allows a same-college joined member to read and post', async () => {
+      activityRow = baseActivity(
+        'COLLEGE_ONLY',
+        [],
+        [{ userId: 'user-same', status: 'MEMBER' }],
+      );
       prisma.crewActivity.findFirst.mockImplementation(() =>
         Promise.resolve(activityRow),
       );

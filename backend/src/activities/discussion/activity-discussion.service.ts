@@ -1,6 +1,7 @@
 import {
   Injectable,
   BadRequestException,
+  ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
@@ -25,10 +26,11 @@ const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 50;
 
 /**
- * Lightweight, activity-scoped discussion. There are no participants, roles,
- * membership or conversation rows: read/write permission is exactly "may this
- * user view the activity?", resolved server-side by the shared access policy on
- * every call — a restricted activity's discussion is itself restricted data. Messages are keyed directly by
+ * Lightweight, activity-scoped discussion. There are no conversation rows of
+ * its own: reading is "may this user view the activity?", resolved server-side
+ * by the shared access policy on every call — a restricted activity's
+ * discussion is itself restricted data — and posting additionally needs the
+ * caller to be taking part in a live activity. Messages are keyed directly by
  * activityId and retrieved newest-first via the
  * ([activityId, createdAt desc, id desc]) index for fast cursor pagination.
  */
@@ -164,6 +166,41 @@ export class ActivityDiscussionService {
     ) {
       throw new NotFoundException('Activity not found');
     }
+    return activity;
+  }
+
+  /**
+   * Viewing the discussion is open to anyone who may view the activity, but
+   * posting is for the people taking part: the host, a joined member, or an
+   * invitee who accepted (and was not since revoked). Anyone else who can merely
+   * see a public activity may read along, not post. A finished or cancelled
+   * activity is closed to new messages for everyone; the thread stays readable.
+   * Uses the rows assertCanAccessDiscussion already loaded, so no second query.
+   */
+  private assertCanPost(
+    activity: Awaited<ReturnType<typeof this.assertCanAccessDiscussion>>,
+    userId: string,
+  ): void {
+    const isParticipant =
+      activity.creatorId === userId ||
+      (Array.isArray(activity.members) &&
+        activity.members.some(
+          (m) => m.userId === userId && m.status === 'MEMBER',
+        )) ||
+      (Array.isArray(activity.invitations) &&
+        activity.invitations.some(
+          (i) =>
+            i.inviteeId === userId && i.status === 'ACCEPTED' && !i.revokedAt,
+        ));
+    if (!isParticipant) {
+      throw new ForbiddenException('Only people taking part can post here.');
+    }
+    if (activity.status === 'ENDED') {
+      throw new ForbiddenException('This activity has ended.');
+    }
+    if (activity.status === 'CANCELLED') {
+      throw new ForbiddenException('This activity was cancelled.');
+    }
   }
 
   /**
@@ -239,7 +276,8 @@ export class ActivityDiscussionService {
       );
     }
 
-    await this.assertCanAccessDiscussion(activityId, userId);
+    const activity = await this.assertCanAccessDiscussion(activityId, userId);
+    this.assertCanPost(activity, userId);
 
     const created = await this.prisma.activityDiscussionMessage.create({
       data: { activityId, userId, text: trimmed },
