@@ -990,7 +990,11 @@ export class UsersService {
       avatar: targetUser.avatar,
       cover: targetUser.cover,
       bio: targetUser.bio,
-      birthday: targetUser.birthday,
+      // The key stays so older clients still find it, but the value is the
+      // owner's alone: a date of birth is not shown on any other person's
+      // profile, and every viewer who is not the owner (or has no viewer id)
+      // gets null.
+      birthday: currentUserId === targetUser.id ? targetUser.birthday : null,
       college: targetUser.college?.name || null,
       collegeId: targetUser.collegeId,
       isCampusRep: targetUser.isCampusRep,

@@ -218,8 +218,12 @@ describe('UsersService.getProfileByUsername', () => {
     _count: { followers: 0, following: 0, posts: 0 },
   };
 
-  const build = () => {
-    const findFirst = jest.fn(() => Promise.resolve(targetRow));
+  const build = (
+    row: Omit<typeof targetRow, 'birthday'> & {
+      birthday: string | null;
+    } = targetRow,
+  ) => {
+    const findFirst = jest.fn(() => Promise.resolve(row));
     const prisma = stub<PrismaService>({
       user: { findFirst },
       follow: { findUnique: () => Promise.resolve(null) },
@@ -254,6 +258,28 @@ describe('UsersService.getProfileByUsername', () => {
     const profile = await service.getProfileByUsername('sam', 'viewer');
     expect(profile.isOnline).toBe(false);
     expect(profile.lastActive).toBeNull();
+  });
+
+  describe('birthday', () => {
+    const withBirthday = { ...targetRow, birthday: '2003-04-05' };
+
+    it('is null when someone else views the profile', async () => {
+      const { service } = build(withBirthday);
+      const profile = await service.getProfileByUsername('sam', 'viewer');
+      expect(profile).toHaveProperty('birthday', null);
+    });
+
+    it('is null when there is no viewer id', async () => {
+      const { service } = build(withBirthday);
+      const profile = await service.getProfileByUsername('sam');
+      expect(profile).toHaveProperty('birthday', null);
+    });
+
+    it('is returned to the owner viewing their own profile', async () => {
+      const { service } = build(withBirthday);
+      const profile = await service.getProfileByUsername('sam', 'target');
+      expect(profile.birthday).toBe('2003-04-05');
+    });
   });
 });
 
