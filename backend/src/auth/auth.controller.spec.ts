@@ -19,6 +19,7 @@ import type { AuthService } from './auth.service';
 import type { EmailService } from '../email/email.service';
 import type { RateLimitService } from '../common/rate-limit/rate-limit.service';
 import type { UserSessionService } from './session/user-session.service';
+import type { JwtGuard } from '../common/guards/jwt.guard';
 import type { AuthenticatedUser } from '../common/types/authenticated-request';
 
 /** The body revokeAllSessions accepts. */
@@ -71,6 +72,7 @@ describe('AuthController — Security / Email Notification Spoofing Prevention',
       stub<EmailService>(emailService),
       stub<RateLimitService>(rateLimit),
       stub<UserSessionService>(sessions),
+      stub<JwtGuard>(),
     );
   });
 
@@ -212,6 +214,7 @@ describe('AuthController — session revocation scope', () => {
       stub<EmailService>(),
       stub<RateLimitService>({ consume: jest.fn(), penalize: jest.fn() }),
       stub<UserSessionService>(sessions),
+      stub<JwtGuard>(),
     );
   });
 
@@ -425,6 +428,7 @@ describe('AuthController — change password', () => {
       stub<EmailService>(),
       stub<RateLimitService>({ consume: jest.fn(), penalize: jest.fn() }),
       stub<UserSessionService>(sessions),
+      stub<JwtGuard>(),
     );
   });
 
@@ -564,6 +568,7 @@ describe('AuthController — refresh can carry the profile', () => {
       stub<EmailService>(),
       stub<RateLimitService>({ consume: jest.fn(), penalize: jest.fn() }),
       stub<UserSessionService>(sessions),
+      stub<JwtGuard>(),
     );
   });
 
@@ -698,6 +703,7 @@ describe('AuthController — per-email budget on campus requests', () => {
       stub<EmailService>(),
       stub<RateLimitService>({ consume, penalize: jest.fn() }),
       stub<UserSessionService>(),
+      stub<JwtGuard>(),
     );
     return { controller, consume, createCollegeRequest };
   };
@@ -734,6 +740,7 @@ describe('AuthController — failed logins share one budget per account', () => 
       stub<EmailService>(),
       stub<RateLimitService>({ consume: jest.fn(), penalize }),
       stub<UserSessionService>(),
+      stub<JwtGuard>(),
     );
     return { controller, penalize, login };
   };
@@ -804,6 +811,7 @@ describe('AuthController — finalising a password reset', () => {
       stub<EmailService>({ sendPasswordChangedEmail }),
       stub<RateLimitService>(),
       stub<UserSessionService>({ revokeAllForUser }),
+      stub<JwtGuard>(),
     );
     return { controller, revokeAllForUser, sendPasswordChangedEmail };
   };

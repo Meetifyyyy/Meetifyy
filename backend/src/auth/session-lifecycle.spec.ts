@@ -5,10 +5,16 @@ jest.mock('../common/utils/sanitize-html.util', () => ({
   htmlToPlainText: jest.fn((str: string) => str),
 }));
 
-import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  ServiceUnavailableException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { AuthController } from './auth.controller';
 import { UserSessionRevokedReason } from '@prisma/client';
+import { ProviderRefreshUnavailableError } from './auth.service';
 import type { AuthService } from './auth.service';
+import type { JwtGuard } from '../common/guards/jwt.guard';
 import type { EmailService } from '../email/email.service';
 import type { RateLimitService } from '../common/rate-limit/rate-limit.service';
 import type { UserSessionService } from './session/user-session.service';
@@ -45,7 +51,12 @@ import { stub } from '../common/testing/stub';
  */
 describe('AuthController — session lifecycle', () => {
   let controller: AuthController;
-  let authService: { login: jest.Mock; syncProfile: jest.Mock };
+  let authService: {
+    login: jest.Mock;
+    syncProfile: jest.Mock;
+    refreshProviderSession: jest.Mock;
+  };
+  let jwtGuard: { validateToken: jest.Mock };
   let sessions: {
     issue: jest.Mock;
     hashRefreshToken: jest.Mock;
@@ -69,6 +80,7 @@ describe('AuthController — session lifecycle', () => {
         penalize: jest.fn().mockResolvedValue(undefined),
       }),
       stub<UserSessionService>(sessions),
+      stub<JwtGuard>(jwtGuard),
     );
 
   beforeEach(() => {
@@ -82,6 +94,22 @@ describe('AuthController — session lifecycle', () => {
         user: { id: 'u1', email: 'a@b.c', displayName: 'A' },
       }),
       syncProfile: jest.fn().mockResolvedValue({ id: 'u1', username: 'a' }),
+      // What Supabase answers when it accepts the refresh token handed over at
+      // signup: a rotated pair, distinct from the ones the browser presented.
+      refreshProviderSession: jest.fn().mockResolvedValue({
+        access_token: 'rotated-access',
+        refresh_token: 'rotated-refresh',
+        expires_in: 3600,
+      }),
+    };
+    jwtGuard = {
+      validateToken: jest.fn((token: string) =>
+        Promise.resolve(
+          token === 'rotated-access'
+            ? { id: 'u1', email: 'a@b.c', user_metadata: {}, token }
+            : null,
+        ),
+      ),
     };
     sessions = {
       issue: jest.fn().mockResolvedValue({
@@ -191,16 +219,24 @@ describe('AuthController — session lifecycle', () => {
       user_metadata: {},
       token: 'provider-access',
     };
+    const adopt = (init: MockRequestInit = {}) =>
+      controller.adoptSession(
+        { refreshToken: 'provider-refresh' },
+        user,
+        req(init),
+        res,
+      );
+
+    const expectNothingCreated = () => {
+      expect(authService.syncProfile).not.toHaveBeenCalled();
+      expect(sessions.issue).not.toHaveBeenCalled();
+      expect(res.cookie).not.toHaveBeenCalled();
+    };
 
     it('provisions the profile before creating the session row that points at it', async () => {
       // Adoption is a brand-new account's first request, so its User row may
       // not exist yet; the session insert would fail on the foreign key.
-      await controller.adoptSession(
-        { refreshToken: 'provider-refresh' },
-        user,
-        req(),
-        res,
-      );
+      await adopt();
       expect(authService.syncProfile.mock.invocationCallOrder[0]).toBeLessThan(
         sessions.issue.mock.invocationCallOrder[0],
       );
@@ -210,16 +246,114 @@ describe('AuthController — session lifecycle', () => {
       authService.syncProfile.mockRejectedValueOnce(
         new UnauthorizedException('Email verification required.'),
       );
-      await expect(
-        controller.adoptSession(
-          { refreshToken: 'provider-refresh' },
-          user,
-          req(),
-          res,
-        ),
-      ).rejects.toBeInstanceOf(UnauthorizedException);
+      await expect(adopt()).rejects.toBeInstanceOf(UnauthorizedException);
       expect(sessions.issue).not.toHaveBeenCalled();
       expect(res.cookie).not.toHaveBeenCalled();
+    });
+
+    it('spends the refresh token at the provider before anything else happens', async () => {
+      await adopt();
+      expect(authService.refreshProviderSession).toHaveBeenCalledWith(
+        'provider-refresh',
+      );
+      expect(
+        authService.refreshProviderSession.mock.invocationCallOrder[0],
+      ).toBeLessThan(authService.syncProfile.mock.invocationCallOrder[0]);
+    });
+
+    it('refuses a refresh token the provider rejects, and creates nothing', async () => {
+      // A bearer that outlived "sign out everywhere", paired with any string.
+      authService.refreshProviderSession.mockResolvedValueOnce(null);
+      await expect(adopt()).rejects.toBeInstanceOf(UnauthorizedException);
+      expectNothingCreated();
+    });
+
+    it('answers 503, not 401, and creates nothing when the provider is unavailable', async () => {
+      authService.refreshProviderSession.mockRejectedValueOnce(
+        new ProviderRefreshUnavailableError(),
+      );
+      await expect(adopt()).rejects.toBeInstanceOf(ServiceUnavailableException);
+      expectNothingCreated();
+    });
+
+    it('lets any other provider failure propagate', async () => {
+      const boom = new Error('unexpected');
+      authService.refreshProviderSession.mockRejectedValueOnce(boom);
+      await expect(adopt()).rejects.toBe(boom);
+      expectNothingCreated();
+    });
+
+    it('refuses a refresh token that belongs to a different account', async () => {
+      jwtGuard.validateToken.mockResolvedValueOnce({
+        id: 'someone-else',
+        email: 'x@y.z',
+        user_metadata: {},
+        token: 'rotated-access',
+      });
+      await expect(adopt()).rejects.toBeInstanceOf(UnauthorizedException);
+      expectNothingCreated();
+    });
+
+    it('refuses when the refreshed access token cannot be verified', async () => {
+      jwtGuard.validateToken.mockResolvedValueOnce(null);
+      await expect(adopt()).rejects.toBeInstanceOf(UnauthorizedException);
+      expectNothingCreated();
+    });
+
+    it('verifies the NEW access token, not the bearer', async () => {
+      await adopt();
+      expect(jwtGuard.validateToken).toHaveBeenCalledWith('rotated-access');
+    });
+
+    it('seals the rotated provider refresh token, not the one in the body', async () => {
+      await adopt();
+      expect(sessions.issue).toHaveBeenCalledWith(
+        'u1',
+        expect.anything(),
+        'rotated-refresh',
+      );
+      expect(sessions.issue).not.toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        'provider-refresh',
+      );
+    });
+
+    it('sets the rotated access token as the cookie', async () => {
+      await adopt();
+      const set = cookiesSet();
+      expect(set.mf_access).toBe('rotated-access');
+      expect(set.mf_refresh).toBe('our-refresh');
+      expect(set.mf_sid).toBe('s1');
+    });
+
+    it('hands the installed app the rotated access token and keeps the response shape', async () => {
+      const body = await adopt({ headers: { origin: 'https://localhost' } });
+      expect(Object.keys(body).sort()).toEqual(
+        [
+          'accessToken',
+          'csrfToken',
+          'expiresIn',
+          'meta',
+          'refreshToken',
+          'sessionId',
+          'user',
+        ].sort(),
+      );
+      expect(body).toMatchObject({
+        accessToken: 'rotated-access',
+        refreshToken: 'our-refresh',
+        sessionId: 's1',
+      });
+      expect(JSON.stringify(body)).not.toContain('rotated-refresh');
+      expect(JSON.stringify(body)).not.toContain('provider-access');
+    });
+
+    it('sends a website no tokens in the body', async () => {
+      const body = await adopt();
+      expect(Object.keys(body).sort()).toEqual(
+        ['csrfToken', 'meta', 'sessionId', 'user'].sort(),
+      );
     });
   });
 

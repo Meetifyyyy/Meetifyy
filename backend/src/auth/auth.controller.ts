@@ -85,6 +85,9 @@ export class AuthController {
     private readonly emailService: EmailService,
     private readonly rateLimit: RateLimitService,
     private readonly sessions: UserSessionService,
+    // Only to verify the access token the provider hands back when the signup
+    // handover proves its refresh token. The same verifier the route guard uses.
+    private readonly jwtGuard: JwtGuard,
   ) {}
 
   /**
@@ -299,6 +302,21 @@ export class AuthController {
    * any other. The refresh token is in the body because handing it over is the
    * point: the server seals it into the session row, and the client drops its
    * copy immediately afterwards.
+   *
+   * The refresh token is PROVED before the server takes custody of it, by
+   * spending it at the provider. The bearer alone proves nothing about it: with
+   * no `x-session-id` the guard has no server session to check, so a still-valid
+   * access token — one that outlived "sign out everywhere", which ends server
+   * sessions but cannot un-sign a JWT — would otherwise be enough to mint a
+   * fresh cookie/app session by pairing it with any string. Refreshing makes the
+   * caller present a refresh token the provider still honours, and the account
+   * it belongs to must be the account the bearer names.
+   *
+   * The rotated pair is what the server then holds and hands out. Supabase
+   * retires the token it was given, and the client forgets its own copy right
+   * after this call (web: `forgetProviderSession`; app: it stores whatever this
+   * returns), so nothing is left holding the old one. The response keeps its
+   * shape: installed apps ship a frozen client that reads it.
    */
   @Post('session/adopt')
   @HttpCode(HttpStatus.OK)
@@ -314,6 +332,42 @@ export class AuthController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
+    // Nothing below this block runs, and no row or cookie exists, until the
+    // provider has accepted the refresh token. Without a configured provider
+    // this answers null: there is no provider session to adopt.
+    let refreshed: Awaited<ReturnType<AuthService['refreshProviderSession']>>;
+    try {
+      refreshed = await this.authService.refreshProviderSession(
+        body.refreshToken,
+      );
+    } catch (err) {
+      if (!(err instanceof ProviderRefreshUnavailableError)) throw err;
+      // The provider is down or timed out; it said nothing about the token.
+      throw new ServiceUnavailableException(
+        'Sign-in is temporarily unavailable. Please try again.',
+      );
+    }
+    if (!refreshed) {
+      throw new UnauthorizedException('Session could not be verified');
+    }
+
+    // A refresh token that is live but belongs to someone else would otherwise
+    // seal another account's session under this bearer's user id. The token is
+    // verified (signature, expiry, issuer) the same way the guard verifies the
+    // bearer, rather than decoded, so only an identity the provider signed counts.
+    const refreshedUser = await this.jwtGuard.validateToken(
+      refreshed.access_token,
+    );
+    if (!refreshedUser || refreshedUser.id !== user.id) {
+      this.logger.warn(
+        `session.adopt_subject_mismatch ${JSON.stringify({
+          bearerUserId: user.id,
+          refreshedUserId: refreshedUser?.id ?? null,
+        })}`,
+      );
+      throw new UnauthorizedException('Session could not be verified');
+    }
+
     // Profile first: the session row is a foreign key to it, and this is the
     // first request a brand-new account makes, so the row may not exist yet.
     // `syncProfile` creates it for a verified address. See `login`.
@@ -322,15 +376,16 @@ export class AuthController {
     const issued = await this.sessions.issue(
       user.id,
       this.deviceOf(req),
-      body.refreshToken,
+      refreshed.refresh_token,
     );
     await this.supersedePreviousSession(req, user.id, issued.sessionId);
 
+    const accessMaxAgeMs = this.accessCookieMaxAge(refreshed.access_token);
     const { csrfToken } = issueUserSessionCookies(
       res,
-      user.token,
+      refreshed.access_token,
       issued.refreshToken,
-      this.accessCookieMaxAge(user.token),
+      accessMaxAgeMs,
       issued.expiresAt.getTime() - Date.now(),
       issued.sessionId,
     );
@@ -342,9 +397,9 @@ export class AuthController {
       sessionId: issued.sessionId,
       ...this.nativeSessionTokens(
         req,
-        user.token,
+        refreshed.access_token,
         issued.refreshToken,
-        Math.max(1, Math.round(this.accessCookieMaxAge(user.token) / 1000)),
+        Math.max(1, Math.round(accessMaxAgeMs / 1000)),
       ),
     };
   }
