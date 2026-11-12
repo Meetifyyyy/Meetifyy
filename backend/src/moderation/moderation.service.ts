@@ -152,7 +152,12 @@ export class ModerationService {
             targetId: report.targetId,
             reason: report.reason,
           },
-          { removeOnComplete: true },
+          {
+            removeOnComplete: true,
+            // Bounded retention of failures: Redis never evicts, so without
+            // this a failed alert would sit in the queue forever.
+            removeOnFail: { age: 24 * 3600, count: 1000 },
+          },
         );
       } catch (err) {
         this.logger.warn('Failed to enqueue moderator notification task', err);

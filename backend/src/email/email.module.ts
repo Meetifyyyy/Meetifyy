@@ -12,6 +12,18 @@ import { ADDRESS_MAILER } from '../otp/address-mailer';
 
 import { config } from '../config';
 
+/**
+ * Retention for the email queue. BullMQ keeps finished jobs forever unless told
+ * otherwise, and these payloads hold one-time codes, addresses and IPs, so a
+ * sent job is dropped at once. A failed one is kept a day (and capped) so a
+ * delivery problem can be diagnosed; any code in it expired long before that.
+ * Per-job `attempts`/`backoff` are untouched: these are only the defaults.
+ */
+export const EMAIL_QUEUE_DEFAULT_JOB_OPTIONS = {
+  removeOnComplete: true,
+  removeOnFail: { age: 24 * 3600, count: 1000 },
+} as const;
+
 @Module({
   imports: [
     ConfigModule,
@@ -22,6 +34,7 @@ import { config } from '../config';
     EmailUsageModule,
     BullModule.registerQueue({
       name: 'email',
+      defaultJobOptions: EMAIL_QUEUE_DEFAULT_JOB_OPTIONS,
     }),
   ],
   // The email preview controller is registered only where the environment

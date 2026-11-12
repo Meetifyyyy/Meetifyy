@@ -3191,6 +3191,10 @@ export class ActivitiesService implements OnModuleInit {
                 notificationPayload,
                 {
                   removeOnComplete: true,
+                  // Failed jobs are kept a day for inspection, then dropped:
+                  // Redis never evicts (noeviction), so an unbounded failed
+                  // set would grow until it fills the instance.
+                  removeOnFail: { age: 24 * 3600, count: 1000 },
                   attempts: 3,
                   backoff: { type: 'exponential', delay: 1000 },
                 },
