@@ -17,6 +17,7 @@ import {
 import type { ErrorLogRecorder } from '../../observability/error-log.recorder';
 import { requestIdOf } from '../rate-limit/rate-limit.response';
 import { isRecord } from '../utils/type-guards.util';
+import { requestDbStats } from '../request-context/request-context';
 import {
   clientIp,
   headerValue,
@@ -174,6 +175,8 @@ export class HttpExceptionFilter implements ExceptionFilter {
           status,
           userId,
           reqId: requestIdOf(request),
+          dbQueries: requestDbStats(request)?.queries,
+          dbMs: requestDbStats(request)?.dbMs,
           extra: bodySnippet,
           cause,
         }),

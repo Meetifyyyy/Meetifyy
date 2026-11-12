@@ -143,6 +143,9 @@ export interface HttpLine {
   ms?: number;
   userId?: string;
   reqId?: string;
+  /** Prisma operations the request ran, and their summed time. */
+  dbQueries?: number;
+  dbMs?: number;
   /** Appended after a `✗` marker — the root cause on a failure. */
   cause?: string;
   /** Extra trailing facts, e.g. a redacted request body. */
@@ -155,7 +158,14 @@ export function httpLine(l: HttpLine): string {
     pad(shortPath(l.url || ''), W.path),
     padStart(l.status != null ? String(l.status) : '', W.status),
     padStart(formatMs(l.ms), W.ms),
-    facts({ user: shortId(l.userId), req: shortId(l.reqId) }),
+    facts({
+      user: shortId(l.userId),
+      req: shortId(l.reqId),
+      q: l.dbQueries,
+      // Always milliseconds, never `1.2s`: these two are read back by scripts
+      // comparing one build with another, and one unit parses without a case.
+      db: l.dbMs != null ? `${Math.round(l.dbMs)}ms` : undefined,
+    }),
   ];
   let line = cols.join(' ').trimEnd();
   if (l.extra) line += ` ${l.extra}`;

@@ -9,6 +9,7 @@ import { ValidationPipe, Logger as NestLogger } from '@nestjs/common';
 import helmet from 'helmet';
 import type { NextFunction, Request, Response } from 'express';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { GLOBAL_VALIDATION_PIPE_OPTIONS } from './common/validation/global-validation-pipe.options';
 import { ErrorLogRecorder } from './observability/error-log.recorder';
 import cookieParser from 'cookie-parser';
 import compression from 'compression';
@@ -19,6 +20,7 @@ import {
   isOriginAuthExempt,
   isOriginAuthorized,
 } from './common/security/origin-auth';
+import { requestContextMiddleware } from './common/request-context/request-context';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -35,6 +37,11 @@ async function bootstrap() {
   // Until this was set, every IP-keyed rate limit counted the proxy's address,
   // so all traffic shared one bucket. See config/rate-limit.config.ts.
   app.set('trust proxy', config.rateLimit.trustProxyHops);
+
+  // Opens the per-request database counters (queries, time) that the access
+  // log reports. First of all, so the guards' own queries are counted too. The
+  // Server-Timing header is a development aid and stays off in production.
+  app.use(requestContextMiddleware({ serverTiming: !config.app.isProduction }));
 
   // Refuse anything that did not come through our Cloudflare zone. Runs before
   // every other middleware so a refused request costs nothing. Off unless
@@ -188,13 +195,7 @@ async function bootstrap() {
   });
 
   // Global validation pipe
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-    }),
-  );
+  app.useGlobalPipes(new ValidationPipe(GLOBAL_VALIDATION_PIPE_OPTIONS));
 
   // Global Exception Filter
   // The recorder is resolved from the container and handed over, because this

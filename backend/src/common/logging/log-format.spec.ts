@@ -32,6 +32,26 @@ describe('log-format', () => {
     );
   });
 
+  it('reports what the request cost the database as q= and db=', () => {
+    const line = httpLine({
+      method: 'GET',
+      url: '/api/messages',
+      status: 200,
+      ms: 83,
+      userId: '189d7031-aaaa',
+      reqId: 'req12345-bbbb',
+      dbQueries: 7,
+      dbMs: 41.6,
+    });
+    expect(line).toMatch(/user=189d7031 req=req12345 q=7 db=42ms$/);
+    // A request that never touched the database still says so.
+    expect(
+      httpLine({ method: 'GET', url: '/', dbQueries: 0, dbMs: 0 }),
+    ).toContain('q=0 db=0ms');
+    // No request context, no facts — not `q=undefined`.
+    expect(httpLine({ method: 'GET', url: '/' })).not.toMatch(/q=|db=/);
+  });
+
   it('marks the cause of a failure after the facts', () => {
     const line = httpLine({
       method: 'GET',

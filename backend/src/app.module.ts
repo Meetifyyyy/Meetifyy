@@ -73,6 +73,7 @@ import { AcademicsModule } from './academics/academics.module';
 import { SupportModule } from './support/support.module';
 import { LegalModule } from './legal/legal.module';
 import { requestIdFrom } from './common/utils/request-id.util';
+import { requestDbStats } from './common/request-context/request-context';
 
 @Module({
   imports: [
@@ -106,6 +107,8 @@ import { requestIdFrom } from './common/utils/request-id.util';
                 ms: time,
                 userId: requestUserId(req),
                 reqId: req.id as string,
+                dbQueries: requestDbStats(req)?.queries,
+                dbMs: requestDbStats(req)?.dbMs,
                 cause: 'slow request',
               }),
             );
@@ -120,6 +123,10 @@ import { requestIdFrom } from './common/utils/request-id.util';
             // the request id against some other line that happened to carry it.
             userId: requestUserId(req),
             reqId: req.id as string,
+            // What the request cost the database; absent when no request
+            // context was opened for it (see requestContextMiddleware).
+            dbQueries: requestDbStats(req)?.queries,
+            dbMs: requestDbStats(req)?.dbMs,
             // HttpExceptionFilter stashes the reason a 4xx was refused here
             // rather than logging its own line. Both used to print: one with
             // the cause and no latency, one with the latency and no cause, for
@@ -134,6 +141,8 @@ import { requestIdFrom } from './common/utils/request-id.util';
             status: res.statusCode,
             userId: requestUserId(req),
             reqId: req.id as string,
+            dbQueries: requestDbStats(req)?.queries,
+            dbMs: requestDbStats(req)?.dbMs,
             cause: err.message,
           }),
         customLogLevel: (req, res, err) => {

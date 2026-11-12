@@ -13,6 +13,7 @@ import { dbLine } from '../common/logging/log-format';
 import { detach } from '../common/utils/detach.util';
 import * as os from 'node:os';
 import { connectionRetryMiddleware } from './connection-retry.middleware';
+import { dbStatsMiddleware } from './db-stats.middleware';
 
 /**
  * Connects through node-postgres rather than Prisma's own Rust connection layer.
@@ -182,6 +183,10 @@ export class PrismaService
       }
       this.logger.warn(`Postgres pool error (recovered): ${err.message}`);
     });
+
+    // First, so it wraps the retry below: a retried query is still one
+    // operation of the request that issued it.
+    this.$use(dbStatsMiddleware());
 
     // Retries transient connection drops, and refuses queries once the
     // database has closed (see the middleware's own notes).
