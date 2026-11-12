@@ -647,6 +647,11 @@ export class CommunitiesService implements OnModuleInit {
     // Excluded in `eligible`: deleted, campus-only (a separate gated surface),
     // already joined, and anything the viewer has a pending join request for
     // — suggesting it again would only offer a button that does nothing.
+    //
+    // Private communities stay recommendable, but nothing derived from who is
+    // in them is used or returned for those rows: their roster is hidden from
+    // non-members, so "a person you follow is in it" would reveal exactly the
+    // membership the community's own page withholds.
     const POOL = 120;
     const ACTIVE_DAYS = 14;
     const since = new Date(Date.now() - ACTIVE_DAYS * 24 * 60 * 60 * 1000);
@@ -662,7 +667,8 @@ export class CommunitiesService implements OnModuleInit {
         FROM "User" vu WHERE vu."id" = ${userId} LIMIT 1
       ),
       eligible AS (
-        SELECT c."id", c."name", c."description", c."memberCount", c."createdAt"
+        SELECT c."id", c."name", c."description", c."memberCount", c."createdAt",
+          c."isPrivate"
         FROM "Community" c, me
         WHERE c."deletedAt" IS NULL
           AND c."isCampusCommunity" = false
@@ -688,6 +694,7 @@ export class CommunitiesService implements OnModuleInit {
         FROM my_follows mf
         JOIN "CommunityMember" cm ON cm."userId" = mf."id"
         JOIN eligible e ON e."id" = cm."communityId"
+        WHERE e."isPrivate" = false
         GROUP BY cm."communityId"
         ORDER BY COUNT(*) DESC
         LIMIT ${POOL}
@@ -727,20 +734,23 @@ export class CommunitiesService implements OnModuleInit {
         SELECT
           e."id",
           e."memberCount",
-          (
+          -- The three membership-derived signals are blanked for private
+          -- communities (see above); the CASE also keeps their subqueries from
+          -- running for those rows.
+          CASE WHEN e."isPrivate" THEN 0 ELSE (
             SELECT COUNT(*)::int FROM my_follows mf
             JOIN "CommunityMember" cm
               ON cm."userId" = mf."id" AND cm."communityId" = e."id"
-          ) AS "friendCount",
-          (
+          ) END AS "friendCount",
+          CASE WHEN e."isPrivate" THEN NULL ELSE (
             SELECT u."displayName" FROM my_follows mf
             JOIN "CommunityMember" cm
               ON cm."userId" = mf."id" AND cm."communityId" = e."id"
             JOIN "User" u ON u."id" = mf."id"
             ORDER BY cm."joinedAt" DESC
             LIMIT 1
-          ) AS "friendSampleName",
-          CASE WHEN me."collegeId" IS NULL THEN 0 ELSE (
+          ) END AS "friendSampleName",
+          CASE WHEN e."isPrivate" OR me."collegeId" IS NULL THEN 0 ELSE (
             -- Verified members of the viewer's campus (active affiliation).
             SELECT COUNT(*)::int FROM "CommunityMember" cm
             JOIN "CollegeAffiliation" ca

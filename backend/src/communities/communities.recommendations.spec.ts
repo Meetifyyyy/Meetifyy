@@ -152,6 +152,77 @@ describe('CommunitiesService — discovery recommendations', () => {
     });
   });
 
+  describe('private communities', () => {
+    /**
+     * The text of the ranking query, whitespace collapsed. `$queryRaw` is a
+     * tagged template, so it is called with the literal fragments first and the
+     * interpolated values after; the fragments are what carry the SQL.
+     */
+    const rankingSql = (): string => {
+      const call = queryRaw.mock.calls[0] as unknown as [readonly string[]];
+      return call[0].join('?').replace(/\s+/g, ' ');
+    };
+
+    // The SQL itself is not executed here, so these pin the guards' presence;
+    // what they select is only provable against a real Postgres.
+    it('selects isPrivate in the eligible set', async () => {
+      setup(scoredPool(1));
+      await service.getCommunityRecommendations('me', 3);
+
+      expect(rankingSql()).toMatch(
+        /eligible AS \( SELECT [^()]*c\."isPrivate" FROM "Community" c/,
+      );
+    });
+
+    it('keeps private communities out of the friends arm', async () => {
+      setup(scoredPool(1));
+      await service.getCommunityRecommendations('me', 3);
+
+      expect(rankingSql()).toMatch(
+        /friends_arm AS \(.*JOIN eligible e ON e\."id" = cm\."communityId" WHERE e\."isPrivate" = false GROUP BY/,
+      );
+    });
+
+    it.each([
+      ['friendCount', '0'],
+      ['friendSampleName', 'NULL'],
+    ])('blanks %s for a private community', async (column, blank) => {
+      setup(scoredPool(1));
+      await service.getCommunityRecommendations('me', 3);
+
+      expect(rankingSql()).toContain(
+        `CASE WHEN e."isPrivate" THEN ${blank} ELSE (`,
+      );
+      expect(rankingSql()).toMatch(new RegExp(`\\) END AS "${column}"`));
+    });
+
+    it('blanks campusMemberCount for a private community', async () => {
+      setup(scoredPool(1));
+      await service.getCommunityRecommendations('me', 3);
+
+      expect(rankingSql()).toContain(
+        'CASE WHEN e."isPrivate" OR me."collegeId" IS NULL THEN 0 ELSE (',
+      );
+      expect(rankingSql()).toMatch(/\) END AS "campusMemberCount"/);
+    });
+
+    it('still returns a private community, with no friend or campus signal', async () => {
+      // The query hands back zero / NULL for a private row; the response keeps
+      // every key and carries those values through.
+      setup(scoredPool(1, { friendCount: 0, friendSampleName: null }));
+
+      const [first] = await service.getCommunityRecommendations('me', 3);
+
+      expect(first).toMatchObject({
+        id: 'c0',
+        friendCount: 0,
+        friendSampleName: null,
+        campusMemberCount: 0,
+      });
+      expect(first.reason).not.toBe('friends_joined');
+    });
+  });
+
   it('returns nothing without a viewer, and asks nothing', async () => {
     setup(scoredPool(5));
 
