@@ -15,6 +15,19 @@ export class RedisService implements OnModuleDestroy {
   private subClient: Redis | null = null;
 
   /**
+   * Redis sits behind Container Apps' internal TCP ingress, which closes a
+   * connection that carries no data for about five minutes. TCP keepalive does
+   * not count — the proxy terminates TCP — so an idle connection was cut and
+   * re-established every five minutes, all day (logs: ~12 "connection
+   * established" per hour per connection). Each cut lost the domain events,
+   * relayed socket emits and cache invalidations published while the
+   * subscriber was reconnecting, and made ioredis re-send in-flight commands.
+   * A PING a minute is real traffic, so the connection never goes idle.
+   */
+  private static readonly HEARTBEAT_MS = 60_000;
+  private heartbeatTimer: NodeJS.Timeout | null = null;
+
+  /**
    * In-process mutex map: always-on sequential queue for a single Node.js instance.
    * Maps a lock key to a Promise chain — requests for the same key queue up and
    * execute one-at-a-time even when Redis is unavailable.
@@ -88,6 +101,13 @@ export class RedisService implements OnModuleDestroy {
 
         this.client.on('error', handleRedisError('Shared Redis'));
         this.subClient.on('error', handleRedisError('Redis Subscriber'));
+
+        this.heartbeatTimer = setInterval(
+          () => this.pingIdleConnections(),
+          RedisService.HEARTBEAT_MS,
+        );
+        // Never hold the process open on this timer alone.
+        this.heartbeatTimer.unref();
       } catch (e) {
         this.logger.error('Failed to parse REDIS_URL', e);
       }
@@ -210,7 +230,21 @@ export class RedisService implements OnModuleDestroy {
     }
   }
 
+  /**
+   * One PING per ready connection. PING is valid in subscriber mode, so the
+   * subscriber connection is kept alive the same way.
+   */
+  private pingIdleConnections(): void {
+    for (const conn of [this.client, this.subClient]) {
+      if (conn?.status !== 'ready') continue;
+      // Fire-and-forget: a failed ping means the connection is already
+      // dropping, which ioredis reports and recovers from on its own.
+      conn.ping().catch(() => undefined);
+    }
+  }
+
   async onModuleDestroy() {
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     if (this.client) await this.client.quit();
     if (this.subClient) await this.subClient.quit();
   }
