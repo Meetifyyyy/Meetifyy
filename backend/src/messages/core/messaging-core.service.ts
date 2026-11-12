@@ -233,8 +233,11 @@ export class MessagingCoreService {
     senderId: string,
   ) {
     const realConvId = await this.resolveConversationId(conversationId);
+    // `leftAt: null` as well as `deletedAt: null`: leaving or being removed
+    // from a group sets only `leftAt`, so without it a former member stayed in
+    // this list and kept receiving every forwarded message.
     const participants = await this.prisma.conversationParticipant.findMany({
-      where: { conversationId: realConvId, deletedAt: null },
+      where: { conversationId: realConvId, deletedAt: null, leftAt: null },
       select: { userId: true, isMuted: true },
     });
 
