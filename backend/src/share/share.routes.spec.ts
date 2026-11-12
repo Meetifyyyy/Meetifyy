@@ -214,15 +214,19 @@ describe('share routes', () => {
   });
 
   describe('cache headers survive the global interceptor', () => {
-    it('lets the CDN hold the card for a year, keyed by the versioned URL', async () => {
-      findFirst.mockResolvedValue(postRow());
-      const res = await request(app.getHttpServer()).get(
-        `/api/share/post/${POST_ID}/image.jpg?v=123`,
-      );
+    it.each(['image.jpg?v=123', 'story.jpg?v=123'])(
+      'lets the edge hold %s for a day and the browser for an hour, never as immutable',
+      async (file) => {
+        findFirst.mockResolvedValue(postRow());
+        const res = await request(app.getHttpServer()).get(
+          `/api/share/post/${POST_ID}/${file}`,
+        );
 
-      expect(res.headers['cache-control']).toContain('immutable');
-      expect(res.headers['cache-control']).toContain('max-age=31536000');
-    });
+        expect(res.headers['cache-control']).toBe(
+          'public, max-age=3600, s-maxage=86400',
+        );
+      },
+    );
 
     it('lets the CDN hold the document briefly, and revalidate in the background', async () => {
       findFirst.mockResolvedValue(postRow());
@@ -240,6 +244,7 @@ describe('share routes', () => {
       for (const path of [
         `/api/share/post/${POST_ID}/preview`,
         `/api/share/post/${POST_ID}/image.jpg`,
+        `/api/share/post/${POST_ID}/story.jpg`,
         `/api/share/post/${POST_ID}`,
       ]) {
         const res = await request(app.getHttpServer()).get(path).expect(404);

@@ -81,8 +81,8 @@ export class ShareController {
    * The share card itself.
    *
    * The `v` query parameter is not read. It exists so that an edit to the post
-   * produces a different URL — see `shareImageUrl` — which is what makes an
-   * immutable year-long cache safe. Reading it and comparing would only create
+   * produces a different URL — see `shareImageUrl` — which is what lets
+   * an edit show up at once despite the day-long edge cache. Reading it and comparing would only create
    * a way for a stale crawler to pin an old card.
    */
   /**
@@ -98,7 +98,10 @@ export class ShareController {
    * thumbnail.
    */
   @Get('post/:id/story.jpg')
-  @CacheControl('public, max-age=31536000, s-maxage=31536000, immutable')
+  // Edge a day, browser an hour. A shared cache cannot be told a post was
+  // deleted or hidden, so the card must not outlive that for long; the `v`
+  // parameter still gives an edited post a fresh URL straight away.
+  @CacheControl('public, max-age=3600, s-maxage=86400')
   async story(@Param('id') id: string, @Res() res: Response) {
     const post = await this.preview.getPublicPost(id);
 
@@ -117,7 +120,10 @@ export class ShareController {
   }
 
   @Get('post/:id/image.jpg')
-  @CacheControl('public, max-age=31536000, s-maxage=31536000, immutable')
+  // Edge a day, browser an hour. A shared cache cannot be told a post was
+  // deleted or hidden, so the card must not outlive that for long; the `v`
+  // parameter still gives an edited post a fresh URL straight away.
+  @CacheControl('public, max-age=3600, s-maxage=86400')
   async image(@Param('id') id: string, @Res() res: Response) {
     const post = await this.preview.getPublicPost(id);
 
