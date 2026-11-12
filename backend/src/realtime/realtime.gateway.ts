@@ -9,7 +9,11 @@ import {
   OnGatewayInit,
 } from '@nestjs/websockets';
 import { UseInterceptors } from '@nestjs/common';
-import type { IncomingHttpHeaders } from 'http';
+import type { IncomingHttpHeaders, IncomingMessage } from 'http';
+import {
+  ORIGIN_AUTH_HEADER,
+  isOriginAuthorized,
+} from '../common/security/origin-auth';
 import type { AppServer, AppSocket } from './socket-types';
 import {
   HttpException,
@@ -159,6 +163,21 @@ const RATE_LIMIT_MESSAGES: Record<string, string> = Object.fromEntries(
     // beside it was carefully restricted.
     origin: socketCorsOrigin,
     credentials: true,
+  },
+  // The handshake is served by engine.io, not Express, so the origin check in
+  // main.ts never sees it. Same rule here: when ORIGIN_AUTH_SECRET is set, a
+  // connection that did not come through our Cloudflare zone is refused.
+  allowRequest: (
+    req: IncomingMessage,
+    callback: (err: string | null | undefined, success: boolean) => void,
+  ) => {
+    callback(
+      null,
+      isOriginAuthorized(
+        req.headers[ORIGIN_AUTH_HEADER],
+        config.app.security.originAuthSecret,
+      ),
+    );
   },
 })
 // Each socket event is traced as one unit, with its queries as children
