@@ -11,7 +11,7 @@
  *   <a onMouseEnter={() => prefetchProfile(queryClient, username)}>...</a>
  */
 import { communitiesApi, activitiesApi, usersApi } from '@shared/api/apiClient';
-import { PROFILE_KEYS } from './useProfile';
+import { PROFILE_KEYS, stampRequestedAt } from './useProfile';
 import { warmCover } from '@shared/components/ui/CoverImage';
 
 // ── Community ────────────────────────────────────────────────────────────────
@@ -38,7 +38,8 @@ export function prefetchProfile(queryClient, username) {
   queryClient.prefetchQuery({
     queryKey: PROFILE_KEYS.byUsername(username),
     queryFn: async () => {
-      const data = await usersApi.getByUsername(username);
+      const requestedAt = Date.now();
+      const data = stampRequestedAt(await usersApi.getByUsername(username), requestedAt);
       warmCover(data?.cover);
       return data;
     },

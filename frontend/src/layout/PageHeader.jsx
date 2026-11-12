@@ -14,29 +14,47 @@ export default function PageHeader({
   activeTab,
   onTabChange,
   tabVariant = 'underline',
+  // The display face the top-level pages use. Defaults to that list; a sub-page
+  // of one of them (e.g. Follow requests under Notifications) opts in.
+  displayFont,
+  // Desktop shows no back button by default (the sidebar is the navigation).
+  // A sub-page opts in, so its way back is visible on every screen size.
+  backOnDesktop = false,
 }) {
   const goBack = useSmartBack();
+  const useDisplayFont =
+    displayFont ??
+    ['Messages', 'Crew', 'Communities', 'Search', 'Notifications'].includes(title);
+  const backButton = (extraClass = '') => (
+    <button
+      type="button"
+      className={`${styles.backBtn} ${extraClass}`}
+      onClick={() => goBack(backPath)}
+      aria-label="Go back"
+    >
+      <ChevronLeft size={20} />
+    </button>
+  );
 
   return (
     <header className={styles.headerContainer}>
       <div className={styles.titleArea}>
         <div className={styles.mobileTitleRow}>
-          {showBack && (
-            <button
-              type="button"
-              className={`${styles.backBtn} ${(title === 'Messages' || title === 'Crew' || title === 'Communities' || title === 'Search') ? styles.hideBackOnMobile : ''}`}
-              onClick={() => goBack(backPath)}
-              aria-label="Go back"
-            >
-              <ChevronLeft size={20} />
-            </button>
-          )}
-          <h1 className={`${styles.mobileTitle} ${(title === 'Messages' || title === 'Crew' || title === 'Communities' || title === 'Search' || title === 'Notifications') ? styles.changaFont : ''}`}>{title}</h1>
+          {showBack &&
+            backButton(
+              title === 'Messages' || title === 'Crew' || title === 'Communities' || title === 'Search'
+                ? styles.hideBackOnMobile
+                : '',
+            )}
+          <h1 className={`${styles.mobileTitle} ${useDisplayFont ? styles.changaFont : ''}`}>{title}</h1>
         </div>
 
-        <div className={styles.desktopTitleRow}>
-          <h1 className={`${styles.desktopTitle} ${(title === 'Messages' || title === 'Crew' || title === 'Communities' || title === 'Search' || title === 'Notifications') ? styles.changaFont : ''}`}>{title}</h1>
-          {subtitle && <p className={styles.desktopSubtitle}>{subtitle}</p>}
+        <div className={`${styles.desktopTitleRow} ${showBack && backOnDesktop ? styles.desktopTitleRowWithBack : ''}`}>
+          {showBack && backOnDesktop && backButton()}
+          <div>
+            <h1 className={`${styles.desktopTitle} ${useDisplayFont ? styles.changaFont : ''}`}>{title}</h1>
+            {subtitle && <p className={styles.desktopSubtitle}>{subtitle}</p>}
+          </div>
         </div>
       </div>
 

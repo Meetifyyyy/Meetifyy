@@ -6,6 +6,7 @@ import { useInfiniteQuery } from '@tanstack/react-query';
 import { useDebounce } from '@shared/hooks/useDebounce';
 import { usersApi } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
+import { isHiddenFromViewer } from '@shared/utils/profilePrivacy';
 import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
 import FollowButton from '../ui/FollowButton';
 import Avatar from '../avatar/Avatar';
@@ -69,7 +70,7 @@ const UserRow = memo(function UserRow({ user, isSelf, onOpenProfile }) {
  * the `?tab=` param); `onTypeChange` switches it. The search is sent to the
  * server so it covers the whole list, not just the pages already loaded.
  */
-export default function UserListModal({ type, profileUsername, onClose, onTypeChange }) {
+export default function UserListModal({ type, profileUsername, profileUser, onClose, onTypeChange }) {
   const navigate = useNavigate();
   const { currentUser } = useAuth();
   const observerTargetRef = useRef(null);
@@ -144,6 +145,12 @@ export default function UserListModal({ type, profileUsername, onClose, onTypeCh
   const cleanCurrentUsername = currentUser?.username?.toLowerCase();
   const listKind = isFollowers ? 'followers' : 'following';
   const queryKey = [listKind, cleanProfileUsername, search];
+  // A private account the viewer does not follow answers with an empty list
+  // (a bare array, no flag), so the emptiness is explained from the profile.
+  const hiddenFromViewer = isHiddenFromViewer(
+    profileUser,
+    Boolean(cleanCurrentUsername) && cleanProfileUsername === cleanCurrentUsername,
+  );
 
   const {
     data,
@@ -344,9 +351,13 @@ export default function UserListModal({ type, profileUsername, onClose, onTypeCh
                 <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
                 <path d="M16 3.13a4 4 0 0 1 0 7.75" />
               </svg>
-              <p className={styles.emptyTitle}>{search ? 'No matches' : `No ${type} yet`}</p>
+              <p className={styles.emptyTitle}>
+                {hiddenFromViewer ? 'This account is private' : search ? 'No matches' : `No ${type} yet`}
+              </p>
               <p className={styles.emptySubtitle}>
-                {search
+                {hiddenFromViewer
+                  ? 'Follow this account to see who follows them and who they follow.'
+                  : search
                   ? `Nobody in ${listKind} matches “${search}”.`
                   : isFollowers
                   ? "When someone follows this account, they'll show up here."

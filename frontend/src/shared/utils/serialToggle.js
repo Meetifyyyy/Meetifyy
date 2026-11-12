@@ -21,9 +21,11 @@
  * network and reports back:
  *  - `onConfirmed(target, response, isFinal)` after each successful request;
  *    `isFinal` is true when nothing further will be sent for this burst;
- *  - `onFailed(error, { desired, confirmed })` when a request fails. The
- *    server is still at `confirmed`; the caller restores that if the screen
- *    shows `desired` and they differ.
+ *  - `onFailed(error, { desired, confirmed, lastResponse })` when a request
+ *    fails. The server is still at `confirmed`; the caller restores that if
+ *    the screen shows `desired` and they differ. `lastResponse` is what the
+ *    last SUCCESSFUL request of the burst returned (undefined if none did), for
+ *    a caller whose "confirmed" state has more to it than on/off.
  *
  * The callbacks passed with the latest tap are the ones used, so they always
  * close over the newest render's state.
@@ -45,6 +47,7 @@ function pump(key, entry) {
     .then((res) => {
       entry.inFlight = false;
       entry.confirmed = target;
+      entry.lastResponse = res;
       const isFinal = entry.desired === target;
       entry.io.onConfirmed?.(target, res, isFinal);
       pump(key, entry);
@@ -53,7 +56,11 @@ function pump(key, entry) {
       entry.inFlight = false;
       const desired = entry.desired;
       entries.delete(key);
-      entry.io.onFailed?.(err, { desired, confirmed: entry.confirmed });
+      entry.io.onFailed?.(err, {
+        desired,
+        confirmed: entry.confirmed,
+        lastResponse: entry.lastResponse,
+      });
     });
 }
 
@@ -64,7 +71,7 @@ function pump(key, entry) {
  * @param {boolean} intent the state the person just asked for
  * @param {{ send: (target: boolean) => Promise<unknown>,
  *           onConfirmed?: (target: boolean, res: unknown, isFinal: boolean) => void,
- *           onFailed?: (err: unknown, s: { desired: boolean, confirmed: boolean }) => void }} io
+ *           onFailed?: (err: unknown, s: { desired: boolean, confirmed: boolean, lastResponse?: unknown }) => void }} io
  */
 export function requestToggle(key, intent, io) {
   let entry = entries.get(key);

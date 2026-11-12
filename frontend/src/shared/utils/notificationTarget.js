@@ -35,7 +35,11 @@ export function notificationTargetPath(notif) {
 
   switch (type) {
     case 'FOLLOW':
+    case 'FOLLOW_ACCEPTED':
       return username ? `/profile/${seg(username)}` : null;
+    // A request is answered on the requests page, not on the requester's profile.
+    case 'FOLLOW_REQUEST':
+      return '/notifications/follow-requests';
     case 'LIKE':
     case 'POST_LIKE':
       return postId ? `/post/${seg(postId)}` : null;

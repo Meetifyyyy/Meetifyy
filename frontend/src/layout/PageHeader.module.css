@@ -57,6 +57,12 @@
   display: block;
 }
 
+.desktopTitleRowWithBack {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .desktopTitle {
   composes: type-page-title from global;
   margin: 0 0 0.2rem;

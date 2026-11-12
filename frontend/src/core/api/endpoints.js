@@ -401,6 +401,17 @@ export function createEndpoints({
     // payloads that render it, resolved per row against the Follow table.
     follow: (username, { signal } = {}) => apiClient.post(`/api/users/${username}/follow`, undefined, { signal }),
     unfollow: (username, { signal } = {}) => apiClient.post(`/api/users/${username}/unfollow`, undefined, { signal }),
+    // Requests to follow the viewer's private account, newest first:
+    // `{ requests: [{ user, createdAt }], nextCursor, total }`. The id in
+    // accept/decline is the REQUESTER's. Both 404 once the request is gone
+    // (answered elsewhere, or withdrawn).
+    getFollowRequests: ({ cursor, limit = 20 } = {}) => {
+      const params = new URLSearchParams({ limit: String(limit) });
+      if (cursor) params.set('cursor', cursor);
+      return apiClient.get(`/api/follow-requests?${params.toString()}`);
+    },
+    acceptFollowRequest: (userId) => apiClient.post(`/api/follow-requests/${encodeURIComponent(userId)}/accept`),
+    declineFollowRequest: (userId) => apiClient.post(`/api/follow-requests/${encodeURIComponent(userId)}/decline`),
     getById: (id) => apiClient.get(`/api/users/id/${id}`),
     // `bearer` only for the signup handover; see `request` in transport.js.
     updateProfile: (data, { bearer } = {}) => apiClient.patch('/api/users/me', data, { bearer }),

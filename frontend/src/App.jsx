@@ -120,6 +120,7 @@ const ActivityDetailPage = lazyRoute(() => import('./features/crew/pages/Activit
 const CreateActivityPage = lazyRoute(() => import('./features/crew/pages/CreateActivityPage'));
 const CrewSearchRoute = lazyRoute(() => import('./features/crew/pages/CrewSearchRoute'));
 const NotificationsRoute = lazyRoute(() => import('./features/notifications/pages/NotificationsRoute'));
+const FollowRequestsRoute = lazyRoute(() => import('./features/notifications/pages/FollowRequestsRoute'));
 const loadCampusPage = () => import('./features/campus/pages/CampusPage');
 const CampusPage = lazyRoute(loadCampusPage);
 const DirectoryPage = lazyRoute(() => import('./features/campus/pages/DirectoryPage'));
@@ -623,6 +624,7 @@ export default function App({ homeElement, rootExtras = null, feedRoute = null }
             { path: '/settings',                   element: withBoundary(<SettingsRoute />, <SettingsSkeleton />), handle: { wide: true } },
             { path: '/settings/:panel',            element: withBoundary(<SettingsRoute />, <SettingsSkeleton />), handle: { wide: true } },
             { path: '/notifications',              element: withBoundary(<NotificationsRoute />, <NotificationsPageFallback />), handle: { wide: true } },
+            { path: '/notifications/follow-requests', element: withBoundary(<FollowRequestsRoute />, null), handle: { wide: true } },
             { path: '/campus',                     element: withBoundary(<CampusPage />, <CampusSkeleton />), handle: { wide: true } },
             { path: '/campus/directory',           element: withBoundary(<OnlineOnlyPage><DirectoryPage /></OnlineOnlyPage>, null), handle: { wide: true } },
             { path: '/campus/communities',         element: withBoundary(<OnlineOnlyPage><CampusCommunitiesPage /></OnlineOnlyPage>, null), handle: { wide: true } },

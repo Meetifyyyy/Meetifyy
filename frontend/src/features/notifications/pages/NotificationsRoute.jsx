@@ -15,10 +15,12 @@ import PullToRefresh from '@shared/components/PullToRefresh';
 import { useSystemBars } from '@shared/hooks/useSystemBars';
 
 import NotificationList from '../components/NotificationList';
+import FollowRequestsRow from '../components/FollowRequestsRow';
 import InvitationList from '../components/InvitationList';
 import NotificationsLoading from '../components/NotificationsLoading';
 import styles from './NotificationsRoute.module.css';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
+import { FOLLOW_REQUESTS_KEY } from '@shared/hooks/useFollowRequests';
 
 import { requestOpenInstantMatchChat } from '@features/instant-match/context/InstantMatchContext';
 import { isInstantChatNotification } from '@shared/utils/instantChatRouting';
@@ -355,7 +357,13 @@ export default function NotificationsRoute() {
     }
 
     switch (type) {
+      // Someone asked to follow the (private) recipient: answered on its own page.
+      case 'FOLLOW_REQUEST':
+        navigate('/notifications/follow-requests', { state: { from: '/notifications' } });
+        break;
+
       case 'FOLLOW':
+      case 'FOLLOW_ACCEPTED':
         if (actorUsername) {
           navigate(`/profile/${actorUsername}`, { state: { from: '/notifications' } });
         } else if (notif.entityId) {
@@ -529,6 +537,7 @@ export default function NotificationsRoute() {
       Promise.all([
         queryClient.invalidateQueries({ queryKey: ['notifications'] }),
         queryClient.invalidateQueries({ queryKey: ['activity-pending-invitations'] }),
+        queryClient.invalidateQueries({ queryKey: FOLLOW_REQUESTS_KEY }),
       ]),
     [queryClient],
   );
@@ -576,6 +585,7 @@ export default function NotificationsRoute() {
             />
           ) : (
             <>
+            <FollowRequestsRow />
             {/* The contextual push opt-in: here, never on app load. */}
             <PushOptInCard />
             <NotificationList

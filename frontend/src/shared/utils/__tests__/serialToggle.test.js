@@ -81,4 +81,21 @@ describe('serialToggle', () => {
     await flush();
     expect(requests).toHaveLength(2);
   });
+
+  it('hands onFailed the last successful response, for a caller whose "on" has kinds', async () => {
+    const { requests, send } = server();
+    const io = { send, onFailed: vi.fn() };
+    requestToggle('k', true, io);
+    requestToggle('k', false, io);  // flipped while the first is out
+    await flush();
+    requests[0].resolve({ requested: true });
+    await flush();
+    requests[1].reject(new Error('500'));
+    await flush();
+    expect(io.onFailed).toHaveBeenCalledWith(expect.any(Error), {
+      desired: false,
+      confirmed: true,
+      lastResponse: { requested: true },
+    });
+  });
 });

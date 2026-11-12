@@ -222,6 +222,10 @@
       "destination": "/app.html"
     },
     {
+      "source": "/notifications/follow-requests",
+      "destination": "/app.html"
+    },
+    {
       "source": "/saved",
       "destination": "/app.html"
     },

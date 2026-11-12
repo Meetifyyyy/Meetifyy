@@ -4,13 +4,35 @@ import { usersApi } from '../api/apiClient';
 import { useAuth } from '../context/AuthContext';
 import { toggleRegistry } from '../utils/mutationRegistry';
 import {
+  FOLLOW_REQUESTED,
+  readFollowState,
   writeOptimisticFollowState,
   writeConfirmedFollowState,
 } from '../utils/followState';
 import { showToast } from '../utils/toast';
 import { blockIfOffline } from '../lib/offlineGuard';
-import { requestToggle } from '../utils/serialToggle';
-import { PROFILE_KEYS } from './useProfile';
+import { requestToggle, isTogglePending } from '../utils/serialToggle';
+import { PROFILE_KEYS, persistCachedProfile } from './useProfile';
+
+/**
+ * The follow state the server reports after a follow or unfollow.
+ *
+ * `requested: true` is a private account holding the viewer's request: no
+ * follow was written. A response with neither field (an older server) is read
+ * as having done what was asked.
+ */
+function serverFollowState(target, res) {
+  if (res?.requested === true) return FOLLOW_REQUESTED;
+  if (typeof res?.isFollowing === 'boolean') return res.isFollowing;
+  return target;
+}
+
+/**
+ * What the shared follow state held when each in-progress burst of taps began,
+ * per account. A failed unfollow has to put back WHICH "on" it was (Following
+ * or Requested), and by then the optimistic writes have overwritten it.
+ */
+const burstOrigins = new Map();
 
 /**
  * Follow / unfollow:
@@ -21,6 +43,11 @@ import { PROFILE_KEYS } from './useProfile';
  *    the first already, so both ran in whichever order they landed.
  * 3. The server's own answer is written as confirmed state once the burst
  *    settles; a failure restores the state the server actually holds.
+ * 4. Three states, one toggle. A tap means "on" or "off"; what "on" becomes is
+ *    the account's privacy: Following, or Requested for a private account.
+ *    When the target's privacy is already cached the tap shows the right one
+ *    at once; when it is not, the tap shows Following and settles to what the
+ *    server says (it never passes through "Follow").
  */
 export function useFollowMutation(targetUsername) {
   const { currentUser, updateCurrentUser } = useAuth();
@@ -30,14 +57,27 @@ export function useFollowMutation(targetUsername) {
   const cleanCurrent = currentUser?.username?.toLowerCase();
   const entityKey = `follow:${cleanTarget}`;
 
-  const applyOptimisticUpdate = useCallback((isFollowing) => {
+  /**
+   * `next` is the state to show: `true` (following), `'requested'` or `false`.
+   * Only `true` is a follow: a request changes no follower or following count,
+   * no list of who follows whom and no `followingList`.
+   */
+  const applyOptimisticUpdate = useCallback((next) => {
     if (!cleanTarget) return;
+    const isFollowing = next === true;
+    const requested = next === FOLLOW_REQUESTED;
+    // Read BEFORE the write below replaces it: whether the viewer followed
+    // this account until now decides the count changes. Unknown means "the
+    // opposite of what was asked" for an unfollow, as it always has.
+    const before = readFollowState(queryClient, cleanTarget);
+    const wasFollowing = before === undefined ? next === false : before === true;
+    const followingDelta = Number(isFollowing) - Number(wasFollowing);
 
     // The shared follow-state entry FIRST. Every button for this account reads
     // it, so this is what makes Follow → Following happen on the same frame,
     // wherever that account is rendered — sidebar, search results, profile
     // header — without any of them refetching.
-    writeOptimisticFollowState(queryClient, cleanTarget, isFollowing);
+    writeOptimisticFollowState(queryClient, cleanTarget, next);
 
     /**
      * The follower/following lists, in place.
@@ -60,7 +100,13 @@ export function useFollowMutation(targetUsername) {
      * therefore silent no-ops against these keys.
      */
     const updateRow = (u) =>
-      u && u.username?.toLowerCase() === cleanTarget ? { ...u, isFollowing } : u;
+      u && u.username?.toLowerCase() === cleanTarget
+        ? {
+            ...u,
+            isFollowing,
+            ...(requested || 'followRequested' in u ? { followRequested: requested } : {}),
+          }
+        : u;
     const updateUserListData = (old) => {
       if (!old) return old;
       if (Array.isArray(old)) return old.map(updateRow);
@@ -99,7 +145,7 @@ export function useFollowMutation(targetUsername) {
       if (!old) return old;
       const currentFollowers = old.stats?.followers ?? old.followersCount ?? old.followersList?.length ?? 0;
       const currentlyFollowing = Boolean(old.isFollowing);
-      const delta = isFollowing ? (currentlyFollowing ? 0 : 1) : (currentlyFollowing ? -1 : 0);
+      const delta = Number(isFollowing) - Number(currentlyFollowing);
       const newFollowers = Math.max(0, currentFollowers + delta);
 
       let updatedFollowersList = old.followersList;
@@ -114,6 +160,7 @@ export function useFollowMutation(targetUsername) {
       return {
         ...old,
         isFollowing,
+        followRequested: requested,
         followersCount: newFollowers,
         ...(updatedFollowersList ? { followersList: updatedFollowersList } : {}),
         stats: {
@@ -129,11 +176,12 @@ export function useFollowMutation(targetUsername) {
       if (u.username?.toLowerCase() === cleanTarget) {
         const currentFollowers = u.stats?.followers ?? u.followersCount ?? u.followersList?.length ?? 0;
         const currentlyFollowing = Boolean(u.isFollowing);
-        const delta = isFollowing ? (currentlyFollowing ? 0 : 1) : (currentlyFollowing ? -1 : 0);
+        const delta = Number(isFollowing) - Number(currentlyFollowing);
         const newFollowers = Math.max(0, currentFollowers + delta);
         return {
           ...u,
           isFollowing,
+          ...(requested || 'followRequested' in u ? { followRequested: requested } : {}),
           followersCount: newFollowers,
           stats: u.stats ? {
             ...u.stats,
@@ -160,12 +208,13 @@ export function useFollowMutation(targetUsername) {
       return old;
     });
 
-    // Current user's following count
-    if (cleanCurrent) {
+    // Current user's following count. Not touched by a request, or by
+    // withdrawing one: neither changes who the viewer follows.
+    if (cleanCurrent && followingDelta !== 0) {
       queryClient.setQueryData(PROFILE_KEYS.byUsername(cleanCurrent), (old) => {
         if (!old) return old;
         const currentFollowing = old.stats?.following ?? old.followingCount ?? old.followingList?.length ?? 0;
-        const delta = isFollowing ? 1 : -1;
+        const delta = followingDelta;
         const newFollowing = Math.max(0, currentFollowing + delta);
 
         let updatedFollowingList = old.followingList;
@@ -190,12 +239,19 @@ export function useFollowMutation(targetUsername) {
     }
   }, [queryClient, cleanTarget, cleanCurrent, currentUser, targetUsername, updateCurrentUser]);
 
-  /** The burst has settled on `serverFollowing`: record it and mark lists stale. */
-  const reconcile = useCallback((serverFollowing) => {
+  /** The burst has settled on `serverState` (`true`, `'requested'` or `false`): record it and mark lists stale. */
+  const reconcile = useCallback((serverState) => {
     // Confirmed, not merely observed: this response IS the write. It
     // re-stamps the per-account clock so any list payload still in flight
     // from before the action cannot land on top of it.
-    writeConfirmedFollowState(queryClient, cleanTarget, serverFollowing);
+    writeConfirmedFollowState(queryClient, cleanTarget, serverState);
+
+    // Keep the copy IndexedDB rehydrates from in step with the in-memory
+    // profiles the taps just updated (the target's follow state and follower
+    // count, the viewer's own following count). Without this a reload paints
+    // the pre-tap copy first.
+    persistCachedProfile(queryClient, cleanTarget);
+    persistCachedProfile(queryClient, cleanCurrent);
 
     // ONE silent background sync — does not update UI (staleTime guard prevents flicker)
     queryClient.invalidateQueries({ queryKey: PROFILE_KEYS.byUsername(cleanTarget), refetchType: 'none' });
@@ -220,33 +276,68 @@ export function useFollowMutation(targetUsername) {
     // cursor; it is regenerated when next fetched.
   }, [queryClient, cleanTarget, cleanCurrent]);
 
-  const toggle = useCallback((intentFollow) => {
+  const toggle = useCallback((intentOn) => {
     if (!entityKey || !cleanTarget) return;
     // Offline: not applied (see lib/offlineGuard), so Follow stays Follow.
     if (blockIfOffline('action')) return;
-    // Register intent for UI display (FollowButton reads this via
-    // getLatestIntent). The id scopes the release to THIS tap, so an older
-    // one can never clear a newer one's entry.
-    const mutationId = toggleRegistry.register(entityKey, intentFollow);
-    applyOptimisticUpdate(intentFollow);
+    // Where this burst of taps started, for a failure to restore. Read before
+    // the optimistic write below replaces it.
+    if (!isTogglePending(entityKey)) {
+      burstOrigins.set(entityKey, readFollowState(queryClient, cleanTarget));
+    }
+    // What "on" looks like for this account: Requested when its profile is
+    // already known to be private, otherwise Following until the server says
+    // (a wrong guess is corrected when the response lands, never via "Follow").
+    const cachedProfile = queryClient.getQueryData(PROFILE_KEYS.byUsername(cleanTarget));
+    const isPrivateTarget =
+      cachedProfile?.isPrivate === true || cachedProfile?.settings?.privateProfile === true;
+    const optimistic = intentOn ? (isPrivateTarget ? FOLLOW_REQUESTED : true) : false;
 
-    requestToggle(entityKey, intentFollow, {
+    // Register intent for UI display (FollowButton reads this via
+    // getLatestIntent). The intent is on/off only; the kind of "on" lives in
+    // the shared follow state. The id scopes the release to THIS tap, so an
+    // older one can never clear a newer one's entry.
+    const mutationId = toggleRegistry.register(entityKey, intentOn);
+    applyOptimisticUpdate(optimistic);
+
+    requestToggle(entityKey, intentOn, {
       send: (target) => (target ? usersApi.follow(targetUsername) : usersApi.unfollow(targetUsername)),
       onConfirmed: (target, res, isFinal) => {
         if (!isFinal) return;
+        burstOrigins.delete(entityKey);
         // Release the pending intent BEFORE writing server state: while the
         // registry still holds an entry for this key, writeServerFollowState
         // deliberately declines to write.
         toggleRegistry.clearIfLatest(entityKey, mutationId);
-        reconcile(typeof res?.isFollowing === 'boolean' ? res.isFollowing : target);
+        const serverState = serverFollowState(target, res);
+        // The tap guessed Following and the account is private (or the other
+        // way round): move the counts and lists to what actually happened.
+        if (readFollowState(queryClient, cleanTarget) !== serverState) {
+          applyOptimisticUpdate(serverState);
+        }
+        reconcile(serverState);
       },
-      onFailed: (_err, { desired, confirmed }) => {
+      onFailed: (_err, { confirmed, lastResponse }) => {
         toggleRegistry.clearIfLatest(entityKey, mutationId);
-        if (desired !== confirmed) applyOptimisticUpdate(confirmed);
+        const origin = burstOrigins.get(entityKey);
+        burstOrigins.delete(entityKey);
+        // What the server still holds: nothing if no request ever landed
+        // (confirmed is off); else what the last one reported, or, if none
+        // did, what the burst started from.
+        let held = false;
+        if (confirmed) {
+          held = lastResponse !== undefined
+            ? serverFollowState(true, lastResponse)
+            : (origin === FOLLOW_REQUESTED ? FOLLOW_REQUESTED : true);
+        }
+        if (readFollowState(queryClient, cleanTarget) !== held) applyOptimisticUpdate(held);
+        // The rollback is a write to the same profiles; keep the saved copy honest too.
+        persistCachedProfile(queryClient, cleanTarget);
+        persistCachedProfile(queryClient, cleanCurrent);
         showToast('Action failed', 'error');
       },
     });
-  }, [entityKey, cleanTarget, targetUsername, applyOptimisticUpdate, reconcile]);
+  }, [entityKey, cleanTarget, cleanCurrent, targetUsername, queryClient, applyOptimisticUpdate, reconcile]);
 
   return {
     follow: () => toggle(true),

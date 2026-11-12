@@ -22,6 +22,56 @@ export const PROFILE_KEYS = {
 // ── Hooks ────────────────────────────────────────────────────────────────────
 
 /**
+ * Stamp a profile answer with when its request STARTED (`_requestedAt`, epoch ms).
+ *
+ * React Query's `dataUpdatedAt` is when the response ARRIVED, and the server
+ * generated the body before that. The follow button arbitrates between a
+ * profile and the viewer's own click by time, so a fetch that began before a
+ * tap and resolved after it must not look newer than the tap: the body says
+ * what was true before the write. The start time is the honest bound. A copy
+ * saved to IndexedDB keeps it, so a rehydrated profile is older still.
+ *
+ * Nothing reads the field except the follow button's fold; it is an extra key
+ * on the object, like any other the server does not send.
+ */
+export function stampRequestedAt(data, requestedAt) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return data;
+  return { ...data, _requestedAt: requestedAt };
+}
+
+/** When the request behind a profile started, if it was stamped. */
+export function profileRequestedAt(profile) {
+  return typeof profile?._requestedAt === 'number' ? profile._requestedAt : undefined;
+}
+
+/**
+ * Re-persist the profile copy the query cache holds to IndexedDB.
+ *
+ * `useProfile` rehydrates from that copy before the network answers, and the
+ * copy is otherwise written only by the profile `queryFn`. Anything that
+ * changes a profile in memory afterwards (a follow, a request, an accepted
+ * request moving the viewer's counts) updates the query cache and nothing
+ * else, so the next cold start would paint the pre-change copy. This writes the
+ * cache's current copy back, through the same path and with the same shape the
+ * queryFn uses. Chosen over invalidating the query: an invalidation with no
+ * refetch persists nothing, and one with a refetch costs a request to learn
+ * what the cache already holds.
+ *
+ * Only a copy `useProfile` would accept is written (it carries `stats`), and
+ * the clear-generation is captured now, with the data, so a logout that lands
+ * before the write drops it.
+ */
+export function persistCachedProfile(queryClient, username) {
+  const key = username?.toLowerCase();
+  if (!key) return;
+  const data = queryClient.getQueryData(PROFILE_KEYS.byUsername(key));
+  if (!data?.stats) return;
+  // Fire-and-forget on purpose: idbSet swallows its own failures, and the
+  // caller has nothing to wait for.
+  void idbSet('profiles', key, data, idbEpoch());
+}
+
+/**
  * Fetches a full profile by username.
  * Seeds from IndexedDB so navigating to a recently-viewed profile is instant.
  */
@@ -33,7 +83,8 @@ export function useProfile(username, { enabled = true } = {}) {
     queryKey: qk,
     queryFn: async () => {
       const epoch = idbEpoch();
-      const data = await usersApi.getByUsername(username);
+      const requestedAt = Date.now();
+      const data = stampRequestedAt(await usersApi.getByUsername(username), requestedAt);
       idbSet('profiles', username?.toLowerCase(), data, epoch);
       // The cover is fetched and decoded as soon as the profile is known, not
       // when the screen mounts: it is the slowest thing on the page.

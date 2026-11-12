@@ -27,6 +27,31 @@
 import { toggleRegistry } from './mutationRegistry';
 
 /**
+ * The third state. The entry holds `true` (following), `false` (not) or
+ * `'requested'` (the account is private and the viewer has a pending request).
+ *
+ * `true`/`false` are kept as they were so every existing reader and seed keeps
+ * working; a payload that only knows `isFollowing` can say "following" or "not
+ * following" and never "requested" (see the guard in writeServerFollowState).
+ */
+export const FOLLOW_REQUESTED = 'requested';
+
+/** A value the entry may hold. Anything else is "I don't know". */
+export function isFollowStateValue(value) {
+  return typeof value === 'boolean' || value === FOLLOW_REQUESTED;
+}
+
+/**
+ * Whether the viewer wants the relationship: following, or waiting on a
+ * private account to approve. This is the on/off the toggle registry and the
+ * serial request queue deal in -- which kind of "on" it is, is the server's
+ * (and the account's privacy) to decide.
+ */
+export function isFollowOn(value) {
+  return value === true || value === FOLLOW_REQUESTED;
+}
+
+/**
  * When the follow graph was last changed on this client.
  *
  * `/api/auth/sync` answers with a full `followingList`, and AuthContext
@@ -51,6 +76,39 @@ let lastFollowGraphWriteAt = 0;
  * from the server, so nothing stale survives to be arbitrated against.
  */
 const accountWriteAt = new Map();
+
+/**
+ * When the data behind each account's CURRENT entry was generated, as opposed
+ * to when it was written.
+ *
+ * The two differ whenever an entry is filled from data that was already old:
+ * a profile rehydrated from IndexedDB is written now but was generated when it
+ * was fetched. Comparing a newer answer against the WRITE time rejects any
+ * request that started before that write -- including the network answer for
+ * the very mount that wrote it. Each record carries the `wroteAt` it was made
+ * under, so an entry replaced by something that did not record itself (a direct
+ * `setQueryData`) is recognised as unrecorded and falls back to its write time.
+ */
+const entrySource = new Map();
+
+function recordEntrySource(queryClient, username, generatedAt) {
+  const wroteAt = queryClient.getQueryState(followStateKey(username))?.dataUpdatedAt ?? 0;
+  entrySource.set(String(username).toLowerCase(), {
+    generatedAt: typeof generatedAt === 'number' ? generatedAt : wroteAt,
+    wroteAt,
+  });
+}
+
+/**
+ * When the data behind this account's entry was generated (epoch ms), or 0 if
+ * there is no entry. Server-derived writes report the time their request
+ * started; the viewer's own writes and unstamped ones report the write time.
+ */
+export function followEntryGeneratedAt(queryClient, username) {
+  const wroteAt = queryClient.getQueryState(followStateKey(username))?.dataUpdatedAt ?? 0;
+  const source = entrySource.get(String(username).toLowerCase());
+  return source && source.wroteAt === wroteAt ? source.generatedAt : wroteAt;
+}
 
 /** True if a follow/unfollow was applied locally after `since` (epoch ms). */
 export function followGraphChangedSince(since) {
@@ -82,7 +140,7 @@ export function writeServerFollowState(
   isFollowing,
   generatedAt,
 ) {
-  if (!username || typeof isFollowing !== 'boolean') return;
+  if (!username || !isFollowStateValue(isFollowing)) return;
   if (toggleRegistry.isPending(followEntityKey(username))) return;
 
   /**
@@ -118,7 +176,20 @@ export function writeServerFollowState(
     if (!provablyNewer) return;
   }
 
+  /**
+   * A plain `false` does not carry "no pending request": list rows and any
+   * payload that predates follow requests say only `isFollowing: false`. So it
+   * cannot take the button off Requested unless it was generated after the
+   * entry's data was generated. (A profile says `followRequested` explicitly and
+   * reaches here as `'requested'` or `false` with a fresh timestamp.)
+   */
+  if (isFollowing === false && queryClient.getQueryData(followStateKey(username)) === FOLLOW_REQUESTED) {
+    const writtenAt = followEntryGeneratedAt(queryClient, username);
+    if (!(typeof generatedAt === 'number' && generatedAt > writtenAt)) return;
+  }
+
   queryClient.setQueryData(followStateKey(username), isFollowing);
+  recordEntrySource(queryClient, username, generatedAt);
 }
 
 /**
@@ -128,7 +199,7 @@ export function writeServerFollowState(
  * payload still in flight from before this moment now loses to it too.
  */
 export function writeConfirmedFollowState(queryClient, username, isFollowing) {
-  if (!username || typeof isFollowing !== 'boolean') return;
+  if (!username || !isFollowStateValue(isFollowing)) return;
   markFollowGraphChanged(username);
   queryClient.setQueryData(followStateKey(username), isFollowing);
 }
@@ -147,12 +218,12 @@ export function markFollowGraphChanged(username) {
  * current intent, and it is what makes the button change on the same frame.
  */
 export function writeOptimisticFollowState(queryClient, username, isFollowing) {
-  if (!username || typeof isFollowing !== 'boolean') return;
+  if (!username || !isFollowStateValue(isFollowing)) return;
   markFollowGraphChanged(username);
   queryClient.setQueryData(followStateKey(username), isFollowing);
 }
 
-/** Current state, or `undefined` when nothing authoritative is known yet. */
+/** Current state (`true`, `false` or `'requested'`), or `undefined` when nothing authoritative is known yet. */
 export function readFollowState(queryClient, username) {
   if (!username) return undefined;
   return queryClient.getQueryData(followStateKey(username));
@@ -171,7 +242,8 @@ export function seedFollowStateFromList(queryClient, users, generatedAt) {
   if (!Array.isArray(users)) return;
   for (const u of users) {
     if (u?.username && typeof u.isFollowing === 'boolean') {
-      writeServerFollowState(queryClient, u.username, u.isFollowing, generatedAt);
+      const state = !u.isFollowing && u.followRequested === true ? FOLLOW_REQUESTED : u.isFollowing;
+      writeServerFollowState(queryClient, u.username, state, generatedAt);
     }
   }
 }

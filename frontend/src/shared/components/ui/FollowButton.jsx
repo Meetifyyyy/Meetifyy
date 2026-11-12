@@ -2,15 +2,28 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@shared/context/AuthContext';
 import { useFollowMutation } from '@shared/hooks/useFollowMutation';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
-import { followEntityKey, writeServerFollowState } from '@shared/utils/followState';
+import {
+  FOLLOW_REQUESTED,
+  followEntityKey,
+  followEntryGeneratedAt,
+  isFollowOn,
+  isFollowStateValue,
+  readFollowState,
+  writeServerFollowState,
+} from '@shared/utils/followState';
 import { useFollowState } from '@shared/hooks/useFollowState';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { usersApi } from '@shared/api/apiClient';
-import { PROFILE_KEYS } from '@shared/hooks/useProfile';
+import { PROFILE_KEYS, profileRequestedAt, stampRequestedAt } from '@shared/hooks/useProfile';
 import UnfollowModal from '@shared/components/modals/UnfollowModal';
 import styles from './FollowButton.module.css';
 
 /**
+ * Three states: Follow, Requested (a private account has not answered yet) and
+ * Following. Tapping Follow on a private account turns it into Requested, not
+ * Following; tapping Requested withdraws the request with no question asked;
+ * tapping Following asks first, as before.
+ *
  * `initialFollowing` is AUTHORITATIVE when it is a boolean.
  *
  * Every list endpoint that renders this button now returns a real `isFollowing`
@@ -19,6 +32,12 @@ import styles from './FollowButton.module.css';
  * `undefined` means "I don't know", and the button resolves the state itself.
  * Collapsing the two is what made an already-followed account render "Follow".
  */
+/** The follow state a profile payload reports. */
+function profileFollowState(profile) {
+  if (profile?.isFollowing) return true;
+  return profile?.followRequested === true ? FOLLOW_REQUESTED : false;
+}
+
 const FollowButton = ({ targetUsername, initialFollowing, size = 'md', className, style }) => {
   const { currentUser } = useAuth();
   const queryClient = useQueryClient();
@@ -44,6 +63,11 @@ const FollowButton = ({ targetUsername, initialFollowing, size = 'md', className
   // Ordering matters: the shared entry first (it carries optimistic intent and
   // every server correction), then the caller's value, then the profile
   // lookup. `??` and not `||` — `false` is an answer, not a missing value.
+  // The entry is `true`, `false` or `'requested'`. A list row's
+  // `initialFollowing` is a boolean: it knows "following" and "not", never
+  // "requested", so on a row the button shows Follow for an account the viewer
+  // has already requested until it is tapped (the server then says Requested
+  // again, without notifying the account twice).
   const sharedState =
     sharedEntry ?? (typeof initialFollowing === 'boolean' ? initialFollowing : undefined);
 
@@ -58,61 +82,97 @@ const FollowButton = ({ targetUsername, initialFollowing, size = 'md', className
   // suppressed the corrective fetch for a full minute — the button sat on a
   // guess and called it fact. `placeholderData` renders without being written
   // to the cache and without pretending to be fresh.
-  const needsLookup = !isSelf && typeof sharedState !== 'boolean';
+  const needsLookup = !isSelf && !isFollowStateValue(sharedState);
   const {
     data: targetProfile,
     isLoading: isProfileLoading,
     dataUpdatedAt: targetProfileUpdatedAt,
   } = useQuery({
     queryKey: PROFILE_KEYS.byUsername(cleanTargetUsername),
-    queryFn: () => usersApi.getByUsername(targetUsername),
+    queryFn: async () => {
+      // Same stamp as useProfile's fetch: the start of THIS request, so a
+      // lookup that began before a tap cannot outrank it when it resolves after.
+      const requestedAt = Date.now();
+      return stampRequestedAt(await usersApi.getByUsername(targetUsername), requestedAt);
+    },
     enabled: needsLookup && !!cleanTargetUsername && cleanTargetUsername !== 'unknown',
     staleTime: 1000 * 60,
   });
 
   /**
-   * Fold a profile response back into the shared entry so a second button for
-   * the same account never repeats the request.
+   * Fold a profile response into the shared entry -- the first answer for an
+   * unknown, and every NEWER answer after that.
    *
-   * Gated on `needsLookup`, and that gate is the whole point. A DISABLED
-   * `useQuery` still returns whatever sits under its key, so this effect used
-   * to fire for data the button never asked for -- including the profile that
-   * `useProfile` rehydrates from IndexedDB when the profile route mounts. That
-   * payload carries the `isFollowing` from whenever it was persisted, so
-   * opening the profile of someone you had just followed in the sidebar wrote
-   * `false` straight over the `true` your click had produced, and every button
-   * for that account reverted. A reload fixed it because a cold cache fetches
-   * the profile from the network instead of rehydrating it.
+   * This used to be gated on `needsLookup` ("the lookup only ANSWERS an
+   * unknown, never corrects a known"). The gate fixed a real regression: a
+   * DISABLED `useQuery` still returns whatever sits under its key, including
+   * the profile `useProfile` rehydrates from IndexedDB with the `isFollowing`
+   * from whenever it was saved, so opening the profile of someone you had just
+   * followed wrote that old `false` over your click's `true`.
    *
-   * When the entry already holds a boolean there is nothing to fold in: the
-   * lookup exists only to ANSWER an unknown, never to correct a known.
-   * `dataUpdatedAt` is passed as a second line of defence, so even a requested
-   * response that resolves after a click cannot outrank it.
+   * But the gate also shut the door on the fix for the opposite problem. The
+   * rehydrated copy (old `storedAt`) folds first and fills the entry, so
+   * `needsLookup` turns false and the network profile that arrives a moment
+   * later -- `followRequested: true`, or `isFollowing: true` after the request
+   * was accepted while the viewer was away -- was never folded in. The button
+   * stayed on the saved copy until the entry was cleared.
+   *
+   * The ordering is by TIME, not by "is there a value yet", and it is safe
+   * against the regression above for two independent reasons:
+   *   1. A click stamps this account's change clock
+   *      (`markFollowGraphChanged`), and `writeServerFollowState` only lets a
+   *      payload through if it was generated strictly after that. A profile is
+   *      stamped with when its REQUEST STARTED (`_requestedAt`), so the
+   *      rehydrated copy (started long ago) loses to the click, and so does a
+   *      fetch that began before the tap and resolved after it. A toggle still
+   *      in flight is declined outright, and a plain `false` cannot clear
+   *      Requested unless it is newer.
+   *   2. Without a click, the answer must also have been generated after the
+   *      data behind the entry (below), so an older copy never overwrites a
+   *      newer reading -- and a copy of what the entry already says is a no-op.
+   * The profile query itself is still only ENABLED when the state is unknown
+   * (`needsLookup`), so this costs no extra request: the fold just reads
+   * whatever profile data the button can see, whoever fetched it.
    */
+  const profileState = typeof targetProfile?.isFollowing === 'boolean'
+    ? profileFollowState(targetProfile)
+    : undefined;
+  // When the profile's body was generated: the start of the request that
+  // produced it (see stampRequestedAt), not the moment it arrived. An
+  // unstamped payload (a seed written by another feature) falls back to its
+  // arrival time.
+  const profileGeneratedAt = profileRequestedAt(targetProfile) ?? targetProfileUpdatedAt;
   useEffect(() => {
-    if (!needsLookup) return;
-    if (typeof targetProfile?.isFollowing === 'boolean') {
-      writeServerFollowState(
-        queryClient,
-        cleanTargetUsername,
-        targetProfile.isFollowing,
-        targetProfileUpdatedAt,
-      );
-    }
+    if (isSelf || profileState === undefined) return;
+    // Nothing recorded yet: any profile answer is news. Otherwise the answer
+    // must have been generated after the data behind the entry. (Not "after
+    // the entry was written": a rehydrated copy writes the entry now with
+    // data from an hour ago, and the network answer for the same mount starts
+    // before that write.)
+    const entryEmpty = !isFollowStateValue(readFollowState(queryClient, cleanTargetUsername));
+    const isNewer =
+      typeof profileGeneratedAt === 'number'
+      && profileGeneratedAt > followEntryGeneratedAt(queryClient, cleanTargetUsername);
+    if (!entryEmpty && !isNewer) return;
+    writeServerFollowState(queryClient, cleanTargetUsername, profileState, profileGeneratedAt);
   }, [
     queryClient,
     cleanTargetUsername,
-    needsLookup,
-    targetProfile?.isFollowing,
-    targetProfileUpdatedAt,
+    isSelf,
+    profileState,
+    profileGeneratedAt,
   ]);
 
-  const following =
-    typeof sharedState === 'boolean'
-      ? sharedState
-      : Boolean(targetProfile?.isFollowing);
+  const state = isFollowStateValue(sharedState)
+    ? sharedState
+    : profileFollowState(targetProfile);
   const entityKey = followEntityKey(cleanTargetUsername);
-  const displayFollowing = toggleRegistry.getLatestIntent(entityKey, following);
+  // The pending intent (on or off) outranks a render that has not caught up
+  // with the latest tap. Which "on" it is comes from the shared entry, which
+  // the same tap has already written: Requested stays Requested, anything else
+  // is Following.
+  const intentOn = toggleRegistry.getLatestIntent(entityKey, isFollowOn(state));
+  const displayState = !intentOn ? false : state === FOLLOW_REQUESTED ? FOLLOW_REQUESTED : true;
 
   const { follow, unfollow } = useFollowMutation(targetUsername);
   // Unfollowing asks first; following never does.
@@ -148,8 +208,9 @@ const FollowButton = ({ targetUsername, initialFollowing, size = 'md', className
     
     // The button is showing "Following": this tap would unfollow, so ask first.
     // Nothing is recorded in the toggle registry until it is confirmed - a
-    // cancelled question must leave no pending intent behind.
-    if (displayFollowing) {
+    // cancelled question must leave no pending intent behind. "Requested" does
+    // not ask: withdrawing a request costs nothing to redo.
+    if (displayState === true) {
       setConfirmingUnfollow(true);
       return;
     }
@@ -157,16 +218,16 @@ const FollowButton = ({ targetUsername, initialFollowing, size = 'md', className
   };
 
   const runToggle = () => {
-    const nextFollowing = toggleRegistry.getNextToggleIntent(entityKey, following);
-    if (nextFollowing) {
+    const nextOn = toggleRegistry.getNextToggleIntent(entityKey, isFollowOn(state));
+    if (nextOn) {
       follow();
     } else {
       unfollow();
     }
   };
 
-  const label = displayFollowing ? 'Following' : 'Follow';
-  const stateClass = displayFollowing ? styles.following : styles.notFollowing;
+  const label = displayState === true ? 'Following' : displayState === FOLLOW_REQUESTED ? 'Requested' : 'Follow';
+  const stateClass = displayState ? styles.following : styles.notFollowing;
 
   return (
     <>

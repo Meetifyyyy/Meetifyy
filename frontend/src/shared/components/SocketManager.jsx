@@ -24,6 +24,7 @@ import { applyAffiliationToUser, hasAffiliationField } from '../lib/campusAccess
 import { dropCampusCaches } from '../lib/campusCache';
 import { PROFILE_KEYS } from '../hooks/useProfile';
 import { notificationTargetPath } from '@shared/utils/notificationTarget';
+import { FOLLOW_REQUESTS_KEY } from '@shared/hooks/useFollowRequests';
 
 export default function SocketManager() {
   const { session, isLoggedIn, currentUser, updateCurrentUser, refreshCurrentUser } = useAuth();
@@ -165,6 +166,10 @@ export default function SocketManager() {
 
       // Invalidate queries so useNotifications hook fetches the latest
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      // A new request changes the Follow requests row and page.
+      if (notification.type?.toUpperCase() === 'FOLLOW_REQUEST') {
+        queryClient.invalidateQueries({ queryKey: FOLLOW_REQUESTS_KEY });
+      }
 
       // Smart toast logic: suppress if user is on the exact screen or if muted
       const currentEntityId = notification.entityId || notification.metadata?.conversationId;
@@ -218,6 +223,10 @@ export default function SocketManager() {
           bodyText = `${actorName} invited you to join.`;
         } else if (notifType === 'follow') {
           bodyText = 'started following you.';
+        } else if (notifType === 'follow_request') {
+          bodyText = 'requested to follow you.';
+        } else if (notifType === 'follow_accepted') {
+          bodyText = 'accepted your follow request.';
         } else if (notifType === 'like') {
           bodyText = 'liked your post.';
         } else if (notifType === 'comment_like') {

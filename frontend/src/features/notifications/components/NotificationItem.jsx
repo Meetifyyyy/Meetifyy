@@ -36,6 +36,10 @@ function NotificationItem({
   let displayText = notif.body || notif.text || '';
   if (isFollow) {
     displayText = 'started following you.';
+  } else if (notifType === 'follow_request') {
+    displayText = 'requested to follow you.';
+  } else if (notifType === 'follow_accepted') {
+    displayText = 'accepted your follow request.';
   } else if (notifType === 'like') {
     displayText = 'liked your post.';
   } else if (notifType === 'comment_like') {

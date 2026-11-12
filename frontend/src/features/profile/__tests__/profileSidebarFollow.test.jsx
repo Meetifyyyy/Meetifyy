@@ -304,15 +304,23 @@ describe('ProfileRightSidebar — follow state survives opening the profile', ()
     vi.useRealTimers();
   });
 
-  /** A profile as `useProfile` rehydrates it from IndexedDB. */
+  /**
+   * A profile as `useProfile` rehydrates it from IndexedDB: with the copy's
+   * own `storedAt` as its timestamp, not "now". That timestamp is what lets the
+   * button tell a saved copy from a profile fetched after the click.
+   */
   function hydrateStaleProfile(queryClient, isFollowing) {
     act(() => {
-      queryClient.setQueryData(PROFILE_KEYS.byUsername('ann'), {
-        username: 'ann',
-        displayName: 'Ann',
-        isFollowing,
-        stats: { followers: 3 },
-      });
+      queryClient.setQueryData(
+        PROFILE_KEYS.byUsername('ann'),
+        {
+          username: 'ann',
+          displayName: 'Ann',
+          isFollowing,
+          stats: { followers: 3 },
+        },
+        { updatedAt: Date.now() - 10 * 60 * 1000 },
+      );
     });
   }
 

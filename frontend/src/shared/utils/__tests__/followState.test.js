@@ -167,3 +167,62 @@ describe('followState', () => {
     });
   });
 });
+
+describe('followState - requested', () => {
+  let qc;
+  // A fresh account per test: the per-account change clock is module state and
+  // outlives each QueryClient, so reusing a name would carry it across tests.
+  let ravi;
+  let n = 0;
+
+  beforeEach(() => {
+    qc = new QueryClient();
+    ravi = `requested-ravi-${n++}`;
+    toggleRegistry.clear(`follow:${ravi}`);
+  });
+
+  it('holds Requested as a third value', () => {
+    writeServerFollowState(qc, ravi, 'requested');
+    expect(readFollowState(qc, ravi)).toBe('requested');
+  });
+
+  it('ignores values that are neither a boolean nor requested', () => {
+    writeServerFollowState(qc, ravi, 'pending');
+    expect(readFollowState(qc, ravi)).toBeUndefined();
+  });
+
+  it('a payload that only says isFollowing=false cannot take the entry off Requested', () => {
+    writeServerFollowState(qc, ravi, 'requested');
+    writeServerFollowState(qc, ravi, false);
+    expect(readFollowState(qc, ravi)).toBe('requested');
+  });
+
+  it('but one generated after the entry was written can', () => {
+    writeServerFollowState(qc, ravi, 'requested');
+    writeServerFollowState(qc, ravi, false, Date.now() + 1000);
+    expect(readFollowState(qc, ravi)).toBe(false);
+  });
+
+  it('Following replaces Requested', () => {
+    writeServerFollowState(qc, ravi, 'requested');
+    writeServerFollowState(qc, ravi, true);
+    expect(readFollowState(qc, ravi)).toBe(true);
+  });
+
+  it('seeds Requested from a row that carries followRequested', () => {
+    seedFollowStateFromList(qc, [
+      { username: ravi, isFollowing: false, followRequested: true },
+      { username: 'asha', isFollowing: false },
+    ]);
+    expect(readFollowState(qc, ravi)).toBe('requested');
+    expect(readFollowState(qc, 'asha')).toBe(false);
+  });
+
+  it('records Requested as the viewer\'s own change', () => {
+    writeOptimisticFollowState(qc, ravi, 'requested');
+    expect(readFollowState(qc, ravi)).toBe('requested');
+    expect(followGraphChangedSince(Date.now() - 1000)).toBe(true);
+    writeConfirmedFollowState(qc, ravi, false);
+    expect(readFollowState(qc, ravi)).toBe(false);
+  });
+});

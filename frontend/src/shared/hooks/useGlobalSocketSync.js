@@ -8,8 +8,9 @@ import { commentLikeKey, writeCommentLike } from '@features/feed/hooks/useLikeCo
 import { useAuth } from '../context/AuthContext';
 import { showToast } from '../utils/toast';
 import { useConversations } from './useMessages';
-import { PROFILE_KEYS } from './useProfile';
+import { PROFILE_KEYS, persistCachedProfile } from './useProfile';
 import { toggleRegistry } from '../utils/mutationRegistry';
+import { FOLLOW_REQUESTED, readFollowState, writeServerFollowState } from '../utils/followState';
 import { propagateUserMedia } from '../utils/propagateUserMedia';
 import { isPostListQuery } from '../../features/feed/utils/postCache';
 import {
@@ -315,9 +316,23 @@ export function useGlobalSocketSync() {
                   ...old.stats,
                   followers: newFollowers,
                 },
-                ...(isCurrentUserFollower ? { isFollowing } : {}),
+                ...(isCurrentUserFollower ? { isFollowing, followRequested: false } : {}),
               };
             });
+            // The saved copy IndexedDB rehydrates from must move with the
+            // in-memory one, or a reload shows Follow/Requested for an
+            // account whose request was just accepted. (No-op if uncached.)
+            persistCachedProfile(queryClient, cleanTarget);
+          }
+
+          // A private account answered the viewer's request: Requested becomes
+          // Following on every button for it, at once. Only that transition is
+          // written here -- the button's state is otherwise set by the viewer's
+          // own taps, and an echo of one arriving late must not overwrite it.
+          // (A pending local toggle was ruled out at the top of this case.)
+          if (isFollowing && isCurrentUserFollower && cleanTarget
+            && readFollowState(queryClient, cleanTarget) === FOLLOW_REQUESTED) {
+            writeServerFollowState(queryClient, cleanTarget, true, Date.now());
           }
 
           if (isCurrentUserFollower && cleanCurrent) {
@@ -333,6 +348,7 @@ export function useGlobalSocketSync() {
                 },
               };
             });
+            persistCachedProfile(queryClient, cleanCurrent);
             // Stale, not refetched — this branch only runs for the viewer's
             // OWN follow action (see `isCurrentUserFollower` above), so it is
             // the socket echo of something the local optimistic update has

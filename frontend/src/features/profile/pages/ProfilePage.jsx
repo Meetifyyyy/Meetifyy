@@ -15,6 +15,7 @@ import { showToast } from '@shared/utils/toast';
 import { useOpenDirectMessage } from '@shared/hooks/useOpenDirectMessage';
 import Post from '@features/feed/components/post/Post';
 import UserListModal from '@shared/components/modals/UserListModal';
+import { isHiddenFromViewer } from '@shared/utils/profilePrivacy';
 import Avatar from '@shared/components/avatar/Avatar';
 import NotFoundState from '@shared/components/ui/NotFoundState';
 import { OfflineState } from '@shared/components/ui/StateViews';
@@ -744,14 +745,18 @@ export default function ProfilePage() {
 
           {/* Posts */}
           <div className={s.postsContainer}>
-            {!isOwnProfile && !profileUser.isFollowing && (profileUser.settings?.privateProfile || profileUser.isPrivate) ? (
+            {isHiddenFromViewer(profileUser, isOwnProfile) ? (
               <div className={s.emptyState} style={{ padding: '3.5rem 1rem' }}>
                 <svg className={s.emptyStateIcon} width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
                   <path d="M7 11V7a5 5 0 0 1 10 0v4" />
                 </svg>
                 <h3 className={s.emptyStateTitle}>This Account is Private</h3>
-                <p className={s.emptyStateDesc}>Follow this account to see their posts and updates.</p>
+                <p className={s.emptyStateDesc}>
+                  {profileUser.followRequested
+                    ? 'Your follow request is pending.'
+                    : 'Follow this account to see their posts and updates.'}
+                </p>
               </div>
             ) : postsLoading && online ? (
               <>
