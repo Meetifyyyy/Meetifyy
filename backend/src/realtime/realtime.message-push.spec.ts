@@ -35,7 +35,12 @@ function build(message: Record<string, unknown>) {
     stub<InstantMatchService>(),
     stub<InstantMatchRateLimiter>({ consume: () => true }),
     stub<PrismaService>(),
-    stub<RedisService>({ getClient: jest.fn() }),
+    // No pub/sub: socket emits are delivered on this process directly.
+    stub<RedisService>({
+      getClient: jest.fn(),
+      getPubClient: () => null,
+      getSubClient: () => null,
+    }),
     stub<ActivityAuthorizationService>(),
     stub<BlocksService>(),
     createVerificationAccessMock(),

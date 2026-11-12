@@ -34,7 +34,12 @@ type Emit = jest.Mock<void, [string, unknown]>;
 type ConvFindFirst = jest.Mock<Promise<typeof CONV | null>, [unknown]>;
 
 function build() {
-  const emitted: { room: string; event: string; payload: unknown }[] = [];
+  const emitted: {
+    room: string;
+    event: string;
+    payload: unknown;
+    except?: string[];
+  }[] = [];
   const findFirst: ConvFindFirst = jest.fn((args: unknown) => {
     // Resolves only when the caller is an active participant: the query must
     // carry the membership condition, not merely the id.
@@ -68,7 +73,12 @@ function build() {
       conversation: { findFirst },
       conversationParticipant: { findMany: jest.fn().mockResolvedValue([]) },
     }),
-    stub<RedisService>({ getClient: jest.fn() }),
+    // No pub/sub: socket emits are delivered on this process directly.
+    stub<RedisService>({
+      getClient: jest.fn(),
+      getPubClient: () => null,
+      getSubClient: () => null,
+    }),
     stub<ActivityAuthorizationService>(),
     stub<BlocksService>({
       getExcludedUserIds: jest.fn().mockResolvedValue([]),
@@ -78,12 +88,25 @@ function build() {
     createLegalConsentMock(),
     undefined,
   );
-  // Records one entry per room, whether the gateway names one room or several.
+  // Records one entry per room, whether the gateway names one room or several,
+  // and which sockets an emit excluded.
+  const record =
+    (room: string | string[], except?: string | string[]) =>
+    (event: string, payload: unknown) => {
+      for (const r of ([] as string[]).concat(room))
+        emitted.push({
+          room: r,
+          event,
+          payload,
+          ...(except ? { except: ([] as string[]).concat(except) } : {}),
+        });
+      return true;
+    };
   gateway.server = stub<RealtimeGateway['server']>({
     to: (room: string | string[]) => ({
-      emit: jest.fn((event: string, payload: unknown) => {
-        for (const r of ([] as string[]).concat(room))
-          emitted.push({ room: r, event, payload });
+      emit: jest.fn(record(room)),
+      except: (except: string | string[]) => ({
+        emit: jest.fn(record(room, except)),
       }),
     }),
   });
@@ -204,6 +227,32 @@ describe('message:send validates like the HTTP route', () => {
       'c1',
       expect.objectContaining({ text: 'hi', clientId: 't1' }),
     );
+  });
+
+  it("delivers to every recipient once, alerting only the unmuted, and syncs the sender's other tabs", async () => {
+    const { gateway, sendMessage, emitted } = build();
+    sendMessage.mockResolvedValueOnce({
+      id: 'm1',
+      recipientIds: [ALICE, 'bob', 'carol', 'dave'],
+      unmutedRecipientIds: ['bob', 'dave'],
+    });
+    const socket = socketFor(ALICE);
+    await gateway.handleSendMessage(socket, valid);
+
+    const sent = emitted
+      .filter((e) => e.event === 'message:new')
+      .map((e) => ({
+        room: e.room,
+        alert: (e.payload as { alert: boolean }).alert,
+        except: e.except,
+      }))
+      .sort((x, y) => x.room.localeCompare(y.room));
+    expect(sent).toEqual([
+      { room: ALICE, alert: false, except: [socket.id] },
+      { room: 'bob', alert: true, except: undefined },
+      { room: 'carol', alert: false, except: undefined },
+      { room: 'dave', alert: true, except: undefined },
+    ]);
   });
 
   it.each([

@@ -93,6 +93,8 @@ import {
 import { publicMessage } from '../messages/message-alert.util';
 import { CONVERSATION_REVIVED } from '../messages/core/conversation-revive';
 import { SESSIONS_REVOKED_EVENT } from '../auth/session/user-session.service';
+import { SocketRelay, type RelayOp } from './socket-relay';
+import { SeenMessageIds } from '../common/utils/pubsub-dedupe.util';
 
 /**
  * The client address behind a socket.
@@ -213,6 +215,21 @@ export class RealtimeGateway
   private static readonly PARTICIPANT_MISS_TTL_MS = 5_000;
   private static readonly PARTICIPANT_CACHE_MAX = 10_000;
 
+  /**
+   * Cluster-wide delivery for emits that do not arrive as a domain event
+   * (socket handlers, instant match, presence). See socket-relay.ts for why
+   * this is not the Socket.IO Redis adapter.
+   */
+  private readonly relay = new SocketRelay({
+    deliverLocally: (ops) => this.deliverRelayOps(ops),
+    getPubClient: () => this.redisService.getPubClient(),
+    getSubClient: () => this.redisService.getSubClient(),
+    logger: this.logger,
+  });
+
+  /** Domain events already handled, by the id the publisher stamps on them. */
+  private readonly seenDomainEvents = new SeenMessageIds();
+
   // Sweep interval for proactive in-memory cache eviction
   private sessionSweepTimer?: NodeJS.Timeout;
   private cacheEvictionTimer: NodeJS.Timeout | null = null;
@@ -313,6 +330,7 @@ export class RealtimeGateway
     );
 
     this.setupDomainEventSubscriber();
+    this.relay.start();
 
     /**
      * Disconnect sockets whose session has since been revoked.
@@ -375,8 +393,17 @@ export class RealtimeGateway
       const rule = targetUser?.settings?.whoCanSeeOnline || 'everyone';
       const isEnabled = targetUser?.settings?.showOnlineStatus !== false;
 
-      // Always broadcast to the user's personal room (for multi-device sync)
-      this.server.to(userId).emit('presence:update', presencePayload);
+      // Always broadcast to the user's personal room (for multi-device sync).
+      // Relayed: a status change is raised only on the replica holding the
+      // socket that connected or dropped.
+      this.relay.send([
+        {
+          kind: 'emit',
+          rooms: [userId],
+          event: 'presence:update',
+          payload: presencePayload,
+        },
+      ]);
 
       if (!isEnabled || rule === 'nobody') {
         return; // Already emitted to self
@@ -417,9 +444,14 @@ export class RealtimeGateway
           this.blocksService,
         );
         if (allowedViewerIds.length > 0) {
-          this.server
-            .to(allowedViewerIds)
-            .emit('presence:update', presencePayload);
+          this.relay.send([
+            {
+              kind: 'emit',
+              rooms: allowedViewerIds,
+              event: 'presence:update',
+              payload: presencePayload,
+            },
+          ]);
         }
       }
     } catch (err) {
@@ -440,6 +472,15 @@ export class RealtimeGateway
         if (channel === 'meetifyy:domain_events') {
           try {
             const payload: unknown = JSON.parse(message);
+            // Drop a publish ioredis re-sent after a reconnect, then strip the
+            // id so clients get the payload exactly as published. Events
+            // without one (an older build mid-deploy) pass through.
+            if (isRecord(payload) && typeof payload.eventId === 'string') {
+              const { eventId, ...event } = payload;
+              if (!this.seenDomainEvents.firstSighting(eventId)) return;
+              this.handleDomainEvent(event);
+              return;
+            }
             this.handleDomainEvent(payload);
           } catch (e) {
             this.logger.error('Failed to parse domain event payload', e);
@@ -889,6 +930,7 @@ export class RealtimeGateway
    * but both should stop when the module does.
    */
   onModuleDestroy(): void {
+    this.relay.stop();
     if (this.sessionSweepTimer) clearInterval(this.sessionSweepTimer);
     if (this.cacheEvictionTimer) clearInterval(this.cacheEvictionTimer);
   }
@@ -1317,15 +1359,44 @@ export class RealtimeGateway
       // conversation cache still honours the mute. The message itself is
       // delivered either way: mute silences the alert, not the sync.
       const unmuted = new Set<string>(message.unmutedRecipientIds || []);
+      // Relayed, not emitted: this handler runs on the sender's replica, and
+      // a recipient may be connected to another one. Recipients are grouped
+      // by alert flag — one operation per group rather than one per member —
+      // so a group message carries two copies of the payload, not hundreds.
+      // Each personal room holds only that user's sockets, so addressing
+      // several rooms at once reaches each recipient exactly as before.
+      const alerted: string[] = [];
+      const silent: string[] = [];
       for (const rId of recipientIds) {
         if (rId === senderId) continue;
-        this.server
-          .to(rId)
-          .emit('message:new', { ...payload, alert: unmuted.has(rId) });
+        (unmuted.has(rId) ? alerted : silent).push(rId);
       }
+      const deliveries: RelayOp[] = [];
+      if (alerted.length > 0)
+        deliveries.push({
+          kind: 'emit',
+          rooms: alerted,
+          event: 'message:new',
+          payload: { ...payload, alert: true },
+        });
+      if (silent.length > 0)
+        deliveries.push({
+          kind: 'emit',
+          rooms: silent,
+          event: 'message:new',
+          payload: { ...payload, alert: false },
+        });
       // Multi-device sync: emit to sender's OTHER connected sockets/tabs.
-      // Never alerted — the sender already knows.
-      client.to(senderId).emit('message:new', { ...payload, alert: false });
+      // Never alerted — the sender already knows. Excluding the socket id
+      // (every socket is also a room of its own id) is what `client.to()` did.
+      deliveries.push({
+        kind: 'emit',
+        rooms: [senderId],
+        except: [client.id],
+        event: 'message:new',
+        payload: { ...payload, alert: false },
+      });
+      this.relay.send(deliveries);
 
       // Device push, after the message committed, to the same unmuted set the
       // alert flag above uses. Instant Match chats are never pushed.
@@ -1903,7 +1974,47 @@ export class RealtimeGateway
     const rooms = [conv.id, conv.publicId]
       .filter((r): r is string => Boolean(r))
       .map((r) => `conv_${r}`);
-    this.server.to(rooms).emit(event, payload);
+    // Called from socket handlers (typing, receipts), which run on the
+    // sender's replica only — so relayed to every replica.
+    this.relay.send([{ kind: 'emit', rooms, event, payload }]);
+  }
+
+  /**
+   * Applies relay operations to the sockets THIS replica holds. Every replica
+   * runs this for every relayed operation, so together they reach each socket
+   * once. Room joins use the in-memory adapter, so `in(room).socketsJoin()`
+   * is local by construction.
+   */
+  private deliverRelayOps(ops: RelayOp[]) {
+    const server = this.server;
+    if (!server) return;
+    for (const op of ops) {
+      // Isolated per operation: one that throws (a reserved event name, an
+      // unserialisable payload) must not cost the others in the same batch.
+      try {
+        if (op.kind === 'join') {
+          server.in(op.room).socketsJoin(op.join);
+          continue;
+        }
+        const except = op.except ?? [];
+        if (op.rooms.length > 0) {
+          const target = server.to(op.rooms);
+          (except.length > 0 ? target.except(except) : target).emit(
+            op.event,
+            op.payload,
+          );
+        } else if (except.length > 0) {
+          server.except(except).emit(op.event, op.payload);
+        } else {
+          server.emit(op.event, op.payload);
+        }
+      } catch (err) {
+        this.logger.error(
+          `Relayed socket operation failed (${op.kind === 'join' ? 'join' : op.event})`,
+          err,
+        );
+      }
+    }
   }
 
   // One of the two database-heavy events that fire on every reconnect, which
@@ -2293,10 +2404,16 @@ export class RealtimeGateway
 
   // ─── Instant Match Emit Helpers ──────────────────────────────────────────────
   // Emits target the user's personal room, so every device and tab that user
-  // has open stays in step with the same match.
+  // has open stays in step with the same match. All of them are relayed: the
+  // instant-match service calls them from whichever replica handled the
+  // request or ran the queue job, which need not hold the user's sockets.
+
+  private emitToUser(userId: string, event: string, payload: unknown) {
+    this.relay.send([{ kind: 'emit', rooms: [userId], event, payload }]);
+  }
 
   emitMatchFound(userId: string, payload: MatchFoundPayload) {
-    this.server?.to(userId).emit('match:found', payload);
+    this.emitToUser(userId, 'match:found', payload);
   }
 
   emitMatchAccepted(userId: string, payload: MatchAcceptedPayload) {
@@ -2304,32 +2421,29 @@ export class RealtimeGateway
     // rooms *before* announcing it. Room membership is otherwise established
     // by the client replaying its conversation list, so without this the two
     // freshly matched users sat in a chat that delivered nothing in real time
-    // until one of them reloaded.
-    const userSockets = this.server?.sockets.adapter.rooms.get(userId);
-    if (userSockets) {
-      for (const socketId of userSockets) {
-        const socket = this.server.sockets.sockets.get(socketId);
-        if (!socket) continue;
-        void socket.join(`conv_${payload.internalId}`);
-        if (payload.chatId) void socket.join(`conv_${payload.chatId}`);
-      }
-    }
-    this.server?.to(userId).emit('match:accepted', payload);
+    // until one of them reloaded. Sent as one relay message, so each replica
+    // applies the join before the announcement.
+    const join = [`conv_${payload.internalId}`];
+    if (payload.chatId) join.push(`conv_${payload.chatId}`);
+    this.relay.send([
+      { kind: 'join', room: userId, join },
+      { kind: 'emit', rooms: [userId], event: 'match:accepted', payload },
+    ]);
   }
 
   emitMatchDeclined(
     userId: string,
     payload: { reason: string; requeued: boolean },
   ) {
-    this.server?.to(userId).emit('match:declined', payload);
+    this.emitToUser(userId, 'match:declined', payload);
   }
 
   emitSearchResumed(userId: string) {
-    this.server?.to(userId).emit('search:resumed', {});
+    this.emitToUser(userId, 'search:resumed', {});
   }
 
   emitQueueStats(userId: string, stats: QueueStats) {
-    this.server?.to(userId).emit('queue:stats', stats);
+    this.emitToUser(userId, 'queue:stats', stats);
   }
 
   /**
@@ -2343,7 +2457,9 @@ export class RealtimeGateway
    * Clients with the list closed have no listener registered and drop it.
    */
   emitQueueChanged() {
-    this.server?.emit('queue:changed', {});
+    this.relay.send([
+      { kind: 'emit', rooms: [], event: 'queue:changed', payload: {} },
+    ]);
   }
 
   /**
@@ -2357,7 +2473,7 @@ export class RealtimeGateway
    * state — and applying it twice is a no-op.
    */
   emitInstantMatchChatEnded(userId: string, state: InstantMatchChatState) {
-    this.server?.to(userId).emit('instant_match:chat_ended', state);
+    this.emitToUser(userId, 'instant_match:chat_ended', state);
   }
 }
 

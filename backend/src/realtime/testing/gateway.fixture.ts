@@ -50,7 +50,13 @@ export function buildGateway(deps: GatewayDependencies = {}): RealtimeGateway {
     stub<InstantMatchService>(deps.instantMatch),
     stub<InstantMatchRateLimiter>(deps.instantMatchLimiter),
     stub<PrismaService>(deps.prisma),
-    stub<RedisService>(deps.redis),
+    // No pub/sub unless a test supplies it: the socket relay then delivers on
+    // this "replica" directly, which is what handler tests assert against.
+    stub<RedisService>({
+      getPubClient: () => null,
+      getSubClient: () => null,
+      ...deps.redis,
+    }),
     stub<ActivityAuthorizationService>(deps.activityPolicy),
     stub<BlocksService>(deps.blocks),
     deps.verificationAccess ?? createVerificationAccessMock(),
