@@ -36,7 +36,12 @@ beforeEach(() => {
   fallback.switchTo.mockReset();
 });
 
-afterEach(() => {
+afterEach(async () => {
+  // The driver removes its transition class on a 50 ms timer once a switch
+  // settles (jsdom has no requestIdleCallback). Let it run here, while the
+  // document exists: left pending, the last test's timer fired after the
+  // environment was torn down and failed CI with "document is not defined".
+  await new Promise((resolve) => { setTimeout(resolve, 60); });
   vi.unstubAllGlobals();
   root.removeAttribute('data-theme');
   root.className = '';
