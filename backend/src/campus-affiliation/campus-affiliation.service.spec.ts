@@ -1,4 +1,4 @@
-import { HttpException } from '@nestjs/common';
+import { ConflictException, HttpException } from '@nestjs/common';
 import { Prisma, UserOtpPurpose } from '@prisma/client';
 import { CampusAffiliationService } from './campus-affiliation.service';
 import { UserOtpService } from '../otp/user-otp.service';
@@ -6,6 +6,11 @@ import { DomainValidatorService } from '../common/services/domain-validator.serv
 import { CampusAccessService } from '../common/campus/campus-access.service';
 import { createUserOtpStore } from '../otp/testing/user-otp-store.fake';
 import { stub } from '../common/testing/stub';
+import {
+  createCampusCommunityStore,
+  type CampusCommunityStore,
+} from '../common/campus/testing/campus-community.fake';
+import type { CommunitiesService } from '../communities/communities.service';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { RedisService } from '../redis/redis.service';
 import type { DomainEventService } from '../events/domain-event.service';
@@ -64,6 +69,8 @@ describe('CampusAffiliationService', () => {
   let raceOnNextUpsert: boolean;
   let sentCodes: Array<{ to: string; code: string }>;
   let emit: jest.Mock;
+  let store: CampusCommunityStore;
+  let announceCampusExit: jest.Mock;
   let verifyPassword: jest.Mock;
   let service: CampusAffiliationService;
   let access: CampusAccessService;
@@ -92,6 +99,7 @@ describe('CampusAffiliationService', () => {
 
   const buildPrisma = () => {
     const db = {
+      ...store.model,
       userOtp: otpStore.model,
       college: {
         findFirst: jest.fn(
@@ -292,6 +300,17 @@ describe('CampusAffiliationService', () => {
       ],
     ]);
     otpStore = createUserOtpStore();
+    store = createCampusCommunityStore((userId) => {
+      const a = affiliations.get(userId);
+      return a
+        ? {
+            collegeId: a.collegeId,
+            revokedAt: a.revokedAt,
+            college: colleges.get(a.collegeId)!,
+          }
+        : null;
+    });
+    announceCampusExit = jest.fn(() => Promise.resolve());
     raceOnNextUpsert = false;
     sentCodes = [];
     emit = jest.fn(() => Promise.resolve());
@@ -338,6 +357,7 @@ describe('CampusAffiliationService', () => {
         consume: jest.fn(() => Promise.resolve({ allowed: true })),
       }),
       mailer,
+      stub<CommunitiesService>({ announceCampusExit }),
     );
     access = new CampusAccessService(prisma);
   });
@@ -704,6 +724,479 @@ describe('CampusAffiliationService', () => {
         collegeId: GLA,
         collegeName: 'GLA University',
         emailMasked: 'm***@gla.ac.in',
+      });
+    });
+  });
+
+  describe('campus communities', () => {
+    const C_CODING = 'c-coding';
+    const C_MUSIC = 'c-music';
+    const C_PLAIN = 'c-plain';
+    const C_IIT = 'c-iit';
+    const C_ROBOTICS = 'c-robotics';
+    const MOD_NEW = 'mod-new';
+    const MEMBER_OLD = 'member-old';
+    const MEMBER_NEW = 'member-new';
+
+    const affiliate = (
+      userId: string,
+      collegeId: string,
+      revokedAt: Date | null = null,
+    ) => {
+      affiliations.set(userId, {
+        id: `aff-${userId}`,
+        userId,
+        collegeId,
+        email: `${userId}@x.edu`,
+        emailNormalized: `${userId}@x.edu`,
+        method: 'CAMPUS_OTP',
+        verifiedAt: new Date(),
+        revokedAt,
+        revokedReason: null,
+      });
+    };
+
+    /** ME is at GLA and belongs to communities of every kind. */
+    const seed = async () => {
+      await verifyAs(ME, 'me@gla.ac.in');
+      store.addCommunity({
+        id: C_CODING,
+        name: 'Coding Club',
+        collegeId: GLA,
+        memberCount: 5,
+      });
+      store.addCommunity({
+        id: C_MUSIC,
+        name: 'Music',
+        collegeId: GLA,
+        memberCount: 3,
+      });
+      // A campus community's cousins that must never be touched.
+      store.addCommunity({
+        id: C_PLAIN,
+        name: 'Plain',
+        collegeId: GLA,
+        isCampusCommunity: false,
+        memberCount: 4,
+      });
+      store.addCommunity({
+        id: C_IIT,
+        name: 'IIT Club',
+        collegeId: IIT,
+        memberCount: 2,
+      });
+      store.addCommunity({
+        id: C_ROBOTICS,
+        name: 'Robotics',
+        collegeId: GLA,
+        memberCount: 1,
+      });
+      for (const id of [C_CODING, C_MUSIC, C_PLAIN, C_IIT]) {
+        store.addMember(ME, id);
+      }
+      store.joinRequests.push(
+        {
+          id: 'r-gla',
+          communityId: C_ROBOTICS,
+          userId: ME,
+          status: 'PENDING',
+        },
+        { id: 'r-iit', communityId: C_IIT, userId: ME, status: 'PENDING' },
+        {
+          id: 'r-declined',
+          communityId: C_MUSIC,
+          userId: ME,
+          status: 'DECLINED',
+        },
+      );
+    };
+
+    const removeMe = () =>
+      service.remove(stub<AuthenticatedUser>({ id: ME, email: 'x' }), {
+        password: 'right-password',
+      });
+
+    const conflictBody = async (p: Promise<unknown>) => {
+      const err = await p.then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect(err).toBeInstanceOf(ConflictException);
+      return (err as ConflictException).getResponse();
+    };
+
+    /** Candidates to inherit Coding Club, in the order a naive pick would err. */
+    const seedSuccessors = () => {
+      for (const id of [MOD_NEW, MEMBER_OLD, MEMBER_NEW]) {
+        store.addPerson(id);
+        affiliate(id, GLA);
+      }
+      store.addMember(MEMBER_OLD, C_CODING, 'MEMBER', new Date('2025-01-01'));
+      store.addMember(MEMBER_NEW, C_CODING, 'MEMBER', new Date('2026-03-01'));
+      store.addMember(MOD_NEW, C_CODING, 'MODERATOR', new Date('2026-02-01'));
+    };
+
+    describe('removing the affiliation', () => {
+      it('leaves only the campus communities of the college being left', async () => {
+        await seed();
+        await removeMe();
+
+        expect(store.roleOf(ME, C_CODING)).toBeNull();
+        expect(store.roleOf(ME, C_MUSIC)).toBeNull();
+        // Not a campus community, and another college's: both stay.
+        expect(store.roleOf(ME, C_PLAIN)).toBe('MEMBER');
+        expect(store.roleOf(ME, C_IIT)).toBe('MEMBER');
+      });
+
+      it('decrements each count by the one row removed, and no others', async () => {
+        await seed();
+        await removeMe();
+
+        expect(store.communities.get(C_CODING)?.memberCount).toBe(4);
+        expect(store.communities.get(C_MUSIC)?.memberCount).toBe(2);
+        expect(store.communities.get(C_PLAIN)?.memberCount).toBe(4);
+        expect(store.communities.get(C_IIT)?.memberCount).toBe(2);
+        expect(store.communities.get(C_ROBOTICS)?.memberCount).toBe(1);
+      });
+
+      it('deletes pending join requests to those communities only', async () => {
+        await seed();
+        await removeMe();
+
+        expect(store.joinRequests.map((r) => r.id).sort()).toEqual([
+          'r-declined',
+          'r-iit',
+        ]);
+      });
+
+      it('announces the leaves after the commit, with the college and counts', async () => {
+        await seed();
+        await removeMe();
+
+        expect(announceCampusExit).toHaveBeenCalledTimes(1);
+        expect(announceCampusExit).toHaveBeenCalledWith(ME, GLA, {
+          removed: [
+            { communityId: C_CODING, memberCount: 4 },
+            { communityId: C_MUSIC, memberCount: 2 },
+          ],
+          transfers: [],
+          unsuccessored: [],
+        });
+      });
+
+      it('locks the affected community rows in id order inside the transaction', async () => {
+        await seed();
+        await removeMe();
+
+        expect(store.rawStatements).toHaveLength(1);
+        expect(store.rawStatements[0].text).toBe(
+          'SELECT "id" FROM "Community" WHERE "id" IN (?) ORDER BY "id" FOR UPDATE',
+        );
+        expect(store.rawStatements[0].values).toEqual([[C_CODING, C_MUSIC]]);
+      });
+
+      it('refuses an owner with the 409 body, and changes nothing', async () => {
+        await seed();
+        store.communities.get(C_CODING)!.ownerId = ME;
+        store.members.find(
+          (m) => m.userId === ME && m.communityId === C_CODING,
+        )!.role = 'OWNER';
+        store.communities.get(C_MUSIC)!.ownerId = ME;
+
+        const body = await conflictBody(removeMe());
+
+        expect(body).toEqual({
+          statusCode: 409,
+          code: 'CAMPUS_COMMUNITY_OWNER',
+          message:
+            'You own campus communities at GLA University. Transfer ownership of Coding Club, Music before removing your campus.',
+          communities: [
+            { id: C_CODING, name: 'Coding Club' },
+            { id: C_MUSIC, name: 'Music' },
+          ],
+        });
+        expect(affiliations.has(ME)).toBe(true);
+        expect(store.roleOf(ME, C_CODING)).toBe('OWNER');
+        expect(store.roleOf(ME, C_MUSIC)).toBe('MEMBER');
+        expect(store.communities.get(C_CODING)?.memberCount).toBe(5);
+        expect(store.joinRequests).toHaveLength(3);
+        expect(announceCampusExit).not.toHaveBeenCalled();
+      });
+
+      it('does nothing to communities for a user with none', async () => {
+        await verifyAs(ME, 'me@gla.ac.in');
+        await removeMe();
+        expect(announceCampusExit).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('switching colleges', () => {
+      it('leaves the old college’s campus communities when the college changes', async () => {
+        await seed();
+        pastCooldown();
+        await verifyAs(ME, 'me@iit.ac.in', IIT);
+
+        expect(store.roleOf(ME, C_CODING)).toBeNull();
+        expect(store.roleOf(ME, C_MUSIC)).toBeNull();
+        expect(store.roleOf(ME, C_IIT)).toBe('MEMBER');
+        expect(store.communities.get(C_CODING)?.memberCount).toBe(4);
+        expect(announceCampusExit).toHaveBeenCalledWith(
+          ME,
+          GLA,
+          expect.objectContaining({
+            removed: [
+              { communityId: C_CODING, memberCount: 4 },
+              { communityId: C_MUSIC, memberCount: 2 },
+            ],
+          }),
+        );
+      });
+
+      it('does nothing to communities when only the address changes', async () => {
+        await seed();
+        pastCooldown();
+        await verifyAs(ME, 'other.address@gla.ac.in');
+
+        expect(store.roleOf(ME, C_CODING)).toBe('MEMBER');
+        expect(store.communities.get(C_CODING)?.memberCount).toBe(5);
+        expect(store.rawStatements).toHaveLength(0);
+        expect(announceCampusExit).not.toHaveBeenCalled();
+      });
+
+      it('refuses an owner switching, naming the college and wording it as a switch', async () => {
+        await seed();
+        pastCooldown();
+        // Not an owner when the code goes out; becomes one before it is used.
+        await service.requestOtp(ME, { collegeId: IIT, email: 'me@iit.ac.in' });
+        store.communities.get(C_CODING)!.ownerId = ME;
+
+        const body = await conflictBody(service.verify(ME, lastCode()));
+
+        expect(body).toEqual({
+          statusCode: 409,
+          code: 'CAMPUS_COMMUNITY_OWNER',
+          message:
+            'You own campus communities at GLA University. Transfer ownership of Coding Club before switching your campus.',
+          communities: [{ id: C_CODING, name: 'Coding Club' }],
+        });
+        expect(affiliations.get(ME)?.collegeId).toBe(GLA);
+        expect(store.communities.get(C_CODING)?.memberCount).toBe(5);
+        expect(announceCampusExit).not.toHaveBeenCalled();
+      });
+
+      it('tells an owner before a code is sent', async () => {
+        await seed();
+        store.communities.get(C_CODING)!.ownerId = ME;
+        pastCooldown();
+        const sentBefore = sentCodes.length;
+
+        const body = await conflictBody(
+          service.requestOtp(ME, { collegeId: IIT, email: 'me@iit.ac.in' }),
+        );
+
+        expect(body).toMatchObject({
+          code: 'CAMPUS_COMMUNITY_OWNER',
+          communities: [{ id: C_CODING, name: 'Coding Club' }],
+        });
+        expect((body as { message: string }).message).toMatch(
+          /before switching your campus\.$/,
+        );
+        expect(sentCodes).toHaveLength(sentBefore);
+      });
+
+      describe('an account with only the legacy college mirror', () => {
+        // The backfill skipped duplicate or malformed college emails, so some
+        // accounts hold `User.collegeId` with no affiliation row.
+        const dropRowKeepMirror = () => {
+          affiliations.delete(ME);
+          expect(users.get(ME)?.collegeId).toBe(GLA);
+        };
+
+        it('tells an owner before a code is sent', async () => {
+          await seed();
+          dropRowKeepMirror();
+          store.communities.get(C_CODING)!.ownerId = ME;
+          pastCooldown();
+          const sentBefore = sentCodes.length;
+
+          const body = await conflictBody(
+            service.requestOtp(ME, { collegeId: IIT, email: 'me@iit.ac.in' }),
+          );
+
+          expect(body).toMatchObject({
+            code: 'CAMPUS_COMMUNITY_OWNER',
+            message:
+              'You own campus communities at GLA University. Transfer ownership of Coding Club before switching your campus.',
+          });
+          expect(sentCodes).toHaveLength(sentBefore);
+        });
+
+        it('refuses an owner at verify and switches nothing', async () => {
+          await seed();
+          dropRowKeepMirror();
+          pastCooldown();
+          await service.requestOtp(ME, {
+            collegeId: IIT,
+            email: 'me@iit.ac.in',
+          });
+          store.communities.get(C_CODING)!.ownerId = ME;
+
+          const body = await conflictBody(service.verify(ME, lastCode()));
+
+          expect(body).toMatchObject({ code: 'CAMPUS_COMMUNITY_OWNER' });
+          expect(affiliations.get(ME)).toBeUndefined();
+          expect(users.get(ME)?.collegeId).toBe(GLA);
+          expect(store.communities.get(C_CODING)?.memberCount).toBe(5);
+        });
+
+        it('leaves the mirrored college’s campus communities on a switch', async () => {
+          await seed();
+          dropRowKeepMirror();
+          pastCooldown();
+          await verifyAs(ME, 'me@iit.ac.in', IIT);
+
+          expect(store.roleOf(ME, C_CODING)).toBeNull();
+          expect(store.roleOf(ME, C_MUSIC)).toBeNull();
+          expect(store.roleOf(ME, C_PLAIN)).toBe('MEMBER');
+          expect(announceCampusExit).toHaveBeenCalledWith(
+            ME,
+            GLA,
+            expect.anything(),
+          );
+        });
+      });
+
+      it('lets an owner add another address at the same college', async () => {
+        await seed();
+        store.communities.get(C_CODING)!.ownerId = ME;
+        pastCooldown();
+        await expect(
+          service.requestOtp(ME, {
+            collegeId: GLA,
+            email: 'second@gla.ac.in',
+          }),
+        ).resolves.toMatchObject({ sent: true });
+      });
+    });
+
+    describe('admin revoke and release', () => {
+      const owning = async () => {
+        await seed();
+        seedSuccessors();
+        store.communities.get(C_CODING)!.ownerId = ME;
+        store.members.find(
+          (m) => m.userId === ME && m.communityId === C_CODING,
+        )!.role = 'OWNER';
+      };
+
+      it('passes ownership to the longest-serving moderator, ahead of an older member', async () => {
+        await owning();
+        await service.revoke(ME, 'fake student');
+
+        expect(store.communities.get(C_CODING)?.ownerId).toBe(MOD_NEW);
+        expect(store.roleOf(MOD_NEW, C_CODING)).toBe('OWNER');
+        expect(store.roleOf(MEMBER_OLD, C_CODING)).toBe('MEMBER');
+        // The old owner is removed with the rest, and counted out once.
+        expect(store.roleOf(ME, C_CODING)).toBeNull();
+        expect(store.communities.get(C_CODING)?.memberCount).toBe(4);
+        expect(announceCampusExit).toHaveBeenCalledWith(
+          ME,
+          GLA,
+          expect.objectContaining({
+            transfers: [
+              {
+                communityId: C_CODING,
+                communityName: 'Coding Club',
+                newOwnerId: MOD_NEW,
+              },
+            ],
+          }),
+        );
+      });
+
+      it('falls back to the longest-serving member when there is no moderator', async () => {
+        await owning();
+        store.members.find((m) => m.userId === MOD_NEW)!.role = 'MEMBER';
+        store.members.find((m) => m.userId === MOD_NEW)!.joinedAt = new Date(
+          '2027-01-01',
+        );
+        await service.adminRelease(ME);
+
+        expect(store.communities.get(C_CODING)?.ownerId).toBe(MEMBER_OLD);
+        expect(store.roleOf(MEMBER_OLD, C_CODING)).toBe('OWNER');
+        expect(store.roleOf(ME, C_CODING)).toBeNull();
+        expect(affiliations.has(ME)).toBe(false);
+      });
+
+      it('skips a candidate whose affiliation is revoked or at another college', async () => {
+        await owning();
+        affiliate(MOD_NEW, GLA, new Date()); // revoked
+        affiliate(MEMBER_OLD, IIT); // moved on
+        await service.revoke(ME, 'reason');
+
+        expect(store.communities.get(C_CODING)?.ownerId).toBe(MEMBER_NEW);
+      });
+
+      it('leaves ownership and the owner’s membership alone when nobody qualifies, and logs it', async () => {
+        await owning();
+        for (const id of [MOD_NEW, MEMBER_OLD, MEMBER_NEW]) {
+          affiliate(id, IIT);
+        }
+        const warn = jest
+          .spyOn(service['logger'], 'warn')
+          .mockImplementation(() => undefined);
+
+        await service.revoke(ME, 'reason');
+
+        expect(store.communities.get(C_CODING)?.ownerId).toBe(ME);
+        expect(store.roleOf(ME, C_CODING)).toBe('OWNER');
+        expect(store.communities.get(C_CODING)?.memberCount).toBe(5);
+        // The others are still removed.
+        expect(store.roleOf(ME, C_MUSIC)).toBeNull();
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining(C_CODING));
+        expect(announceCampusExit).toHaveBeenCalledWith(
+          ME,
+          GLA,
+          expect.objectContaining({ unsuccessored: [C_CODING] }),
+        );
+      });
+    });
+
+    describe('status', () => {
+      it('counts the campus communities joined and lists the owned ones', async () => {
+        await seed();
+        store.communities.get(C_MUSIC)!.ownerId = ME;
+
+        const { campusCommunities } = await service.getStatus(ME);
+
+        // Coding Club and Music; the plain and IIT communities do not count.
+        expect(campusCommunities).toEqual({
+          joinedCount: 2,
+          owned: [{ id: C_MUSIC, name: 'Music' }],
+        });
+      });
+
+      it('counts an owner who has no member row as owning, not as joined', async () => {
+        await seed();
+        store.communities.get(C_ROBOTICS)!.ownerId = ME;
+
+        expect((await service.getStatus(ME)).campusCommunities).toEqual({
+          joinedCount: 2,
+          owned: [{ id: C_ROBOTICS, name: 'Robotics' }],
+        });
+      });
+
+      it('is empty without an active affiliation', async () => {
+        await seed();
+        await service.revoke(ME, 'reason');
+        expect((await service.getStatus(ME)).campusCommunities).toEqual({
+          joinedCount: 0,
+          owned: [],
+        });
+        expect((await service.getStatus(OTHER)).campusCommunities).toEqual({
+          joinedCount: 0,
+          owned: [],
+        });
       });
     });
   });

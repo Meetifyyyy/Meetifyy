@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { activeAffiliationCollegeIdSql } from '../common/campus/campus-affiliation.sql';
 import { CampusAccessService } from '../common/campus/campus-access.service';
+import type { CampusCommunityExit } from '../common/campus/campus-community-exit';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma, type Community } from '@prisma/client';
 import { DomainEventService } from '../events/domain-event.service';
@@ -1688,19 +1689,86 @@ export class CommunitiesService implements OnModuleInit {
       });
 
       if (left) {
-        void this.domainEventService.emit('community.memberLeft', {
+        await this.afterMemberLeft(
           communityId,
           userId,
-          memberCount: newCount,
-        });
-        await this.invalidateCommunityCache(
-          communityId,
+          newCount,
           community.collegeId ?? undefined,
         );
       }
 
       return { success: true };
     });
+  }
+
+  /**
+   * What every committed leave does next: tell the room and the person who
+   * left (open clients drop the community and refresh its count), then drop
+   * the cached lists and the community's cached detail.
+   */
+  private async afterMemberLeft(
+    communityId: string,
+    userId: string,
+    memberCount: number,
+    collegeId?: string,
+  ): Promise<void> {
+    void this.domainEventService.emit('community.memberLeft', {
+      communityId,
+      userId,
+      memberCount,
+    });
+    await this.invalidateCommunityCache(communityId, collegeId);
+  }
+
+  /**
+   * Cache and realtime follow-up to a campus exit
+   * (`leaveCampusCommunities`), which the campus-affiliation service runs in
+   * the same transaction as the affiliation change. Called after that commits.
+   * Each removal goes through the same path as a normal leave; each handover
+   * is announced exactly as `transferOwnership` announces one.
+   */
+  async announceCampusExit(
+    userId: string,
+    collegeId: string,
+    exit: CampusCommunityExit,
+  ): Promise<void> {
+    for (const removed of exit.removed) {
+      await this.afterMemberLeft(
+        removed.communityId,
+        userId,
+        removed.memberCount,
+        collegeId,
+      );
+    }
+    for (const transfer of exit.transfers) {
+      await this.afterOwnershipTransferred({
+        communityId: transfer.communityId,
+        communityName: transfer.communityName,
+        newOwnerId: transfer.newOwnerId,
+        previousOwnerId: userId,
+        collegeId,
+      });
+    }
+  }
+
+  private async afterOwnershipTransferred(args: {
+    communityId: string;
+    communityName: string;
+    newOwnerId: string;
+    previousOwnerId: string;
+    collegeId?: string;
+  }): Promise<void> {
+    await this.invalidateCommunityCache(args.communityId, args.collegeId);
+    void this.domainEventService.emit(
+      'community.ownershipTransferred',
+      {
+        communityId: args.communityId,
+        newOwnerId: args.newOwnerId,
+        previousOwnerId: args.previousOwnerId,
+        communityName: args.communityName,
+      },
+      [args.newOwnerId, args.previousOwnerId],
+    );
   }
 
   /**
@@ -2235,20 +2303,13 @@ export class CommunitiesService implements OnModuleInit {
       });
     });
 
-    await this.invalidateCommunityCache(
+    await this.afterOwnershipTransferred({
       communityId,
-      community.collegeId ?? undefined,
-    );
-    void this.domainEventService.emit(
-      'community.ownershipTransferred',
-      {
-        communityId,
-        newOwnerId,
-        previousOwnerId: requestingUserId,
-        communityName: community.name,
-      },
-      [newOwnerId, requestingUserId],
-    );
+      communityName: community.name,
+      newOwnerId,
+      previousOwnerId: requestingUserId,
+      collegeId: community.collegeId ?? undefined,
+    });
     return { success: true, ownerId: newOwnerId };
   }
 

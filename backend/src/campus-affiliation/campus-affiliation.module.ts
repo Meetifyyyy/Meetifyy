@@ -5,9 +5,18 @@ import { UserOtpModule } from '../otp/user-otp.module';
 import { EmailModule } from '../email/email.module';
 import { AuthModule } from '../auth/auth.module';
 import { AccountSecurityModule } from '../account-security/account-security.module';
+import { CommunitiesModule } from '../communities/communities.module';
 
 @Module({
-  imports: [UserOtpModule, EmailModule, AuthModule, AccountSecurityModule],
+  // CommunitiesModule: the cache and realtime follow-up of leaving campus
+  // communities when an affiliation ends. It imports nothing from here.
+  imports: [
+    UserOtpModule,
+    EmailModule,
+    AuthModule,
+    AccountSecurityModule,
+    CommunitiesModule,
+  ],
   controllers: [CampusAffiliationController],
   providers: [CampusAffiliationService],
   exports: [CampusAffiliationService],

@@ -21,6 +21,7 @@ import type { DomainEventService } from '../events/domain-event.service';
 import type { AddressMailer } from '../otp/address-mailer';
 import type { AuthenticatedUser } from '../common/types/authenticated-request';
 import type { RateLimitService } from '../common/rate-limit/rate-limit.service';
+import type { CommunitiesService } from '../communities/communities.service';
 
 /**
  * The email-change security controls, against a real Postgres.
@@ -285,6 +286,9 @@ describeDb('email change security (database)', () => {
       policy,
       rateLimit,
       mailer,
+      // These tests never end an affiliation, so the campus-community
+      // follow-up after an exit is never reached.
+      stub<CommunitiesService>(),
     );
     access = new CampusAccessService(prisma);
 

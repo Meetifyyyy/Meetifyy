@@ -29,6 +29,16 @@ import {
   presentAffiliation,
   type AffiliationView,
 } from '../common/campus/campus-affiliation.util';
+import {
+  CampusCommunityOwnerError,
+  campusCommunityOwnerConflict,
+  getCampusCommunityStanding,
+  leaveCampusCommunities,
+  type CampusCommunityExit,
+  type CampusCommunityStanding,
+  type CampusOwnerPolicy,
+} from '../common/campus/campus-community-exit';
+import { CommunitiesService } from '../communities/communities.service';
 import { deriveBatchYearForStorage } from '../common/student-year/batch-year.util';
 import { errorMessage } from '../common/utils/error.util';
 import {
@@ -83,6 +93,13 @@ export interface CollegeEmailProof {
 
 export interface AffiliationStatus {
   affiliation: AffiliationView | null;
+  /**
+   * The person's standing in the campus communities of their current college,
+   * so the settings screen can say what ending the campus will also do, and
+   * which communities must be handed over first. Empty without an active
+   * affiliation.
+   */
+  campusCommunities: CampusCommunityStanding;
   pending: {
     collegeId: string;
     collegeName: string;
@@ -98,6 +115,9 @@ export interface OtpSent {
   expiresAt: string;
   resendAvailableAt: string;
 }
+
+/** The college an affiliation change left, and what leaving it did. */
+type CampusExit = { collegeId: string; exit: CampusCommunityExit } | null;
 
 const unavailable = () =>
   new ConflictException({
@@ -135,6 +155,13 @@ function isUniqueViolation(err: unknown): boolean {
  * code proves the mailbox) but still starts the cooldown. Removal is never
  * blocked by the cooldown: giving up access must always be possible.
  *
+ * Whenever an affiliation ends — removed, switched to another college, revoked
+ * or released — the person leaves every campus community of the college they
+ * left, in the same transaction (`leaveCampusCommunities`). An owner must hand
+ * their communities over first when they act themselves (409
+ * `CAMPUS_COMMUNITY_OWNER`); an admin's revoke or release cannot be refused, so
+ * ownership passes to a successor instead.
+ *
  * Uniqueness of an address is enforced three times on purpose: a pre-check
  * before any mail is sent (so a taken address does not cost a code), a recheck
  * inside the verify transaction, and the unique index as the final arbiter for
@@ -154,6 +181,9 @@ export class CampusAffiliationService {
     private readonly policy: EmailChangePolicyService,
     private readonly rateLimit: RateLimitService,
     @Inject(ADDRESS_MAILER) private readonly mailer: AddressMailer,
+    // Required, not optional: an optional dependency that failed to resolve
+    // would silently skip the cache and realtime follow-up of a campus exit.
+    private readonly communities: CommunitiesService,
   ) {}
 
   /**
@@ -183,10 +213,20 @@ export class CampusAffiliationService {
   }
 
   async getStatus(userId: string): Promise<AffiliationStatus> {
-    // Read on every Campus visit, so it stays two lookups. The cooldown date
-    // reaches the client from /api/account/email and from the refusal itself.
-    const [affiliation, challenge] = await Promise.all([
-      this.getAffiliationView(userId),
+    // Read on every Campus visit, so it stays a few lookups, the challenge one
+    // running beside the other two. The cooldown date reaches the client from
+    // /api/account/email and from the refusal itself.
+    const [{ affiliation, campusCommunities }, challenge] = await Promise.all([
+      this.getAffiliationView(userId).then(async (view) => ({
+        affiliation: view,
+        campusCommunities: view?.active
+          ? await getCampusCommunityStanding(
+              this.prisma,
+              userId,
+              view.collegeId,
+            )
+          : { joinedCount: 0, owned: [] },
+      })),
       this.otp.getBoundChallenge(userId, UserOtpPurpose.COLLEGE_EMAIL),
     ]);
 
@@ -204,7 +244,7 @@ export class CampusAffiliationService {
         resendAvailableAt: challenge.resendAvailableAt.toISOString(),
       };
     }
-    return { affiliation, pending };
+    return { affiliation, pending, campusCommunities };
   }
 
   // ── Verification ─────────────────────────────────────────────────────────
@@ -270,7 +310,12 @@ export class CampusAffiliationService {
       }),
       this.prisma.collegeAffiliation.findUnique({
         where: { userId },
-        select: { emailNormalized: true, collegeId: true, revokedAt: true },
+        select: {
+          emailNormalized: true,
+          collegeId: true,
+          revokedAt: true,
+          college: { select: { name: true } },
+        },
       }),
     ]);
     // An admin revocation is not undone by verifying again.
@@ -285,6 +330,23 @@ export class CampusAffiliationService {
         code: 'already_affiliated',
         message: 'This address is already verified on your account.',
       });
+    }
+
+    // Moving to another college would end this one, and an owner cannot do
+    // that until they hand their campus communities over. Said now, before a
+    // code is mailed, rather than after they have typed it in.
+    const leaving = mine
+      ? { id: mine.collegeId, name: mine.college.name }
+      : await this.mirroredCollege(this.prisma, userId);
+    if (leaving && leaving.id !== college.id) {
+      const { owned } = await getCampusCommunityStanding(
+        this.prisma,
+        userId,
+        leaving.id,
+      );
+      if (owned.length > 0) {
+        throw campusCommunityOwnerConflict(leaving.name, owned, 'switch');
+      }
     }
 
     // Before any mail, in parallel: a code that could never be redeemed is
@@ -384,8 +446,9 @@ export class CampusAffiliationService {
     await this.requireOpenCollege(collegeId);
     await this.assertDomainOfCollege(target, collegeId);
 
+    let left: CampusExit;
     try {
-      await this.prisma.$transaction(async (tx) => {
+      left = await this.prisma.$transaction(async (tx) => {
         // Serialises every email change for this account. Everything below is
         // re-checked under it, not trusted from the checks above.
         const now = await this.policy.lockUser(tx, userId);
@@ -408,7 +471,12 @@ export class CampusAffiliationService {
           }),
           tx.collegeAffiliation.findUnique({
             where: { userId },
-            select: { revokedAt: true, collegeId: true, email: true },
+            select: {
+              revokedAt: true,
+              collegeId: true,
+              email: true,
+              college: { select: { name: true } },
+            },
           }),
           tx.user.findUnique({
             where: { id: userId },
@@ -417,6 +485,29 @@ export class CampusAffiliationService {
         ]);
         if (mine?.revokedAt) throw revoked();
         if (holder && holder.userId !== userId) throw unavailable();
+
+        // A switch ends the old campus: the person leaves its campus
+        // communities in this same transaction, or is refused while they own
+        // one. A new address at the same college changes nothing here.
+        // The college being left is the affiliation's, or — for an account the
+        // legacy backfill skipped, which has only the User mirror — the
+        // mirror's. Ignoring the mirror let such an owner switch colleges and
+        // leave their old campus communities and ownership behind.
+        const leavingId = mine?.collegeId ?? user?.collegeId ?? null;
+        const exit: CampusExit =
+          leavingId && leavingId !== collegeId
+            ? {
+                collegeId: leavingId,
+                exit: await this.leaveCommunitiesOf(
+                  tx,
+                  userId,
+                  leavingId,
+                  mine?.college.name ?? (await this.collegeName(tx, leavingId)),
+                  'refuse',
+                  'switch',
+                ),
+              }
+            : null;
 
         // One row per user: a new address replaces the old one in place,
         // which is what releases the old address.
@@ -476,12 +567,14 @@ export class CampusAffiliationService {
           newEmail: target,
           at: now,
         });
+        return exit;
       });
     } catch (err) {
       if (isUniqueViolation(err)) throw unavailable();
       throw err;
     }
 
+    if (left) await this.afterCampusExit(userId, left);
     const affiliation = await this.getAffiliationView(userId);
     await this.announce(userId, affiliation);
     return { affiliation };
@@ -542,7 +635,7 @@ export class CampusAffiliationService {
     });
     if (affiliation?.revokedAt) throw revoked();
 
-    await this.prisma.$transaction(async (tx) => {
+    const left = await this.prisma.$transaction(async (tx) => {
       const now = await this.policy.lockUser(tx, user.id);
       if (proof.reauthToken) {
         await this.reauth.consumeGrant(
@@ -555,9 +648,30 @@ export class CampusAffiliationService {
       }
       const existing = await tx.collegeAffiliation.findUnique({
         where: { userId: user.id },
-        select: { email: true, revokedAt: true },
+        select: {
+          email: true,
+          revokedAt: true,
+          collegeId: true,
+          college: { select: { name: true } },
+        },
       });
       if (existing?.revokedAt) throw revoked();
+      // Refused while the person owns a campus community. It happens inside
+      // the transaction, after the grant is consumed, so the refusal rolls
+      // the grant back and they can retry once they have handed over.
+      const exit: CampusExit = existing
+        ? {
+            collegeId: existing.collegeId,
+            exit: await this.leaveCommunitiesOf(
+              tx,
+              user.id,
+              existing.collegeId,
+              existing.college.name,
+              'refuse',
+              'remove',
+            ),
+          }
+        : null;
       await tx.collegeAffiliation.deleteMany({ where: { userId: user.id } });
       await tx.user.update({
         where: { id: user.id },
@@ -574,7 +688,9 @@ export class CampusAffiliationService {
           at: now,
         });
       }
+      return exit;
     });
+    if (left) await this.afterCampusExit(user.id, left);
     await this.otp.invalidate(user.id, UserOtpPurpose.COLLEGE_EMAIL);
     await this.announce(user.id, null);
     return { success: true };
@@ -621,14 +737,29 @@ export class CampusAffiliationService {
     }
     const existing = await this.prisma.collegeAffiliation.findUnique({
       where: { userId },
-      select: { id: true, email: true },
+      select: { id: true, email: true, collegeId: true },
     });
     if (!existing) {
       throw new NotFoundException('This user has no college affiliation.');
     }
     // Security revocation: never blocked by a cooldown, and starts none.
-    await this.prisma.$transaction(async (tx) => {
+    const exit = await this.prisma.$transaction(async (tx) => {
       const now = await this.policy.lockUser(tx, userId);
+      // Re-read under the user lock: the pre-transaction read could predate a
+      // switch to another college, which would leave the wrong campus's
+      // communities behind.
+      const current = await tx.collegeAffiliation.findUnique({
+        where: { userId },
+        select: { collegeId: true },
+      });
+      // An admin cannot be refused: owned communities pass to a successor.
+      const left = await this.leaveCommunitiesOf(
+        tx,
+        userId,
+        current?.collegeId ?? existing.collegeId,
+        '',
+        'transfer',
+      );
       await tx.collegeAffiliation.update({
         where: { userId },
         data: { revokedAt: now, revokedReason: trimmed },
@@ -644,6 +775,11 @@ export class CampusAffiliationService {
         previousEmail: existing.email,
         at: now,
       });
+      return left;
+    });
+    await this.afterCampusExit(userId, {
+      collegeId: existing.collegeId,
+      exit,
     });
     await this.announce(userId, await this.getAffiliationView(userId));
     return { collegeAffiliation: await this.getAdminView(userId) };
@@ -654,12 +790,24 @@ export class CampusAffiliationService {
    * clears the mirror, so the two can never disagree.
    */
   async adminRelease(userId: string): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
+    const left = await this.prisma.$transaction(async (tx) => {
       const now = await this.policy.lockUser(tx, userId);
       const existing = await tx.collegeAffiliation.findUnique({
         where: { userId },
-        select: { email: true },
+        select: { email: true, collegeId: true },
       });
+      const exit: CampusExit = existing
+        ? {
+            collegeId: existing.collegeId,
+            exit: await this.leaveCommunitiesOf(
+              tx,
+              userId,
+              existing.collegeId,
+              '',
+              'transfer',
+            ),
+          }
+        : null;
       await tx.collegeAffiliation.deleteMany({ where: { userId } });
       await tx.user.update({
         where: { id: userId },
@@ -675,8 +823,95 @@ export class CampusAffiliationService {
           at: now,
         });
       }
+      return exit;
     });
+    if (left) await this.afterCampusExit(userId, left);
     await this.announce(userId, null);
+  }
+
+  // ── Campus communities ───────────────────────────────────────────────────
+
+  /**
+   * Runs the campus-community exit inside the caller's transaction and turns
+   * the owner refusal into the 409 the apps show. `collegeName` is used only
+   * for that message, which only a user path can reach.
+   */
+  /**
+   * The college an account is mirrored to when it has no affiliation row: the
+   * legacy backfill skipped duplicate or malformed college emails, so such
+   * accounts can still hold `User.collegeId` (and campus communities).
+   */
+  private async mirroredCollege(
+    db: Prisma.TransactionClient,
+    userId: string,
+  ): Promise<{ id: string; name: string } | null> {
+    const user = await db.user.findUnique({
+      where: { id: userId },
+      select: { collegeId: true },
+    });
+    if (!user?.collegeId) return null;
+    return {
+      id: user.collegeId,
+      name: await this.collegeName(db, user.collegeId),
+    };
+  }
+
+  private async collegeName(
+    db: Prisma.TransactionClient,
+    collegeId: string,
+  ): Promise<string> {
+    const college = await db.college.findUnique({
+      where: { id: collegeId },
+      select: { name: true },
+    });
+    return college?.name ?? 'your college';
+  }
+
+  private async leaveCommunitiesOf(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    collegeId: string,
+    collegeName: string,
+    owners: CampusOwnerPolicy,
+    action: 'remove' | 'switch' = 'remove',
+  ): Promise<CampusCommunityExit> {
+    try {
+      return await leaveCampusCommunities(tx, { userId, collegeId, owners });
+    } catch (err) {
+      if (err instanceof CampusCommunityOwnerError) {
+        throw campusCommunityOwnerConflict(
+          collegeName,
+          err.communities,
+          action,
+        );
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * After the commit: the cache and realtime follow-up of the leaves and
+   * handovers, and a log line for any owned community nobody could inherit.
+   * Best effort — the rows are already correct, and every campus read consults
+   * the database.
+   */
+  private async afterCampusExit(
+    userId: string,
+    { collegeId, exit }: NonNullable<CampusExit>,
+  ): Promise<void> {
+    for (const communityId of exit.unsuccessored) {
+      this.logger.warn(
+        `No eligible successor for campus community ${communityId}; ownership left unchanged`,
+      );
+    }
+    if (exit.removed.length === 0 && exit.transfers.length === 0) return;
+    try {
+      await this.communities.announceCampusExit(userId, collegeId, exit);
+    } catch (err) {
+      this.logger.warn(
+        `campus community exit announce failed for ${userId}: ${errorMessage(err)}`,
+      );
+    }
   }
 
   /**
