@@ -1,0 +1,80 @@
+# The production API only accepts Cloudflare's address ranges (ingress IP
+# restrictions on the Container App). That list is static, and Cloudflare's
+# published ranges change now and then: a range they add and we lack answers
+# 403 for whoever is routed through it, and nothing here would say why.
+#
+# This compares the two once a week and FAILS when they differ, which is what
+# sends the notification. It changes nothing: updating a production ingress
+# from a fetched list unattended would turn a bad download into an outage.
+# The fix is printed in the job log.
+name: Origin allow-list — Cloudflare ranges
+
+on:
+  schedule:
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    # Same environment key as deploy-prod.yml: it is the OIDC token subject.
+    environment: production
+    steps:
+      - name: Azure login — PROD
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID_PROD }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Compare ingress allow-list with Cloudflare's published ranges
+        env:
+          RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP_PROD }}
+          CONTAINERAPP: ${{ secrets.AZURE_CONTAINERAPP_PROD }}
+        run: |
+          set -euo pipefail
+
+          curl -fsS --max-time 20 https://www.cloudflare.com/ips-v4 \
+            | tr -d '\r' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+$' \
+            | sort -u > published.txt
+          # A short or empty download is a failed download, not a real list.
+          if [ "$(wc -l < published.txt)" -lt 10 ]; then
+            echo "::error::Cloudflare's range list did not download properly."
+            exit 1
+          fi
+
+          # Only the standing rules: a deploy's temporary runner rule
+          # (ci-health-*) is not part of the list being compared.
+          az containerapp show \
+            --name "${CONTAINERAPP}" \
+            --resource-group "${RESOURCE_GROUP}" \
+            --query "properties.configuration.ingress.ipSecurityRestrictions[?starts_with(name, 'cloudflare-')].ipAddressRange" \
+            --output tsv | tr -d '\r' | sort -u > allowed.txt
+
+          if [ ! -s allowed.txt ]; then
+            echo "::error::The origin has no Cloudflare allow-list: it is open to direct access."
+            exit 1
+          fi
+
+          MISSING=$(comm -23 published.txt allowed.txt)
+          STALE=$(comm -13 published.txt allowed.txt)
+          if [ -z "${MISSING}" ] && [ -z "${STALE}" ]; then
+            echo "Allow-list matches Cloudflare's $(wc -l < published.txt) published ranges."
+            exit 0
+          fi
+
+          if [ -n "${MISSING}" ]; then
+            echo "::error::Cloudflare ranges the origin does NOT allow (their traffic gets 403):"
+            echo "${MISSING}"
+            echo "Add each with:"
+            echo "  az containerapp ingress access-restriction set --name <app> --resource-group <rg> --rule-name cloudflare-<n> --ip-address <range> --action Allow"
+          fi
+          if [ -n "${STALE}" ]; then
+            echo "::error::Allowed ranges Cloudflare no longer publishes (remove them):"
+            echo "${STALE}"
+          fi
+          exit 1
