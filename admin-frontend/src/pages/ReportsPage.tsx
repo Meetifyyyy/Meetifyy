@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '../api/apiClient';
-import { Eye, X, Search, ShieldCheck, Clock, CheckCircle, AlertCircle, RefreshCw, FileText } from '../components/icons';
+import { Eye, EyeOff, X, Search, ShieldCheck, Clock, CheckCircle, AlertCircle, RefreshCw, FileText } from '../components/icons';
 import { Dropdown } from '../components/Dropdown';
 import { Pagination } from '../components/Pagination';
 import { LoadingState } from '../components/LoadingState';
@@ -30,6 +30,45 @@ const ModerationError: React.FC<{ message: string; retry: () => void }> = ({ mes
   <div className="moderation-error" role="alert"><AlertCircle size={18} aria-hidden="true" /><span>{message}</span><button className="btn-secondary" onClick={retry}><RefreshCw size={16} />Try again</button></div>
 );
 
+interface ConfessionAuthor { id: string; username: string; displayName: string; avatar?: string | null }
+const REVEAL_REASON_MIN = 10;
+const REVEAL_REASON_MAX = 500;
+
+/**
+ * A confession's author stays hidden in the report view. Seeing the account
+ * takes a stated reason, which the server stores in the audit log, so the
+ * identity is held only in this component's state and is gone when the review
+ * closes.
+ */
+const ConfessionAuthorReveal: React.FC<{ reportId: string; handle?: string }> = ({ reportId, handle }) => {
+  const [formOpen, setFormOpen] = useState(false);
+  const [reason, setReason] = useState('');
+  const [author, setAuthor] = useState<ConfessionAuthor | null>(null);
+  const reveal = useMutation({
+    mutationFn: (text: string) => apiRequest<{ author: ConfessionAuthor }>(`/admin/reports/${reportId}/reveal-author`, { method: 'POST', body: JSON.stringify({ reason: text }) }),
+    onSuccess: (result) => { setAuthor(result.author); setFormOpen(false); setReason(''); },
+  });
+  const trimmed = reason.trim();
+  const valid = trimmed.length >= REVEAL_REASON_MIN && trimmed.length <= REVEAL_REASON_MAX;
+  const closeForm = () => { setFormOpen(false); setReason(''); reveal.reset(); };
+
+  return <div className="moderation-author" aria-label="Confession author">
+    <span className="moderation-field-caption">Posted anonymously{handle ? <> as <strong>{handle}</strong></> : null}</span>
+    {author ? <div className="moderation-person" role="status"><UserAvatar user={author} size={36} /><div><strong>{author.displayName || author.username}</strong><span>@{author.username}</span><span>User ID {author.id}</span></div></div>
+      : formOpen ? <form className="moderation-reveal-form" onSubmit={(event) => { event.preventDefault(); if (valid && !reveal.isPending) reveal.mutate(trimmed); }}
+        onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); if (!reveal.isPending) closeForm(); } }}>
+        <div className="moderation-review-field">
+          <label htmlFor="reveal-author-reason">Reason for revealing the author <small>{trimmed.length}/{REVEAL_REASON_MAX}</small></label>
+          <textarea id="reveal-author-reason" value={reason} onChange={(event) => setReason(event.target.value)} maxLength={REVEAL_REASON_MAX} rows={3} className="input-control" placeholder="Why this account needs to be identified" disabled={reveal.isPending} autoFocus />
+          <p className="moderation-field-help">At least {REVEAL_REASON_MIN} characters. The reason and your admin account are recorded in the audit log.</p>
+        </div>
+        {reveal.isError && <div className="moderation-error" role="alert"><AlertCircle size={18} aria-hidden="true" /><span>{(reveal.error as Error).message || 'Could not reveal the author.'}</span></div>}
+        <div className="moderation-reveal-actions"><button type="button" className="btn-secondary" onClick={closeForm} disabled={reveal.isPending}>Cancel</button><button type="submit" className="btn-primary" disabled={!valid || reveal.isPending}>{reveal.isPending ? 'Revealing…' : 'Reveal author'}</button></div>
+      </form>
+      : <><button type="button" className="btn-secondary moderation-reveal-button" onClick={() => setFormOpen(true)}><EyeOff size={16} aria-hidden="true" />Reveal author</button><p className="moderation-field-help">The author is hidden by default. Revealing needs a reason and is audited.</p></>}
+  </div>;
+};
+
 const ReportReviewEditor: React.FC<{ report: ReportDetail; onClose: () => void }> = ({ report, onClose }) => {
   const confirm = useConfirm();
   const queryClient = useQueryClient();
@@ -53,6 +92,7 @@ const ReportReviewEditor: React.FC<{ report: ReportDetail; onClose: () => void }
   });
   const content = report.targetContent && typeof report.targetContent === 'object' ? report.targetContent as Record<string, unknown> : null;
   const preview = typeof report.targetContent === 'string' ? report.targetContent : [content?.text, content?.description, content?.bio].find((value): value is string => typeof value === 'string' && Boolean(value));
+  const confessionHandle = report.targetType === 'CONFESSION' && content?.profile && typeof content.profile === 'object' && typeof (content.profile as Record<string, unknown>).handle === 'string' ? (content.profile as { handle: string }).handle : undefined;
   const contentTitle = [content?.displayName, content?.name, content?.username].find((value): value is string => typeof value === 'string' && Boolean(value));
 
   return <>
@@ -66,6 +106,7 @@ const ReportReviewEditor: React.FC<{ report: ReportDetail; onClose: () => void }
             {contentTitle && <strong>{contentTitle}</strong>}
             {preview && <p className="moderation-content-text">{preview}</p>}
             {!preview && !contentTitle && <p className="moderation-muted">Content details are available below.</p>}
+            {report.targetType === 'CONFESSION' && <ConfessionAuthorReveal reportId={report.id} handle={confessionHandle} />}
             <details className="moderation-content-data"><summary>View content data</summary><pre tabIndex={0} aria-label="Reported content data">{JSON.stringify(report.targetContent, null, 2)}</pre></details>
           </>}
         </div>

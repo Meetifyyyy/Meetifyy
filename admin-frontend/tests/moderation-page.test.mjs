@@ -13,10 +13,10 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const { createRoot } = await import('react-dom/client');
 const element = React.createElement;
 let server, ReportsPage, ConfirmProvider, root, host, client;
-let calls = [], listFails = false, statsFail = false, detailFails = false, updateFails = false, detailGate = null, listGate = null;
+let calls = [], listFails = false, statsFail = false, detailFails = false, updateFails = false, detailGate = null, listGate = null, revealFails = false;
 let report;
 function reset() {
-  calls = []; listFails = statsFail = detailFails = updateFails = false; detailGate = listGate = null;
+  calls = []; listFails = statsFail = detailFails = updateFails = revealFails = false; detailGate = listGate = null;
   report = { id: 'report-example', targetId: 'post-example', targetType: 'POST', reason: 'HATE_SPEECH', priority: 'HIGH', status: 'PENDING', createdAt: '2026-11-07T08:00:00Z',
     reporter: { username: 'reporter', displayName: 'Example Reporter' }, description: 'Please review this post.', internalNotes: 'Existing notes', resolution: 'Existing outcome', targetContent: { text: '<script>example()</script>', author: { username: 'author' } } };
 }
@@ -31,6 +31,10 @@ globalThis.__moderationApi = async (path, options = {}) => {
     if (listGate) await listGate;
     if (listFails) throw new Error('Queue unavailable');
     return { data: [report], meta: { total: 21, totalPages: 2 } };
+  }
+  if (path === '/admin/reports/report-example/reveal-author') {
+    if (revealFails) throw new Error('Audit log unavailable');
+    return { author: { id: 'user-secret', username: 'real_author', displayName: 'Real Author', avatar: null } };
   }
   if (path === '/admin/reports/report-example') {
     if (options.method === 'PATCH') {
@@ -178,4 +182,62 @@ test('pending queues show the shared loading spinner without a false empty state
   assert.equal(host.querySelector('.moderation-empty'), null);
   await act(async () => release()); await tick();
   assert.ok(host.querySelector('.moderation-table'));
+});
+
+const confession = () => { report = { ...report, targetType: 'CONFESSION', targetContent: { id: 'c1', content: 'I did it', text: 'I did it', profile: { handle: 'ghost_42' } } }; };
+const reveals = () => writes().filter(({ path }) => path.endsWith('/reveal-author'));
+
+test('a confession report shows the handle and hides the author until revealed', async () => {
+  confession(); await render(); await openReview();
+  assert.match(dialog().querySelector('.moderation-author').textContent, /ghost_42/);
+  assert.doesNotMatch(dialog().textContent, /real_author|Real Author|user-secret/);
+  assert.ok(byText(dialog(), 'Reveal author'));
+  assert.equal(reveals().length, 0);
+});
+
+test('other report types have no reveal control', async () => {
+  await render(); await openReview();
+  assert.equal(dialog().querySelector('.moderation-author'), null);
+  assert.equal(byText(dialog(), 'Reveal author'), undefined);
+});
+
+test('revealing needs a reason of 10 to 500 characters, sends it trimmed, then shows the author', async () => {
+  confession(); await render(); await openReview();
+  await click(byText(dialog(), 'Reveal author'));
+  const submit = () => byText(dialog(), 'Reveal author');
+  assert.equal(submit().disabled, true);
+  await input(dialog().querySelector('#reveal-author-reason'), 'too short');
+  assert.equal(submit().disabled, true);
+  await input(dialog().querySelector('#reveal-author-reason'), '          '); assert.equal(submit().disabled, true);
+  await input(dialog().querySelector('#reveal-author-reason'), '  Threats against a named student  ');
+  assert.equal(submit().disabled, false);
+  await click(submit());
+  assert.deepEqual(reveals().map(({ path, method, body }) => [path, method, JSON.parse(body)]), [['/admin/reports/report-example/reveal-author', 'POST', { reason: 'Threats against a named student' }]]);
+  assert.match(dialog().querySelector('.moderation-author').textContent, /Real Author/);
+  assert.match(dialog().querySelector('.moderation-author').textContent, /@real_author/);
+  assert.equal(dialog().querySelector('#reveal-author-reason'), null);
+  assert.doesNotMatch(dialog().querySelector('pre').textContent, /real_author/);
+});
+
+test('a failed reveal shows the error, keeps the reason, and does not show the author', async () => {
+  revealFails = true; confession(); await render(); await openReview();
+  await click(byText(dialog(), 'Reveal author'));
+  await input(dialog().querySelector('#reveal-author-reason'), 'Threats against a named student');
+  await click(byText(dialog(), 'Reveal author'));
+  assert.match(dialog().querySelector('.moderation-reveal-form [role="alert"]').textContent, /Audit log unavailable/);
+  assert.equal(dialog().querySelector('#reveal-author-reason').value, 'Threats against a named student');
+  assert.doesNotMatch(dialog().textContent, /Real Author|real_author/);
+  revealFails = false; await click(byText(dialog(), 'Reveal author'));
+  assert.match(dialog().querySelector('.moderation-author').textContent, /Real Author/);
+});
+
+test('cancelling the reveal form discards the reason without closing the review', async () => {
+  confession(); await render(); await openReview();
+  await click(byText(dialog(), 'Reveal author'));
+  await input(dialog().querySelector('#reveal-author-reason'), 'Threats against a named student');
+  await act(async () => dialog().querySelector('#reveal-author-reason').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))); await tick();
+  assert.ok(dialog()); assert.equal(dialog().querySelector('#reveal-author-reason'), null);
+  assert.equal(reveals().length, 0);
+  await click(byText(dialog(), 'Reveal author'));
+  assert.equal(dialog().querySelector('#reveal-author-reason').value, '');
 });

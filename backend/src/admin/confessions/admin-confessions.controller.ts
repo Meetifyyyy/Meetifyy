@@ -15,9 +15,11 @@ import { ModerateConfessionDto } from '../../confessions/dto/confession.dto';
 
 /**
  * Moderator actions on anonymous confessions. Reports reach moderators
- * through /admin/reports (target type CONFESSION, with the author's account
- * resolved for them there); this is where they act on one. The admin audit
- * interceptor records every call.
+ * through /admin/reports (target type CONFESSION); report views hide the
+ * author, and a moderator who needs the account reveals it through
+ * `POST admin/reports/:id/reveal-author`, which requires a reason and is
+ * audited. This is where they act on one. The admin audit interceptor records
+ * every call.
  */
 @UseGuards(AdminJwtGuard)
 @Controller('admin/confessions')

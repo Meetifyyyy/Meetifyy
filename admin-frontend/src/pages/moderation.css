@@ -79,6 +79,12 @@ html:has(.moderation-review-modal), body:has(.moderation-review-modal), body:has
 .moderation-content-data { margin-top: 14px; padding-top: 12px; border-top: 1px solid #edf0f5; }
 .moderation-content-data summary { color: #75839a; font-size: .75rem; cursor: pointer; padding: 5px 0; }
 .moderation-content-data pre { max-width: 100%; max-height: 220px; margin: 10px 0 0; padding: 12px; border-radius: 10px; background: #f4f6fa; color: #526176; font-family: monospace; font-size: .6875rem; line-height: 1.6; white-space: pre-wrap; overflow: auto; overflow-wrap: anywhere; overscroll-behavior: contain; }
+.moderation-author { margin-top: 14px; padding-top: 12px; border-top: 1px solid #edf0f5; }
+.moderation-author .moderation-field-caption strong { color: #35465e; font-weight: 600; overflow-wrap: anywhere; }
+.moderation-reveal-button { min-height: 44px; gap: 8px; font-size: .8125rem; }
+.moderation-reveal-form .moderation-error { margin: 0 0 12px; }
+.moderation-reveal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.moderation-reveal-actions > button { min-height: 44px; font-size: .8125rem; }
 .moderation-muted { color: #7b899d; font-size: .8125rem; line-height: 1.6; margin: 0; }
 .moderation-reporter-detail { padding: 16px; margin-bottom: 20px; border: 1px solid #e9edf4; border-radius: 14px; background: #f8fafe; }
 .moderation-case-meta { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; margin: 14px 0 0; }

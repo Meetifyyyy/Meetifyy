@@ -14,11 +14,20 @@ import { ModerationService } from '../../moderation/moderation.service';
 import { UpdateReportDto } from '../../moderation/dto/update-report.dto';
 import { BulkActionReportDto } from '../../moderation/dto/bulk-action-report.dto';
 import { AdminJwtGuard } from '../../common/guards/admin-jwt.guard';
+import { clientIp } from '../../common/rate-limit/client-ip.util';
+import {
+  AdminReportsService,
+  type RevealedConfessionAuthor,
+} from './admin-reports.service';
+import { RevealConfessionAuthorDto } from './reveal-confession-author.dto';
 
 @UseGuards(AdminJwtGuard)
 @Controller('admin/reports')
 export class AdminReportsController {
-  constructor(private readonly moderationService: ModerationService) {}
+  constructor(
+    private readonly moderationService: ModerationService,
+    private readonly reports: AdminReportsService,
+  ) {}
 
   @Get()
   async listReports(
@@ -64,5 +73,26 @@ export class AdminReportsController {
   @Post('bulk')
   async bulkAction(@Body() dto: BulkActionReportDto, @Req() req: AdminRequest) {
     return this.moderationService.bulkAction(dto, req.admin?.id);
+  }
+
+  /**
+   * The only way to see who wrote an anonymous confession. A reason is
+   * required and recorded; AuditInterceptor also writes its generic row for
+   * this POST (the reason, no identity), alongside the specific one.
+   */
+  @Post(':id/reveal-author')
+  async revealAuthor(
+    @Param('id') id: string,
+    @Body() dto: RevealConfessionAuthorDto,
+    @Req() req: AdminRequest,
+  ): Promise<{ author: RevealedConfessionAuthor }> {
+    const requestId = req.headers['x-request-id'];
+    return this.reports.revealConfessionAuthor(id, dto.reason, {
+      adminId: req.admin.id,
+      ip: clientIp(req) || req.ip || '0.0.0.0',
+      endpoint: req.originalUrl || req.url || '',
+      httpMethod: (req.method || 'POST').toUpperCase(),
+      requestId: typeof requestId === 'string' ? requestId || null : null,
+    });
   }
 }

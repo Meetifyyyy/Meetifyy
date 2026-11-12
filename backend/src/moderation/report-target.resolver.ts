@@ -213,7 +213,10 @@ export class ReportTargetResolver {
           select: { id: true, name: true, type: true, createdAt: true },
         });
       case ReportTargetType.CONFESSION:
-        // Moderators see who is behind the handle so they can act on it.
+        // The handle only. A report view is a read that is never audited, so it
+        // must not carry the account behind an anonymous author; a moderator
+        // who needs it asks for it through the reveal-author action, which
+        // requires a reason and writes an audit row.
         return this.prisma.confession.findUnique({
           where: { id: targetId },
           select: {
@@ -224,19 +227,7 @@ export class ReportTargetResolver {
             relateCount: true,
             createdAt: true,
             collegeId: true,
-            profile: {
-              select: {
-                handle: true,
-                user: {
-                  select: {
-                    id: true,
-                    username: true,
-                    displayName: true,
-                    avatar: true,
-                  },
-                },
-              },
-            },
+            profile: { select: { handle: true } },
           },
         });
       default:
