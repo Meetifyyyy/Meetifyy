@@ -28,6 +28,7 @@
 #   → run `prisma migrate deploy` → PROD Supabase (via Container App Job)
 #   → deploy to meetifyy-api Container App
 #   → health check
+#   → prune old prod images from ACR (keeps the newest 15)
 #
 # Required GitHub Environment secrets (Settings → Environments → production):
 #   AZURE_CLIENT_ID_PROD      — PROD service principal app ID
@@ -380,6 +381,20 @@ jobs:
           # never became healthy still reported green, which is precisely the
           # case someone needs to be told about.
           exit 1
+
+      # ── 8. Prune old PRODUCTION images ─────────────────────────────────────
+      # ACR Basic includes 10 GiB and every prod image is ~330 MiB. Keeps the
+      # 15 newest images — the rollback targets the step above points at —
+      # plus prod-latest and the one just deployed. Runs only after a healthy
+      # deploy and never fails it.
+      - name: Prune old PRODUCTION images from ACR
+        continue-on-error: true
+        env:
+          ACR: ${{ secrets.ACR_LOGIN_SERVER }}
+          TAG: ${{ env.PROD_TAG }}
+        run: |
+          KEEP=15 PROTECT_TAGS="prod-latest ${TAG}" \
+            bash scripts/acr-prune.sh "${ACR%%.*}" meetifyy-api --apply
 
       # ── Sentry: mark the release deployed (PROD) ──────────────────────
       - name: Sentry release — finalize and record deploy (PROD)

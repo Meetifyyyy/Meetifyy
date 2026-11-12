@@ -15,6 +15,7 @@
 #   → run `prisma migrate deploy` against DEV Supabase (via Container App Job)
 #   → deploy to meetifyy-api-dev Container App
 #   → health check
+#   → prune old dev images from ACR (keeps the newest 10)
 #
 # Required GitHub Environment secrets (Settings → Environments → development):
 #   AZURE_CLIENT_ID_DEV       — DEV service principal app ID
@@ -281,6 +282,20 @@ jobs:
           # Fail the job: the previous version ended on an `echo`, so the step
           # exited 0 and an unhealthy deploy still reported green.
           exit 1
+
+      # ── 8. Prune old DEV images ────────────────────────────────────────────
+      # ACR Basic includes 10 GiB; every dev push adds ~330 MiB, and the
+      # registry had reached 36 GiB (billed overage) before this step existed.
+      # Runs only after a healthy deploy, keeps the 10 newest images plus the
+      # one just deployed, and never fails the deploy.
+      - name: Prune old DEV images from ACR
+        continue-on-error: true
+        env:
+          ACR: ${{ secrets.ACR_LOGIN_SERVER }}
+          TAG: ${{ env.DEV_TAG }}
+        run: |
+          KEEP=10 PROTECT_TAGS="dev-latest ${TAG}" \
+            bash scripts/acr-prune.sh "${ACR%%.*}" meetifyy-api --apply
 
       # ── Sentry: mark the release deployed (DEV) ──────────────────────
       - name: Sentry release — finalize and record deploy (DEV)
