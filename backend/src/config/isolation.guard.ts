@@ -175,6 +175,41 @@ function corsIsolationProblems(): string[] {
   return problems;
 }
 
+/**
+ * The private bucket must exist in production and must never be the public one.
+ *
+ * Identity documents and chat media are written to the verification bucket;
+ * the provider falls back to the public bucket when the variable is empty, and
+ * that bucket's public host serves any key without authentication. So an empty
+ * value in production would quietly publish them, and the same value as
+ * R2_BUCKET_NAME does so in every environment. Local development has no
+ * private bucket and keeps the fallback. Names only are inspected.
+ */
+export function privateBucketProblems(): string[] {
+  const problems: string[] = [];
+  const { provider, r2 } = storageConfigValues;
+  if (provider !== 'r2') return problems;
+
+  if (IS_PRODUCTION && !r2.verificationBucketName) {
+    problems.push(
+      `R2_VERIFICATION_BUCKET_NAME is empty. It names the private bucket that ` +
+        `holds identity documents and chat media; without it they would be ` +
+        `written to the public bucket and served to anyone with the URL.`,
+    );
+  }
+  if (
+    r2.verificationBucketName &&
+    r2.verificationBucketName === r2.bucketName
+  ) {
+    problems.push(
+      `R2_VERIFICATION_BUCKET_NAME is the same bucket as R2_BUCKET_NAME ` +
+        `("${r2.bucketName}"), which is public. Identity documents and chat ` +
+        `media need a separate private bucket.`,
+    );
+  }
+  return problems;
+}
+
 export function assertEnvironmentIsolation(): void {
   // Tests run in no browser and serve no page, and build their configuration
   // per case.
@@ -187,6 +222,7 @@ export function assertEnvironmentIsolation(): void {
     return throwIfProblems([
       ...corsIsolationProblems(),
       ...pushIsolationProblems(['prod', 'production']),
+      ...privateBucketProblems(),
     ]);
   }
 
@@ -195,7 +231,9 @@ export function assertEnvironmentIsolation(): void {
       `[isolation] DEV_RESOURCE_CHECK_DISABLED=true — cross-environment ` +
         `resource checks are SKIPPED for APP_ENV="${APP_ENV}".`,
     );
-    return;
+    // That escape is for a naming false positive; it never excuses a missing
+    // or public private bucket.
+    return throwIfProblems(privateBucketProblems());
   }
 
   // In production, a resource named for either dev or staging is wrong. In
@@ -248,6 +286,7 @@ export function assertEnvironmentIsolation(): void {
 
   problems.push(...corsIsolationProblems());
   problems.push(...pushIsolationProblems(forbidden));
+  problems.push(...privateBucketProblems());
 
   throwIfProblems(problems);
 }

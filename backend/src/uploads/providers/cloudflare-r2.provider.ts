@@ -38,8 +38,10 @@ export class CloudflareR2Provider implements StorageProvider {
     const { accountId, accessKeyId, secretAccessKey, bucketName, region } =
       config.storage.r2;
     this.bucketName = bucketName;
-    // Falls back to the main bucket when unset, so nothing changes until an
-    // operator provisions a private bucket and points this at it.
+    // The fallback to the main (public) bucket exists only for local
+    // development, which has no private bucket. Production refuses to boot
+    // without R2_VERIFICATION_BUCKET_NAME (isolation.guard.ts), so identity
+    // documents and chat media can never land in the public bucket there.
     this.verificationBucketName =
       config.storage.r2.verificationBucketName || bucketName;
     this.publicUrl = config.storage.publicUrl || config.storage.r2.publicUrl;

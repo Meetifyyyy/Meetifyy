@@ -10,6 +10,7 @@ describe('environment isolation guard', () => {
     SUPABASE_ANON_KEY: 'x',
     SUPABASE_SERVICE_ROLE_KEY: 'x',
     R2_BUCKET_NAME: 'meetifyy-prod',
+    R2_VERIFICATION_BUCKET_NAME: 'meetifyy-prod-private',
     FRONTEND_URL: 'https://meetifyy.app',
     ADMIN_URL: 'https://admin.meetifyy.app',
     ADMIN_JWT_ACCESS_SECRET: 'x',
@@ -54,6 +55,41 @@ describe('environment isolation guard', () => {
 
   it('rejects a production boot against the DEV bucket', () => {
     expect(load({ R2_BUCKET_NAME: 'meetifyy-dev' })).toThrow(/R2_BUCKET_NAME/);
+  });
+
+  describe('private bucket', () => {
+    it('refuses production with no verification bucket', () => {
+      expect(load({ R2_VERIFICATION_BUCKET_NAME: '' })).toThrow(
+        /R2_VERIFICATION_BUCKET_NAME is empty/,
+      );
+    });
+
+    it('passes production with a distinct verification bucket', () => {
+      expect(load()).not.toThrow();
+    });
+
+    it('passes development with no verification bucket', () => {
+      expect(
+        load({
+          APP_ENV: 'development',
+          R2_BUCKET_NAME: 'meetifyy-dev',
+          R2_VERIFICATION_BUCKET_NAME: '',
+        }),
+      ).not.toThrow();
+    });
+
+    it.each(['production', 'development'])(
+      'refuses %s when the verification bucket is the public bucket',
+      (appEnv) => {
+        expect(
+          load({
+            APP_ENV: appEnv,
+            R2_BUCKET_NAME: 'shared-bucket',
+            R2_VERIFICATION_BUCKET_NAME: 'shared-bucket',
+          }),
+        ).toThrow(/same bucket as R2_BUCKET_NAME/);
+      },
+    );
   });
 
   it('never echoes credentials from a connection string', () => {

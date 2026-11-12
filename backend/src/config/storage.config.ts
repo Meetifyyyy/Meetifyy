@@ -55,8 +55,11 @@ export const storageConfigValues = {
      * public host and verification objects become reachable only through a
      * signed URL.
      *
-     * Unset falls back to `bucketName`, which keeps existing deployments
-     * working unchanged.
+     * Must be a different bucket from `bucketName`: with the R2 provider the
+     * boot guard (`privateBucketProblems` in isolation.guard.ts) refuses to
+     * start when the two are equal in any environment, and when this is empty
+     * in production. Empty is only tolerated outside production, where the
+     * uploader then falls back to `bucketName`.
      */
     verificationBucketName: str('R2_VERIFICATION_BUCKET_NAME', { default: '' }),
     publicUrl: url('R2_PUBLIC_URL'),

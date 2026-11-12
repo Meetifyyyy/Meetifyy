@@ -26,6 +26,7 @@ describe('production container app configuration', () => {
     STORAGE_PROVIDER: 'r2',
     R2_ACCOUNT_ID: 'acct',
     R2_BUCKET_NAME: 'meetifyy-prod',
+    R2_VERIFICATION_BUCKET_NAME: 'meetifyy-prod-private',
     R2_ACCESS_KEY_ID: 'k',
     R2_SECRET_ACCESS_KEY: 's',
     REDIS_QUEUE_PREFIX: 'bull:production',
@@ -105,6 +106,12 @@ describe('production container app configuration', () => {
 
   it('refuses to boot production against the dev bucket', () => {
     expect(boot({ R2_BUCKET_NAME: 'meetifyy-dev' })).toThrow(/isolation/i);
+  });
+
+  it('refuses to boot production without a private bucket', () => {
+    expect(boot({ R2_VERIFICATION_BUCKET_NAME: '' })).toThrow(
+      /R2_VERIFICATION_BUCKET_NAME/,
+    );
   });
 
   it('refuses to boot production against the dev redis', () => {
