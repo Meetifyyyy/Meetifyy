@@ -21,6 +21,7 @@ import {
   stringOrNull,
 } from './message-payload';
 import { isJsonValue } from '../../common/utils/json.util';
+import { errorMessage } from '../../common/utils/error.util';
 import { MentionSource, NotificationEntityType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BlocksService } from '../../users/blocks.service';
@@ -881,8 +882,13 @@ export class MessagingCoreService {
               },
             })
           : Promise.resolve(null),
+        // Current members only. This list feeds the roster handed to members
+        // and the "read by everyone" test on the viewer's own messages; a
+        // former member's stale (or never-set) lastReadAt would otherwise keep
+        // every message from showing as read, and the roster would list people
+        // who are no longer in the group.
         this.prisma.conversationParticipant.findMany({
-          where: { conversationId: realConvId, deletedAt: null },
+          where: { conversationId: realConvId, deletedAt: null, leftAt: null },
           select: {
             userId: true,
             lastReadAt: true,
@@ -1191,8 +1197,11 @@ export class MessagingCoreService {
       );
       void this.invalidateUserConversationsCache([userId]).catch(() => {});
 
+      // Current members only: a former member must not be told what the group
+      // is reading, and their frozen lastReadAt must not count towards (or
+      // block) "everyone has read this".
       const participants = await this.prisma.conversationParticipant.findMany({
-        where: { conversationId: realConvId, deletedAt: null },
+        where: { conversationId: realConvId, deletedAt: null, leftAt: null },
         select: {
           userId: true,
           lastReadAt: true,
@@ -1236,7 +1245,7 @@ export class MessagingCoreService {
       }
     } catch (err) {
       this.coreLogger.warn(
-        `markAsRead background write failed: ${(err as Error)?.message}`,
+        `markAsRead background write failed: ${errorMessage(err)}`,
       );
     }
   }

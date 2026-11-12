@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { BullModule } from '@nestjs/bullmq';
 import { EmailService } from './email.service';
 import { EmailProcessor } from './email.processor';
+import { EmailQueueJanitor } from './email-queue-janitor';
 import { EmailUsageModule } from './email-usage.module';
 import { DevEmailController } from './dev-email.controller';
 import { SupportEmailBuilder } from './support-email.builder';
@@ -44,6 +45,10 @@ export const EMAIL_QUEUE_DEFAULT_JOB_OPTIONS = {
     EmailService,
     EmailProcessor,
     SupportEmailBuilder,
+    // Clears finished jobs left from before retention existed. Not registered
+    // under Jest, where nothing should open a Redis connection at boot (the
+    // same pattern as the dev controller above).
+    ...(config.isTest ? [] : [EmailQueueJanitor]),
     // Narrow alias of the same instance. Lets the account-deletion flow depend
     // on a two-method interface instead of importing this class, which would
     // drag `sanitize-html` (ESM) into its module graph — see account-mailer.ts.

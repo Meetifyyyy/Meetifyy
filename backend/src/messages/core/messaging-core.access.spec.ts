@@ -143,6 +143,37 @@ describe('MessagingCoreService — conversation access', () => {
     service.resolveConversationId = jest.fn(() => Promise.resolve(CONV));
   });
 
+  type Seeded = {
+    userId: string;
+    leftAt: Date | null;
+    lastReadAt: Date | null;
+  };
+
+  /**
+   * A participant table that honours the `leftAt: null` filter the way the
+   * database does, so a query that forgets it returns the former member.
+   */
+  function seedParticipants(rows: Seeded[]) {
+    prisma.conversationParticipant.findMany.mockImplementation(
+      ({ where }: { where: Where }) =>
+        Promise.resolve(
+          rows
+            .filter((r) => (where.leftAt === null ? r.leftAt === null : true))
+            .map((r) => ({
+              userId: r.userId,
+              lastReadAt: r.lastReadAt,
+              user: { settings: { readReceipts: true } },
+            })),
+        ),
+    );
+  }
+
+  function seenRecipients(): string[] {
+    return emit.mock.calls
+      .filter(([event]) => event === 'conversation:seen')
+      .flatMap(([, , audience]) => audience as string[]);
+  }
+
   describe('getConversationHistory', () => {
     it('refuses a caller who is not a participant', async () => {
       await expect(
@@ -191,6 +222,25 @@ describe('MessagingCoreService — conversation access', () => {
       const former = await service.getConversationHistory(CONV, ME);
       expect(former.isMember).toBe(false);
       expect(former.participants).toEqual([]);
+    });
+
+    it('lists only current members in the roster and asks the database for them', async () => {
+      seedParticipants([
+        { userId: ME, leftAt: null, lastReadAt: null },
+        { userId: 'other-1', leftAt: null, lastReadAt: null },
+        { userId: 'gone-1', leftAt: new Date(), lastReadAt: null },
+      ]);
+      const page = await service.getConversationHistory(CONV, ME);
+      expect(page.participants.map((p) => p.userId).sort()).toEqual(
+        [ME, 'other-1'].sort(),
+      );
+      expect(
+        (
+          prisma.conversationParticipant.findMany.mock.calls[0] as [
+            { where: Where },
+          ]
+        )[0].where.leftAt,
+      ).toBeNull();
     });
 
     it('does not serve an Instant Match thread through the DM/group path', async () => {
@@ -244,6 +294,53 @@ describe('MessagingCoreService — conversation access', () => {
       expect(emit).toHaveBeenCalledWith(
         'conversation:seen',
         expect.objectContaining({ readerId: ME }),
+        ['other-1'],
+      );
+    });
+
+    it('reads only current members when it fans the receipt out', async () => {
+      await service.markAsRead(CONV, ME);
+      await flush();
+      await flush();
+      expect(prisma.conversationParticipant.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            conversationId: CONV,
+            deletedAt: null,
+            leftAt: null,
+          }) as unknown,
+        }),
+      );
+    });
+
+    it('sends no read receipt to a member who has left', async () => {
+      seedParticipants([
+        { userId: ME, leftAt: null, lastReadAt: new Date() },
+        { userId: 'other-1', leftAt: null, lastReadAt: new Date() },
+        { userId: 'gone-1', leftAt: new Date(), lastReadAt: null },
+      ]);
+      await service.markAsRead(CONV, ME);
+      await flush();
+      await flush();
+      expect(seenRecipients()).toEqual(['other-1']);
+    });
+
+    it("does not let a former member's missing read time stop a message counting as read", async () => {
+      const readAt = new Date('2026-09-24T11:00:00Z');
+      seedParticipants([
+        { userId: ME, leftAt: null, lastReadAt: readAt },
+        { userId: 'other-1', leftAt: null, lastReadAt: readAt },
+        { userId: 'gone-1', leftAt: new Date(), lastReadAt: null },
+      ]);
+      await service.markAsRead(CONV, ME);
+      await flush();
+      await flush();
+      expect(emit).toHaveBeenCalledWith(
+        'conversation:seen',
+        expect.objectContaining({
+          isAllRead: true,
+          minOtherReadAt: readAt.toISOString(),
+        }),
         ['other-1'],
       );
     });
