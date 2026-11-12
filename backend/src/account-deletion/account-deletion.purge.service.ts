@@ -9,6 +9,7 @@ import { JwtGuard } from '../common/guards/jwt.guard';
 import { UserSessionService } from '../auth/session/user-session.service';
 import { clearAuthSyncCache } from '../auth/auth.service';
 import { DELETED_USER_DISPLAY_NAME } from '../common/users/deleted-user';
+import { findSuccessor } from '../common/campus/campus-community-exit';
 import {
   PURGE_BATCH_SIZE,
   PURGE_LEASE_MS,
@@ -476,7 +477,9 @@ export class AccountDeletionPurgeService {
    * Communities are other people's, so they are never deleted out from under
    * them: ownership moves to the longest-standing remaining member (admins
    * first, by role order). Only a community where this user was the sole member
-   * is wound up.
+   * is wound up. A campus community is open only to its college's active
+   * affiliates, so its heir is chosen by the same rule the campus exit uses;
+   * with nobody eligible it is wound up like a sole-member community.
    */
   private async purgeOwnedCommunities(
     tx: Prisma.TransactionClient,
@@ -486,37 +489,51 @@ export class AccountDeletionPurgeService {
   ): Promise<void> {
     const owned = await tx.community.findMany({
       where: { ownerId: userId, deletedAt: null },
-      select: { id: true, avatarKey: true, coverKey: true },
+      select: {
+        id: true,
+        avatarKey: true,
+        coverKey: true,
+        isCampusCommunity: true,
+        collegeId: true,
+      },
     });
 
     for (const comm of owned) {
-      const successor = await tx.communityMember.findFirst({
-        where: { communityId: comm.id, userId: { not: userId } },
-        orderBy: [{ role: 'asc' }, { joinedAt: 'asc' }],
-        select: { userId: true },
-      });
+      let successorId: string | null;
+      if (comm.isCampusCommunity && comm.collegeId) {
+        successorId = await findSuccessor(tx, comm.id, comm.collegeId, userId);
+      } else {
+        const successor = await tx.communityMember.findFirst({
+          where: { communityId: comm.id, userId: { not: userId } },
+          orderBy: [{ role: 'asc' }, { joinedAt: 'asc' }],
+          select: { userId: true },
+        });
+        successorId = successor?.userId ?? null;
+      }
 
-      if (successor) {
+      if (successorId) {
         await tx.community.update({
           where: { id: comm.id },
-          data: { ownerId: successor.userId },
+          data: { ownerId: successorId },
         });
         await tx.communityMember.update({
           where: {
             userId_communityId: {
-              userId: successor.userId,
+              userId: successorId,
               communityId: comm.id,
             },
           },
           data: { role: 'OWNER' },
         });
         this.logger.log(
-          `Community ${comm.id} ownership transferred to ${successor.userId}`,
+          `Community ${comm.id} ownership transferred to ${successorId}`,
         );
         continue;
       }
 
-      // Sole member: nothing of anyone else's is in here.
+      // No one to hand it to (sole member, or no eligible campus affiliate).
+      // Any other members it still has are removed with it, so their rows go
+      // here and the count is zeroed below rather than decremented later.
       await this.purgePosts(tx, { communityId: comm.id }, mediaKeys);
       if (comm.avatarKey) mediaKeys.push(comm.avatarKey);
       if (comm.coverKey) mediaKeys.push(comm.coverKey);
@@ -576,6 +593,12 @@ export class AccountDeletionPurgeService {
     await tx.follow.deleteMany({
       where: { OR: [{ followerId: userId }, { followingId: userId }] },
     });
+    // Pending follow requests, sent and received. The user row is anonymised
+    // rather than deleted, so the cascade on the relation never fires: left
+    // alone, a purged account would sit in other people's request inboxes.
+    await tx.followRequest.deleteMany({
+      where: { OR: [{ requesterId: userId }, { targetId: userId }] },
+    });
     await tx.postBookmark.deleteMany({ where: { userId } });
     await tx.postLike.deleteMany({ where: { userId } });
     await tx.postShare.deleteMany({ where: { userId } });
@@ -608,6 +631,19 @@ export class AccountDeletionPurgeService {
     // that would otherwise render a tombstone actor in someone else's list.
     await tx.notification.deleteMany({ where: { recipientId: userId } });
     await tx.notification.deleteMany({ where: { actorId: userId } });
+    // Lower each live community's count before the rows that justify it go.
+    // Communities wound up above are already soft-deleted with their members
+    // removed, so neither the join nor the `deletedAt` filter lets them be
+    // counted twice; a community handed to a successor still holds this
+    // user's row and is lowered here, once.
+    await tx.$executeRaw`
+      UPDATE "Community" c
+      SET "memberCount" = GREATEST(c."memberCount" - 1, 0)
+      FROM "CommunityMember" cm
+      WHERE cm."communityId" = c."id"
+        AND cm."userId" = ${userId}
+        AND c."deletedAt" IS NULL
+    `;
     await tx.communityMember.deleteMany({ where: { userId } });
     await tx.communityJoinRequest.deleteMany({ where: { userId } });
     await tx.conversationJoinRequest.deleteMany({ where: { userId } });

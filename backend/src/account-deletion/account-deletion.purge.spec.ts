@@ -58,6 +58,12 @@ type WriteArgs = {
 
 type TransactionOptions = { timeout?: number; maxWait?: number };
 
+/** A recording model whose reads a test can script. */
+type FakeModel = Record<
+  'findMany' | 'findFirst' | 'deleteMany' | 'updateMany' | 'update',
+  jest.Mock
+>;
+
 /**
  * The permanent-deletion worker, and the race between it and recovery.
  *
@@ -86,6 +92,10 @@ describe('AccountDeletionPurgeService — permanent deletion', () => {
   let posts: { id: string }[];
   let activities: { id: string; coverImage: string }[];
   let calls: Record<string, WriteArgs[][]>;
+  let communityModel: FakeModel;
+  let memberModel: FakeModel;
+  /** Statements that touch community membership, in the order they ran. */
+  let sequence: string[];
 
   const record = (model: string, op: string) =>
     jest.fn((...args: WriteArgs[]) => {
@@ -96,6 +106,7 @@ describe('AccountDeletionPurgeService — permanent deletion', () => {
   beforeEach(() => {
     JwtGuard.unrevokeUser(USER_ID);
     calls = {};
+    sequence = [];
     posts = [{ id: 'post-1' }, { id: 'post-2' }];
     activities = [{ id: 'act-1', coverImage: 'activities/act1.jpg' }];
 
@@ -169,6 +180,15 @@ describe('AccountDeletionPurgeService — permanent deletion', () => {
       ...extra,
     });
 
+    communityModel = emptyModel();
+    memberModel = emptyModel({
+      deleteMany: jest.fn((...args: WriteArgs[]) => {
+        (calls['communityMember.deleteMany'] ??= []).push(args);
+        sequence.push(`delete:${JSON.stringify(args[0]?.where)}`);
+        return Promise.resolve({ count: 1 });
+      }),
+    });
+
     const tx = {
       user: {
         update: jest.fn(({ data }: { data: Partial<UserRow> }) => {
@@ -187,8 +207,8 @@ describe('AccountDeletionPurgeService — permanent deletion', () => {
         findMany: jest.fn(() => Promise.resolve(activities)),
         deleteMany: record('crewActivity', 'deleteMany'),
       },
-      community: emptyModel(),
-      communityMember: emptyModel(),
+      community: communityModel,
+      communityMember: memberModel,
       communityJoinRequest: emptyModel(),
       comment: {
         updateMany: record('comment', 'updateMany'),
@@ -213,6 +233,7 @@ describe('AccountDeletionPurgeService — permanent deletion', () => {
       notification: { deleteMany: record('notification', 'deleteMany') },
       mention: { deleteMany: record('mention', 'deleteMany') },
       follow: { deleteMany: record('follow', 'deleteMany') },
+      followRequest: { deleteMany: record('followRequest', 'deleteMany') },
       postBookmark: { deleteMany: record('postBookmark', 'deleteMany') },
       postLike: { deleteMany: record('postLike', 'deleteMany') },
       postShare: { deleteMany: record('postShare', 'deleteMany') },
@@ -232,9 +253,9 @@ describe('AccountDeletionPurgeService — permanent deletion', () => {
       pollVote: { deleteMany: record('pollVote', 'deleteMany') },
       // The vote counts lowered before the votes go (raw SQL).
       $executeRaw: jest.fn((strings: TemplateStringsArray) => {
-        (calls['raw.executeRaw'] ??= []).push([
-          { data: { sql: strings.join('?') } },
-        ]);
+        const sql = strings.join('?');
+        (calls['raw.executeRaw'] ??= []).push([{ data: { sql } }]);
+        sequence.push(`raw:${sql}`);
         return Promise.resolve(1);
       }),
       conversationJoinRequest: {
@@ -541,10 +562,180 @@ describe('AccountDeletionPurgeService — permanent deletion', () => {
       expect(calls['pollVote.deleteMany']).toHaveLength(1);
     });
 
+    it('lowers each live community count by one before the memberships go', () => {
+      const sql = (calls['raw.executeRaw'] ?? [])
+        .map(([a]) => String(a.data?.sql))
+        .find((q) => q.includes('UPDATE "Community"'));
+      expect(sql).toBeDefined();
+      const flat = (sql ?? '').replace(/\s+/g, ' ');
+      // One statement, never below zero, by the user's own rows only, and
+      // never for a soft-deleted community (its count was zeroed on wind-up).
+      expect(flat).toContain(
+        'SET "memberCount" = GREATEST(c."memberCount" - 1, 0)',
+      );
+      expect(flat).toContain('FROM "CommunityMember" cm');
+      expect(flat).toContain('cm."communityId" = c."id"');
+      expect(flat).toContain('cm."userId" = ?');
+      expect(flat).toContain('c."deletedAt" IS NULL');
+      const update = sequence.findIndex((q) =>
+        q.includes('UPDATE "Community"'),
+      );
+      const del = sequence.findIndex((q) =>
+        q.startsWith(`delete:{"userId":"${USER_ID}"}`),
+      );
+      expect(update).toBeGreaterThanOrEqual(0);
+      expect(update).toBeLessThan(del);
+      expect(
+        (calls['raw.executeRaw'] ?? []).filter(([a]) =>
+          String(a.data?.sql).includes('UPDATE "Community"'),
+        ),
+      ).toHaveLength(1);
+    });
+
+    it('drops pending follow requests in both directions', () => {
+      const [args] = calls['followRequest.deleteMany'][0];
+      expect(args.where).toEqual({
+        OR: [{ requesterId: USER_ID }, { targetId: USER_ID }],
+      });
+    });
+
     it('emits user.deleted exactly once', () => {
       expect(domainEventService.emit).toHaveBeenCalledWith('user.deleted', {
         userId: USER_ID,
       });
+    });
+  });
+
+  describe('owned communities', () => {
+    const ownedBy = (
+      ...rows: Array<{
+        id: string;
+        isCampusCommunity: boolean;
+        collegeId: string | null;
+      }>
+    ) =>
+      communityModel.findMany.mockImplementation(
+        ({ where }: { where: { ownerId?: string } }) =>
+          Promise.resolve(
+            where.ownerId === USER_ID
+              ? rows.map((r) => ({
+                  ...r,
+                  avatarKey: null,
+                  coverKey: null,
+                }))
+              : [],
+          ),
+      );
+
+    /** The `community.update` calls as plain objects. */
+    const communityUpdates = () =>
+      communityModel.update.mock.calls.map(
+        ([a]) => a as { where: { id: string }; data: Record<string, unknown> },
+      );
+
+    /** Members eligible for the campus rule, by community. */
+    const campusHeirs = (heirs: Record<string, string>) =>
+      memberModel.findFirst.mockImplementation(
+        ({
+          where,
+        }: {
+          where: { communityId: string; role?: string; user?: unknown };
+        }) => {
+          // Only the campus finder filters on the member's affiliation.
+          if (!where.user || where.role !== 'MEMBER') {
+            return Promise.resolve(null);
+          }
+          const id = heirs[where.communityId];
+          return Promise.resolve(id ? { userId: id } : null);
+        },
+      );
+
+    it('hands a campus community to a member with an active affiliation at its college', async () => {
+      ownedBy({ id: 'camp-1', isCampusCommunity: true, collegeId: 'col-1' });
+      campusHeirs({ 'camp-1': 'eligible-1' });
+      await purge.runSweep();
+
+      const finder = memberModel.findFirst.mock.calls
+        .map(([a]) => a as { where: Record<string, unknown> })
+        .find((a) => a.where.role === 'MEMBER');
+      expect(finder?.where).toMatchObject({
+        communityId: 'camp-1',
+        user: {
+          collegeAffiliation: { is: { collegeId: 'col-1', revokedAt: null } },
+        },
+      });
+      expect(communityModel.update).toHaveBeenCalledWith({
+        where: { id: 'camp-1' },
+        data: { ownerId: 'eligible-1' },
+      });
+      expect(memberModel.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { role: 'OWNER' } }),
+      );
+    });
+
+    it('winds a campus community up when nobody at its college is eligible', async () => {
+      ownedBy({ id: 'camp-2', isCampusCommunity: true, collegeId: 'col-1' });
+      campusHeirs({});
+      await purge.runSweep();
+
+      const updates = communityUpdates();
+      expect(updates).toHaveLength(1);
+      expect(updates[0].where).toEqual({ id: 'camp-2' });
+      expect(updates[0].data).toMatchObject({ memberCount: 0, ownerId: null });
+      expect(updates[0].data.deletedAt).toBeInstanceOf(Date);
+    });
+
+    it('keeps the plain longest-standing rule for a non-campus community', async () => {
+      ownedBy({ id: 'plain-1', isCampusCommunity: false, collegeId: null });
+      memberModel.findFirst.mockImplementation(() =>
+        Promise.resolve({ userId: 'oldest-1' }),
+      );
+      await purge.runSweep();
+
+      expect(memberModel.findFirst).toHaveBeenCalledWith({
+        where: { communityId: 'plain-1', userId: { not: USER_ID } },
+        orderBy: [{ role: 'asc' }, { joinedAt: 'asc' }],
+        select: { userId: true },
+      });
+      expect(communityModel.update).toHaveBeenCalledWith({
+        where: { id: 'plain-1' },
+        data: { ownerId: 'oldest-1' },
+      });
+    });
+
+    it('decrements a handed-over community once, at the final membership delete', async () => {
+      ownedBy({ id: 'plain-2', isCampusCommunity: false, collegeId: null });
+      memberModel.findFirst.mockImplementation(() =>
+        Promise.resolve({ userId: 'heir-1' }),
+      );
+      await purge.runSweep();
+
+      // The handover writes no count of its own and no per-community delete...
+      expect(communityUpdates()).toEqual([
+        { where: { id: 'plain-2' }, data: { ownerId: 'heir-1' } },
+      ]);
+      expect(calls['communityMember.deleteMany']).toHaveLength(1);
+      // ...so the single statement before the user-wide delete is the only
+      // decrement for it.
+      const updates = sequence.filter((q) => q.includes('UPDATE "Community"'));
+      expect(updates).toHaveLength(1);
+    });
+
+    it('does not decrement a community it winds up, which is soft-deleted with count 0', async () => {
+      ownedBy({ id: 'solo-1', isCampusCommunity: false, collegeId: null });
+      await purge.runSweep();
+
+      expect(calls['communityMember.deleteMany']?.[0]?.[0]?.where).toEqual({
+        communityId: 'solo-1',
+      });
+      expect(communityUpdates()[0].data).toMatchObject({ memberCount: 0 });
+      // The wind-up deletes its members before the count statement runs, and
+      // that statement skips a community with a `deletedAt`.
+      const wind = sequence.findIndex((q) =>
+        q.includes('"communityId":"solo-1"'),
+      );
+      const raw = sequence.findIndex((q) => q.includes('UPDATE "Community"'));
+      expect(wind).toBeLessThan(raw);
     });
   });
 
