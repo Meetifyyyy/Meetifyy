@@ -113,6 +113,16 @@ SUPER_ADMIN_PASSWORD=$(get_env SUPER_ADMIN_PASSWORD)
 # These three now mirror setup-azure-prod.sh exactly. They are the only cookie
 # settings that are the same across the two environments, and deliberately so:
 # cookie scope is a property of the domain layout, which is identical here.
+#
+# Scale: DEV scales to zero when nobody is using it (min 0, HTTP rule; an open
+# Socket.IO connection counts as an in-flight request and keeps it up). Pinned
+# at min 1 it cost about ₹1,900/month to serve a handful of developers. The
+# first request after ~5 idle minutes waits for a cold start, and in-process
+# timers and delayed BullMQ jobs only run while a replica is up — acceptable
+# for DEV only. Production stays at min 1. Max stays 1 in both environments:
+# Socket.IO uses the in-memory adapter, so a second replica would split rooms.
+# Anything that polls the API every few minutes (an uptime monitor) keeps it
+# awake and cancels the saving.
 echo "==> 6. Creating Initial DEV Container App ($APP_NAME)..."
 az containerapp create \
   --name "$APP_NAME" \
@@ -122,8 +132,11 @@ az containerapp create \
   --target-port 4000 \
   --ingress external \
   --transport http \
-  --min-replicas 1 \
+  --min-replicas 0 \
   --max-replicas 1 \
+  --scale-rule-name http-requests \
+  --scale-rule-type http \
+  --scale-rule-metadata concurrentRequests=50 \
   --cpu 0.5 \
   --memory 1Gi \
   --registry-server "${ACR_NAME}.azurecr.io" \
