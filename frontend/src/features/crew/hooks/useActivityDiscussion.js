@@ -197,7 +197,11 @@ export function useActivityDiscussion(activityId, { enabled = true } = {}) {
       } catch (err) {
         // Roll back the optimistic entry and surface the error.
         setLiveMessages((prev) => prev.filter((m) => m.tempId !== tempId));
-        setSendError('Failed to send. Tap to retry.');
+        // A 403 carries the reason (not taking part, ended, cancelled) and
+        // retrying cannot help, so show it instead of the generic line.
+        setSendError(
+          err?.status === 403 && err?.message ? err.message : 'Failed to send. Tap to retry.',
+        );
         throw err;
       } finally {
         setIsSending(false);

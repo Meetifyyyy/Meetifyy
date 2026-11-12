@@ -16,6 +16,13 @@
   min-width: 0;
 }
 
+/* A community name inside a row's description. */
+.ownedLink {
+  color: var(--color-text-main);
+  font-weight: 600;
+  text-decoration: underline;
+}
+
 .value {
   font-size: 0.95rem;
   font-weight: 600;

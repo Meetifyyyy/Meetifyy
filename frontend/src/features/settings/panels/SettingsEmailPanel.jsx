@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   CheckCircle2,
@@ -13,11 +13,16 @@ import {
   ShieldCheck,
   Trash2,
 } from '@shared/components/icons';
-import { accountEmailApi } from '@shared/api/apiClient';
+import { accountEmailApi, campusAffiliationApi } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
 import { useCampusAffiliation } from '@shared/hooks/useCampusAffiliation';
 import { useCampusAffiliationActions } from '@shared/hooks/useCampusAffiliationActions';
-import { describeCampusOtpError, formatEligibleDate } from '@shared/lib/campusAccess';
+import {
+  CAMPUS_AFFILIATION_QUERY_KEY,
+  describeCampusCommunityLeave,
+  describeCampusOtpError,
+  formatEligibleDate,
+} from '@shared/lib/campusAccess';
 import { showToast } from '@shared/utils/toast';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import PersonalEmailForm from '@shared/components/AccountEmail/PersonalEmailForm';
@@ -32,6 +37,18 @@ export const ACCOUNT_EMAIL_QUERY_KEY = ['account', 'email'];
 function activeUntil(iso) {
   const at = iso ? new Date(iso).getTime() : 0;
   return Number.isFinite(at) && at > Date.now() ? iso : null;
+}
+
+/** "A", "A and B", "A, B and C", each name linking to its community. */
+function OwnedCommunityLinks({ communities }) {
+  return communities.map((c, i) => (
+    <span key={c.id}>
+      {i === 0 ? '' : i === communities.length - 1 ? ' and ' : ', '}
+      <Link to={`/communities/${c.id}`} className={local.ownedLink}>
+        {c.name}
+      </Link>
+    </span>
+  ));
 }
 
 /**
@@ -71,6 +88,18 @@ export default function SettingsEmailPanel() {
   const collegeName = affiliation?.collegeName || '';
   const sameAsCollege =
     Boolean(currentUser?.profileCompletion?.needsPersonalEmail) || Boolean(emailInfo?.needsPersonalEmail);
+  // What removing the college email does to the campus communities. Only asked
+  // for while there is a college email to remove.
+  const { data: standing, refetch: refetchStanding } = useQuery({
+    queryKey: [...CAMPUS_AFFILIATION_QUERY_KEY, 'communities', currentUser?.id],
+    queryFn: () => campusAffiliationApi.get(),
+    select: (res) => res?.campusCommunities ?? null,
+    enabled: Boolean(currentUser?.id && affiliation),
+    retry: false,
+    staleTime: 30 * 1000,
+  });
+  const ownedCommunities = Array.isArray(standing?.owned) ? standing.owned : [];
+  const joinedCount = typeof standing?.joinedCount === 'number' ? standing.joinedCount : undefined;
   const personalUntil = activeUntil(emailInfo?.cooldowns?.personal);
   const collegeUntil = activeUntil(emailInfo?.cooldowns?.college);
 
@@ -85,11 +114,23 @@ export default function SettingsEmailPanel() {
       refetch();
       showToast('College email removed', 'success');
     } catch (err) {
-      if (err?.code !== REAUTH_CANCELLED) showToast(describeCampusOtpError(err), 'error');
+      if (err?.code !== REAUTH_CANCELLED) {
+        showToast(describeCampusOtpError(err), 'error');
+        // The list of communities the person owns was out of date.
+        if (err?.code === 'CAMPUS_COMMUNITY_OWNER') refetchStanding();
+      }
     } finally {
       setRemoveBusy(false);
     }
   };
+
+  const removeDescription = [
+    'Campus and your college directory close for you straight away.',
+    describeCampusCommunityLeave(joinedCount),
+    'Your posts, profile and other communities stay. You can add a college email again after 30 days.',
+  ]
+    .filter(Boolean)
+    .join(' ');
 
   return (
     <div className={`${rs.body} animate-in`}>
@@ -198,21 +239,38 @@ export default function SettingsEmailPanel() {
                 </span>
               </button>
             )}
-            {/* Never blocked by the cooldown: giving up access is always allowed. */}
-            <button
-              type="button"
-              className={`${rs.row} ${rs.rowDanger}`}
-              onClick={() => setConfirmOpen(true)}
-              disabled={removeBusy}
-            >
-              <span className={rs.rowIcon} aria-hidden="true">
-                <Trash2 size={18} />
-              </span>
-              <span className={rs.rowText}>
-                <span className={rs.rowLabel}>{removeBusy ? 'Removing…' : 'Remove college email'}</span>
-                <span className={rs.rowDesc}>Closes Campus until you verify again</span>
-              </span>
-            </button>
+            {/* Never blocked by the cooldown: giving up access is always allowed.
+                An owner has to hand their campus communities over first; the
+                server refuses otherwise, so say so instead of offering it. */}
+            {ownedCommunities.length > 0 ? (
+              <div className={local.infoRow}>
+                <span className={rs.rowIcon} aria-hidden="true">
+                  <Trash2 size={18} />
+                </span>
+                <span className={rs.rowText}>
+                  <span className={rs.rowLabel}>Remove college email</span>
+                  <span className={rs.rowDesc}>
+                    You own <OwnedCommunityLinks communities={ownedCommunities} />. Transfer ownership before
+                    removing your college email.
+                  </span>
+                </span>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className={`${rs.row} ${rs.rowDanger}`}
+                onClick={() => setConfirmOpen(true)}
+                disabled={removeBusy}
+              >
+                <span className={rs.rowIcon} aria-hidden="true">
+                  <Trash2 size={18} />
+                </span>
+                <span className={rs.rowText}>
+                  <span className={rs.rowLabel}>{removeBusy ? 'Removing…' : 'Remove college email'}</span>
+                  <span className={rs.rowDesc}>Closes Campus until you verify again</span>
+                </span>
+              </button>
+            )}
           </>
         ) : collegeUntil ? (
           <div className={local.infoRow} aria-disabled="true">
@@ -250,7 +308,7 @@ export default function SettingsEmailPanel() {
         centered
         visible={confirmOpen}
         title="Remove college email?"
-        description="Campus, your college directory and campus communities close for you straight away. Your posts, profile and other communities stay. You can add a college email again after 30 days."
+        description={removeDescription}
         confirmText="Continue"
         cancelText="Keep it"
         isDestructive

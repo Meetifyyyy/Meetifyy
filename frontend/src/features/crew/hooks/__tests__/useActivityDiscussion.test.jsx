@@ -140,3 +140,19 @@ it('does not refetch on the first join, and leaves the room on unmount', async (
   unmount();
   expect(socket.emit).toHaveBeenLastCalledWith('activity:leave', { activityId: 'act' });
 });
+
+it("shows the server's reason when a post is refused with 403, and a generic line otherwise", async () => {
+  api.getDiscussion.mockResolvedValue({ messages: [], nextCursor: null, hasMore: false });
+  const { wrapper } = setup();
+  const { result } = renderHook(() => useActivityDiscussion('act'), { wrapper });
+  await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+  api.sendDiscussionMessage.mockRejectedValueOnce(Object.assign(new Error('This activity has ended.'), { status: 403 }));
+  await act(async () => { await result.current.sendMessage('hi').catch(() => {}); });
+  expect(result.current.sendError).toBe('This activity has ended.');
+  expect(result.current.messages).toEqual([]);
+
+  api.sendDiscussionMessage.mockRejectedValueOnce(Object.assign(new Error('API error 500'), { status: 500 }));
+  await act(async () => { await result.current.sendMessage('hi').catch(() => {}); });
+  expect(result.current.sendError).toBe('Failed to send. Tap to retry.');
+});

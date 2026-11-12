@@ -156,6 +156,18 @@ export function describeReauthError(err) {
   }
 }
 
+/**
+ * What ending the campus also does to the viewer's campus communities, as one
+ * sentence for the remove confirmation. `count` is the status's `joinedCount`;
+ * undefined while it has not loaded, '' when there is nothing to leave.
+ */
+export function describeCampusCommunityLeave(count) {
+  if (typeof count !== 'number') return "You'll also leave your campus communities.";
+  if (count <= 0) return '';
+  if (count === 1) return "You'll also leave your campus community.";
+  return `You'll also leave your ${count} campus communities.`;
+}
+
 /** Maps the contract's error codes to sentences a student can act on. */
 export function describeCampusOtpError(err) {
   const security = describeEmailSecurityError(err);
@@ -179,6 +191,10 @@ export function describeCampusOtpError(err) {
     case 'OTP_COOLDOWN':
     case 'OTP_RATE_LIMITED':
       return describeRateLimit(err);
+    case 'CAMPUS_COMMUNITY_OWNER':
+      // The server names the communities and the college; its sentence is the
+      // one to show.
+      return err?.message || 'Transfer ownership of your campus communities before changing your campus.';
     case 'affiliation_revoked':
       return 'Your college verification was revoked by Meetifyy. Contact support if you think this is a mistake.';
     case 'invalid_email':

@@ -76,3 +76,35 @@ it('does not trap scroll: the list and the panel let a gesture chain to the page
   expect(blockOf('\\.messages')).not.toMatch(/overscroll-behavior[^;]*contain/);
   expect(blockOf('\\.inline')).not.toMatch(/overscroll-behavior[^;]*contain/);
 });
+
+it('shows the composer when the viewer may post, and by default', () => {
+  const { rerender } = render(<ActivityDiscussion activityId="a" closedNote="Closed." />);
+  expect(composer()).toBeTruthy();
+  expect(screen.queryByText('Closed.')).toBeNull();
+  rerender(<ActivityDiscussion activityId="a" canPost closedNote="Closed." />);
+  expect(composer()).toBeTruthy();
+});
+
+it('replaces the composer with the note when the viewer may not post, and keeps the messages', () => {
+  mocks.discussion.mockReturnValue({
+    ...mocks.discussion(),
+    messages: [{ id: 'm1', userId: 'other', text: 'See you at nine', createdAt: new Date().toISOString() }],
+  });
+  render(<ActivityDiscussion activityId="a" canPost={false} closedNote="This activity has ended." />);
+  expect(screen.getByText('See you at nine')).toBeTruthy();
+  expect(screen.getByText('This activity has ended.')).toBeTruthy();
+  expect(screen.queryByPlaceholderText('Write a message…')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Send' })).toBeNull();
+});
+
+it('does not invite a read-only viewer to start the conversation', () => {
+  render(<ActivityDiscussion activityId="a" canPost={false} closedNote="Join this activity to take part in the discussion." />);
+  expect(screen.getByText('No messages yet')).toBeTruthy();
+  expect(screen.queryByText('Start the conversation about this activity.')).toBeNull();
+});
+
+it('shows the send error, such as the server reason for a refused post', () => {
+  mocks.discussion.mockReturnValue({ ...mocks.discussion(), sendError: 'This activity has ended.' });
+  render(<ActivityDiscussion activityId="a" />);
+  expect(screen.getByText('This activity has ended.')).toBeTruthy();
+});

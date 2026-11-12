@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   applyAffiliationToUser,
+  describeCampusCommunityLeave,
   describeCampusOtpError,
   hasAffiliationField,
   isAffiliationActive,
@@ -55,5 +56,18 @@ describe('campus access', () => {
     expect(new Set(messages).size).toBe(codes.length);
     // Never identifies who holds an address.
     expect(describeCampusOtpError({ status: 409, code: 'college_email_unavailable' })).not.toMatch(/@/);
+  });
+
+  it("passes the server's sentence through for an owner of campus communities", () => {
+    const message = 'You own campus communities at GLA. Transfer ownership of Chess Club before removing your campus.';
+    expect(describeCampusOtpError({ status: 409, code: 'CAMPUS_COMMUNITY_OWNER', message })).toBe(message);
+    expect(describeCampusOtpError({ status: 409, code: 'CAMPUS_COMMUNITY_OWNER' })).toMatch(/Transfer ownership/);
+  });
+
+  it('says how many campus communities ending the campus leaves, and nothing at none', () => {
+    expect(describeCampusCommunityLeave(3)).toBe("You'll also leave your 3 campus communities.");
+    expect(describeCampusCommunityLeave(1)).toBe("You'll also leave your campus community.");
+    expect(describeCampusCommunityLeave(0)).toBe('');
+    expect(describeCampusCommunityLeave(undefined)).toBe("You'll also leave your campus communities.");
   });
 });

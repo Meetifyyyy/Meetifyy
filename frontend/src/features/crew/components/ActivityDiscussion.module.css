@@ -233,6 +233,16 @@
   flex-shrink: 0;
 }
 
+/* Replaces the composer when the viewer cannot post. */
+.closedNote {
+  margin: 0;
+  padding: 0.6rem 0.9rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.5);
+  flex-shrink: 0;
+}
+
 /* ── Input ─────────────────────────────────────────────────────── */
 .inputRow {
   display: flex;

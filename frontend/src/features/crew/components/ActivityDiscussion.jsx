@@ -64,6 +64,11 @@ export const ActivityDiscussion = memo(function ActivityDiscussion({
   variant = 'inline',
   onClose,
   enabled = true,
+  // Whether the viewer may post. Reading is open to anyone who can see the
+  // activity; the page decides who writes. Absent means yes, so other callers
+  // are unchanged. `closedNote` is the line shown in the composer's place.
+  canPost = true,
+  closedNote,
 }) {
   const { currentUser } = useAuth();
   const myId = String(currentUser?.id);
@@ -220,9 +225,11 @@ export const ActivityDiscussion = memo(function ActivityDiscussion({
           <div className={styles.emptyState}>
             <MessageCircle size={26} strokeWidth={1.5} />
             <p className={styles.emptyTitle}>No messages yet</p>
-            <p className={styles.emptyDesc}>
-              Start the conversation about this activity.
-            </p>
+            {canPost && (
+              <p className={styles.emptyDesc}>
+                Start the conversation about this activity.
+              </p>
+            )}
           </div>
         ) : (
           messages.map((m) => (
@@ -241,30 +248,34 @@ export const ActivityDiscussion = memo(function ActivityDiscussion({
       {/* ── Send error ─────────────────────────────────────────── */}
       {sendError && <div className={styles.sendError}>{sendError}</div>}
 
-      {draft.length >= DISCUSSION_MAX_LENGTH && (
+      {canPost && draft.length >= DISCUSSION_MAX_LENGTH && (
         <div className={styles.limitNote} role="status">Text limit reached</div>
       )}
 
       {/* ── Input ──────────────────────────────────────────────── */}
-      <form className={styles.inputRow} onSubmit={handleSubmit}>
-        <textarea
-          className={styles.textarea}
-          placeholder="Write a message…"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={handleKeyDown}
-          rows={1}
-          maxLength={DISCUSSION_MAX_LENGTH}
-        />
-        <button
-          type="submit"
-          className={styles.sendBtn}
-          disabled={!draft.trim() || isSending}
-          aria-label="Send"
-        >
-          <Send size={16} />
-        </button>
-      </form>
+      {canPost ? (
+        <form className={styles.inputRow} onSubmit={handleSubmit}>
+          <textarea
+            className={styles.textarea}
+            placeholder="Write a message…"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={handleKeyDown}
+            rows={1}
+            maxLength={DISCUSSION_MAX_LENGTH}
+          />
+          <button
+            type="submit"
+            className={styles.sendBtn}
+            disabled={!draft.trim() || isSending}
+            aria-label="Send"
+          >
+            <Send size={16} />
+          </button>
+        </form>
+      ) : (
+        <p className={styles.closedNote}>{closedNote}</p>
+      )}
     </div>
   );
 

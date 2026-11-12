@@ -20,10 +20,19 @@ export function useCampusAffiliationActions() {
 
   const sendCode = useCallback(
     async ({ collegeId, email, reauthToken }) => {
-      const res = await campusAffiliationApi.sendOtp({ collegeId, email, reauthToken });
-      // The pending state now lives on the server; let the status query see it.
-      queryClient.invalidateQueries({ queryKey: CAMPUS_AFFILIATION_QUERY_KEY });
-      return res;
+      try {
+        const res = await campusAffiliationApi.sendOtp({ collegeId, email, reauthToken });
+        // The pending state now lives on the server; let the status query see it.
+        queryClient.invalidateQueries({ queryKey: CAMPUS_AFFILIATION_QUERY_KEY });
+        return res;
+      } catch (err) {
+        // Refused because the person owns campus communities here: the status
+        // that screens read is out of date, so ask for it again.
+        if (err?.code === 'CAMPUS_COMMUNITY_OWNER') {
+          queryClient.invalidateQueries({ queryKey: CAMPUS_AFFILIATION_QUERY_KEY });
+        }
+        throw err;
+      }
     },
     [queryClient],
   );

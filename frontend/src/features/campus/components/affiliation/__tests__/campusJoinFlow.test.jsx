@@ -130,6 +130,17 @@ describe('Campus join flow', () => {
     expect(sendCode.mock.calls[0][0]).toMatchObject({ collegeId: 'gla', email: 'asha@gla.ac.in' });
   });
 
+  it("shows the server's message when switching colleges is refused for an owner of campus communities", async () => {
+    const message = 'You own campus communities at GLA University. Transfer ownership of Chess Club before switching your campus.';
+    sendCode.mockRejectedValueOnce(Object.assign(new Error(message), { status: 409, code: 'CAMPUS_COMMUNITY_OWNER' }));
+    mount();
+    await pickGla();
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByPlaceholderText('you@gla.ac.in'), { target: { value: 'asha@gla.ac.in' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: /send code/i }));
+    expect(await within(dialog).findByText(message)).toBeTruthy();
+  });
+
   it('goes back to the same list, keeping what was typed in the search', async () => {
     mount();
     const search = await screen.findByLabelText('Search colleges');

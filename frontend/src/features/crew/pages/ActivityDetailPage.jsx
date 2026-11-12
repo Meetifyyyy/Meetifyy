@@ -540,6 +540,15 @@ export default function ActivityDetailPage() {
   // returns, since hooks cannot live down here). It re-renders this page at the
   // exact boundary, so an open page flips to "Already started!" on its own.
   const { isCancelled, hasStarted, hasEnded } = lifecycle;
+  // Anyone who can see the activity can read its discussion; posting is for the
+  // host and members, and stops once the activity is over. An accepted invitee
+  // is a member (accepting joins them, so the server reports isJoined for them).
+  const canPostDiscussion = (isHost || isJoined) && !isCancelled && !hasEnded;
+  const discussionClosedNote = isCancelled
+    ? 'This activity was cancelled.'
+    : hasEnded
+      ? 'This activity has ended.'
+      : 'Join this activity to take part in the discussion.';
 
   const handleRsvp = (choice) => {
     if (isHost || isRsvpPending) return;
@@ -780,7 +789,12 @@ export default function ActivityDetailPage() {
               <div ref={discussionSlotRef}>
                 {discussionVisible && (
                   <Suspense fallback={<div className={styles.discussionPlaceholder} aria-hidden="true" />}>
-                    <ActivityDiscussion variant="inline" activityId={activity.id} />
+                    <ActivityDiscussion
+                      variant="inline"
+                      activityId={activity.id}
+                      canPost={canPostDiscussion}
+                      closedNote={discussionClosedNote}
+                    />
                   </Suspense>
                 )}
               </div>
