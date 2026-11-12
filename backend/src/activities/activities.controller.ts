@@ -14,9 +14,16 @@ import { JwtGuard } from '../common/guards/jwt.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { VerifiedOnly } from '../common/decorators/verified-only.decorator';
 import { CreateActivityDto } from './dto/activity.dto';
+import {
+  InviteFriendsDto,
+  UpdateActivityVisibilityDto,
+} from './dto/invite-friends.dto';
+import { RateLimit } from '../common/rate-limit/rate-limit.decorator';
+import { RateLimitPolicyGuard } from '../common/rate-limit/rate-limit-policy.guard';
 import { CacheControl } from '../common/decorators/cache-control.decorator';
 import type { AuthenticatedUser } from '../common/types/authenticated-request';
 import { Idempotent } from '../common/decorators/idempotent.decorator';
+import { PageLimitPipe } from '../common/pagination';
 
 @Controller('api/activities')
 @UseGuards(JwtGuard)
@@ -28,12 +35,10 @@ export class ActivitiesController {
   // stale data when navigating back after joining. Relies on backend Redis cache.
   async getAllActivities(
     @CurrentUser() user: AuthenticatedUser,
-    @Query('limit') limit?: string,
+    @Query('limit', new PageLimitPipe({ default: 20, max: 50 })) limit: number,
     @Query('cursor') cursor?: string,
     @Query('scope') scope?: string,
   ) {
-    const rawLimit = parseInt(limit || '', 10);
-    const parsedLimit = !isNaN(rawLimit) && rawLimit > 0 ? rawLimit : 20;
     const allowedScopes = [
       'public',
       'college',
@@ -50,11 +55,11 @@ export class ActivitiesController {
     // The personalized feed is ordered by relevance rather than recency, so it
     // has its own ranked-offset pagination instead of the createdAt cursor.
     if (parsedScope === 'for_you') {
-      return this.activitiesService.getForYouFeed(user.id, parsedLimit, cursor);
+      return this.activitiesService.getForYouFeed(user.id, limit, cursor);
     }
     return this.activitiesService.getAllActivities(
       user?.id,
-      parsedLimit,
+      limit,
       cursor,
       parsedScope,
     );
@@ -75,15 +80,10 @@ export class ActivitiesController {
   // @CacheControl removed
   async getSavedActivities(
     @CurrentUser() user: AuthenticatedUser,
-    @Query('limit') limit?: string,
+    @Query('limit', new PageLimitPipe({ default: 20, max: 50 })) limit: number,
     @Query('cursor') cursor?: string,
   ) {
-    const parsedLimit = limit ? parseInt(limit, 10) : 20;
-    return this.activitiesService.getSavedActivities(
-      user.id,
-      parsedLimit,
-      cursor,
-    );
+    return this.activitiesService.getSavedActivities(user.id, limit, cursor);
   }
 
   @Get('bookmarks/ids')
@@ -137,16 +137,15 @@ export class ActivitiesController {
   async getAttendees(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
-    @Query('limit') limit?: string,
+    @Query('limit', new PageLimitPipe({ default: 30, max: 60 })) limit: number,
     @Query('cursor') cursor?: string,
     // `not_going` pages the "Not going" list; anything else is the attendees.
     @Query('status') status?: string,
   ) {
-    const parsed = parseInt(limit || '', 10);
     return this.activitiesService.getAttendees(
       id,
       user.id,
-      !isNaN(parsed) && parsed > 0 ? parsed : 30,
+      limit,
       cursor,
       status === 'not_going' ? 'not_going' : 'going',
     );
@@ -178,13 +177,13 @@ export class ActivitiesController {
   @Patch(':id/visibility')
   async updateVisibility(
     @Param('id') id: string,
-    @Body('visibility') visibility: string,
+    @Body() dto: UpdateActivityVisibilityDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.activitiesService.updateActivityVisibility(
       id,
       user.id,
-      visibility,
+      dto.visibility,
     );
   }
 
@@ -232,13 +231,21 @@ export class ActivitiesController {
     return this.activitiesService.endCrewActivity(id, user.id);
   }
 
+  /**
+   * Budgeted per host, not per invitee: the array is capped in the DTO, so a
+   * request is at most MAX_INVITEES_PER_REQUEST notifications, and this limits
+   * how many of those a host can send in an hour. The class guard has already
+   * authenticated the caller, which a user-keyed policy needs.
+   */
   @Post(':id/invite')
+  @UseGuards(RateLimitPolicyGuard)
+  @RateLimit('activity.invite.user')
   async inviteFriends(
     @Param('id') id: string,
-    @Body('userIds') userIds: string[],
+    @Body() dto: InviteFriendsDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.activitiesService.inviteFriends(id, user.id, userIds);
+    return this.activitiesService.inviteFriends(id, user.id, dto.userIds);
   }
 
   /** Host-only: withdraw an outstanding invitation. Effective immediately. */

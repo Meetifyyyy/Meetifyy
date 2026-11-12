@@ -1,6 +1,7 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { AdminAuditService } from './admin-audit.service';
 import { AdminJwtGuard } from '../../common/guards/admin-jwt.guard';
+import { PageLimitPipe, PageNumberPipe } from '../../common/pagination';
 
 @UseGuards(AdminJwtGuard)
 @Controller('admin/audit')
@@ -12,37 +13,40 @@ export class AdminAuditController {
     @Query('action') action?: string,
     @Query('targetType') targetType?: string,
     @Query('adminId') adminId?: string,
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
+    @Query('page', new PageNumberPipe({ max: 1000 })) page?: number,
+    @Query('limit', new PageLimitPipe({ default: 20, max: 100 }))
+    limit?: number,
   ) {
     return this.auditService.listAuditLogs({
       action,
       targetType,
       adminId,
-      page: page ? parseInt(page, 10) : undefined,
-      limit: limit ? parseInt(limit, 10) : undefined,
+      page,
+      limit,
     });
   }
 
   @Get('security-events')
   async getSecurityEvents(
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
+    @Query('page', new PageNumberPipe({ max: 1000 })) page?: number,
+    @Query('limit', new PageLimitPipe({ default: 20, max: 100 }))
+    limit?: number,
   ) {
     return this.auditService.getSecurityEvents({
-      page: page ? parseInt(page, 10) : undefined,
-      limit: limit ? parseInt(limit, 10) : undefined,
+      page,
+      limit,
     });
   }
 
   @Get('login-audits')
   async getLoginAudits(
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
+    @Query('page', new PageNumberPipe({ max: 1000 })) page?: number,
+    @Query('limit', new PageLimitPipe({ default: 20, max: 100 }))
+    limit?: number,
   ) {
     return this.auditService.getLoginAudits({
-      page: page ? parseInt(page, 10) : undefined,
-      limit: limit ? parseInt(limit, 10) : undefined,
+      page,
+      limit,
     });
   }
 }

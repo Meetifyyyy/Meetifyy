@@ -12,6 +12,8 @@ import { JwtGuard } from '../../common/guards/jwt.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../../common/types/authenticated-request';
 import { Idempotent } from '../../common/decorators/idempotent.decorator';
+import { PageLimitPipe } from '../../common/pagination';
+import { SendDiscussionMessageDto } from './dto/send-discussion-message.dto';
 
 @Controller('api/activities/:activityId/discussion')
 @UseGuards(JwtGuard)
@@ -23,10 +25,8 @@ export class ActivityDiscussionController {
     @CurrentUser() user: AuthenticatedUser,
     @Param('activityId') activityId: string,
     @Query('before') before?: string,
-    @Query('limit') limit?: string,
+    @Query('limit', new PageLimitPipe({ default: 20, max: 50 })) limit?: number,
   ) {
-    const parsed = parseInt(limit || '', 10);
-    const limitNum = !isNaN(parsed) && parsed > 0 ? parsed : 20;
     // A cursor is a message id. Anything longer than an id is not one, and
     // would only reach the database as a lookup that cannot match.
     const cursor =
@@ -37,7 +37,7 @@ export class ActivityDiscussionController {
       activityId,
       user?.id,
       cursor,
-      limitNum,
+      limit,
     );
   }
 
@@ -51,9 +51,9 @@ export class ActivityDiscussionController {
   @Idempotent()
   async sendMessage(
     @Param('activityId') activityId: string,
-    @Body('text') text: string,
+    @Body() dto: SendDiscussionMessageDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.discussionService.sendMessage(activityId, user?.id, text);
+    return this.discussionService.sendMessage(activityId, user?.id, dto.text);
   }
 }

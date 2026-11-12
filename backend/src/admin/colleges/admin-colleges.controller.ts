@@ -16,10 +16,14 @@ import { COLLEGE_LOGO_MAX_BYTES } from '../../uploads/uploads.service';
 import { AdminCollegesService } from './admin-colleges.service';
 import { AdminJwtGuard } from '../../common/guards/admin-jwt.guard';
 import {
+  AddCollegeDomainDto,
   ChangeCollegeStatusDto,
+  ChangeDomainStatusDto,
   CreateCollegeDto,
+  UpdateCollegeRequestStatusDto,
   UpdateCollegeDto,
 } from './dto/college.dto';
+import { PageLimitPipe, PageNumberPipe } from '../../common/pagination';
 
 @UseGuards(AdminJwtGuard)
 @Controller('admin/colleges')
@@ -30,14 +34,15 @@ export class AdminCollegesController {
   async listColleges(
     @Query('search') search?: string,
     @Query('status') status?: string,
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
+    @Query('page', new PageNumberPipe({ max: 1000 })) page?: number,
+    @Query('limit', new PageLimitPipe({ default: 20, max: 100 }))
+    limit?: number,
   ) {
     return this.collegesService.listColleges({
       search,
       status,
-      page: page ? parseInt(page, 10) : undefined,
-      limit: limit ? parseInt(limit, 10) : undefined,
+      page,
+      limit,
     });
   }
 
@@ -90,21 +95,17 @@ export class AdminCollegesController {
   }
 
   @Post(':id/domains')
-  async addDomain(
-    @Param('id') id: string,
-    @Body('domain') domain: string,
-    @Body('isPrimary') isPrimary?: boolean,
-  ) {
-    return this.collegesService.addDomain(id, domain, isPrimary);
+  async addDomain(@Param('id') id: string, @Body() dto: AddCollegeDomainDto) {
+    return this.collegesService.addDomain(id, dto.domain, dto.isPrimary);
   }
 
   @Patch(':id/domains/:domainId/status')
   async toggleDomainStatus(
     @Param('id') id: string,
     @Param('domainId') domainId: string,
-    @Body('status') status: 'ACTIVE' | 'DISABLED',
+    @Body() dto: ChangeDomainStatusDto,
   ) {
-    return this.collegesService.toggleDomainStatus(id, domainId, status);
+    return this.collegesService.toggleDomainStatus(id, domainId, dto.status);
   }
 
   @Delete(':id/domains/:domainId')
@@ -123,21 +124,25 @@ export class AdminCollegesController {
   @Get('requests/list')
   async listCollegeRequests(
     @Query('status') status?: string,
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
+    @Query('page', new PageNumberPipe({ max: 1000 })) page?: number,
+    @Query('limit', new PageLimitPipe({ default: 20, max: 100 }))
+    limit?: number,
   ) {
     return this.collegesService.listCollegeRequests({
       status,
-      page: page ? parseInt(page, 10) : undefined,
-      limit: limit ? parseInt(limit, 10) : undefined,
+      page,
+      limit,
     });
   }
 
   @Patch('requests/:requestId/status')
   async updateCollegeRequestStatus(
     @Param('requestId') requestId: string,
-    @Body('status') status: string,
+    @Body() dto: UpdateCollegeRequestStatusDto,
   ) {
-    return this.collegesService.updateCollegeRequestStatus(requestId, status);
+    return this.collegesService.updateCollegeRequestStatus(
+      requestId,
+      dto.status,
+    );
   }
 }

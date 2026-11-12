@@ -20,6 +20,7 @@ import {
   type RevealedConfessionAuthor,
 } from './admin-reports.service';
 import { RevealConfessionAuthorDto } from './reveal-confession-author.dto';
+import { PageLimitPipe, PageNumberPipe } from '../../common/pagination';
 
 @UseGuards(AdminJwtGuard)
 @Controller('admin/reports')
@@ -37,8 +38,9 @@ export class AdminReportsController {
     @Query('priority') priority?: string,
     @Query('reporterId') reporterId?: string,
     @Query('search') search?: string,
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
+    @Query('page', new PageNumberPipe({ max: 1000 })) page?: number,
+    @Query('limit', new PageLimitPipe({ default: 20, max: 100 }))
+    limit?: number,
   ) {
     return this.moderationService.listReports({
       status,
@@ -46,8 +48,8 @@ export class AdminReportsController {
       priority,
       reporterId,
       search,
-      page: page ? parseInt(page, 10) : undefined,
-      limit: limit ? parseInt(limit, 10) : undefined,
+      page,
+      limit,
     });
   }
 

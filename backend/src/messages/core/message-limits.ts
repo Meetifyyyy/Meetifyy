@@ -191,3 +191,36 @@ export async function assertNewConversationWithinRateLimit(
  * not an id and is refused before it reaches a query.
  */
 export const MAX_REFERENCE_ID_LENGTH = 128;
+
+/**
+ * The most people a new group may be founded with (not counting its creator).
+ *
+ * The array came straight from the client, bounded only by the 100 KB body
+ * limit — about 2,500 ids — and a group fans an invitation and a notification
+ * out to every one of them. There is no member ceiling to borrow: groups have
+ * none once they exist. 256 is far past what a person picks by hand from a
+ * list of people they follow, and is still a bound a founding fan-out can live
+ * with; people join a larger group afterwards through its link or an admin.
+ */
+export const MAX_NEW_GROUP_MEMBERS = 256;
+
+/** Longest group name, in characters. Matches the field in the web and native apps. */
+export const MAX_GROUP_NAME_LENGTH = 120;
+
+/** Longest group description, in characters. Matches the edit sheet in the web app. */
+export const MAX_GROUP_DESCRIPTION_LENGTH = 300;
+
+/**
+ * Longest group avatar reference. A storage key or a public URL, so it is
+ * bounded like a URL rather than like a name.
+ */
+export const MAX_GROUP_AVATAR_LENGTH = 2048;
+
+/**
+ * Longest message reaction. An emoji is one to a few code points, and a
+ * multi-person or flag sequence with joiners is under twenty UTF-16 units.
+ */
+export const MAX_REACTION_LENGTH = 32;
+
+/** Longest value of a group's edit-permission setting (`ADMIN`, `EVERYONE`, …). */
+export const MAX_GROUP_PERMISSION_LENGTH = 64;

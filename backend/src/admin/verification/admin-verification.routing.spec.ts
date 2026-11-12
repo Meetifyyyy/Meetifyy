@@ -74,6 +74,22 @@ describe('AdminVerificationController — routing', () => {
     );
   });
 
+  it('clamps a huge limit and offset before they reach the service', async () => {
+    service.listRequests.mockClear();
+    await request(app.getHttpServer())
+      .get('/admin/verification/requests?limit=100000&offset=99999999')
+      .expect(200);
+    expect(service.listRequests).toHaveBeenCalledWith(undefined, 100, 10000);
+  });
+
+  it('keeps the queue defaults of 20 and 0 for junk', async () => {
+    service.listRequests.mockClear();
+    await request(app.getHttpServer())
+      .get('/admin/verification/requests?limit=abc&offset=-5')
+      .expect(200);
+    expect(service.listRequests).toHaveBeenCalledWith(undefined, 20, 0);
+  });
+
   it('no longer answers on the api/-prefixed path', async () => {
     await request(app.getHttpServer())
       .get('/api/admin/verification/requests')

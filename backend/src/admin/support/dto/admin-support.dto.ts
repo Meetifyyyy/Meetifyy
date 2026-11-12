@@ -19,11 +19,16 @@ import {
   SupportPriority,
   SupportStatus,
 } from '@prisma/client';
+import { PageLimitPipe, PageNumberPipe } from '../../../common/pagination';
 
 const trim = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value;
-const toInt = ({ value }: { value: unknown }) =>
-  value === undefined || value === '' ? undefined : Number(value);
+// Bounded rather than validated: an out-of-range page or size is clamped, so a
+// stale admin client is never answered with a 400.
+const toPage = ({ value }: { value: unknown }) =>
+  new PageNumberPipe({ max: 1000 }).transform(value);
+const toPageSize = ({ value }: { value: unknown }) =>
+  new PageLimitPipe({ default: 20, max: 100 }).transform(value);
 
 /**
  * Every admin mutation goes through one of these.
@@ -49,8 +54,8 @@ export class ListSupportTicketsDto {
   @IsOptional() @IsIn(['newest', 'oldest', 'updated', 'priority']) sort?:
     'newest' | 'oldest' | 'updated' | 'priority';
 
-  @IsOptional() @Transform(toInt) @IsInt() @Min(1) page?: number;
-  @IsOptional() @Transform(toInt) @IsInt() @Min(1) limit?: number;
+  @IsOptional() @Transform(toPage) @IsInt() @Min(1) page?: number;
+  @IsOptional() @Transform(toPageSize) @IsInt() @Min(1) limit?: number;
 }
 
 export class UpdateTicketStatusDto {

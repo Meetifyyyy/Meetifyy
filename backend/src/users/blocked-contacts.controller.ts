@@ -10,6 +10,7 @@ import {
 import type { AuthenticatedRequest } from '../common/types/authenticated-request';
 import { UsersService } from './users.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
+import { OffsetPipe, PageLimitPipe } from '../common/pagination';
 
 /**
  * Settings -> Privacy -> Blocked Contacts.
@@ -26,14 +27,12 @@ export class BlockedContactsController {
   @UseGuards(JwtGuard)
   async getBlockedContacts(
     @Req() req: AuthenticatedRequest,
-    @Query('limit') limit?: string,
-    @Query('offset') offset?: string,
+    @Query('limit', new PageLimitPipe({ default: 20, max: 50 }))
+    limit: number,
+    @Query('offset', new OffsetPipe({ max: 10000 }))
+    offset: number,
   ) {
-    return this.usersService.getBlockedContacts(
-      req.user.id,
-      limit ? parseInt(limit, 10) || 20 : 20,
-      offset ? parseInt(offset, 10) || 0 : 0,
-    );
+    return this.usersService.getBlockedContacts(req.user.id, limit, offset);
   }
 }
 

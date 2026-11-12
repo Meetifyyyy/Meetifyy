@@ -12,6 +12,8 @@ import {
 import { AdminUsersService } from './admin-users.service';
 import { AdminJwtGuard } from '../../common/guards/admin-jwt.guard';
 import { RevokeAffiliationDto } from '../../campus-affiliation/dto/campus-affiliation.dto';
+import { SetCampusRepDto, SuspendUserDto } from './dto/admin-users.dto';
+import { PageLimitPipe, PageNumberPipe } from '../../common/pagination';
 
 @UseGuards(AdminJwtGuard)
 @Controller('admin/users')
@@ -23,15 +25,16 @@ export class AdminUsersController {
     @Query('search') search?: string,
     @Query('accountStatus') accountStatus?: string,
     @Query('collegeId') collegeId?: string,
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
+    @Query('page', new PageNumberPipe({ max: 1000 })) page?: number,
+    @Query('limit', new PageLimitPipe({ default: 20, max: 100 }))
+    limit?: number,
   ) {
     return this.usersService.listUsers({
       search,
       accountStatus,
       collegeId,
-      page: page ? parseInt(page, 10) : undefined,
-      limit: limit ? parseInt(limit, 10) : undefined,
+      page,
+      limit,
     });
   }
 
@@ -55,16 +58,13 @@ export class AdminUsersController {
   }
 
   @Post(':id/campus-rep')
-  async setCampusRep(
-    @Param('id') id: string,
-    @Body('isCampusRep') isCampusRep: boolean,
-  ) {
-    return this.usersService.setCampusRep(id, Boolean(isCampusRep));
+  async setCampusRep(@Param('id') id: string, @Body() dto: SetCampusRepDto) {
+    return this.usersService.setCampusRep(id, dto.isCampusRep);
   }
 
   @Post(':id/suspend')
-  async suspendUser(@Param('id') id: string, @Body('reason') reason?: string) {
-    return this.usersService.suspendUser(id, reason);
+  async suspendUser(@Param('id') id: string, @Body() dto: SuspendUserDto) {
+    return this.usersService.suspendUser(id, dto.reason);
   }
 
   @Post(':id/unsuspend')

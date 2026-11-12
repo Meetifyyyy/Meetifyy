@@ -14,6 +14,7 @@ import { DomainEventService } from '../../events/domain-event.service';
 import { ActivityAuthorizationService } from '../activity-authorization.service';
 import { BlocksService } from '../../users/blocks.service';
 import type { UserIdentityLike } from '../../common/users/deleted-user';
+import { MAX_DISCUSSION_MESSAGE_LENGTH } from './dto/send-discussion-message.dto';
 import {
   isUnavailableUser,
   presentUserAvatar,
@@ -21,7 +22,7 @@ import {
   DELETED_USER_USERNAME,
 } from '../../common/users/deleted-user';
 
-const MAX_MESSAGE_LENGTH = 2000;
+const MAX_MESSAGE_LENGTH = MAX_DISCUSSION_MESSAGE_LENGTH;
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 50;
 

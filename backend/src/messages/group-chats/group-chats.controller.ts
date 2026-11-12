@@ -9,7 +9,6 @@ import {
   Query,
   Req,
   UseGuards,
-  BadRequestException,
   Optional,
 } from '@nestjs/common';
 import type { AuthenticatedRequest } from '../../common/types/authenticated-request';
@@ -39,8 +38,22 @@ import {
   type DepartureAnnouncer,
 } from '../group-departure-announce.util';
 import { JoinGroupDto } from '../core/dto/join-group.dto';
+import { ForwardMessageDto } from '../core/dto/forward-message.dto';
+import { ReactToMessageDto } from '../core/dto/react-to-message.dto';
+import {
+  MuteConversationDto,
+  PinConversationDto,
+} from '../core/dto/conversation-preference.dto';
+import { CreateGroupDto } from '../core/dto/create-group.dto';
+import { UpdateGroupInfoDto } from '../core/dto/update-group-info.dto';
+import {
+  AddGroupMemberDto,
+  GroupRoleTargetDto,
+  UpdateGroupPermissionDto,
+} from '../core/dto/group-member.dto';
 import { inviteRefFromQuery } from '../core/group-invite-access';
 import { PushDispatcherService } from '../../push/push-dispatcher.service';
+import { OffsetPipe, PageLimitPipe } from '../../common/pagination';
 
 @Controller('api/group-chats')
 export class GroupChatsController {
@@ -57,16 +70,16 @@ export class GroupChatsController {
   @UseGuards(JwtGuard)
   async getConversations(
     @Req() req: AuthenticatedRequest,
-    @Query('limit') limit?: string,
-    @Query('offset') offset?: string,
+    @Query('limit', new PageLimitPipe({ default: 20, max: 50 }))
+    limit: number,
+    @Query('offset', new OffsetPipe({ max: 10000 }))
+    offset: number,
   ) {
     const userId = req.user?.id;
-    const limitNum = limit ? parseInt(limit, 10) : 20;
-    const offsetNum = offset ? parseInt(offset, 10) : 0;
     return this.groupChatsService.getUserGroupConversations(
       userId,
-      limitNum,
-      offsetNum,
+      limit,
+      offset,
     );
   }
 
@@ -76,14 +89,11 @@ export class GroupChatsController {
   @VerifiedOnly()
   async createGroup(
     @Req() req: AuthenticatedRequest,
-    @Body('name') name: string,
-    @Body('userIds') userIds: string[],
+    @Body() dto: CreateGroupDto,
   ) {
     const userId = req.user?.id;
-    if (!name) {
-      throw new BadRequestException('Group name is required');
-    }
-    const targetUserIds = Array.isArray(userIds) ? userIds : [];
+    const { name } = dto;
+    const targetUserIds = dto.userIds ?? [];
     const res = await this.groupChatsService.createGroup(
       targetUserIds,
       userId,
@@ -137,15 +147,15 @@ export class GroupChatsController {
     @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
     @Query('before') beforeCursor?: string,
-    @Query('limit') limit?: string,
+    @Query('limit', new PageLimitPipe({ default: 10, max: 50 }))
+    limit?: number,
   ) {
     const userId = req.user?.id;
-    const limitNum = limit ? parseInt(limit, 10) : 10;
     return this.groupChatsService.getConversationHistory(
       conversationId,
       userId,
       beforeCursor,
-      limitNum,
+      limit,
     );
   }
 
@@ -248,13 +258,13 @@ export class GroupChatsController {
   async muteConversation(
     @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
-    @Body('muted') muted: boolean,
+    @Body() dto: MuteConversationDto,
   ) {
     const userId = req.user?.id;
     return this.groupChatsService.muteConversation(
       conversationId,
       userId,
-      muted,
+      dto.muted,
     );
   }
 
@@ -263,13 +273,13 @@ export class GroupChatsController {
   async pinConversation(
     @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
-    @Body('pinned') pinned: boolean,
+    @Body() dto: PinConversationDto,
   ) {
     const userId = req.user?.id;
     return this.groupChatsService.pinConversation(
       conversationId,
       userId,
-      pinned,
+      dto.pinned,
     );
   }
 
@@ -368,13 +378,7 @@ export class GroupChatsController {
   async updateGroupInfo(
     @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
-    @Body()
-    body: {
-      name?: string;
-      description?: string;
-      avatarKey?: string;
-      avatar?: string;
-    },
+    @Body() body: UpdateGroupInfoDto,
   ) {
     const userId = req.user?.id;
     const { updated, convBefore, actorHandle, participantIds } =
@@ -465,9 +469,10 @@ export class GroupChatsController {
   async addMember(
     @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
-    @Body('userId') targetUserId: string,
+    @Body() dto: AddGroupMemberDto,
   ) {
     const userId = req.user?.id;
+    const targetUserId = dto.userId;
     const result = await this.groupChatsService.addGroupMember(
       conversationId,
       userId,
@@ -621,9 +626,10 @@ export class GroupChatsController {
   async updatePermissions(
     @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
-    @Body('permission') permission: string,
+    @Body() dto: UpdateGroupPermissionDto,
   ) {
     const userId = req.user?.id;
+    const { permission } = dto;
     const result = await this.groupChatsService.updateGroupEditPermission(
       conversationId,
       userId,
@@ -660,9 +666,10 @@ export class GroupChatsController {
   async changeOwner(
     @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
-    @Body('targetUserId') targetUserId: string,
+    @Body() dto: GroupRoleTargetDto,
   ) {
     const userId = req.user?.id;
+    const { targetUserId } = dto;
     const targetHandle =
       await this.groupChatsService.getUserHandle(targetUserId);
     const result = await this.groupChatsService.changeGroupOwner(
@@ -721,9 +728,10 @@ export class GroupChatsController {
   async promoteAdmin(
     @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
-    @Body('targetUserId') targetUserId: string,
+    @Body() dto: GroupRoleTargetDto,
   ) {
     const userId = req.user?.id;
+    const { targetUserId } = dto;
     const targetHandle =
       await this.groupChatsService.getUserHandle(targetUserId);
     const result = await this.groupChatsService.promoteToAdmin(
@@ -1002,15 +1010,10 @@ export class GroupChatsController {
   async forwardMessage(
     @Req() req: AuthenticatedRequest,
     @Param('messageId') messageId: string,
-    @Body('targetConversationIds') targetConversationIds: string[],
+    @Body() dto: ForwardMessageDto,
   ) {
     const userId = req.user?.id;
-    if (
-      !Array.isArray(targetConversationIds) ||
-      targetConversationIds.length === 0
-    ) {
-      throw new BadRequestException('targetConversationIds array is required');
-    }
+    const { targetConversationIds } = dto;
     const result = await this.groupChatsService.forwardMessage(
       messageId,
       targetConversationIds,
@@ -1082,9 +1085,13 @@ export class GroupChatsController {
   async reactToMessage(
     @Req() req: AuthenticatedRequest,
     @Param('id') messageId: string,
-    @Body('reaction') reaction: string,
+    @Body() dto: ReactToMessageDto,
   ) {
     const userId = req.user?.id;
-    return this.groupChatsService.reactToMessage(messageId, userId, reaction);
+    return this.groupChatsService.reactToMessage(
+      messageId,
+      userId,
+      dto.reaction,
+    );
   }
 }

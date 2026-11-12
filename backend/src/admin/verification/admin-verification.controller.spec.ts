@@ -5,6 +5,7 @@ import { AdminJwtGuard } from '../../common/guards/admin-jwt.guard';
 import { VerificationStatus } from '@prisma/client';
 import type { AdminRequest } from '../../common/types/authenticated-request';
 import { stub } from '../../common/testing/stub';
+import { UpdateVerificationStatusDto } from './dto/update-verification-status.dto';
 
 describe('AdminVerificationController', () => {
   let controller: AdminVerificationController;
@@ -46,8 +47,8 @@ describe('AdminVerificationController', () => {
 
       const result = await controller.listRequests(
         VerificationStatus.PENDING,
-        '10',
-        '5',
+        10,
+        5,
       );
 
       expect(service.listRequests).toHaveBeenCalledWith(
@@ -56,18 +57,6 @@ describe('AdminVerificationController', () => {
         5,
       );
       expect(result).toEqual(statusResponse);
-    });
-
-    it('should use default limit and offset if not provided', async () => {
-      mockAdminVerificationService.listRequests.mockResolvedValue({});
-
-      await controller.listRequests(VerificationStatus.PENDING);
-
-      expect(service.listRequests).toHaveBeenCalledWith(
-        VerificationStatus.PENDING,
-        20,
-        0,
-      );
     });
   });
 
@@ -89,6 +78,9 @@ describe('AdminVerificationController', () => {
   describe('updateStatus', () => {
     /** What AdminJwtGuard attaches after verifying the admin session. */
     const req = stub<AdminRequest>({ admin: { id: 'super-admin-7' } });
+    /** The body as the global pipe hands it over: a DTO instance. */
+    const decision = (status: VerificationStatus, adminNotes?: string) =>
+      Object.assign(new UpdateVerificationStatusDto(), { status, adminNotes });
 
     it('should call updateStatus on service with correct params', async () => {
       const updateResponse = {
@@ -102,8 +94,7 @@ describe('AdminVerificationController', () => {
       const result = await controller.updateStatus(
         req,
         'req-1',
-        VerificationStatus.VERIFIED,
-        'Looks good',
+        decision(VerificationStatus.VERIFIED, 'Looks good'),
       );
 
       expect(service.updateStatus).toHaveBeenCalledWith(
@@ -125,8 +116,7 @@ describe('AdminVerificationController', () => {
           body: { reviewerId: 'super-admin-1' },
         }),
         'req-1',
-        VerificationStatus.REJECTED,
-        'Blurry',
+        decision(VerificationStatus.REJECTED, 'Blurry'),
       );
 
       expect(service.updateStatus).toHaveBeenCalledWith(

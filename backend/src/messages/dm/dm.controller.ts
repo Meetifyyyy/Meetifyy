@@ -21,10 +21,18 @@ import { NotificationsService } from '../../notifications/notifications.service'
 import { NotificationFactory } from '../../notifications/notification.factory';
 import { SendMessageDto } from '../core/dto/send-message.dto';
 import { SendGroupInviteDto } from '../core/dto/send-group-invite.dto';
+import { ForwardMessageDto } from '../core/dto/forward-message.dto';
+import { ReactToMessageDto } from '../core/dto/react-to-message.dto';
+import {
+  MuteConversationDto,
+  PinConversationDto,
+} from '../core/dto/conversation-preference.dto';
+import { StartDirectMessageDto } from '../core/dto/create-group.dto';
 import { emitMessageNew, publicMessage } from '../message-alert.util';
 import { VerificationAccessService } from '../../common/verification/verification-access.service';
 import { announceUnsent } from '../unsend-announce.util';
 import { previewOf } from '../core/message-preview';
+import { OffsetPipe, PageLimitPipe } from '../../common/pagination';
 
 @Controller('api/dm')
 export class DmController {
@@ -41,13 +49,13 @@ export class DmController {
   @UseGuards(JwtGuard)
   async getConversations(
     @Req() req: AuthenticatedRequest,
-    @Query('limit') limit?: string,
-    @Query('offset') offset?: string,
+    @Query('limit', new PageLimitPipe({ default: 20, max: 50 }))
+    limit: number,
+    @Query('offset', new OffsetPipe({ max: 10000 }))
+    offset: number,
   ) {
     const userId = req.user?.id;
-    const limitNum = limit ? parseInt(limit, 10) : 20;
-    const offsetNum = offset ? parseInt(offset, 10) : 0;
-    return this.dmService.getUserDMConversations(userId, limitNum, offsetNum);
+    return this.dmService.getUserDMConversations(userId, limit, offset);
   }
 
   @Get('lookup/:targetUserId')
@@ -105,13 +113,12 @@ export class DmController {
   @VerifiedOnly()
   async startDM(
     @Req() req: AuthenticatedRequest,
-    @Body('targetUserId') targetUserId?: string,
-    @Body('userIds') userIdsBody?: string | string[],
+    @Body() body: StartDirectMessageDto,
   ) {
     const userId = req.user?.id;
-    let targetId = targetUserId;
-    if (!targetId && userIdsBody) {
-      targetId = Array.isArray(userIdsBody) ? userIdsBody[0] : userIdsBody;
+    let targetId = body.targetUserId;
+    if (!targetId && body.userIds) {
+      targetId = Array.isArray(body.userIds) ? body.userIds[0] : body.userIds;
     }
     if (!targetId) {
       throw new BadRequestException('targetUserId is required');
@@ -169,15 +176,15 @@ export class DmController {
     @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
     @Query('before') beforeCursor?: string,
-    @Query('limit') limit?: string,
+    @Query('limit', new PageLimitPipe({ default: 10, max: 50 }))
+    limit?: number,
   ) {
     const userId = req.user?.id;
-    const limitNum = limit ? parseInt(limit, 10) : 10;
     return this.dmService.getConversationHistory(
       conversationId,
       userId,
       beforeCursor,
-      limitNum,
+      limit,
     );
   }
 
@@ -273,10 +280,10 @@ export class DmController {
   async muteConversation(
     @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
-    @Body('muted') muted: boolean,
+    @Body() dto: MuteConversationDto,
   ) {
     const userId = req.user?.id;
-    return this.dmService.muteConversation(conversationId, userId, muted);
+    return this.dmService.muteConversation(conversationId, userId, dto.muted);
   }
 
   @Patch(':id/pin')
@@ -284,10 +291,10 @@ export class DmController {
   async pinConversation(
     @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
-    @Body('pinned') pinned: boolean,
+    @Body() dto: PinConversationDto,
   ) {
     const userId = req.user?.id;
-    return this.dmService.pinConversation(conversationId, userId, pinned);
+    return this.dmService.pinConversation(conversationId, userId, dto.pinned);
   }
 
   @Post(':id/clear')
@@ -340,15 +347,10 @@ export class DmController {
   async forwardMessage(
     @Req() req: AuthenticatedRequest,
     @Param('messageId') messageId: string,
-    @Body('targetConversationIds') targetConversationIds: string[],
+    @Body() dto: ForwardMessageDto,
   ) {
     const userId = req.user?.id;
-    if (
-      !Array.isArray(targetConversationIds) ||
-      targetConversationIds.length === 0
-    ) {
-      throw new BadRequestException('targetConversationIds array is required');
-    }
+    const { targetConversationIds } = dto;
     const result = await this.dmService.forwardMessage(
       messageId,
       targetConversationIds,
@@ -429,9 +431,9 @@ export class DmController {
   async reactToMessage(
     @Req() req: AuthenticatedRequest,
     @Param('id') messageId: string,
-    @Body('reaction') reaction: string,
+    @Body() dto: ReactToMessageDto,
   ) {
     const userId = req.user?.id;
-    return this.dmService.reactToMessage(messageId, userId, reaction);
+    return this.dmService.reactToMessage(messageId, userId, dto.reaction);
   }
 }

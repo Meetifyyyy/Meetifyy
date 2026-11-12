@@ -11,6 +11,8 @@ import {
 import type { AuthenticatedRequest } from '../common/types/authenticated-request';
 import { SearchService } from './search.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
+import { PageLimitPipe } from '../common/pagination';
+import { AddRecentSearchDto } from './dto/recent-search.dto';
 
 @Controller('api/search')
 @UseGuards(JwtGuard)
@@ -22,15 +24,14 @@ export class SearchController {
     @Req() req: AuthenticatedRequest,
     @Query('q') query: string,
     @Query('type') type?: string,
-    @Query('limit') limit?: string,
+    @Query('limit', new PageLimitPipe({ default: 15, max: 50 })) limit?: number,
     @Query('cursor') cursor?: string,
   ) {
     const currentUserId = req.user?.id;
-    const limitNum = limit ? parseInt(limit, 10) : 15;
     return this.searchService.globalSearch(
       query,
       currentUserId,
-      limitNum,
+      limit,
       type,
       cursor,
     );
@@ -53,9 +54,9 @@ export class SearchController {
   @Post('recent')
   async addRecentSearch(
     @Req() req: AuthenticatedRequest,
-    @Body('term') term: string,
+    @Body() dto: AddRecentSearchDto,
   ) {
-    return this.searchService.addRecentSearch(req.user?.id, term);
+    return this.searchService.addRecentSearch(req.user?.id, dto.term);
   }
 
   @Delete('recent')

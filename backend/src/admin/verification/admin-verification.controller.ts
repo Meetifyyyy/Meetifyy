@@ -12,6 +12,8 @@ import type { AdminRequest } from '../../common/types/authenticated-request';
 import { AdminVerificationService } from './admin-verification.service';
 import { AdminJwtGuard } from '../../common/guards/admin-jwt.guard';
 import { VerificationStatus } from '@prisma/client';
+import { UpdateVerificationStatusDto } from './dto/update-verification-status.dto';
+import { OffsetPipe, PageLimitPipe } from '../../common/pagination';
 
 /**
  * Verification review, on the same rails as the rest of the admin portal.
@@ -47,16 +49,11 @@ export class AdminVerificationController {
   @Get('requests')
   async listRequests(
     @Query('status') status?: VerificationStatus,
-    @Query('limit') limit?: string,
-    @Query('offset') offset?: string,
+    @Query('limit', new PageLimitPipe({ default: 20, max: 100 }))
+    limit?: number,
+    @Query('offset', new OffsetPipe({ max: 10000 })) offset?: number,
   ) {
-    const limitNum = limit ? parseInt(limit, 10) : 20;
-    const offsetNum = offset ? parseInt(offset, 10) : 0;
-    return this.adminVerificationService.listRequests(
-      status,
-      limitNum,
-      offsetNum,
-    );
+    return this.adminVerificationService.listRequests(status, limit, offset);
   }
 
   /**
@@ -73,16 +70,15 @@ export class AdminVerificationController {
   async updateStatus(
     @Req() req: AdminRequest,
     @Param('id') id: string,
-    @Body('status') status: VerificationStatus,
-    @Body('adminNotes') adminNotes?: unknown,
+    @Body() dto: UpdateVerificationStatusDto,
   ) {
     // `req.admin` is set by AdminJwtGuard and is a real SuperAdmin row, which is
     // what `reviewerId` references. Taken from the verified session, never from
     // the request body.
     return this.adminVerificationService.updateStatus(
       id,
-      status,
-      adminNotes,
+      dto.status,
+      dto.adminNotes,
       req.admin?.id,
     );
   }

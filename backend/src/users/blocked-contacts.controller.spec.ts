@@ -59,7 +59,7 @@ describe('Blocked contacts endpoints', () => {
 
   describe('GET /api/settings/blocked-contacts', () => {
     it('reads the list for the JWT subject, never a caller-supplied id', async () => {
-      await blockedContacts.getBlockedContacts(asRequest('alice'));
+      await blockedContacts.getBlockedContacts(asRequest('alice'), 20, 0);
 
       expect(usersService.getBlockedContacts).toHaveBeenCalledWith(
         'alice',
@@ -68,30 +68,12 @@ describe('Blocked contacts endpoints', () => {
       );
     });
 
-    it('defaults to 20 per page', async () => {
-      await blockedContacts.getBlockedContacts(asRequest('alice'));
-      expect(usersService.getBlockedContacts.mock.calls[0][1]).toBe(20);
-    });
-
-    it('passes through pagination parameters', async () => {
-      await blockedContacts.getBlockedContacts(asRequest('alice'), '15', '40');
+    it('passes the parsed pagination parameters through', async () => {
+      await blockedContacts.getBlockedContacts(asRequest('alice'), 15, 40);
       expect(usersService.getBlockedContacts).toHaveBeenCalledWith(
         'alice',
         15,
         40,
-      );
-    });
-
-    it('falls back to defaults on unparseable pagination input', async () => {
-      await blockedContacts.getBlockedContacts(
-        asRequest('alice'),
-        'abc',
-        'xyz',
-      );
-      expect(usersService.getBlockedContacts).toHaveBeenCalledWith(
-        'alice',
-        20,
-        0,
       );
     });
 

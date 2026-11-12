@@ -5,6 +5,7 @@ import {
   type SlowRequestSurface,
 } from './admin-analytics.service';
 import { AdminJwtGuard } from '../../common/guards/admin-jwt.guard';
+import { PageLimitPipe, PageNumberPipe } from '../../common/pagination';
 
 /**
  * Infrastructure and resource usage, read-only.
@@ -31,8 +32,9 @@ export class AdminAnalyticsController {
    */
   @Get('error-logs')
   async getErrorLogs(
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
+    @Query('page', new PageNumberPipe({ max: 1000 })) page?: number,
+    @Query('limit', new PageLimitPipe({ default: 25, max: 100 }))
+    limit?: number,
     @Query('route') route?: string,
     @Query('severity') severity?: string,
     @Query('statusCode') statusCode?: string,
@@ -40,8 +42,8 @@ export class AdminAnalyticsController {
   ) {
     const parsedStatus = statusCode ? parseInt(statusCode, 10) : NaN;
     return this.analytics.getErrorLogs({
-      page: page ? parseInt(page, 10) : undefined,
-      limit: limit ? parseInt(limit, 10) : undefined,
+      page,
+      limit,
       route,
       severity,
       statusCode: Number.isFinite(parsedStatus) ? parsedStatus : undefined,
@@ -51,15 +53,16 @@ export class AdminAnalyticsController {
 
   @Get('slow-requests')
   async getSlowRequests(
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
+    @Query('page', new PageNumberPipe({ max: 1000 })) page?: number,
+    @Query('limit', new PageLimitPipe({ default: 25, max: 100 }))
+    limit?: number,
     @Query('route') route?: string,
     @Query('method') method?: string,
     @Query('surface') surface?: SlowRequestSurface,
   ) {
     return this.analytics.getSlowRequests({
-      page: page ? parseInt(page, 10) : undefined,
-      limit: limit ? parseInt(limit, 10) : undefined,
+      page,
+      limit,
       route,
       method,
       surface,

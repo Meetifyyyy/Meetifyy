@@ -12,6 +12,7 @@ import type { AuthenticatedRequest } from '../common/types/authenticated-request
 import { NotificationsService } from './notifications.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { NotificationType } from '@prisma/client';
+import { PageLimitPipe } from '../common/pagination';
 
 /**
  * Notification kinds a client may filter the feed down to. MESSAGE is
@@ -29,17 +30,16 @@ export class NotificationsController {
   @Get()
   async getNotifications(
     @Req() req: AuthenticatedRequest,
-    @Query('limit') limit?: string,
+    @Query('limit', new PageLimitPipe({ default: 20, max: 50 })) limit: number,
     @Query('cursor') cursor?: string,
     @Query('type') type?: string,
   ) {
-    const limitNum = limit ? parseInt(limit, 10) : 20;
     // Allow-listed rather than passed through: an unvalidated value would reach
     // Prisma as an enum filter and throw on anything unexpected.
     const parsedType = ALLOWED_NOTIFICATION_FILTERS.find((t) => t === type);
     return this.notificationsService.getNotifications(
       req.user.id,
-      limitNum,
+      limit,
       cursor,
       parsedType,
     );

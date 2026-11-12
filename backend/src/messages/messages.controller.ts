@@ -9,7 +9,6 @@ import {
   Req,
   Query,
   Delete,
-  BadRequestException,
   Optional,
 } from '@nestjs/common';
 import { requestedUserIds } from './core/requested-user-ids';
@@ -38,8 +37,23 @@ import {
   type DepartureAnnouncer,
 } from './group-departure-announce.util';
 import { JoinGroupDto } from './core/dto/join-group.dto';
+import { ForwardMessageDto } from './core/dto/forward-message.dto';
+import { ReactToMessageDto } from './core/dto/react-to-message.dto';
+import {
+  MuteConversationDto,
+  PinConversationDto,
+} from './core/dto/conversation-preference.dto';
+import { StartConversationDto } from './core/dto/create-group.dto';
+import { UpdateGroupInfoDto } from './core/dto/update-group-info.dto';
+import {
+  AddGroupMemberDto,
+  GroupRoleTargetDto,
+  UpdateGroupPermissionDto,
+} from './core/dto/group-member.dto';
 import { inviteRefFromQuery } from './core/group-invite-access';
 import { PushDispatcherService } from '../push/push-dispatcher.service';
+import { OffsetPipe, PageLimitPipe } from '../common/pagination';
+import { MEDIA_PAGE_DEFAULT, MEDIA_PAGE_MAX } from './conversation-media.util';
 
 @Controller('api/messages')
 export class MessagesController {
@@ -82,15 +96,10 @@ export class MessagesController {
   async forwardMessage(
     @Req() req: AuthenticatedRequest,
     @Param('messageId') messageId: string,
-    @Body('targetConversationIds') targetConversationIds: string[],
+    @Body() dto: ForwardMessageDto,
   ) {
     const userId = req.user?.id;
-    if (
-      !Array.isArray(targetConversationIds) ||
-      targetConversationIds.length === 0
-    ) {
-      throw new BadRequestException('targetConversationIds array is required');
-    }
+    const { targetConversationIds } = dto;
     const result = await this.messagesService.forwardMessage(
       messageId,
       targetConversationIds,
@@ -179,24 +188,22 @@ export class MessagesController {
   // inbox. See getUserConversations for why one endpoint answers both.
   async getConversations(
     @Req() req: AuthenticatedRequest,
-    @Query('limit') limit?: string,
-    @Query('offset') offset?: string,
+    @Query('limit', new PageLimitPipe({ default: 20, max: 50 }))
+    limit: number,
+    @Query('offset', new OffsetPipe({ max: 10000 }))
+    offset: number,
     @Query('eligibleOnly') eligibleOnly?: string,
     @Query('search') search?: string,
   ) {
     const userId = req.user?.id;
-    const parsedLimit = limit ? parseInt(limit, 10) : 20;
-    const parsedOffset = offset ? parseInt(offset, 10) : 0;
-    const limitNum = isNaN(parsedLimit) ? 20 : parsedLimit;
-    const offsetNum = isNaN(parsedOffset) ? 0 : parsedOffset;
     // Capped so a pathological query string cannot become the cache key or a
     // very wide `contains` scan. Longer input is truncated, not rejected: the
     // extra characters could only have narrowed the result further.
     const searchTerm = (typeof search === 'string' ? search : '').slice(0, 100);
     return this.messagesService.getUserConversations(
       userId,
-      limitNum,
-      offsetNum,
+      limit,
+      offset,
       eligibleOnly === 'true',
       searchTerm,
     );
@@ -215,15 +222,15 @@ export class MessagesController {
     @Req() req: AuthenticatedRequest,
     @Param('conversationId') conversationId: string,
     @Query('before') beforeCursor?: string,
-    @Query('limit') limit?: string,
+    @Query('limit', new PageLimitPipe({ default: 50, max: 50 }))
+    limit?: number,
   ) {
     const userId = req.user?.id;
-    const limitNum = limit ? parseInt(limit, 10) : 50;
     return this.messagesService.getConversationHistory(
       conversationId,
       userId,
       beforeCursor,
-      limitNum,
+      limit,
     );
   }
 
@@ -238,14 +245,17 @@ export class MessagesController {
     @Req() req: AuthenticatedRequest,
     @Param('conversationId') conversationId: string,
     @Query('before') beforeCursor?: string,
-    @Query('limit') limit?: string,
+    @Query(
+      'limit',
+      new PageLimitPipe({ default: MEDIA_PAGE_DEFAULT, max: MEDIA_PAGE_MAX }),
+    )
+    limit?: number,
   ) {
-    const parsedLimit = limit ? parseInt(limit, 10) : undefined;
     return this.messagesService.getConversationMedia(
       conversationId,
       req.user.id,
       beforeCursor,
-      parsedLimit,
+      limit,
     );
   }
 
@@ -332,21 +342,20 @@ export class MessagesController {
   @UseGuards(JwtGuard)
   async startConversation(
     @Req() req: AuthenticatedRequest,
+    @Body() body: StartConversationDto,
     @Query('userIds') userIdsQuery?: string,
-    @Body('userIds') userIdsBody?: unknown,
-    @Body('name') nameBody?: string,
   ) {
     const userId = req.user?.id;
     let targetUserIds: string[] = [];
-    if (userIdsBody) {
-      targetUserIds = requestedUserIds(userIdsBody);
+    if (body.userIds) {
+      targetUserIds = requestedUserIds(body.userIds);
     } else if (userIdsQuery) {
       targetUserIds = userIdsQuery.split(',');
     }
     const res = await this.messagesService.startConversation(
       targetUserIds,
       userId,
-      nameBody,
+      body.name,
     );
     if (targetUserIds.length > 0) {
       const others = targetUserIds.filter((tId) => tId && tId !== userId);
@@ -371,10 +380,10 @@ export class MessagesController {
   async reactToMessage(
     @Req() req: AuthenticatedRequest,
     @Param('id') messageId: string,
-    @Body('reaction') reaction: string,
+    @Body() dto: ReactToMessageDto,
   ) {
     const userId = req.user?.id;
-    return this.messagesService.reactToMessage(messageId, userId, reaction);
+    return this.messagesService.reactToMessage(messageId, userId, dto.reaction);
   }
 
   @Post(':id/read')
@@ -392,10 +401,14 @@ export class MessagesController {
   async muteConversation(
     @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
-    @Body('muted') muted: boolean,
+    @Body() dto: MuteConversationDto,
   ) {
     const userId = req.user?.id;
-    return this.messagesService.muteConversation(conversationId, userId, muted);
+    return this.messagesService.muteConversation(
+      conversationId,
+      userId,
+      dto.muted,
+    );
   }
 
   @Patch(':id/pin')
@@ -403,10 +416,14 @@ export class MessagesController {
   async pinConversation(
     @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
-    @Body('pinned') pinned: boolean,
+    @Body() dto: PinConversationDto,
   ) {
     const userId = req.user?.id;
-    return this.messagesService.pinConversation(conversationId, userId, pinned);
+    return this.messagesService.pinConversation(
+      conversationId,
+      userId,
+      dto.pinned,
+    );
   }
 
   @Post(':id/clear')
@@ -513,13 +530,7 @@ export class MessagesController {
   async updateGroupInfo(
     @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
-    @Body()
-    body: {
-      name?: string;
-      description?: string;
-      avatarKey?: string;
-      avatar?: string;
-    },
+    @Body() body: UpdateGroupInfoDto,
   ) {
     const userId = req.user?.id;
     const realConvId =
@@ -591,9 +602,10 @@ export class MessagesController {
   async addMember(
     @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
-    @Body('userId') targetUserId: string,
+    @Body() dto: AddGroupMemberDto,
   ) {
     const userId = req.user?.id;
+    const targetUserId = dto.userId;
     const result = await this.messagesService.addGroupMember(
       conversationId,
       userId,
@@ -712,9 +724,10 @@ export class MessagesController {
   async updatePermissions(
     @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
-    @Body('permission') permission: string,
+    @Body() dto: UpdateGroupPermissionDto,
   ) {
     const userId = req.user?.id;
+    const { permission } = dto;
     return this.messagesService.updateGroupEditPermission(
       conversationId,
       userId,
@@ -727,9 +740,10 @@ export class MessagesController {
   async changeOwner(
     @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
-    @Body('targetUserId') targetUserId: string,
+    @Body() dto: GroupRoleTargetDto,
   ) {
     const userId = req.user?.id;
+    const { targetUserId } = dto;
     const targetHandle = await this.messagesService.getUserHandle(targetUserId);
     const result = await this.messagesService.changeGroupOwner(
       conversationId,
@@ -764,9 +778,10 @@ export class MessagesController {
   async promoteAdmin(
     @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
-    @Body('targetUserId') targetUserId: string,
+    @Body() dto: GroupRoleTargetDto,
   ) {
     const userId = req.user?.id;
+    const { targetUserId } = dto;
     const [targetHandle, actorHandle] = await Promise.all([
       this.messagesService.getUserHandle(targetUserId),
       this.messagesService.getUserHandle(userId),

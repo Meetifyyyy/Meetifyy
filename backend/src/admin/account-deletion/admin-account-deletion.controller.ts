@@ -4,6 +4,7 @@ import {
   AdminAccountDeletionService,
   DeletionQueueFilter,
 } from './admin-account-deletion.service';
+import { PageLimitPipe, PageNumberPipe } from '../../common/pagination';
 
 /**
  * Account Deletion — its own admin section, not a tab inside Users or
@@ -20,14 +21,15 @@ export class AdminAccountDeletionController {
   async list(
     @Query('filter') filter?: DeletionQueueFilter,
     @Query('search') search?: string,
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
+    @Query('page', new PageNumberPipe({ max: 1000 })) page?: number,
+    @Query('limit', new PageLimitPipe({ default: 20, max: 100 }))
+    limit?: number,
   ) {
     return this.service.list({
       filter,
       search,
-      page: page ? parseInt(page, 10) : undefined,
-      limit: limit ? parseInt(limit, 10) : undefined,
+      page,
+      limit,
     });
   }
 

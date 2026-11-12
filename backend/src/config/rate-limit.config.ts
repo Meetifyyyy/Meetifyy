@@ -39,8 +39,11 @@ import { IS_PRODUCTION, APP_ENV, int, oneOf, str } from './env';
  *     (per 10 minutes and per day) and relating.
  * v12: confessions feed sync (what is new, and fresh totals for what is
  *     already on screen), asked when the page is reopened.
+ * v13: inviting people to an activity got a per-host budget; it had none.
+ * v14: link previews got a per-user budget; the route makes the server fetch a
+ *     caller-chosen URL and had only the global tier.
  */
-export const POLICY_VERSION = 12;
+export const POLICY_VERSION = 14;
 
 export type RateLimitAlgorithm = 'fixed-window' | 'token-bucket';
 
@@ -835,6 +838,43 @@ export const RATE_LIMIT_POLICIES = {
     dimension: 'user',
     onRedisFailure: 'closed',
     message: "You've created several communities recently. Try again later.",
+  },
+
+  /**
+   * Activity invitations, one point per request. Each request can name up to
+   * MAX_INVITEES_PER_REQUEST people and every one of them gets a notification,
+   * so this is the bound on unsolicited pings a host can send: 30 requests an
+   * hour is about three thousand at the cap, and a person inviting friends to
+   * their own plans sends one or two. Closed on a Redis outage, like the other
+   * fan-out routes: an unmetered notification route is what a spammer waits for.
+   *
+   * ASSUMPTION: not yet validated against production traffic.
+   */
+  'activity.invite.user': {
+    points: 30,
+    duration: 3600,
+    dimension: 'user',
+    onRedisFailure: 'closed',
+    message: "You've sent a lot of invitations recently. Try again later.",
+  },
+
+  /**
+   * Link previews, 60/min per user. Each call makes this server fetch a URL the
+   * caller chose, holding a socket for up to the preview deadline, so the
+   * global 300/min tier is far too loose for it. Real use is one request per
+   * link pasted into a composer or shown in a chat, a few a minute at most; 60
+   * leaves room for a thread of links opening at once. Open on a Redis outage:
+   * the fetcher has its own socket and time caps, and breaking link cards for
+   * everyone because Redis blinked is the worse trade.
+   *
+   * ASSUMPTION: not yet validated against production traffic.
+   */
+  'link-preview.user': {
+    points: 60,
+    duration: 60,
+    dimension: 'user',
+    onRedisFailure: 'open',
+    message: 'Too many link previews requested. Please slow down.',
   },
 
   /**
