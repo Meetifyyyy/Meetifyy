@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { RedisService } from '../redis/redis.service';
 import { isRecord } from '../common/utils/type-guards.util';
+import { newMessageId } from '../common/utils/pubsub-dedupe.util';
 
 export interface DomainEventPayload {
   type: string; // e.g., 'follow.created'
@@ -73,7 +74,14 @@ export class DomainEventService {
     const pubClient = this.redisService.getPubClient();
     if (pubClient) {
       try {
-        await pubClient.publish(this.CHANNEL_NAME, JSON.stringify(payload));
+        // `eventId` lets each subscriber drop a publish ioredis re-sends after
+        // a reconnect (pubsub-dedupe.util.ts). It rides on the Redis copy
+        // only: the gateway strips it, so clients receive the payload exactly
+        // as before, and local listeners above never see it.
+        await pubClient.publish(
+          this.CHANNEL_NAME,
+          JSON.stringify({ ...payload, eventId: newMessageId() }),
+        );
       } catch (err) {
         this.logger.error(
           `Failed to publish domain event ${type} to Redis`,
