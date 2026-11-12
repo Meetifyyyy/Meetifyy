@@ -289,6 +289,81 @@ describe('RealtimeGateway — Authentication', () => {
     );
   });
 
+  describe('the display name shown in typing indicators', () => {
+    const connectAs = async (
+      metadata: Record<string, unknown> | undefined,
+      profile: () => Promise<unknown>,
+    ) => {
+      const client = fakeSocket({
+        data: {},
+        id: 'socket-name',
+        handshake: {
+          auth: { token: 'valid.signed.jwt' },
+          headers: { cookie: 'mf_sid=sess-1' },
+        },
+        disconnect: jest.fn(),
+        join: jest.fn(),
+      });
+      sessionOwner = 'user-uuid-789';
+      jwtGuard.validateToken.mockResolvedValue({
+        id: 'user-uuid-789',
+        email: 'private.person@example.com',
+        user_metadata: metadata,
+      });
+      // The lifecycle check also reads the user row; only the profile lookup
+      // (which selects `username`) is under test here.
+      prisma.user.findUnique.mockImplementation(
+        (args: { select?: { username?: boolean } }) =>
+          args.select?.username
+            ? profile()
+            : Promise.resolve({ accountStatus: 'ACTIVE' }),
+      );
+      await gateway.handleConnection(client);
+      return client;
+    };
+
+    const profileLookups = () =>
+      (
+        prisma.user.findUnique.mock.calls as Array<
+          [{ select?: { username?: boolean } }]
+        >
+      ).filter(([args]) => args.select?.username);
+
+    it('reads the username from the profile when metadata has none, never the email', async () => {
+      const client = await connectAs({}, () =>
+        Promise.resolve({ username: 'db_user', displayName: 'Db User' }),
+      );
+
+      expect(client.data.userName).toBe('db_user');
+      expect(client.data.userName).not.toContain('@');
+      expect(profileLookups()).toHaveLength(1);
+    });
+
+    it('makes no profile lookup when metadata carries a username', async () => {
+      const client = await connectAs({ username: 'meta_user' }, () =>
+        Promise.resolve({ username: 'db_user' }),
+      );
+
+      expect(client.data.userName).toBe('meta_user');
+      expect(profileLookups()).toHaveLength(0);
+    });
+
+    it("falls back to 'Someone' when the profile yields nothing", async () => {
+      const client = await connectAs(undefined, () => Promise.resolve(null));
+
+      expect(client.data.userName).toBe('Someone');
+    });
+
+    it("falls back to 'Someone' when the profile lookup throws", async () => {
+      const client = await connectAs({}, () =>
+        Promise.reject(new Error('db down')),
+      );
+
+      expect(client.disconnect).not.toHaveBeenCalled();
+      expect(client.data.userName).toBe('Someone');
+    });
+  });
+
   it('rejects connection if Supabase auth is not configured', async () => {
     supabaseService.isConfigured = false;
     const client = fakeSocket({
@@ -373,6 +448,7 @@ describe('RealtimeGateway — room join authorization', () => {
     conversationParticipant: { findMany: jest.Mock };
   };
   let blocksService: { getExcludedUserIds: jest.Mock };
+  let getActiveCollegeId: jest.Mock<Promise<string | null>, [string]>;
 
   const socket = () =>
     fakeSocket({
@@ -391,8 +467,12 @@ describe('RealtimeGateway — room join authorization', () => {
       conversationParticipant: { findMany: jest.fn().mockResolvedValue([]) },
     };
     blocksService = { getExcludedUserIds: jest.fn().mockResolvedValue([]) };
+    getActiveCollegeId = jest
+      .fn<Promise<string | null>, [string]>()
+      .mockResolvedValue(null);
 
     gateway = buildGateway({
+      campusAccess: { getActiveCollegeId },
       supabase: {
         isConfigured: true,
         client: { auth: { getUser: jest.fn() } },
@@ -444,6 +524,75 @@ describe('RealtimeGateway — room join authorization', () => {
       });
       await gateway.handlePostJoin(client, { postId: 'p2' });
       expect(client.join).not.toHaveBeenCalled();
+    });
+
+    describe('community rules', () => {
+      const community = (over: Record<string, unknown>) => ({
+        deletedAt: null,
+        isPrivate: false,
+        isCampusCommunity: false,
+        collegeId: null,
+        ownerId: 'someone',
+        members: [],
+        ...over,
+      });
+      const postIn = (c: ReturnType<typeof community>) =>
+        prisma.post.findFirst.mockResolvedValue({
+          authorId: 'author',
+          community: c,
+        });
+      const tryJoin = async () => {
+        const client = socket();
+        await gateway.handlePostJoin(client, { postId: 'p1' });
+        return client;
+      };
+
+      it('refuses a non-member of a private community', async () => {
+        postIn(community({ isPrivate: true }));
+        expect((await tryJoin()).join).not.toHaveBeenCalled();
+      });
+
+      it('admits a member of a private community', async () => {
+        postIn(community({ isPrivate: true, members: [{ userId: 'viewer' }] }));
+        expect((await tryJoin()).join).toHaveBeenCalledWith('post_p1');
+      });
+
+      it('admits the owner of a private community', async () => {
+        postIn(community({ isPrivate: true, ownerId: 'viewer' }));
+        expect((await tryJoin()).join).toHaveBeenCalledWith('post_p1');
+      });
+
+      it('refuses a member whose active college is another, or none', async () => {
+        const campus = community({
+          isCampusCommunity: true,
+          collegeId: 'college-a',
+          members: [{ userId: 'viewer' }],
+        });
+        postIn(campus);
+        getActiveCollegeId.mockResolvedValue('college-b');
+        expect((await tryJoin()).join).not.toHaveBeenCalled();
+        getActiveCollegeId.mockResolvedValue(null);
+        expect((await tryJoin()).join).not.toHaveBeenCalled();
+      });
+
+      it('admits a member whose active college is the community college', async () => {
+        postIn(
+          community({
+            isCampusCommunity: true,
+            collegeId: 'college-a',
+            members: [{ userId: 'viewer' }],
+          }),
+        );
+        getActiveCollegeId.mockResolvedValue('college-a');
+        expect((await tryJoin()).join).toHaveBeenCalledWith('post_p1');
+        expect(getActiveCollegeId).toHaveBeenCalledWith('viewer');
+      });
+
+      it('does not look up a college for a plain public community', async () => {
+        postIn(community({}));
+        expect((await tryJoin()).join).toHaveBeenCalledWith('post_p1');
+        expect(getActiveCollegeId).not.toHaveBeenCalled();
+      });
     });
 
     it('fails closed when the policy lookup throws', async () => {

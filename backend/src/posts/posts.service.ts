@@ -50,6 +50,10 @@ import { MentionDto } from '../common/dto/mention.dto';
 import { ContentDeletionAuthorizer } from './content-deletion.authorizer';
 import { randomUUID } from 'crypto';
 import { extractHashtags } from './hashtags.util';
+import {
+  canViewCommunity,
+  type CommunityVisibilityFields,
+} from './community-visibility';
 import type Redis from 'ioredis';
 import { config } from '../config';
 import { VerificationAccessService } from '../common/verification/verification-access.service';
@@ -284,28 +288,13 @@ export class PostsService {
    * `assertCanViewPostCommunity`), so holding a post id is never enough to read
    * or interact with a post you could not see in the feed.
    */
-  private async canViewCommunity(
+  private canViewCommunity(
     userId: string,
-    community: {
-      deletedAt: Date | null;
-      isPrivate: boolean;
-      isCampusCommunity: boolean;
-      collegeId: string | null;
-      ownerId: string | null;
-      members?: Array<{ userId: string }>;
-    },
+    community: CommunityVisibilityFields,
   ): Promise<boolean> {
-    if (community.deletedAt) return false;
-    if (community.isCampusCommunity && community.collegeId) {
-      const viewerCollegeId = await this.activeCollegeId(userId);
-      if (viewerCollegeId !== community.collegeId) return false;
-    }
-    if (community.isPrivate) {
-      const isOwner = !!userId && community.ownerId === userId;
-      const isMember = (community.members?.length ?? 0) > 0;
-      if (!isOwner && !isMember) return false;
-    }
-    return true;
+    return canViewCommunity(userId, community, (id) =>
+      this.activeCollegeId(id),
+    );
   }
 
   /**
@@ -1288,6 +1277,14 @@ export class PostsService {
               SELECT 1 FROM "CommunityMember" cm
               WHERE cm."communityId" = p."communityId" AND cm."userId" = ${userId}
             )
+            -- A campus community belongs to its college, not to whoever still
+            -- holds a membership row: the row outlives a revoked or changed
+            -- affiliation. COALESCE makes a viewer with no active college (a
+            -- NULL comparison) fail closed instead of slipping through.
+            AND (
+              c."isCampusCommunity" = false
+              OR COALESCE(c."collegeId" = (SELECT me."collegeId" FROM me), false)
+            )
           ))
           ${excludedUserIds.length > 0 ? Prisma.sql`AND p."authorId" NOT IN (${Prisma.join(excludedUserIds)})` : Prisma.empty}
         ORDER BY p."createdAt" DESC, p.id DESC
@@ -1551,10 +1548,23 @@ export class PostsService {
             : userId
               ? Prisma.sql`AND (
                 p."communityId" IS NULL 
-                OR EXISTS (
-                  SELECT 1 FROM "CommunityMember" cm 
-                  WHERE cm."communityId" = p."communityId" 
-                  AND cm."userId" = ${userId}
+                OR (
+                  EXISTS (
+                    SELECT 1 FROM "CommunityMember" cm 
+                    WHERE cm."communityId" = p."communityId" 
+                    AND cm."userId" = ${userId}
+                  )
+                  -- Same campus rule as the ranked feed and the read-time
+                  -- checks: a membership row alone does not admit a campus
+                  -- community's post once the viewer's affiliation has moved.
+                  -- NULL (no active college) fails closed through COALESCE.
+                  AND (
+                    c."isCampusCommunity" = false
+                    OR COALESCE(
+                      c."collegeId" = ${activeAffiliationCollegeIdSql(Prisma.sql`${userId}`)},
+                      false
+                    )
+                  )
                 )
               )`
               : Prisma.sql`AND p."communityId" IS NULL`

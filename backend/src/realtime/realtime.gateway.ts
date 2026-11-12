@@ -93,6 +93,7 @@ import {
 import { publicMessage } from '../messages/message-alert.util';
 import { CONVERSATION_REVIVED } from '../messages/core/conversation-revive';
 import { SESSIONS_REVOKED_EVENT } from '../auth/session/user-session.service';
+import { canViewCommunity } from '../posts/community-visibility';
 import { SocketRelay, type RelayOp } from './socket-relay';
 import { SeenMessageIds } from '../common/utils/pubsub-dedupe.util';
 
@@ -1227,11 +1228,25 @@ export class RealtimeGateway
       const value = user.user_metadata?.[key];
       return typeof value === 'string' && value ? value : undefined;
     };
-    userName =
-      metaName('username') ||
-      metaName('displayName') ||
-      user.email ||
-      'Unknown';
+    userName = metaName('username') || metaName('displayName') || '';
+    if (!userName) {
+      // This string is broadcast to every conversation member in `typing:start`
+      // and shown as-is, so it must never be the account email. Metadata is
+      // missing for some accounts; the profile row is the source of truth, read
+      // only in that case so the common path adds no query.
+      try {
+        const profile = await this.prisma.user.findUnique({
+          where: { id: userId },
+          select: { username: true, displayName: true },
+        });
+        userName = profile?.username || profile?.displayName || '';
+      } catch (err) {
+        this.logger.warn(
+          `Could not read display name for user=${userId}: ${errorMessage(err)}`,
+        );
+      }
+    }
+    userName = userName || 'Someone';
 
     client.data.userId = userId;
     client.data.userName = userName;
@@ -1533,9 +1548,11 @@ export class RealtimeGateway
    * Server-side authorization for the `post_<id>` realtime room.
    *
    * Deliberately mirrors `PostsService.getPostById`'s denial set — deleted post,
-   * deleted community, unavailable author, and a block in either direction —
-   * because a viewer who cannot
-   * open the post must not be able to subscribe to it either. It answers a bare
+   * unavailable author, a block in either direction, and the community rule
+   * (deleted, private-and-not-a-member, or a campus community of another
+   * college), which is the very function `getPostById` calls — because a
+   * viewer who cannot open the post must not be able to subscribe to it
+   * either. It answers a bare
    * boolean for the same reason that route answers a neutral 404: the caller
    * must not be able to tell "no such post" from "not for you".
    */
@@ -1548,10 +1565,35 @@ export class RealtimeGateway
         where: { id: postId, deletedAt: null, author: { deletedAt: null } },
         select: {
           authorId: true,
-          community: { select: { deletedAt: true } },
+          community: {
+            select: {
+              deletedAt: true,
+              isPrivate: true,
+              isCampusCommunity: true,
+              collegeId: true,
+              ownerId: true,
+              // Only the viewer's own row, as `getPostById` selects it.
+              members: { where: { userId }, select: { userId: true } },
+            },
+          },
         },
       });
-      if (!post || post.community?.deletedAt) return false;
+      if (!post) return false;
+      // Owners and members of a private community, and the verified members of
+      // a campus one, only. The viewer's college comes from the active
+      // affiliation, never from a membership row that may predate a change; a
+      // gateway without the campus service cannot prove it, so it refuses.
+      if (
+        post.community &&
+        !(await canViewCommunity(
+          userId,
+          post.community,
+          async (id) =>
+            (await this.campusAccess?.getActiveCollegeId(id)) ?? null,
+        ))
+      ) {
+        return false;
+      }
 
       // A user is always allowed into the room for their own post, and the
       // policy calls below would say the same — this just skips them.
