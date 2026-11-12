@@ -3,8 +3,11 @@ import {
   Logger,
   OnModuleInit,
   OnModuleDestroy,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { RedisService } from '../redis/redis.service';
+import { runOnOneReplica } from '../redis/run-on-one-replica';
 import { traceBackground } from '../observability/background-trace';
 import { StorageService } from '../uploads/uploads.service';
 
@@ -40,6 +43,8 @@ export class VerificationUploadCollectorService
 
   private static readonly SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000;
   private static readonly BATCH = 500;
+  /** Well under the interval; only matters if the holder dies mid-sweep. */
+  private static readonly LOCK_TTL_MS = 15 * 60 * 1000;
 
   /**
    * How long an unsubmitted upload is left alone.
@@ -58,15 +63,16 @@ export class VerificationUploadCollectorService
   constructor(
     private readonly prisma: PrismaService,
     private readonly storageService: StorageService,
+    @Optional() private readonly redis?: RedisService,
   ) {}
 
   async onModuleInit() {
-    await this.sweep();
+    await this.sweepOnOneReplica();
     this.timer = setInterval(
       () =>
         void traceBackground(
           { name: 'task verification.upload-sweep', op: 'task' },
-          () => this.sweep(),
+          () => this.sweepOnOneReplica(),
         ),
       VerificationUploadCollectorService.SWEEP_INTERVAL_MS,
     );
@@ -76,6 +82,20 @@ export class VerificationUploadCollectorService
 
   onModuleDestroy() {
     if (this.timer) clearInterval(this.timer);
+  }
+
+  /**
+   * One pass, on one replica at a time. Two replicas sweeping together would
+   * each delete the same objects from the bucket; the work is safe to repeat,
+   * so this only avoids doing it twice at once.
+   */
+  private async sweepOnOneReplica(): Promise<void> {
+    await runOnOneReplica(
+      this.redis,
+      'verification:upload-sweep',
+      VerificationUploadCollectorService.LOCK_TTL_MS,
+      () => this.sweep(),
+    );
   }
 
   /** One pass. Idempotent, and never throws — it runs from a timer. */

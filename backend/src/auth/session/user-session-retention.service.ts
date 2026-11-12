@@ -3,8 +3,11 @@ import {
   Logger,
   OnModuleDestroy,
   OnModuleInit,
+  Optional,
 } from '@nestjs/common';
 
+import { RedisService } from '../../redis/redis.service';
+import { runOnOneReplica } from '../../redis/run-on-one-replica';
 import { UserSessionService } from './user-session.service';
 import { traceBackground } from '../../observability/background-trace';
 
@@ -35,19 +38,24 @@ export class UserSessionRetentionService
   implements OnModuleInit, OnModuleDestroy
 {
   private static readonly SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000;
+  /** Well under the interval; only matters if the holder dies mid-sweep. */
+  private static readonly LOCK_TTL_MS = 15 * 60 * 1000;
 
   private readonly logger = new Logger(UserSessionRetentionService.name);
   private timer: NodeJS.Timeout | null = null;
 
-  constructor(private readonly sessions: UserSessionService) {}
+  constructor(
+    private readonly sessions: UserSessionService,
+    @Optional() private readonly redis?: RedisService,
+  ) {}
 
   async onModuleInit(): Promise<void> {
-    await this.sweep();
+    await this.sweepOnOneReplica();
     this.timer = setInterval(
       () =>
         void traceBackground(
           { name: 'task sessions.retention-sweep', op: 'task' },
-          () => this.sweep(),
+          () => this.sweepOnOneReplica(),
         ),
       UserSessionRetentionService.SWEEP_INTERVAL_MS,
     );
@@ -57,6 +65,20 @@ export class UserSessionRetentionService
 
   onModuleDestroy(): void {
     if (this.timer) clearInterval(this.timer);
+  }
+
+  /**
+   * One pass, on one replica at a time. Every replica runs this at boot and on
+   * its own timer; the lock only stops them overlapping on the same rows, since
+   * the delete is safe to repeat.
+   */
+  private async sweepOnOneReplica(): Promise<void> {
+    await runOnOneReplica(
+      this.redis,
+      'sessions:retention-sweep',
+      UserSessionRetentionService.LOCK_TTL_MS,
+      () => this.sweep(),
+    );
   }
 
   /** One pass. Never throws — it runs from a timer and at boot. */

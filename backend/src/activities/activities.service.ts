@@ -152,6 +152,36 @@ interface FeedResponse {
   nextCursor: string | undefined;
 }
 
+/** An activity id is a 36-character UUID; a legacy cursor longer than this is not one. */
+const MAX_LEGACY_CURSOR_LENGTH = 64;
+
+/** What `UPDATE ... RETURNING` hands back for an invitation the caller claimed. */
+interface ClaimedInvitationRow {
+  activityId: string;
+  inviteeId: string;
+}
+
+/** The controller clamps the feed's page size to this. */
+const MAX_CACHED_FEED_LIMIT = 50;
+
+/**
+ * Whether a feed page is the one shape worth a Redis entry: the first page
+ * (no cursor) at a page size the controller could have produced. The cursor
+ * is a timestamp the client chooses, so caching it would let one viewer mint
+ * a key per millisecond.
+ */
+export function isCacheableFeedPage(
+  limit: number,
+  cursor: string | undefined,
+): boolean {
+  return (
+    !cursor &&
+    Number.isInteger(limit) &&
+    limit >= 1 &&
+    limit <= MAX_CACHED_FEED_LIMIT
+  );
+}
+
 @Injectable()
 export class ActivitiesService implements OnModuleInit {
   private readonly logger = new Logger(ActivitiesService.name);
@@ -215,6 +245,8 @@ export class ActivitiesService implements OnModuleInit {
   onModuleInit() {
     // Run auto-expiration every 60 seconds, traced as one unit (1,440 a day,
     // so at 5%). Each step still fails on its own without stopping the others.
+    // Every replica runs this; each step claims its rows in the database (or,
+    // for the start announcement, in Redis), so none acts twice.
     setInterval(() => {
       void traceBackground(
         {
@@ -244,26 +276,29 @@ export class ActivitiesService implements OnModuleInit {
    *
    * Only PENDING rows are touched, so an accepted or declined invite keeps the
    * answer its recipient gave.
+   *
+   * The rows are claimed with one UPDATE ... RETURNING rather than found and
+   * then updated. Every API replica runs this sweep, and with a separate read
+   * two of them would both see the same PENDING rows and each notify the
+   * invitee. Here the second statement waits on the row lock, finds the row no
+   * longer PENDING, and returns nothing, so only the replica whose UPDATE
+   * changed a row acts on it.
    */
   async expireStartedInvitations() {
     const now = new Date();
     try {
-      const stale = await this.prisma.activityInvitation.findMany({
-        where: {
-          status: 'PENDING',
-          activity: {
-            deletedAt: null,
-            startDate: { lte: now },
-          },
-        },
-        select: { id: true, activityId: true, inviteeId: true },
-      });
+      const stale = await this.prisma.$queryRaw<ClaimedInvitationRow[]>`
+        UPDATE "ActivityInvitation" AS i
+           SET "status" = 'EXPIRED'::"ActivityInvitationStatus",
+               "updatedAt" = ${now}
+          FROM "CrewActivity" AS a
+         WHERE a."id" = i."activityId"
+           AND i."status" = 'PENDING'::"ActivityInvitationStatus"
+           AND a."deletedAt" IS NULL
+           AND a."startDate" <= ${now}
+        RETURNING i."activityId", i."inviteeId"
+      `;
       if (stale.length === 0) return;
-
-      await this.prisma.activityInvitation.updateMany({
-        where: { id: { in: stale.map((i) => i.id) } },
-        data: { status: 'EXPIRED' },
-      });
 
       const byActivity = new Map<string, string[]>();
       for (const inv of stale) {
@@ -302,6 +337,12 @@ export class ActivitiesService implements OnModuleInit {
    * runs its own timer to the authoritative start time, so the transition is
    * correct even if this process is not running, the socket is down, or the
    * sweep lands late. Deliberately room-scoped and detail-free.
+   *
+   * Each replica sweeps its own window, so two of them find the same activity.
+   * There is no stored state to claim in the database, so the claim is a Redis
+   * key per activity and start time: whichever replica sets it announces, the
+   * others skip. The start time is in the key so an activity rescheduled to a
+   * new start is announced again.
    */
   async announceStartedActivities() {
     const now = new Date();
@@ -322,6 +363,9 @@ export class ActivitiesService implements OnModuleInit {
       });
 
       for (const act of justStarted) {
+        if (!(await this.claimStartAnnouncement(act.id, act.startDate))) {
+          continue;
+        }
         await this.domainEventService.emit('activity.started', {
           activityId: act.id,
           id: act.id,
@@ -334,44 +378,79 @@ export class ActivitiesService implements OnModuleInit {
     }
   }
 
+  /**
+   * True when this process should announce the start of `activityId`.
+   *
+   * Fails open: with no Redis there is one process, and with Redis unreachable
+   * the realtime relay that would carry a duplicate is down as well. A nudge
+   * sent twice costs a refetch; a nudge lost costs the live transition.
+   */
+  private async claimStartAnnouncement(
+    activityId: string,
+    startDate: Date | null,
+  ): Promise<boolean> {
+    if (!this.redis) return true;
+    try {
+      const claimed = await this.redis.set(
+        `activities:start-announced:${activityId}:${startDate?.getTime() ?? 0}`,
+        '1',
+        'EX',
+        ActivitiesService.START_ANNOUNCE_CLAIM_TTL_SECONDS,
+        'NX',
+      );
+      return claimed === 'OK';
+    } catch {
+      return true;
+    }
+  }
+
+  /** Far longer than a sweep window, so a late replica still finds the claim. */
+  private static readonly START_ANNOUNCE_CLAIM_TTL_SECONDS = 600;
+
+  /**
+   * Ends OPEN activities past their end (or, with no end, three hours past
+   * their start), and expires the invitations still outstanding on them.
+   *
+   * Runs from the sweep on every replica and from the feed's cache-miss path,
+   * so both steps are claims: an UPDATE ... RETURNING that hands each row to
+   * exactly one caller. The activities are claimed first, then the pending
+   * invitations on just those activities. A caller that claimed nothing has
+   * nothing to notify and does nothing.
+   */
   async autoExpireActivities() {
     const now = new Date();
     try {
-      const expiredList = await this.prisma.crewActivity.findMany({
-        where: {
-          status: 'OPEN',
-          deletedAt: null,
-          OR: [
-            { endDate: { lte: now } },
-            {
-              endDate: null,
-              startDate: { lte: new Date(now.getTime() - 3 * 60 * 60 * 1000) },
-            },
-          ],
-        },
-        select: { id: true },
-      });
+      const threeHoursAgo = new Date(now.getTime() - 3 * 60 * 60 * 1000);
+      const expiredList = await this.prisma.$queryRaw<Array<{ id: string }>>`
+        UPDATE "CrewActivity"
+           SET "status" = 'ENDED'::"CrewActivityStatus",
+               "updatedAt" = ${now}
+         WHERE "status" = 'OPEN'::"CrewActivityStatus"
+           AND "deletedAt" IS NULL
+           AND (
+             "endDate" <= ${now}
+             OR ("endDate" IS NULL AND "startDate" <= ${threeHoursAgo})
+           )
+        RETURNING "id"
+      `;
 
-      if (expiredList && expiredList.length > 0) {
+      if (expiredList.length > 0) {
         const expiredIds = expiredList.map((a) => a.id);
-        await this.prisma.crewActivity.updateMany({
-          where: { id: { in: expiredIds } },
-          data: { status: 'ENDED' },
-        });
 
-        // Read the outstanding invitees first: after the updateMany below there
-        // is no longer any way to know whose invite went unanswered, and those
+        // Claimed rather than read-then-updated: after this statement there is
+        // no longer any way to know whose invite went unanswered, and those
         // are exactly the notifications that must be moved to EXPIRED rather
         // than left showing live Accept/Decline buttons forever.
-        const pendingInvites = await this.prisma.activityInvitation.findMany({
-          where: { activityId: { in: expiredIds }, status: 'PENDING' },
-          select: { activityId: true, inviteeId: true },
-        });
-
-        await this.prisma.activityInvitation.updateMany({
-          where: { activityId: { in: expiredIds }, status: 'PENDING' },
-          data: { status: 'EXPIRED' },
-        });
+        const pendingInvites = await this.prisma.$queryRaw<
+          ClaimedInvitationRow[]
+        >`
+          UPDATE "ActivityInvitation"
+             SET "status" = 'EXPIRED'::"ActivityInvitationStatus",
+                 "updatedAt" = ${now}
+           WHERE "activityId" IN (${Prisma.join(expiredIds)})
+             AND "status" = 'PENDING'::"ActivityInvitationStatus"
+          RETURNING "activityId", "inviteeId"
+        `;
 
         const inviteesByActivity = new Map<string, string[]>();
         for (const inv of pendingInvites) {
@@ -414,7 +493,11 @@ export class ActivitiesService implements OnModuleInit {
       return parsed;
     }
 
-    // 3. Fallback for legacy plain ID cursor: Check Redis first
+    // 3. Fallback for legacy plain ID cursor: Check Redis first.
+    // An activity id is a UUID. Anything longer is not an id, so it is neither
+    // looked up nor allowed to shape a key; the answer would be "no such
+    // activity" either way.
+    if (cursor.length > MAX_LEGACY_CURSOR_LENGTH) return undefined;
     const cacheKey = `activity:created_at:${cursor}`;
     if (this.redis) {
       try {
@@ -512,10 +595,18 @@ export class ActivitiesService implements OnModuleInit {
     // Keyed by the caller's own id, which is what determines their college and
     // their invitations — so this page is never reachable by anyone else, and
     // the fast path stays a single Redis round-trip with no DB work.
-    const userCacheKey = `activities:feed:${scope}:${userId || 'anon'}:${limit}:${cursor || 'none'}`;
+    //
+    // Only the first page is cached (`v2`; the old key also carried the
+    // cursor, so every cursor a client sent became its own entry). A cursor is
+    // a timestamp, so there is no coarser bucket that would still return the
+    // exact page; deeper pages are read from the database.
+    const cacheable = isCacheableFeedPage(limit, cursor);
+    const userCacheKey = cacheable
+      ? `activities:feed:v2:${scope}:${userId || 'anon'}:${limit}`
+      : null;
     let tCache = 0;
 
-    if (this.redis) {
+    if (this.redis && userCacheKey) {
       const redisStart = performance.now();
       try {
         const userCached = await this.redis.get(userCacheKey);
@@ -562,14 +653,15 @@ export class ActivitiesService implements OnModuleInit {
     // blocks and no invitation-derived extra visibility.
     const allowBaseCache =
       excludedUserIds.length === 0 && liveInvitationCount === 0;
-    const baseCacheKeyFor = (d?: Date) =>
-      `activities:feed:base:${scopeTag}:${audienceTag}:${limit}:${d ? d.toISOString() : 'none'}`;
+    const baseCacheKey = cacheable
+      ? `activities:feed:base:v2:${scopeTag}:${audienceTag}:${limit}`
+      : null;
 
     // ── Tier 2: audience-scoped shared feed cache ────────────────────────────
     let baseFeed: FeedBasePage | null = null;
-    if (allowBaseCache && this.redis) {
+    if (allowBaseCache && this.redis && baseCacheKey) {
       try {
-        const cachedBase = await this.redis.get(baseCacheKeyFor(cursorDate));
+        const cachedBase = await this.redis.get(baseCacheKey);
         if (cachedBase) baseFeed = JSON.parse(cachedBase) as FeedBasePage;
       } catch {
         // A cache miss and an unreachable Redis are the same thing here: fall through to the database.
@@ -644,23 +736,18 @@ export class ActivitiesService implements OnModuleInit {
       activities = fetchedActivities;
 
       // Cache base feed in background
-      if (allowBaseCache && this.redis) {
-        const resolvedBaseKey = baseCacheKeyFor(cursorDate);
+      if (allowBaseCache && this.redis && baseCacheKey) {
         this.redis
-          .setex(
-            resolvedBaseKey,
-            60,
-            JSON.stringify({ activities, nextCursor }),
-          )
+          .setex(baseCacheKey, 60, JSON.stringify({ activities, nextCursor }))
           .catch(() => {});
-        this.registerFeedCacheKey(resolvedBaseKey);
+        this.registerFeedCacheKey(baseCacheKey);
       }
     }
     const tMainDb = performance.now() - dbStart;
 
     if (activities.length === 0) {
       const emptyRes: FeedResponse = { activities: [], nextCursor: undefined };
-      if (this.redis) {
+      if (this.redis && userCacheKey) {
         this.redis
           .setex(userCacheKey, 60, JSON.stringify(emptyRes))
           .catch(() => {});
@@ -701,7 +788,7 @@ export class ActivitiesService implements OnModuleInit {
     };
 
     // Cache user-specific response (includes isJoined flags)
-    if (this.redis) {
+    if (this.redis && userCacheKey) {
       this.redis
         .setex(userCacheKey, 60, JSON.stringify(response))
         .catch(() => {});

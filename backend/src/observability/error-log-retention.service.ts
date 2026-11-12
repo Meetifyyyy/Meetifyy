@@ -3,10 +3,13 @@ import {
   Logger,
   OnModuleDestroy,
   OnModuleInit,
+  Optional,
 } from '@nestjs/common';
 
 import { config } from '../config';
 import { PrismaService } from '../prisma/prisma.service';
+import { RedisService } from '../redis/redis.service';
+import { runOnOneReplica } from '../redis/run-on-one-replica';
 import { traceBackground } from './background-trace';
 
 /**
@@ -20,22 +23,27 @@ import { traceBackground } from './background-trace';
 @Injectable()
 export class ErrorLogRetentionService implements OnModuleInit, OnModuleDestroy {
   private static readonly SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000;
+  /** Well under the interval; only matters if the holder dies mid-sweep. */
+  private static readonly LOCK_TTL_MS = 15 * 60 * 1000;
   /** Bounded per pass so a long-neglected table cannot lock up one statement. */
   private static readonly BATCH = 5_000;
 
   private readonly logger = new Logger(ErrorLogRetentionService.name);
   private timer: NodeJS.Timeout | null = null;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly redis?: RedisService,
+  ) {}
 
   async onModuleInit(): Promise<void> {
     if (!config.observability.errorLogs.enabled) return;
-    await this.sweep();
+    await this.sweepOnOneReplica();
     this.timer = setInterval(
       () =>
         void traceBackground(
           { name: 'task error-logs.retention-sweep', op: 'task' },
-          () => this.sweep(),
+          () => this.sweepOnOneReplica(),
         ),
       ErrorLogRetentionService.SWEEP_INTERVAL_MS,
     );
@@ -50,6 +58,20 @@ export class ErrorLogRetentionService implements OnModuleInit, OnModuleDestroy {
   get cutoff(): Date {
     const { retentionDays } = config.observability.errorLogs;
     return new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+  }
+
+  /**
+   * One pass, on one replica at a time. Every replica runs this at boot and on
+   * its own timer; the lock only stops them overlapping on the same rows, since
+   * the delete is safe to repeat.
+   */
+  private async sweepOnOneReplica(): Promise<void> {
+    await runOnOneReplica(
+      this.redis,
+      'error-logs:retention-sweep',
+      ErrorLogRetentionService.LOCK_TTL_MS,
+      () => this.sweep(),
+    );
   }
 
   /** One pass. Idempotent, and never throws — it runs from a timer. */

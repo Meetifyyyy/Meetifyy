@@ -188,7 +188,9 @@ describe('getUserConversations — picker search', () => {
     expect(serialised).not.toContain('batchYear');
   });
 
-  it('scopes the cache entry by term, so two searches are two lists', async () => {
+  it('keeps a searched list out of the cache, so two searches are two lists', async () => {
+    // A searched page cannot be evicted after a send and its key would come
+    // from the client's text, so it is answered from the database every time.
     const redis = {
       get: jest.fn<Promise<string | null>, [string]>().mockResolvedValue(null),
       setex: jest.fn().mockResolvedValue('OK'),
@@ -198,9 +200,33 @@ describe('getUserConversations — picker search', () => {
     await service.getUserConversations('viewer', 50, 0, true, 'anita');
     await service.getUserConversations('viewer', 50, 0, true, 'bharat');
 
-    const [first, second] = redis.get.mock.calls.map((c) => c[0]);
-    expect(first).not.toEqual(second);
-    expect(first).toContain('anita');
-    expect(second).toContain('bharat');
+    expect(redis.get).not.toHaveBeenCalled();
+    expect(redis.setex).not.toHaveBeenCalled();
+  });
+
+  it('still caches the unsearched first page', async () => {
+    const redis = {
+      get: jest.fn<Promise<string | null>, [string]>().mockResolvedValue(null),
+      setex: jest.fn().mockResolvedValue('OK'),
+    };
+    Object.assign(service, { redis });
+
+    await service.getUserConversations('viewer', 50, 0, true, '');
+
+    expect(redis.get).toHaveBeenCalledTimes(1);
+    expect(redis.setex).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not cache a deep page', async () => {
+    const redis = {
+      get: jest.fn<Promise<string | null>, [string]>().mockResolvedValue(null),
+      setex: jest.fn().mockResolvedValue('OK'),
+    };
+    Object.assign(service, { redis });
+
+    await service.getUserConversations('viewer', 50, 150, true, '');
+
+    expect(redis.get).not.toHaveBeenCalled();
+    expect(redis.setex).not.toHaveBeenCalled();
   });
 });

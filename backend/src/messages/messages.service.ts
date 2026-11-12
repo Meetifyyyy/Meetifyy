@@ -56,6 +56,7 @@ import {
 import { withDmCreateLock } from './core/dm-lock';
 import { retryOnClientIdConflict, withClientSendLock } from './core/send-lock';
 import { RedisService } from '../redis/redis.service';
+import { runOnOneReplica } from '../redis/run-on-one-replica';
 import { BlocksService } from '../users/blocks.service';
 import { resolvePresenceVisibilityForViewer } from '../users/privacy.helper';
 import { MentionsService } from '../mentions/mentions.service';
@@ -334,7 +335,7 @@ export class MessagesService
   }
 
   async onModuleInit() {
-    await this.cleanupExpiredInstantMatches();
+    await this.cleanupExpiredInstantMatchesOnOneReplica();
     // Every 5 minutes rather than 15: the sidebar shows a live countdown, so
     // a chat that lingers for up to a quarter of an hour past "expired" reads
     // as broken. Expiry is driven purely by `expiresAt`, which is stamped at
@@ -348,7 +349,7 @@ export class MessagesService
             op: 'task',
             traceRate: 0.1,
           },
-          () => this.cleanupExpiredInstantMatches(),
+          () => this.cleanupExpiredInstantMatchesOnOneReplica(),
         ),
       5 * 60 * 1000,
     );
@@ -358,6 +359,21 @@ export class MessagesService
   onModuleDestroy() {
     if (this.instantMatchCleanupTimer)
       clearInterval(this.instantMatchCleanupTimer);
+  }
+
+  /**
+   * One cleanup pass, on one replica at a time. Every replica runs it at boot
+   * and on its own timer; two overlapping would find the same chats, delete
+   * them twice and each drop the same caches. The delete is safe to repeat, so
+   * the lock only avoids doing the work at once.
+   */
+  private async cleanupExpiredInstantMatchesOnOneReplica(): Promise<void> {
+    await runOnOneReplica(
+      this.redisService,
+      'messages:instant-match-chat-cleanup',
+      60_000,
+      () => this.cleanupExpiredInstantMatches(),
+    );
   }
 
   private async cleanupExpiredInstantMatches() {
@@ -1763,7 +1779,7 @@ export class MessagesService
       cleanSearch,
       eligibleOnly,
     );
-    if (this.redis) {
+    if (this.redis && cacheKey) {
       try {
         const cached = await this.redis.get(cacheKey);
         // The value written below: this same list, JSON-serialized. Dates come
@@ -2261,7 +2277,7 @@ export class MessagesService
       };
     });
 
-    if (this.redis) {
+    if (this.redis && cacheKey) {
       this.redis.setex(cacheKey, 60, JSON.stringify(result)).catch(() => {});
     }
 

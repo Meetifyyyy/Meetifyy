@@ -137,13 +137,21 @@ export class CampusEventsService {
   }
 
   // ── Caching (per campus+scope, short TTL, invalidated on any mutation) ────────
+  /**
+   * The key of a cached list page, or `null` when the request is not worth
+   * one. Only the first page is cached (`v2`; the old key also carried the
+   * cursor, so every cursor a client sent became its own entry, and a cursor
+   * is a timestamp, so no coarser bucket would return the exact page). The
+   * limit is already clamped to 1..50 by the caller.
+   */
   private listCacheKey(
     campusId: string,
     scope: CampusEventScope,
     limit: number,
     cursor?: string,
-  ) {
-    return `campus-events:${campusId}:${scope}:${limit}:${cursor || 'none'}`;
+  ): string | null {
+    if (cursor) return null;
+    return `campus-events:v2:${campusId}:${scope}:${limit}`;
   }
 
   /** Set of live cache keys for one campus, so invalidation never scans. */
@@ -265,7 +273,7 @@ export class CampusEventsService {
     if (!campusId) return { events: [], nextCursor: undefined };
 
     const cacheKey = this.listCacheKey(campusId, scope, limit, opts.cursor);
-    if (this.redis) {
+    if (this.redis && cacheKey) {
       try {
         const cached = await this.redis.get(cacheKey);
         if (cached) return JSON.parse(cached) as CampusEventPage;
@@ -369,7 +377,7 @@ export class CampusEventsService {
     // No `presentEventCreator` here: the list no longer selects `creator`, so
     // there is no identity to substitute. The single-event read still does.
     const response: CampusEventPage = { events: pageRows, nextCursor };
-    if (this.redis) {
+    if (this.redis && cacheKey) {
       this.redis.setex(cacheKey, 30, JSON.stringify(response)).catch(() => {});
       this.registerListCacheKey(campusId, cacheKey);
     }

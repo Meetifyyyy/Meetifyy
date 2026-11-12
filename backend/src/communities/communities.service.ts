@@ -39,6 +39,13 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationFactory } from '../notifications/notification.factory';
 import { MediaCleanupService } from '../uploads/media-cleanup.service';
 import { assertMediaRefsOwnedBy } from '../uploads/media-ownership.util';
+import { LruCache } from '../common/utils/lru-cache.util';
+import {
+  allCommunitiesCacheKey,
+  allCommunitiesCacheKeys,
+  campusCommunitiesCacheKey,
+  campusCommunitiesCacheKeys,
+} from './communities-list-cache';
 
 /**
  * How many members the community detail loads for the member strip.
@@ -196,15 +203,21 @@ interface CommunityScoreRow {
  */
 export const JOIN_NOTIFY_REVIEWER_CEILING = 200;
 
+/** Pages the in-process fallback holds at once; a handful of keys are cacheable, so this is generous. */
+const LOCAL_FALLBACK_MAX_ENTRIES = 500;
+const LOCAL_FALLBACK_TTL_MS = 60_000;
+
 @Injectable()
 export class CommunitiesService implements OnModuleInit {
   private readonly logger = new Logger('CommunitiesService');
   private redis: Redis | null = null;
-  // In-process fallback used only when Redis is unavailable
-  private readonly localFallback = new Map<
-    string,
-    { data: unknown[]; timestamp: number }
-  >();
+  // In-process fallback used only when Redis is unavailable. Bounded: it used
+  // to be a Map pruned only when the same key was read again, so during a Redis
+  // outage every distinct page a client asked for stayed in memory.
+  private readonly localFallback = new LruCache<string, unknown[]>(
+    LOCAL_FALLBACK_MAX_ENTRIES,
+    LOCAL_FALLBACK_TTL_MS,
+  );
 
   constructor(
     private readonly prisma: PrismaService,
@@ -223,16 +236,9 @@ export class CommunitiesService implements OnModuleInit {
 
   async onModuleInit() {
     try {
-      await this.prisma
-        .$executeRawUnsafe(
-          `ALTER TYPE "CommunityRole" ADD VALUE IF NOT EXISTS 'OWNER'`,
-        )
-        .catch(() => {});
-      await this.prisma
-        .$executeRawUnsafe(
-          `ALTER TYPE "CommunityRole" ADD VALUE IF NOT EXISTS 'MODERATOR'`,
-        )
-        .catch(() => {});
+      // The CommunityRole values (OWNER, MODERATOR, MEMBER) are created by the
+      // init migration. This used to run `ALTER TYPE ... ADD VALUE` here on
+      // every boot; schema changes belong to `prisma migrate deploy` only.
       // One set-based statement, where this used to read every community into
       // the process and issue one `upsert` per row, sequentially, on every
       // boot. That is O(communities) round trips before the instance is
@@ -292,11 +298,7 @@ export class CommunitiesService implements OnModuleInit {
       }
     }
     const local = this.localFallback.get(key);
-    if (local) {
-      if (Date.now() - local.timestamp < 60_000) return local.data as T[];
-      this.localFallback.delete(key);
-    }
-    return null;
+    return local ? (local as T[]) : null;
   }
 
   private async setCachedList(
@@ -314,7 +316,9 @@ export class CommunitiesService implements OnModuleInit {
         /* fallthrough to local */
       }
     }
-    this.localFallback.set(key, { data, timestamp: Date.now() });
+    // Dead entries go first, so the size cap evicts live ones only when it must.
+    this.localFallback.pruneExpired();
+    this.localFallback.set(key, data);
   }
 
   /** Cache a single community detail object. */
@@ -422,17 +426,15 @@ export class CommunitiesService implements OnModuleInit {
         /* ignore */
       }
     }
-    // Targeted local fallback deletion instead of clear-all
-    if (communityId) {
-      this.localFallback.delete(`detail:${communityId}`);
-    }
-    // List keys carry the visibility filter and page, so drop them by prefix.
-    for (const key of this.localFallback.keys()) {
-      if (key.startsWith('all:')) this.localFallback.delete(key);
+    // The fallback only ever holds the cacheable pages (see
+    // communities-list-cache.ts), so they can be dropped by name.
+    for (const key of allCommunitiesCacheKeys()) {
+      this.localFallback.delete(key);
     }
     if (collegeId) {
-      this.localFallback.delete(`campus:${collegeId}:30:0`);
-      this.localFallback.delete(`campus:${collegeId}:20:0`);
+      for (const key of campusCommunitiesCacheKeys(collegeId)) {
+        this.localFallback.delete(key);
+      }
     }
   }
 
@@ -464,12 +466,15 @@ export class CommunitiesService implements OnModuleInit {
           ? { isPrivate: true }
           : {};
 
-    // Only unsearched pages are cached: a search term is unbounded input, and
-    // caching each one would let any client fill Redis with single-use keys.
-    const cacheKey = `all:${visibility || 'any'}:${limit}:${offset}`;
-    let communities = searchTerm
+    // Only unsearched first pages are cached: a search term, a deep offset and
+    // an unusual page size are client-chosen, and caching each would let any
+    // client fill Redis with single-use keys.
+    const cacheKey = searchTerm
       ? null
-      : await this.getCachedList<CommunityListRow>(cacheKey);
+      : allCommunitiesCacheKey(visibility, limit, offset);
+    let communities = cacheKey
+      ? await this.getCachedList<CommunityListRow>(cacheKey)
+      : null;
     if (!communities) {
       communities = await this.prisma.community.findMany({
         where: {
@@ -490,7 +495,7 @@ export class CommunitiesService implements OnModuleInit {
         take: limit,
         skip: offset,
       });
-      if (!searchTerm) await this.setCachedList(cacheKey, communities, 60);
+      if (cacheKey) await this.setCachedList(cacheKey, communities, 60);
     }
 
     if (!userId || communities.length === 0) {
@@ -867,11 +872,14 @@ export class CommunitiesService implements OnModuleInit {
         }
       : {};
 
-    const cacheKey = `campus:${collegeId}:${limit}:${offset}`;
-    // Only the unfiltered list is cached (searches are cheap, per-college scoped).
-    let communities = searchTerm
+    // Only the unfiltered first page at a common size is cached; see
+    // communities-list-cache.ts.
+    const cacheKey = searchTerm
       ? null
-      : await this.getCachedList<CampusCommunityRow>(cacheKey);
+      : campusCommunitiesCacheKey(collegeId, limit, offset);
+    let communities = cacheKey
+      ? await this.getCachedList<CampusCommunityRow>(cacheKey)
+      : null;
     if (!communities) {
       communities = await this.prisma.community.findMany({
         where: {
@@ -895,7 +903,7 @@ export class CommunitiesService implements OnModuleInit {
         take: limit,
         skip: offset,
       });
-      if (!searchTerm) await this.setCachedList(cacheKey, communities, 120);
+      if (cacheKey) await this.setCachedList(cacheKey, communities, 120);
     }
 
     if (communities.length === 0) return [];

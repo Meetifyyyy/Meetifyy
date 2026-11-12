@@ -134,4 +134,36 @@ describe('LruCache', () => {
       expect(cache.get(1)).toBe('one');
     });
   });
+
+  // ── Bounded size ──────────────────────────────────────────────────────────
+
+  describe('bounded size', () => {
+    it('never holds more than maxSize entries', () => {
+      const cache = new LruCache<string, number>(3, 60_000);
+      for (let i = 0; i < 100; i++) cache.set(`k${i}`, i);
+      expect(cache.size).toBe(3);
+      expect(cache.get('k99')).toBe(99);
+      expect(cache.get('k0')).toBeUndefined();
+    });
+
+    it('replacing a key at capacity evicts nothing else', () => {
+      const cache = new LruCache<string, number>(2, 60_000);
+      cache.set('a', 1);
+      cache.set('b', 2);
+      cache.set('b', 3);
+      expect(cache.size).toBe(2);
+      expect(cache.get('a')).toBe(1);
+      expect(cache.get('b')).toBe(3);
+    });
+
+    it('pruneExpired drops dead entries and keeps live ones', () => {
+      const cache = new LruCache<string, number>(10, 1000);
+      cache.set('old', 1);
+      jest.advanceTimersByTime(2000);
+      cache.set('new', 2);
+      cache.pruneExpired();
+      expect(cache.size).toBe(1);
+      expect(cache.get('new')).toBe(2);
+    });
+  });
 });

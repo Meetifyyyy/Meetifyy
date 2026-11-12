@@ -26,6 +26,10 @@ export class LruCache<K, V> {
   }
 
   set(key: K, value: V, ttlMs: number = this.defaultTtlMs): void {
+    // Replacing a key must not push out a different, live one: the size does
+    // not grow, so no room is needed. Deleting first also moves it to the
+    // most-recently-used end.
+    this.cache.delete(key);
     if (this.cache.size >= this.maxSize) {
       const oldestKey = this.cache.keys().next().value;
       if (oldestKey !== undefined) {
@@ -37,6 +41,24 @@ export class LruCache<K, V> {
       value,
       expiresAt: Date.now() + ttlMs,
     });
+  }
+
+  /** Entries currently held, including any that have expired but not been read. */
+  get size(): number {
+    return this.cache.size;
+  }
+
+  /**
+   * Drops every expired entry. Expiry is otherwise noticed only when a key is
+   * read, so a cache that is written but rarely read keeps dead entries until
+   * the size cap pushes them out; callers that want the cap to hold only live
+   * data call this on write.
+   */
+  pruneExpired(): void {
+    const now = Date.now();
+    for (const [key, entry] of this.cache) {
+      if (now > entry.expiresAt) this.cache.delete(key);
+    }
   }
 
   delete(key: K): boolean {

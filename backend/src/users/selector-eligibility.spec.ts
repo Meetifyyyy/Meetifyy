@@ -190,11 +190,12 @@ describe('UsersService — selector eligibility', () => {
  * simply did not apply, on the exact endpoint it was written for.
  */
 describe('UsersService — connections cache', () => {
-  it('reads and writes a versioned key', async () => {
-    const get = jest.fn().mockResolvedValue(null);
-    const setex = jest
-      .fn<Promise<string>, [string, number, string]>()
-      .mockResolvedValue('OK');
+  const get = jest.fn<Promise<string | null>, [string]>();
+  const setex = jest.fn<Promise<string>, [string, number, string]>();
+
+  async function makeService(): Promise<UsersService> {
+    get.mockReset().mockResolvedValue(null);
+    setex.mockReset().mockResolvedValue('OK');
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -237,14 +238,40 @@ describe('UsersService — connections cache', () => {
       ],
     }).compile();
 
-    await moduleRef.get(UsersService).getConnections('me', 'john', 50);
+    return moduleRef.get(UsersService);
+  }
+
+  it('reads and writes a versioned key holding a digest, not the typed text', async () => {
+    const service = await makeService();
+    await service.getConnections('me', 'john', 50);
 
     // The prefix is bumped whenever the MEANING of a cached entry changes, so
     // entries written by the previous build are retired instantly rather than
     // being served for the rest of their TTL under a rule that no longer
     // applies. v2 was the verification filter; v3 was first-year isolation;
     // v4 is its removal.
-    expect(get).toHaveBeenCalledWith('connections:v6:default:me:john:50');
-    expect(setex.mock.calls[0][0]).toBe('connections:v6:default:me:john:50');
+    const expected = /^connections:v7:default:me:[0-9a-f]{16}:50$/;
+    expect(get.mock.calls[0][0]).toMatch(expected);
+    expect(setex.mock.calls[0][0]).toBe(get.mock.calls[0][0]);
+  });
+
+  it('gives "John " and "john" one entry, and a 10 kB term none', async () => {
+    const service = await makeService();
+    await service.getConnections('me', ' John ', 50);
+    await service.getConnections('me', 'john', 50);
+    expect(setex.mock.calls[0][0]).toBe(setex.mock.calls[1][0]);
+
+    get.mockClear();
+    setex.mockClear();
+    await service.getConnections('me', 'x'.repeat(10 * 1024), 50);
+    expect(get).not.toHaveBeenCalled();
+    expect(setex).not.toHaveBeenCalled();
+  });
+
+  it('keeps the key length fixed whatever the term', async () => {
+    const service = await makeService();
+    await service.getConnections('me', 'a', 50);
+    await service.getConnections('me', 'a'.repeat(100), 50);
+    expect(setex.mock.calls[0][0]).toHaveLength(setex.mock.calls[1][0].length);
   });
 });

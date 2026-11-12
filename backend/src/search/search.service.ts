@@ -17,11 +17,58 @@ import {
   communitySearchSql,
   userSearchSql,
 } from './search-ranking';
+import { boundedTextKeyPart } from '../common/cache/cache-key';
 
 /** How long (seconds) search results are cached per (query, userId) pair. */
 const SEARCH_CACHE_TTL = 15;
 /** How long (seconds) typeahead suggestions are cached — short since results are small and per-keystroke. */
 const SUGGESTIONS_CACHE_TTL = 10;
+
+/**
+ * The longest term worth caching. The search box stops at 100 characters, so
+ * anything longer was not typed by a person; it is answered from the database
+ * and never becomes a Redis key.
+ */
+export const MAX_CACHED_TERM_LENGTH = 100;
+/** The `type` values the search understands; any other value matches nothing and is not cached. */
+const CACHEABLE_TYPES = new Set([
+  'all',
+  'people',
+  'users',
+  'communities',
+  'posts',
+  'activities',
+]);
+/** The controller clamps `limit` to this; a larger value only reaches here from a direct call. */
+const MAX_CACHED_LIMIT = 50;
+
+/**
+ * Where a global-search response is cached, or `null` when this request is not
+ * worth a Redis entry.
+ *
+ * Only the first page is stored. It is the one every search opens and the one
+ * repeated keystrokes hit; deeper pages are one-off scrolls, and each cursor is
+ * a distinct key, so caching them would let a client mint keys without bound.
+ */
+export function globalSearchCacheKey(
+  searchQuery: string,
+  type: string | undefined,
+  viewerId: string | undefined,
+  limit: number,
+  cursor: string | undefined,
+): string | null {
+  if (cursor) return null;
+  const resolvedType = type || 'all';
+  if (!CACHEABLE_TYPES.has(resolvedType)) return null;
+  if (!Number.isInteger(limit) || limit < 1 || limit > MAX_CACHED_LIMIT) {
+    return null;
+  }
+  const term = searchQuery.trim()
+    ? boundedTextKeyPart(searchQuery, MAX_CACHED_TERM_LENGTH)
+    : 'discovery';
+  if (!term) return null;
+  return `search:v5:${term}:${resolvedType}:${viewerId ?? 'anon'}:${limit}`;
+}
 
 interface SearchCursor {
   /** `${createdAt ISO}__${id}` for posts (ordered createdAt desc). */
@@ -89,14 +136,20 @@ export class SearchService {
     cursorParam?: string,
   ): Promise<GlobalSearchResult> {
     const searchQuery = (query || '').trim();
-    const cleanQuery = searchQuery.toLowerCase();
-    // `v4`: results are now ranked in SQL and carry a different user shape
-    // (no `followers` array). The key is scoped by viewer, which is what
-    // makes caching a block-filtered result safe.
-    const cacheKey = `search:v4:${cleanQuery || 'discovery'}:${type || 'all'}:${currentUserId ?? 'anon'}:${limit}:${cursorParam || 'first'}`;
+    // `v5`: the key now carries a digest of the term instead of the term, and
+    // only first pages are stored. `v4` entries (results ranked in SQL, no
+    // `followers` array) simply age out. The key is scoped by viewer, which is
+    // what makes caching a block-filtered result safe.
+    const cacheKey = globalSearchCacheKey(
+      searchQuery,
+      type,
+      currentUserId,
+      limit,
+      cursorParam,
+    );
 
     // 1. Cache read
-    if (this.redis) {
+    if (this.redis && cacheKey) {
       try {
         const cached = await this.redis.get(cacheKey);
         if (cached) {
@@ -117,7 +170,7 @@ export class SearchService {
     );
 
     // 2. Cache write
-    if (this.redis) {
+    if (this.redis && cacheKey) {
       try {
         await this.redis.setex(
           cacheKey,
@@ -654,10 +707,13 @@ export class SearchService {
     // Too short to search: answered without touching the cache, as before.
     if (searchQuery.length < 2)
       return this.runSuggestions(query, currentUserId);
-    // `v3` for the same reason as the full-search key above.
-    const cacheKey = `search:suggestions:v3:${searchQuery.toLowerCase()}:${currentUserId ?? 'anon'}`;
+    // `v4` for the same reason as the full-search key above.
+    const termKey = boundedTextKeyPart(searchQuery, MAX_CACHED_TERM_LENGTH);
+    const cacheKey = termKey
+      ? `search:suggestions:v4:${termKey}:${currentUserId ?? 'anon'}`
+      : null;
 
-    if (this.redis) {
+    if (this.redis && cacheKey) {
       try {
         const cached = await this.redis.get(cacheKey);
         if (cached) return JSON.parse(cached) as SuggestionsResult;
@@ -668,7 +724,7 @@ export class SearchService {
 
     const result = await this.runSuggestions(query, currentUserId);
 
-    if (this.redis) {
+    if (this.redis && cacheKey) {
       try {
         await this.redis.setex(
           cacheKey,

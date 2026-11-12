@@ -39,6 +39,7 @@ import {
 import { clearAuthSyncCache } from '../auth/auth.service';
 import { parseKeysetCursor } from '../common/pagination.util';
 import { errorMessage } from '../common/utils/error.util';
+import { boundedTextKeyPart } from '../common/cache/cache-key';
 import { pickReason } from './follow-recommendation.scoring';
 import {
   PickerSocial,
@@ -148,6 +149,9 @@ const CONNECTION_SELECT = {
   college: { select: { id: true, name: true } },
   avatar: true,
 } satisfies Prisma.UserSelect;
+
+/** The longest picker search worth caching: the box itself stops at 100 characters. */
+const MAX_CACHED_PICKER_TERM_LENGTH = 100;
 
 /** First occurrence of each id, in order. */
 function uniqueById<T extends { id: string }>(rows: T[]): T[] {
@@ -2558,8 +2562,19 @@ export class UsersService {
     // learned affinity counted. The audience is part of the key: the two
     // lists differ in who is eligible, not only in order. The key is scoped by `userId`, which is what
     // makes caching a block-filtered list safe at all.
-    const cacheKey = `connections:v6:${audience}:${userId}:${cleanQuery}:${limit}`;
-    if (redis) {
+    //
+    // `v7`: the typed text is a digest, not the text. It was in the key as
+    // typed and without a length limit, so every distinct string a client sent
+    // became its own Redis key of arbitrary size. A term longer than the
+    // search box allows is simply not cached.
+    const termKey = cleanQuery
+      ? boundedTextKeyPart(cleanQuery, MAX_CACHED_PICKER_TERM_LENGTH)
+      : 'none';
+    const cacheKey =
+      termKey && Number.isInteger(limit) && limit >= 1 && limit <= 100
+        ? `connections:v7:${audience}:${userId}:${termKey}:${limit}`
+        : null;
+    if (redis && cacheKey) {
       try {
         const cached = await redis.get(cacheKey);
         if (cached) return JSON.parse(cached) as ConnectionUser[];
@@ -2704,7 +2719,7 @@ export class UsersService {
       for (const u of payload) u.contactable = eligible.get(u.id) === true;
     }
 
-    if (redis) {
+    if (redis && cacheKey) {
       // 20s TTL — long enough to make a modal session feel instant, short
       // enough that a new block/signup surfaces quickly.
       redis.setex(cacheKey, 20, JSON.stringify(payload)).catch(() => {});
