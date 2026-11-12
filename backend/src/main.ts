@@ -14,6 +14,11 @@ import cookieParser from 'cookie-parser';
 import compression from 'compression';
 import { Logger } from 'nestjs-pino';
 import { originMatchesPattern } from './config/origin-pattern';
+import {
+  ORIGIN_AUTH_HEADER,
+  isOriginAuthExempt,
+  isOriginAuthorized,
+} from './common/security/origin-auth';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -30,6 +35,24 @@ async function bootstrap() {
   // Until this was set, every IP-keyed rate limit counted the proxy's address,
   // so all traffic shared one bucket. See config/rate-limit.config.ts.
   app.set('trust proxy', config.rateLimit.trustProxyHops);
+
+  // Refuse anything that did not come through our Cloudflare zone. Runs before
+  // every other middleware so a refused request costs nothing. Off unless
+  // ORIGIN_AUTH_SECRET is set. Socket.IO never reaches Express middleware and
+  // applies the same check in the gateway's `allowRequest`.
+  const { originAuthSecret } = config.app.security;
+  if (originAuthSecret) {
+    app.use((req: Request, res: Response, next: NextFunction) => {
+      if (
+        isOriginAuthExempt(req.path) ||
+        isOriginAuthorized(req.headers[ORIGIN_AUTH_HEADER], originAuthSecret)
+      ) {
+        next();
+        return;
+      }
+      res.status(403).json({ statusCode: 403, message: 'Forbidden' });
+    });
+  }
 
   // Normalize double slashes in incoming request URLs
   app.use((req: Request, _res: Response, next: NextFunction) => {
