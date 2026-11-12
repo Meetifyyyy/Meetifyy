@@ -336,6 +336,30 @@ jobs:
             --query 'properties.configuration.ingress.fqdn' \
             --output tsv)
 
+          # The origin only accepts Cloudflare's address ranges (ingress IP
+          # restrictions), so this runner cannot reach it as it is. Going
+          # through api.meetifyy.app is not an option either: Bot Fight Mode
+          # challenges datacentre addresses, and curl cannot answer a
+          # challenge. So the runner's own address is allowed for the length
+          # of this check and removed again whatever the outcome.
+          RUNNER_IP=$(curl -fsS --max-time 10 https://api.ipify.org)
+          RULE="ci-health-${{ github.run_id }}"
+          remove_rule() {
+            az containerapp ingress access-restriction remove \
+              --name "${CONTAINERAPP}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --rule-name "${RULE}" --output none \
+              || echo "::warning::Could not remove ingress rule ${RULE}; remove it by hand."
+          }
+          trap remove_rule EXIT
+          az containerapp ingress access-restriction set \
+            --name "${CONTAINERAPP}" \
+            --resource-group "${RESOURCE_GROUP}" \
+            --rule-name "${RULE}" \
+            --ip-address "${RUNNER_IP}/32" \
+            --description "GitHub runner, post-deploy health check" \
+            --action Allow --output none
+
           echo "Checking https://${FQDN}/health ..."
           for i in $(seq 1 18); do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
