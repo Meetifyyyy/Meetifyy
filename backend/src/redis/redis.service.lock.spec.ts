@@ -1,3 +1,4 @@
+import type { Logger } from '@nestjs/common';
 import type Redis from 'ioredis';
 import type { ConfigService } from '@nestjs/config';
 import { RedisService } from './redis.service';
@@ -64,5 +65,100 @@ describe('RedisService.withLock', () => {
     // No racy GET-then-DEL.
     expect(get).not.toHaveBeenCalled();
     expect(del).not.toHaveBeenCalled();
+  });
+});
+
+describe('RedisService.runIfLockFree', () => {
+  // Built without the constructor, which would open real connections to
+  // whatever REDIS_URL names; only the client field is read here.
+  const build = (client: Redis | null) => {
+    const service = Object.create(RedisService.prototype) as RedisService;
+    service['client'] = client;
+    return service;
+  };
+
+  it('runs when it wins the lock and releases it with its own value', async () => {
+    const set = jest.fn().mockResolvedValue('OK');
+    const evalFn = jest.fn().mockResolvedValue(1);
+    const service = build(stub<Redis>({ set, eval: evalFn }));
+
+    const result = await service.runIfLockFree('job', 5000, () =>
+      Promise.resolve('done'),
+    );
+
+    expect(result).toEqual({ ran: true, value: 'done' });
+    const setCall = set.mock.calls[0] as unknown[];
+    expect(setCall.slice(0, 1)).toEqual(['lock:job']);
+    expect(setCall.slice(2)).toEqual(['PX', 5000, 'NX']);
+    const evalCall = evalFn.mock.calls[0] as unknown[];
+    expect(evalCall[3]).toBe(setCall[1]);
+  });
+
+  it('does not run, and does not wait, when the lock is held', async () => {
+    const set = jest.fn().mockResolvedValue(null);
+    const evalFn = jest.fn();
+    const fn = jest.fn(() => Promise.resolve('x'));
+    const service = build(stub<Redis>({ set, eval: evalFn }));
+
+    const result = await service.runIfLockFree('job', 5000, fn);
+
+    expect(result).toEqual({ ran: false });
+    expect(fn).not.toHaveBeenCalled();
+    // One attempt only: withLock would have retried for ttl/2.
+    expect(set).toHaveBeenCalledTimes(1);
+    expect(evalFn).not.toHaveBeenCalled();
+  });
+
+  it('releases the lock when the work throws', async () => {
+    const set = jest.fn().mockResolvedValue('OK');
+    const evalFn = jest.fn().mockResolvedValue(1);
+    const service = build(stub<Redis>({ set, eval: evalFn }));
+
+    await expect(
+      service.runIfLockFree('job', 5000, () => Promise.reject(new Error('x'))),
+    ).rejects.toThrow('x');
+    expect(evalFn).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs without a lock when there is no Redis', async () => {
+    const result = await build(null).runIfLockFree('job', 5000, () =>
+      Promise.resolve(1),
+    );
+    expect(result).toEqual({ ran: true, value: 1 });
+  });
+});
+
+describe('RedisService.withLock while Redis is unreachable', () => {
+  const build = (client: Redis) => {
+    const service = Object.create(RedisService.prototype) as RedisService;
+    service['client'] = client;
+    // Field initialisers do not run without the constructor.
+    Object.defineProperty(service, 'inProcessLocks', { value: new Map() });
+    Object.defineProperty(service, 'logger', {
+      value: stub<Logger>({ debug: jest.fn() }),
+    });
+    return service;
+  };
+
+  it('runs the work without the distributed lock when acquiring fails', async () => {
+    const set = jest.fn().mockRejectedValue(new Error('Command timed out'));
+    const evalFn = jest.fn();
+    const service = build(stub<Redis>({ set, eval: evalFn }));
+
+    await expect(
+      service.withLock('k', 1000, () => Promise.resolve('ran')),
+    ).resolves.toBe('ran');
+    expect(set).toHaveBeenCalledTimes(1);
+    expect(evalFn).not.toHaveBeenCalled();
+  });
+
+  it('still raises an error thrown by the work itself', async () => {
+    const set = jest.fn().mockResolvedValue('OK');
+    const evalFn = jest.fn().mockResolvedValue(1);
+    const service = build(stub<Redis>({ set, eval: evalFn }));
+
+    await expect(
+      service.withLock('k', 1000, () => Promise.reject(new Error('boom'))),
+    ).rejects.toThrow('boom');
   });
 });

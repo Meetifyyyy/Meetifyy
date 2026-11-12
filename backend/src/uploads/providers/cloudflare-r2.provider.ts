@@ -24,6 +24,12 @@ import {
 import { config } from '../../config';
 import { extensionForMime } from '../mime-extension';
 import { errorMessage } from '../../common/utils/error.util';
+import { PRIVATE_PREFIXES } from '../private-prefixes';
+import { cacheControlFor } from '../object-cache-control';
+import {
+  isObjectNotFound,
+  type PrivateMediaTarget,
+} from '../private-media-relocation';
 
 @Injectable()
 export class CloudflareR2Provider implements StorageProvider {
@@ -132,9 +138,7 @@ export class CloudflareR2Provider implements StorageProvider {
     // Identity documents must never be told to cache publicly for a year.
     // They were, which is how a verification object stayed in a CDN long
     // after the request that produced it had failed.
-    const cacheControl = key.startsWith('verification/')
-      ? 'private, no-store'
-      : 'public, max-age=31536000, immutable';
+    const cacheControl = cacheControlFor(key);
     const command = new PutObjectCommand({
       Bucket: this.bucketFor(key),
       Key: key,
@@ -179,39 +183,20 @@ export class CloudflareR2Provider implements StorageProvider {
   }
 
   /**
-   * The bucket a key belongs in.
+   * The bucket a key is WRITTEN to.
    *
    * Identity documents can be routed to a bucket with no public host, because
    * the main bucket is fronted by a `pub-*.r2.dev` URL that resolves any key
    * without authentication — leaving verification privacy resting on key
-   * secrecy alone. Keyed off the prefix rather than passed by every caller, so
-   * a new call site cannot forget to ask for the right bucket.
-   */
-  private static readonly PRIVATE_PREFIXES = [
-    'verification/',
-    // Conversation attachments, for the same reason. The main bucket's public
-    // host resolves any key with no authentication, so an object placed there
-    // is readable by anyone who ever sees its URL — after the message is
-    // deleted, and with no way to revoke it. Authorizing `/api/media` does not
-    // help if the CDN will serve the same bytes directly.
-    'chat/',
-    'messages/',
-    'voice/',
-    // Support-request attachments. The submitter is usually anonymous and the
-    // files are user-supplied (screenshots, PDFs), so they must not be
-    // readable through the main bucket's unauthenticated public host. Admins
-    // reach them only through a short-lived signed URL.
-    'support/',
-  ];
-
-  /**
-   * The bucket a key is WRITTEN to.
+   * secrecy alone. Keyed off the prefix (see PRIVATE_PREFIXES) rather than
+   * passed by every caller, so a new call site cannot forget to ask for the
+   * right bucket.
    *
    * Falls back to the main bucket when no private one is configured, which
    * keeps existing deployments working exactly as before.
    */
   private bucketFor(key: string): string {
-    const isPrivate = CloudflareR2Provider.PRIVATE_PREFIXES.some((prefix) =>
+    const isPrivate = PRIVATE_PREFIXES.some((prefix) =>
       key?.startsWith(prefix),
     );
     return isPrivate ? this.verificationBucketName : this.bucketName;
@@ -219,9 +204,7 @@ export class CloudflareR2Provider implements StorageProvider {
 
   /** True when this key's prefix is routed away from the main bucket. */
   private isPrivatePrefix(key: string): boolean {
-    return CloudflareR2Provider.PRIVATE_PREFIXES.some((prefix) =>
-      key?.startsWith(prefix),
-    );
+    return PRIVATE_PREFIXES.some((prefix) => key?.startsWith(prefix));
   }
 
   /**
@@ -288,6 +271,13 @@ export class CloudflareR2Provider implements StorageProvider {
   >();
   private static readonly READ_BUCKET_HIT_TTL_MS = 10 * 60 * 1000;
   private static readonly READ_BUCKET_MISS_TTL_MS = 3 * 1000;
+  /**
+   * How long "it is in the main bucket" is believed for a key that belongs in
+   * the private one. That is a legacy location the relocation job empties, so
+   * a replica that cached it must not keep signing URLs for the old bucket for
+   * ten minutes after the object has moved.
+   */
+  private static readonly READ_BUCKET_LEGACY_TTL_MS = 30 * 1000;
   private static readonly READ_BUCKET_MAX_ENTRIES = 5_000;
 
   private rememberReadBucket(key: string, bucket: string | null): void {
@@ -300,14 +290,48 @@ export class CloudflareR2Provider implements StorageProvider {
         if (oldest) cache.delete(oldest);
       }
     }
-    cache.set(key, {
-      bucket,
-      expiresAt:
-        Date.now() +
-        (bucket
-          ? CloudflareR2Provider.READ_BUCKET_HIT_TTL_MS
-          : CloudflareR2Provider.READ_BUCKET_MISS_TTL_MS),
-    });
+    const inLegacyLocation =
+      bucket === this.bucketName &&
+      this.bucketName !== this.verificationBucketName &&
+      this.isPrivatePrefix(key);
+    const ttl = !bucket
+      ? CloudflareR2Provider.READ_BUCKET_MISS_TTL_MS
+      : inLegacyLocation
+        ? CloudflareR2Provider.READ_BUCKET_LEGACY_TTL_MS
+        : CloudflareR2Provider.READ_BUCKET_HIT_TTL_MS;
+    cache.set(key, { bucket, expiresAt: Date.now() + ttl });
+  }
+
+  /** True when the next read of this key would be answered from the cache. */
+  private hasLiveReadBucket(key: string): boolean {
+    const cached = this.readBucketCache.get(key);
+    return !!cached && cached.expiresAt > Date.now();
+  }
+
+  /**
+   * Forgets where a key was last found. Called when the object has been moved
+   * between buckets, so the next read looks again instead of trusting a hit
+   * that is no longer true.
+   */
+  forgetReadBucket(key: string): void {
+    this.readBucketCache.delete(key);
+  }
+
+  /**
+   * What the relocation job needs: the client and the two bucket names.
+   *
+   * Null when there is nothing to relocate between — no R2 credentials, or no
+   * private bucket distinct from the main one (the single-bucket development
+   * fallback, where a "move" would be a copy onto itself).
+   */
+  getRelocationTarget(): PrivateMediaTarget | null {
+    if (!this.isConfigured || !this.s3) return null;
+    if (this.verificationBucketName === this.bucketName) return null;
+    return {
+      s3: this.s3,
+      mainBucket: this.bucketName,
+      privateBucket: this.verificationBucketName,
+    };
   }
 
   async createSignedDownloadUrl(
@@ -385,6 +409,11 @@ export class CloudflareR2Provider implements StorageProvider {
       // legacy conversation attachment lives in the main bucket, and deleting
       // from the private one would report success while leaving the object —
       // and its public URL — in place.
+      //
+      // Looked up afresh, never from the cache: DeleteObject succeeds on a key
+      // that is not there, so a stale "main bucket" answer after the object
+      // moved to the private one would report success and delete nothing.
+      this.readBucketCache.delete(key);
       const bucket = (await this.resolveReadBucket(key)) ?? this.bucketFor(key);
       await this.s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
       this.readBucketCache.delete(key);
@@ -437,9 +466,7 @@ export class CloudflareR2Provider implements StorageProvider {
           // An identity document is not a cacheable public asset. Storing one
           // with a year-long immutable directive is how a verification image
           // ended up pinned in a CDN edge long after the submission failed.
-          CacheControl: key.startsWith('verification/')
-            ? 'private, no-store'
-            : 'public, max-age=31536000, immutable',
+          CacheControl: cacheControlFor(key),
         }),
       );
       return this.getPublicUrl(key);
@@ -475,20 +502,30 @@ export class CloudflareR2Provider implements StorageProvider {
     }
 
     if (!this.isConfigured || !this.s3) return null;
-    try {
-      const bucket = (await this.resolveReadBucket(key)) ?? this.bucketFor(key);
-      const head = await this.s3.send(
-        new HeadObjectCommand({ Bucket: bucket, Key: key }),
-      );
-      // S3 names these ContentLength / ContentType. Mapped here, once, so no
-      // caller has to know which backend answered.
-      return {
-        contentLength: head.ContentLength,
-        contentType: head.ContentType,
-      };
-    } catch {
-      return null;
+    // At most two tries. The second happens only when the first used a cached
+    // location and found nothing there: the object may have been relocated to
+    // the other bucket since this replica last looked, so the stale entry is
+    // dropped and the lookup redone from scratch.
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const fromCache = this.hasLiveReadBucket(key);
+      try {
+        const bucket =
+          (await this.resolveReadBucket(key)) ?? this.bucketFor(key);
+        const head = await this.s3.send(
+          new HeadObjectCommand({ Bucket: bucket, Key: key }),
+        );
+        // S3 names these ContentLength / ContentType. Mapped here, once, so no
+        // caller has to know which backend answered.
+        return {
+          contentLength: head.ContentLength,
+          contentType: head.ContentType,
+        };
+      } catch (err) {
+        if (!fromCache || !isObjectNotFound(err)) return null;
+        this.readBucketCache.delete(key);
+      }
     }
+    return null;
   }
 
   async copy(sourceKey: string, destinationKey: string): Promise<boolean> {
