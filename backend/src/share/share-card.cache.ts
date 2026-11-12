@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { RedisService } from '../redis/redis.service';
 import { ShareCardRenderer, type CardVariant } from './share-card.renderer';
+import { ShareRenderGate } from './share-render-gate';
 import type { PublicSharePost } from './share-preview.service';
 import { SharePreviewService } from './share-preview.service';
 
@@ -30,6 +31,11 @@ import { SharePreviewService } from './share-preview.service';
  * Old entries under either version are never read again and expire on their
  * own.
  *
+ * WHY RENDERS ARE CAPPED
+ * The key-level lock only stops duplicate work for one card. Distinct cards
+ * would still all render at once, so renders also pass through a process-wide
+ * ShareRenderGate; a caller it turns away gets ShareRenderBusyError.
+ *
  * WHY REDIS FAILING IS NOT AN ERROR
  * Redis here is a cost optimisation, not a source of truth. If it is
  * unavailable the card is rendered on demand, exactly as it would have been on
@@ -56,6 +62,12 @@ export class ShareCardCache {
    * doc). Over the limit the card is still served, just not stored.
    */
   private static readonly MAX_CACHED_BYTES = 2 * 1024 * 1024;
+
+  /**
+   * One gate per process, which is the scope that matters: the CPU and memory
+   * it protects belong to this process. See ShareRenderGate for the limits.
+   */
+  private readonly renderGate = new ShareRenderGate();
 
   constructor(
     private readonly redis: RedisService,
@@ -94,7 +106,11 @@ export class ShareCardCache {
           // Fall through and render.
         }
       }
-      return this.renderer.render(post, variant);
+      // Inside the per-key lock, so concurrent requests for one card collapse
+      // into a single render and only distinct cards compete for a slot. A
+      // refusal here (ShareRenderBusyError) propagates, and nothing below
+      // runs, so a refused card is never written to Redis.
+      return this.renderGate.run(() => this.renderer.render(post, variant));
     });
 
     if (client && card.length <= ShareCardCache.MAX_CACHED_BYTES) {

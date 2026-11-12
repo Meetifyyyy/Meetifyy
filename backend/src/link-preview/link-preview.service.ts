@@ -17,8 +17,44 @@ type AllAddressesCallback = (
   addresses: Array<{ address: string; family: number }>,
 ) => void;
 
+/**
+ * Wall-clock limit for one preview, DNS to last byte.
+ *
+ * `timeout` on a request is a socket IDLE timer: it restarts on every byte, so
+ * a server that sends one byte every few seconds holds the request, and the
+ * socket behind it, open until the 1 MB cap is reached. A preview is a page's
+ * <head>, so a host that has not delivered it in this long is not worth a
+ * socket.
+ */
+const PREVIEW_DEADLINE_MS = 8_000;
+
+/**
+ * Sockets the previewer may hold at once, per protocol.
+ *
+ * The global agent has no cap, so a burst of previews of slow hosts would open
+ * as many sockets as there are requests. Past this number requests wait in the
+ * agent's queue, which still counts against their own deadline. Keep-alive is
+ * off because every request goes to a different, caller-chosen host and a
+ * pooled socket would only sit idle.
+ */
+export const PREVIEW_MAX_SOCKETS = 16;
+
+export const PREVIEW_AGENTS = {
+  'http:': new http.Agent({
+    maxSockets: PREVIEW_MAX_SOCKETS,
+    keepAlive: false,
+  }),
+  'https:': new https.Agent({
+    maxSockets: PREVIEW_MAX_SOCKETS,
+    keepAlive: false,
+  }),
+};
+
 @Injectable()
 export class LinkPreviewService {
+  /** An instance field only so a test can shorten it. */
+  private deadlineMs = PREVIEW_DEADLINE_MS;
+
   async getPreview(url: string) {
     if (!url) {
       throw new BadRequestException('Missing url parameter');
@@ -37,10 +73,15 @@ export class LinkPreviewService {
       );
     }
 
-    await this.assertPublicTarget(parsedUrl);
+    // One deadline for everything below. AbortSignal.timeout's timer is
+    // unreferenced, so it never keeps the process alive.
+    const signal = AbortSignal.timeout(this.deadlineMs);
 
+    // Inside the try so that a host that does not resolve ends the same way as
+    // one that refuses the connection, rather than escaping as a raw 500.
     try {
-      const html = await this.fetchHtmlSafely(parsedUrl);
+      await this.rejectOnAbort(this.assertPublicTarget(parsedUrl), signal);
+      const html = await this.fetchHtmlSafely(parsedUrl, signal);
       const $ = cheerio.load(html);
 
       const getMeta = (prop: string) =>
@@ -132,9 +173,14 @@ export class LinkPreviewService {
    * Verifies the target IP at connection time before the TCP handshake to eliminate
    * DNS rebinding / TOCTOU SSRF attacks.
    */
-  private async fetchHtmlSafely(parsedUrl: URL): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const transport = parsedUrl.protocol === 'https:' ? https : http;
+  private async fetchHtmlSafely(
+    parsedUrl: URL,
+    signal: AbortSignal,
+  ): Promise<string> {
+    let detach = () => {};
+    const result = new Promise<string>((resolve, reject) => {
+      const secure = parsedUrl.protocol === 'https:';
+      const transport = secure ? https : http;
       let settled = false;
 
       const safeLookup = this.createSafeLookup();
@@ -148,6 +194,8 @@ export class LinkPreviewService {
             Accept: 'text/html,application/xhtml+xml',
           },
           lookup: safeLookup,
+          agent: secure ? PREVIEW_AGENTS['https:'] : PREVIEW_AGENTS['http:'],
+          // Idle only; the total bound is the deadline listener below.
           timeout: 5000,
         },
         (res) => {
@@ -235,7 +283,41 @@ export class LinkPreviewService {
         reject(err);
       });
 
+      // The hard bound. Destroying the request closes the socket, which also
+      // ends a response still being streamed and frees an agent slot. It is
+      // armed after the error handler so the destroy cannot go unhandled.
+      const onDeadline = () => {
+        if (settled) return;
+        settled = true;
+        req.destroy();
+        reject(new UnprocessableEntityException('Request timed out'));
+      };
+      detach = () => signal.removeEventListener('abort', onDeadline);
+      if (signal.aborted) {
+        onDeadline();
+        return;
+      }
+      signal.addEventListener('abort', onDeadline, { once: true });
+
       req.end();
+    });
+    return result.finally(() => detach());
+  }
+
+  /**
+   * Settles with `work`, or rejects as a timeout when the deadline fires first.
+   * Used for the DNS lookup, which cannot itself be cancelled: it is abandoned
+   * rather than waited for.
+   */
+  private rejectOnAbort<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const onAbort = () =>
+        reject(new UnprocessableEntityException('Request timed out'));
+      if (signal.aborted) return onAbort();
+      signal.addEventListener('abort', onAbort, { once: true });
+      work
+        .then(resolve, reject)
+        .finally(() => signal.removeEventListener('abort', onAbort));
     });
   }
 

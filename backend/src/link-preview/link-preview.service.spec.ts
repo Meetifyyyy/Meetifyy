@@ -1,7 +1,24 @@
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
+import { lookup } from 'dns/promises';
 import * as http from 'http';
 import type { AddressInfo } from 'net';
-import { LinkPreviewService } from './link-preview.service';
+import {
+  LinkPreviewService,
+  PREVIEW_AGENTS,
+  PREVIEW_MAX_SOCKETS,
+} from './link-preview.service';
+
+// Real DNS by default (the loopback tests below resolve `localhost`); a test
+// that needs a resolver failure queues one with mockRejectedValueOnce.
+jest.mock('dns/promises', () => {
+  const actual =
+    jest.requireActual<typeof import('dns/promises')>('dns/promises');
+  return { ...actual, lookup: jest.fn(actual.lookup) };
+});
 
 describe('LinkPreviewService', () => {
   let service: LinkPreviewService;
@@ -204,6 +221,135 @@ describe('LinkPreviewService — IPv6 literals in the URL', () => {
       });
       expect(result).toMatchObject({ err: null });
       expect(typeof (result as { address: unknown }).address).toBe('string');
+    });
+  });
+});
+
+/**
+ * Resolution failures and the total-time bound.
+ */
+describe('LinkPreviewService — failure and time limits', () => {
+  it('answers a host that does not resolve like any other unreachable target', async () => {
+    jest.mocked(lookup).mockRejectedValueOnce(
+      Object.assign(new Error('getaddrinfo ENOTFOUND no-such-host.example'), {
+        code: 'ENOTFOUND',
+      }),
+    );
+
+    const failure = await new LinkPreviewService()
+      .getPreview('http://no-such-host.example/')
+      .catch((error: unknown) => error);
+
+    // The same 422 an unreachable host produces, not a raw 500.
+    expect(failure).toBeInstanceOf(UnprocessableEntityException);
+    expect((failure as UnprocessableEntityException).getStatus()).toBe(422);
+    expect((failure as Error).message).toMatch(/Could not fetch preview/);
+  });
+
+  it('keeps a Forbidden answer for a host that resolves to a private address', async () => {
+    jest
+      .mocked(lookup)
+      .mockResolvedValueOnce([{ address: '10.0.0.5', family: 4 }] as never);
+
+    await expect(
+      new LinkPreviewService().getPreview('http://internal.example/'),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  describe('against a real server', () => {
+    let server: http.Server;
+    let port: number;
+    let trickleClosed: Promise<void>;
+    let markClosed: () => void;
+    let addressPolicy: jest.SpyInstance;
+
+    beforeAll(async () => {
+      server = http.createServer((req, res) => {
+        if (req.url === '/trickle') {
+          // Valid headers, then one byte at a time, far inside the idle
+          // timeout, so only a total deadline can stop it.
+          res.writeHead(200, { 'Content-Type': 'text/html' });
+          const timer = setInterval(() => res.write('x'), 50);
+          res.on('close', () => {
+            clearInterval(timer);
+            markClosed();
+          });
+          return;
+        }
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end(
+          '<html><head><title>Hello</title><meta property="og:title" content="Hi"></head></html>',
+        );
+      });
+      await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+      port = (server.address() as AddressInfo).port;
+    });
+    afterAll(() => new Promise<void>((r) => server.close(() => r())));
+
+    beforeEach(() => {
+      trickleClosed = new Promise<void>((resolve) => {
+        markClosed = resolve;
+      });
+      // Only the address policy is faked so the loopback server is reachable.
+      addressPolicy = jest
+        .spyOn(
+          LinkPreviewService.prototype as unknown as {
+            isPrivateAddress: (a: string) => boolean;
+          },
+          'isPrivateAddress',
+        )
+        .mockReturnValue(false);
+    });
+    afterEach(() => {
+      addressPolicy.mockRestore();
+    });
+
+    it('aborts a response that trickles bytes, at the total deadline', async () => {
+      const service = new LinkPreviewService();
+      service['deadlineMs'] = 300;
+      const started = Date.now();
+
+      const failure = await service
+        .getPreview(`http://127.0.0.1:${port}/trickle`)
+        .catch((error: unknown) => error);
+
+      expect(failure).toBeInstanceOf(UnprocessableEntityException);
+      expect((failure as Error).message).toBe('Request timed out');
+      // Well before the 5 s idle timeout could have fired.
+      expect(Date.now() - started).toBeLessThan(2000);
+      // The socket was torn down, not merely abandoned.
+      await trickleClosed;
+    });
+
+    it('does not cut off a response that finishes inside the deadline', async () => {
+      const service = new LinkPreviewService();
+      service['deadlineMs'] = 5000;
+
+      await expect(
+        service.getPreview(`http://127.0.0.1:${port}/`),
+      ).resolves.toMatchObject({ title: 'Hi' });
+    });
+
+    it('holds its socket on the dedicated, capped agent rather than the global one', async () => {
+      expect(PREVIEW_AGENTS['http:'].maxSockets).toBe(PREVIEW_MAX_SOCKETS);
+      expect(PREVIEW_AGENTS['https:'].maxSockets).toBe(PREVIEW_MAX_SOCKETS);
+      expect(PREVIEW_MAX_SOCKETS).toBe(16);
+
+      const service = new LinkPreviewService();
+      service['deadlineMs'] = 400;
+      const inFlight = service
+        .getPreview(`http://127.0.0.1:${port}/trickle`)
+        .catch((error: unknown) => error);
+
+      // While the response is still arriving, the connection belongs to the
+      // dedicated agent and the global one has none.
+      await new Promise<void>((r) => setTimeout(r, 150));
+      const open = (agent: http.Agent) =>
+        Object.values(agent.sockets).flat().length;
+      expect(open(PREVIEW_AGENTS['http:'])).toBe(1);
+      expect(open(http.globalAgent)).toBe(0);
+
+      await inFlight;
     });
   });
 });

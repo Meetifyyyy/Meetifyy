@@ -5,6 +5,10 @@ import { SharePreviewService } from './share-preview.service';
 import { ShareCardCache } from './share-card.cache';
 import { ShareCardRenderer } from './share-card.renderer';
 import {
+  SHARE_RENDER_RETRY_AFTER_SECONDS,
+  ShareRenderBusyError,
+} from './share-render-gate';
+import {
   buildShareMetadata,
   canonicalPostUrl,
   renderShareDocument,
@@ -111,12 +115,7 @@ export class ShareController {
       return;
     }
 
-    const card = await this.cards.get(post, 'story');
-
-    res.setHeader('Content-Type', 'image/jpeg');
-    res.setHeader('Content-Length', String(card.length));
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.status(200).end(card);
+    await this.sendCard(() => this.cards.get(post, 'story'), res);
   }
 
   @Get('post/:id/image.jpg')
@@ -136,7 +135,33 @@ export class ShareController {
       return;
     }
 
-    const card = await this.cards.get(post);
+    await this.sendCard(() => this.cards.get(post), res);
+  }
+
+  /**
+   * Writes the card, or a 503 when rendering is at capacity.
+   *
+   * The 503 sets `Cache-Control: no-store` itself: NoCacheInterceptor has
+   * already put the route's day-long public header on the response by the time
+   * the handler runs, and an exception filter does not replace it, so without
+   * this a CDN would keep serving "busy" for a post that renders fine a moment
+   * later. `Retry-After` is what an unfurler or a browser uses to back off.
+   * Every other failure is left to the global filter as before.
+   */
+  private async sendCard(
+    getCard: () => Promise<Buffer>,
+    res: Response,
+  ): Promise<void> {
+    let card: Buffer;
+    try {
+      card = await getCard();
+    } catch (error) {
+      if (!(error instanceof ShareRenderBusyError)) throw error;
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('Retry-After', String(SHARE_RENDER_RETRY_AFTER_SECONDS));
+      res.status(503).end();
+      return;
+    }
 
     res.setHeader('Content-Type', 'image/jpeg');
     res.setHeader('Content-Length', String(card.length));

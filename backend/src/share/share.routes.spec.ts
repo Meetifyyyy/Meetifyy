@@ -9,6 +9,10 @@ import { ShareController } from './share.controller';
 import { SharePreviewService } from './share-preview.service';
 import { ShareCardRenderer } from './share-card.renderer';
 import { ShareCardCache } from './share-card.cache';
+import {
+  SHARE_RENDER_RETRY_AFTER_SECONDS,
+  ShareRenderBusyError,
+} from './share-render-gate';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../uploads/uploads.service';
 import { MediaCleanupService } from '../uploads/media-cleanup.service';
@@ -192,6 +196,31 @@ describe('share routes', () => {
       // Small enough to finish downloading before somebody taps the button —
       // see the encode comment in renderStory.
       expect(body.length).toBeLessThan(250 * 1024);
+    });
+
+    it("answers 503 with Retry-After and no-store, past the route's public header, when rendering is full", async () => {
+      // The interceptor sets the route's day-long public Cache-Control before
+      // the handler runs; a CDN honouring that on a 503 would keep serving
+      // "busy" for a card that renders fine a moment later.
+      findFirst.mockResolvedValue(postRow());
+      const cards = app.get(ShareCardCache);
+      const get = jest
+        .spyOn(cards, 'get')
+        .mockRejectedValue(new ShareRenderBusyError());
+      try {
+        for (const path of ['image.jpg', 'story.jpg']) {
+          const res = await request(app.getHttpServer())
+            .get(`/api/share/post/${POST_ID}/${path}`)
+            .expect(503);
+
+          expect(res.headers['retry-after']).toBe(
+            String(SHARE_RENDER_RETRY_AFTER_SECONDS),
+          );
+          expect(res.headers['cache-control']).toBe('no-store');
+        }
+      } finally {
+        get.mockRestore();
+      }
     });
 
     it('refuses the story image for a post that may not be shared', async () => {

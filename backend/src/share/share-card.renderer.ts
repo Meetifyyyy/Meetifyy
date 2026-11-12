@@ -16,6 +16,20 @@ import {
 } from './share-text.util';
 
 /**
+ * One libvips worker thread per operation.
+ *
+ * sharp sizes libvips' pool from the CPU count it can see, and on the
+ * musl/alpine runtime image that is the HOST's core count: a container limited
+ * to half a CPU would run several threads per render, and with
+ * SHARE_RENDER_MAX_CONCURRENT renders in flight they would only contend for the
+ * same sliver of quota, adding context switches and memory without finishing
+ * any sooner. (On glibc without jemalloc sharp already defaults to 1, which is
+ * what a developer machine reports.) The setting is process-wide, so it also
+ * governs upload processing, which has no more CPU to use than this does.
+ */
+sharp.concurrency(1);
+
+/**
  * Draws the 1200x630 card a Meetifyy link unfurls with.
  *
  * NOT A SCREENSHOT, AND THAT IS THE DESIGN

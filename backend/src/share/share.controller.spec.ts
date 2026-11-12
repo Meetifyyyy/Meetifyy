@@ -10,6 +10,10 @@ import type {
   PublicSharePost,
   SharePreviewService,
 } from './share-preview.service';
+import {
+  SHARE_RENDER_RETRY_AFTER_SECONDS,
+  ShareRenderBusyError,
+} from './share-render-gate';
 import { sharePost } from './testing/share-post.fixture';
 
 /**
@@ -208,6 +212,41 @@ describe('ShareController', () => {
       expect(body.post).not.toHaveProperty('authorUpdatedAt');
       expect(body.post).not.toHaveProperty('updatedAt');
       expect(body.share.canonicalUrl).toBe(`${SITE}/post/${POST_ID}`);
+    });
+  });
+
+  describe('when rendering is at capacity', () => {
+    it.each([
+      ['image', (c: ShareController, r: Response) => c.image(POST_ID, r)],
+      ['story', (c: ShareController, r: Response) => c.story(POST_ID, r)],
+    ])(
+      'answers the %s with 503, Retry-After and no-store, and no body',
+      async (_name, call) => {
+        const { controller, cards } = setup(post());
+        cards.get.mockRejectedValueOnce(new ShareRenderBusyError());
+        const res = makeRes();
+
+        await call(controller, res);
+
+        expect(res.statusCode).toBe(503);
+        expect(res.headers['retry-after']).toBe(
+          String(SHARE_RENDER_RETRY_AFTER_SECONDS),
+        );
+        // Overrides the route's day-long public header: a CDN must never hold
+        // on to "busy" for a card that renders fine a moment later.
+        expect(res.headers['cache-control']).toBe('no-store');
+        expect(res.headers['content-type']).toBeUndefined();
+        expect(res.body).toBeUndefined();
+      },
+    );
+
+    it('still lets any other render failure reach the global filter', async () => {
+      const { controller, cards } = setup(post());
+      cards.get.mockRejectedValueOnce(new Error('sharp exploded'));
+
+      await expect(controller.image(POST_ID, makeRes())).rejects.toThrow(
+        'sharp exploded',
+      );
     });
   });
 
