@@ -15,6 +15,7 @@ import {
 import { JwtGuard } from '../common/guards';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RateLimit } from '../common/rate-limit/rate-limit.decorator';
+import { RateLimitPolicyGuard } from '../common/rate-limit/rate-limit-policy.guard';
 import {
   CaptureVerificationDto,
   SubmitLiveVerificationDto,
@@ -36,6 +37,9 @@ export class VerificationController {
    * The image is re-encoded server side; see VerificationService.captureDocument.
    */
   @Post('capture')
+  // `@RateLimit` is only metadata; without this guard nothing reads it. The
+  // class-level JwtGuard runs first, so the user id the policy keys on is set.
+  @UseGuards(RateLimitPolicyGuard)
   @RateLimit('verification.capture.user')
   @UseInterceptors(
     FileInterceptor('file', {

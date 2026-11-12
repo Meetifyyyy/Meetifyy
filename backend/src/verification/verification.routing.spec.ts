@@ -5,6 +5,7 @@ import request from 'supertest';
 import { VerificationController } from './verification.controller';
 import { VerificationService } from './verification.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
+import { RateLimitPolicyGuard } from '../common/rate-limit/rate-limit-policy.guard';
 
 /**
  * The verification controller was mounted at `/verification` while the client
@@ -32,6 +33,10 @@ describe('VerificationController — routing', () => {
     })
       // The guard is not under test; it is replaced so the routing assertion
       // is about the path and nothing else.
+      // Rate limiting is covered where the guard is attached; here it is not
+      // under test and needs Redis-backed dependencies.
+      .overrideGuard(RateLimitPolicyGuard)
+      .useValue({ canActivate: () => true })
       .overrideGuard(JwtGuard)
       .useValue({
         canActivate: (ctx: ExecutionContext) => {

@@ -15,6 +15,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../uploads/uploads.service';
 import { DomainEventService } from '../events/domain-event.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
+import { RateLimitPolicyGuard } from '../common/rate-limit/rate-limit-policy.guard';
 import { AdminJwtGuard } from '../common/guards/admin-jwt.guard';
 import { APP_GUARD, APP_INTERCEPTOR, Reflector } from '@nestjs/core';
 import type { ExecutionContext } from '@nestjs/common';
@@ -353,6 +354,10 @@ describe('account verification — end to end', () => {
       ],
     })
       // Authentication is stubbed; authorisation is not.
+      // Rate limiting is covered where the guard is attached; here it is not
+      // under test and needs Redis-backed dependencies.
+      .overrideGuard(RateLimitPolicyGuard)
+      .useValue({ canActivate: () => true })
       .overrideGuard(JwtGuard)
       .useValue({
         canActivate: (ctx: ExecutionContext) => {

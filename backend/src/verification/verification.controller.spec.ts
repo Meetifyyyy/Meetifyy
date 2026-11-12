@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { VerificationController } from './verification.controller';
 import { VerificationService } from './verification.service';
 import { JwtGuard } from '../common/guards';
+import { RateLimitPolicyGuard } from '../common/rate-limit/rate-limit-policy.guard';
 
 describe('VerificationController', () => {
   let controller: VerificationController;
@@ -22,6 +23,10 @@ describe('VerificationController', () => {
         },
       ],
     })
+      // Rate limiting is covered where the guard is attached; here it is not
+      // under test and needs Redis-backed dependencies.
+      .overrideGuard(RateLimitPolicyGuard)
+      .useValue({ canActivate: () => true })
       .overrideGuard(JwtGuard)
       .useValue({ canActivate: jest.fn(() => true) })
       .compile();
