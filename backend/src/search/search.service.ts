@@ -6,6 +6,7 @@ import { BlocksService } from '../users/blocks.service';
 import { RedisService } from '../redis/redis.service';
 import { ActivityAuthorizationService } from '../activities/activity-authorization.service';
 import { hashtagQuery } from '../posts/hashtags.util';
+import { authorVisibilityWhere } from '../posts/author-visibility';
 import {
   ACTIVE_AFFILIATION_SELECT,
   activeAffiliationCollegeId,
@@ -224,6 +225,9 @@ export class SearchService {
             : []),
         ],
       },
+      // A private author's own posts are found only by their followers (and
+      // themselves); search is not a way round the follow gate.
+      authorVisibilityWhere(currentUserId),
       ...(postCursorDate && postCursorId
         ? [
             {

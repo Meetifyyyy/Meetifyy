@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PostsService } from './posts.service';
 import { sortPollOptions } from './post-view';
 import { stub } from '../common/testing/stub';
+import { PUBLIC_AUTHOR } from './testing/author-privacy.fake';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { NotificationsService } from '../notifications/notifications.service';
 import type { NotificationFactory } from '../notifications/notification.factory';
@@ -52,6 +53,8 @@ function makeService(
         }),
       ),
     },
+    // The post's author, for the private-account check; a public one here.
+    user: { findUnique: jest.fn(() => Promise.resolve(PUBLIC_AUTHOR)) },
     pollVote: {
       findUnique: jest.fn(() => Promise.resolve(votes.standing)),
       create: jest.fn(),

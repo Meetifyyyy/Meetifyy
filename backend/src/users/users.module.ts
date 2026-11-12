@@ -4,6 +4,7 @@ import {
   BlockedContactsController,
   BlocksController,
 } from './blocked-contacts.controller';
+import { FollowRequestsController } from './follow-requests.controller';
 import { UsersService } from './users.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { NotificationsModule } from '../notifications/notifications.module';
@@ -25,7 +26,12 @@ import { AccountDeletionModule } from '../account-deletion/account-deletion.modu
     AccountDeletionModule,
     BullModule.registerQueue({ name: NOTIFICATIONS_QUEUE }),
   ],
-  controllers: [UsersController, BlockedContactsController, BlocksController],
+  controllers: [
+    UsersController,
+    FollowRequestsController,
+    BlockedContactsController,
+    BlocksController,
+  ],
   providers: [UsersService, BlocksService],
   exports: [UsersService, BlocksService],
 })

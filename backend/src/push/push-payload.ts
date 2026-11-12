@@ -52,6 +52,8 @@ export function categoryForType(type: NotificationType): PushCategory | null {
     case NotificationType.MENTION:
       return 'mentions';
     case NotificationType.FOLLOW:
+    case NotificationType.FOLLOW_REQUEST:
+    case NotificationType.FOLLOW_ACCEPTED:
       return 'follows';
     case NotificationType.ACTIVITY_INVITE:
     case NotificationType.JOIN_REQUEST:
@@ -96,9 +98,14 @@ function intentForNotification(n: NotificationPushInput): PushIntentData {
         ? post(n.entityId)
         : post(n.postId);
     case NotificationType.FOLLOW:
+    case NotificationType.FOLLOW_ACCEPTED:
       return n.actorUsername
         ? { v: '1', t: 'profile', username: n.actorUsername }
         : notificationsIntent;
+    // The request is answered from the notifications page, not the
+    // requester's profile, so that is where the tap lands.
+    case NotificationType.FOLLOW_REQUEST:
+      return notificationsIntent;
     case NotificationType.ACTIVITY_INVITE:
     case NotificationType.JOIN_REQUEST:
       return n.entityId
@@ -136,6 +143,10 @@ function sentenceForNotification(n: NotificationPushInput): string | null {
         : `${name} mentioned you in a post.`;
     case NotificationType.FOLLOW:
       return `${name} started following you.`;
+    case NotificationType.FOLLOW_REQUEST:
+      return `${name} requested to follow you.`;
+    case NotificationType.FOLLOW_ACCEPTED:
+      return `${name} accepted your follow request.`;
     case NotificationType.ACTIVITY_INVITE:
       return `${name} invited you to an activity.`;
     case NotificationType.JOIN_REQUEST:

@@ -13,6 +13,7 @@ import { PresenceService } from '../presence/presence.service';
 import { AcademicsService } from '../academics/academics.service';
 import { VerificationAccessService } from '../common/verification/verification-access.service';
 import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
+import { NotificationType } from '@prisma/client';
 
 /** One row of the blocked-contacts page, exactly as BlocksService returns it. */
 type BlockRow = Awaited<
@@ -42,10 +43,17 @@ describe('UsersService — blocking', () => {
   };
   let blockRows: BlockRow[] = [];
   let domainEvents: jest.Mock;
+  let cancelNotification: jest.Mock<
+    Promise<unknown>,
+    [Record<string, unknown>]
+  >;
 
   const makeTx = () => ({
     block: { upsert: jest.fn() },
     follow: {
+      deleteMany: jest.fn<Promise<unknown>, [{ where: { OR: unknown[] } }]>(),
+    },
+    followRequest: {
       deleteMany: jest.fn<Promise<unknown>, [{ where: { OR: unknown[] } }]>(),
     },
     matchSession: {
@@ -79,6 +87,9 @@ describe('UsersService — blocking', () => {
     };
 
     domainEvents = jest.fn();
+    cancelNotification = jest.fn((_criteria: Record<string, unknown>) =>
+      Promise.resolve(null),
+    );
 
     blocksMock = { provide: BlocksService, useValue: makeBlocks() };
 
@@ -91,6 +102,7 @@ describe('UsersService — blocking', () => {
           useValue: {
             createNotification: jest.fn(),
             invalidatePrefsCache: jest.fn(),
+            cancelNotificationByCriteria: cancelNotification,
           },
         },
         { provide: NotificationFactory, useValue: {} },
@@ -132,6 +144,43 @@ describe('UsersService — blocking', () => {
         { followerId: 'alice', followingId: 'bob' },
         { followerId: 'bob', followingId: 'alice' },
       ]);
+    });
+
+    it('drops a pending follow request in both directions, in the same transaction', async () => {
+      await service.blockUser('alice', 'bob');
+
+      expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(tx.followRequest.deleteMany).toHaveBeenCalledTimes(1);
+      expect(tx.followRequest.deleteMany.mock.calls[0][0].where.OR).toEqual([
+        { requesterId: 'alice', targetId: 'bob' },
+        { requesterId: 'bob', targetId: 'alice' },
+      ]);
+    });
+
+    it('removes the follow-request notifications for the pair, both directions', async () => {
+      await service.blockUser('alice', 'bob');
+
+      expect(cancelNotification).toHaveBeenCalledTimes(2);
+      expect(cancelNotification).toHaveBeenCalledWith({
+        recipientId: 'alice',
+        actorId: 'bob',
+        entityId: 'bob',
+        type: NotificationType.FOLLOW_REQUEST,
+      });
+      expect(cancelNotification).toHaveBeenCalledWith({
+        recipientId: 'bob',
+        actorId: 'alice',
+        entityId: 'alice',
+        type: NotificationType.FOLLOW_REQUEST,
+      });
+    });
+
+    it('still blocks when cancelling a notification fails', async () => {
+      cancelNotification.mockRejectedValue(new Error('db down'));
+      await expect(service.blockUser('alice', 'bob')).resolves.toMatchObject({
+        success: true,
+        blocked: true,
+      });
     });
 
     it('ends a live Instant Match between the two', async () => {

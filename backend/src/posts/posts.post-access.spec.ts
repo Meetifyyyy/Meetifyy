@@ -12,6 +12,15 @@ import type { RedisService } from '../redis/redis.service';
 import type { MentionsService } from '../mentions/mentions.service';
 import type { StorageService } from '../uploads/uploads.service';
 import type { ContentDeletionAuthorizer } from './content-deletion.authorizer';
+import {
+  authorVisibilityWhere,
+  type AuthorPrivacyFields,
+} from './author-visibility';
+import {
+  PUBLIC_AUTHOR,
+  isAuthorPrivacyLookup,
+  privateAuthor,
+} from './testing/author-privacy.fake';
 
 /**
  * Holding a post id is not access to the post.
@@ -48,6 +57,9 @@ describe('PostsService — single-post access', () => {
   let affiliation: AffiliationGateRow | null;
   let postRow: Record<string, unknown>;
   let excluded: string[];
+  let author: AuthorPrivacyFields | null;
+  /** The post as a comment row embeds it (`unlikeComment` reads it there). */
+  let commentPost: { communityId: string | null; authorId?: string };
 
   const communityRow = (over: Partial<CommunityRow> = {}): CommunityRow => ({
     id: COMMUNITY,
@@ -63,8 +75,10 @@ describe('PostsService — single-post access', () => {
   const build = () => {
     const prisma = {
       post: {
-        findUnique: jest.fn(() => Promise.resolve({ ...postRow, community })),
-        findFirst: jest.fn(() =>
+        findUnique: jest.fn((_args?: unknown) =>
+          Promise.resolve({ ...postRow, community }),
+        ),
+        findFirst: jest.fn((_args?: unknown) =>
           Promise.resolve({
             ...postRow,
             community,
@@ -76,7 +90,13 @@ describe('PostsService — single-post access', () => {
         update: jest.fn(() => Promise.resolve({})),
       },
       community: { findUnique: jest.fn(() => Promise.resolve(community)) },
-      user: { findUnique: jest.fn(() => Promise.resolve(null)) },
+      // The actor lookups answer null, as before. The author-privacy lookup
+      // (a `select` with `settings`) answers the current `author` row.
+      user: {
+        findUnique: jest.fn((args?: unknown) =>
+          Promise.resolve(isAuthorPrivacyLookup(args) ? author : null),
+        ),
+      },
       collegeAffiliation: {
         findUnique: jest.fn(() => Promise.resolve(affiliation)),
       },
@@ -88,7 +108,7 @@ describe('PostsService — single-post access', () => {
             authorId: 'commenter',
             isDeleted: false,
             likeCount: 0,
-            post: { communityId: COMMUNITY },
+            post: commentPost,
           }),
         ),
         findMany: jest.fn(() => Promise.resolve([])),
@@ -133,6 +153,8 @@ describe('PostsService — single-post access', () => {
     community = communityRow({ isPrivate: true });
     affiliation = null;
     excluded = [];
+    author = PUBLIC_AUTHOR;
+    commentPost = { communityId: COMMUNITY };
     postRow = {
       id: POST,
       authorId: 'author',
@@ -268,6 +290,136 @@ describe('PostsService — single-post access', () => {
       expect(result.community).not.toHaveProperty('collegeId');
       expect(result.community).toHaveProperty('avatar');
     });
+  });
+
+  /**
+   * A private account's own posts are for its followers. A post in a
+   * community stays under the community's rule, whoever wrote it.
+   */
+  describe("a private author's own post", () => {
+    const FOLLOWING_ROUTES = new Set(['getPostById', 'getComments']);
+    // Routes that load the post and then ask. getPostById and getComments put
+    // the rule in the query they already run, so they are checked below.
+    const asking = routes.filter(([name]) => !FOLLOWING_ROUTES.has(name));
+
+    beforeEach(() => {
+      postRow = { ...postRow, communityId: null };
+      commentPost = { communityId: null, authorId: 'author' };
+      community = null;
+      author = privateAuthor();
+    });
+
+    const outcome = async (call: () => Promise<unknown>) =>
+      call().then(
+        () => 'ok' as const,
+        (e: unknown) => e,
+      );
+
+    describe.each(asking)('%s', (_name, call, writes) => {
+      it('answers a stranger with the not-found a missing post gets, and writes nothing', async () => {
+        const { service, prisma } = build();
+        await expect(call(service)).rejects.toBeInstanceOf(NotFoundException);
+        const writesMade = [
+          ...writes.map((w) => prisma[w as '$queryRaw' | '$transaction']),
+          prisma.postBookmark.upsert,
+          prisma.comment.create,
+        ].some((m) => m.mock.calls.length > 0);
+        expect(writesMade).toBe(false);
+      });
+
+      it('treats a pending follow request as a stranger (the request is never even read)', async () => {
+        // The fake has no `followRequest` delegate: reading one would throw a
+        // TypeError, not the not-found asserted here.
+        author = privateAuthor([]);
+        const { service } = build();
+        await expect(call(service)).rejects.toBeInstanceOf(NotFoundException);
+      });
+
+      it('lets a follower through', async () => {
+        author = privateAuthor([VIEWER]);
+        const { service } = build();
+        expect(await outcome(() => call(service))).not.toBeInstanceOf(
+          NotFoundException,
+        );
+      });
+
+      it('lets the author through without looking at their settings', async () => {
+        postRow = { ...postRow, authorId: VIEWER };
+        commentPost = { communityId: null, authorId: VIEWER };
+        const { service, prisma } = build();
+        expect(await outcome(() => call(service))).not.toBeInstanceOf(
+          NotFoundException,
+        );
+        expect(
+          prisma.user.findUnique.mock.calls.some(([a]) =>
+            isAuthorPrivacyLookup(a),
+          ),
+        ).toBe(false);
+      });
+    });
+
+    it('asks one question for a stranger: the author row with settings and the viewer follow row', async () => {
+      const { service, prisma } = build();
+      await expect(service.likePost(POST, VIEWER)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      const asked = prisma.user.findUnique.mock.calls.filter(([a]) =>
+        isAuthorPrivacyLookup(a),
+      );
+      expect(asked).toHaveLength(1);
+      expect(asked[0][0]).toMatchObject({
+        where: { id: 'author' },
+        select: {
+          settings: { select: { privateProfile: true } },
+          followers: { where: { followerId: VIEWER } },
+        },
+      });
+    });
+
+    it("lets a stranger interact with the private author's post inside a public community", async () => {
+      postRow = { ...postRow, communityId: COMMUNITY };
+      community = communityRow();
+      const { service, prisma } = build();
+      await expect(service.likePost(POST, VIEWER)).resolves.toMatchObject({
+        success: true,
+      });
+      // The community's rule decided it; the author's settings were not read.
+      expect(
+        prisma.user.findUnique.mock.calls.some(([a]) =>
+          isAuthorPrivacyLookup(a),
+        ),
+      ).toBe(false);
+    });
+
+    it('refuses an unknown author rather than guessing (fails closed)', async () => {
+      author = null;
+      const { service } = build();
+      await expect(service.likePost(POST, VIEWER)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+
+    it.each([
+      ['getPostById', (s: PostsService) => s.getPostById(POST, VIEWER)],
+      ['getComments', (s: PostsService) => s.getComments(POST, VIEWER)],
+    ])(
+      '%s refuses inside its own query, so a hidden post is the missing-post 404',
+      async (name, call) => {
+        const { service, prisma } = build();
+        const reader =
+          name === 'getPostById'
+            ? prisma.post.findFirst
+            : prisma.post.findUnique;
+        // What the database answers when the rule excludes the row.
+        reader.mockResolvedValueOnce(null as never);
+        await expect(call(service)).rejects.toBeInstanceOf(NotFoundException);
+        expect(reader.mock.calls[0][0]).toMatchObject({
+          where: { AND: [authorVisibilityWhere(VIEWER)] },
+        });
+        // No separate author lookup: the rule rides on the post query.
+        expect(prisma.user.findUnique).not.toHaveBeenCalled();
+      },
+    );
   });
 
   describe('the ETag short-circuit', () => {

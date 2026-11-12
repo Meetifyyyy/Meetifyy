@@ -83,6 +83,16 @@ describe('push payloads', () => {
       'profile',
     ],
     [
+      { type: NotificationType.FOLLOW_REQUEST, entityType: null },
+      'Aarav requested to follow you.',
+      'notifications',
+    ],
+    [
+      { type: NotificationType.FOLLOW_ACCEPTED, entityType: null },
+      'Aarav accepted your follow request.',
+      'profile',
+    ],
+    [
       {
         type: NotificationType.ACTIVITY_INVITE,
         entityType: 'ACTIVITY',
@@ -122,6 +132,12 @@ describe('push payloads', () => {
     const message = buildNotificationPush({ ...base, ...patch });
     expect(message?.body).toBe(body);
     expect(message?.intent.t).toBe(intentType);
+  });
+
+  it('files follow requests and acceptances under the same Settings switch as follows', () => {
+    expect(categoryForType(NotificationType.FOLLOW)).toBe('follows');
+    expect(categoryForType(NotificationType.FOLLOW_REQUEST)).toBe('follows');
+    expect(categoryForType(NotificationType.FOLLOW_ACCEPTED)).toBe('follows');
   });
 
   it('never pushes SYSTEM or GROUP_INVITE rows (in-app only)', () => {

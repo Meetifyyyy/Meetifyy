@@ -220,6 +220,58 @@ describe('push hooks: every category enqueues once, after the row is written', (
     });
   });
 
+  it('follow request (through the real BullMQ follow-request-notification job)', async () => {
+    const { service, dispatcher } = build();
+    const processor = new NotificationsProcessor(
+      service,
+      stub<DomainEventService>({ emit: jest.fn() }),
+    );
+    await processor.process(
+      stub<Job>({
+        name: 'follow-request-notification',
+        data: {
+          requesterId: 'actor',
+          targetId: 'author',
+          actor: { username: 'aarav', displayName: 'Aarav', avatar: null },
+        },
+      }),
+    );
+    expect(dispatcher.enqueueForNotification).toHaveBeenCalledTimes(1);
+    expect(dispatcher.enqueueForNotification.mock.calls[0][0]).toMatchObject({
+      type: NotificationType.FOLLOW_REQUEST,
+      recipientId: 'author',
+      actorId: 'actor',
+      entityId: 'actor',
+      body: 'Aarav requested to follow you.',
+    });
+  });
+
+  it('follow accepted (through the real BullMQ follow-accepted-notification job)', async () => {
+    const { service, dispatcher } = build();
+    const processor = new NotificationsProcessor(
+      service,
+      stub<DomainEventService>({ emit: jest.fn() }),
+    );
+    await processor.process(
+      stub<Job>({
+        name: 'follow-accepted-notification',
+        data: {
+          accepterId: 'actor',
+          requesterId: 'author',
+          actor: { username: 'aarav', displayName: 'Aarav', avatar: null },
+        },
+      }),
+    );
+    expect(dispatcher.enqueueForNotification).toHaveBeenCalledTimes(1);
+    expect(dispatcher.enqueueForNotification.mock.calls[0][0]).toMatchObject({
+      type: NotificationType.FOLLOW_ACCEPTED,
+      recipientId: 'author',
+      actorId: 'actor',
+      entityId: 'actor',
+      body: 'Aarav accepted your follow request.',
+    });
+  });
+
   it.each([
     ['DM', { id: 'conv-1', publicId: 'pub-1', type: 'DM' }],
     [

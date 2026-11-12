@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { CampusAccessService } from '../common/campus/campus-access.service';
+import { authorVisibilitySql } from '../posts/author-visibility';
 
 export interface TrendingTag {
   name: string;
@@ -44,9 +45,10 @@ const CACHE_TTL_S = 15 * 60;
  * baseline and scores low unless it spikes. The authors term rewards breadth,
  * and the minimum-authors rule keeps one person from manufacturing a trend.
  *
- * Only posts anyone on the campus could see count: public posts, and posts in
- * public communities (a campus-only one only for its own campus). Private
- * community content never leaks into the list.
+ * Only posts anyone on the campus could see count: public authors' posts, and
+ * posts in public communities (a campus-only one only for its own campus).
+ * Private community content, and a private account's own posts, never leak
+ * into the list.
  *
  * Computed on demand and cached per college for 15 minutes — one bounded
  * aggregate per campus per quarter hour, shared by everyone on it, with no
@@ -135,6 +137,12 @@ export class TrendingService {
               AND (c."isCampusCommunity" = false OR c."collegeId" = ${collegeId})
             )
           )
+          -- The list is shared by everyone on the campus, so it is built for
+          -- the weakest viewer: a private author's own posts do not count, or
+          -- their hashtags would surface for strangers who cannot open the
+          -- posts. (Their community posts still do; the community rule above
+          -- already limits those to public ones.)
+          AND ${authorVisibilitySql(undefined, 'p')}
       ),
       counts AS (
         SELECT

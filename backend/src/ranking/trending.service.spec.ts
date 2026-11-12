@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { TrendingService } from './trending.service';
 import { stub } from '../common/testing/stub';
 import type { PrismaService } from '../prisma/prisma.service';
@@ -89,5 +90,31 @@ describe('TrendingService', () => {
     const sql = (queryRaw.mock.calls[0][0] as readonly string[]).join('?');
     expect(sql).toContain('"CollegeAffiliation"');
     expect(sql).not.toContain('u."collegeId" =');
+  });
+
+  it("does not count a private account's own posts, so their hashtags cannot surface", async () => {
+    const { service, queryRaw } = build(
+      { everywhere: [tag('freshers')] },
+      null,
+    );
+    await service.compute(null);
+    // Nested fragments arrive as bound values; flatten them as Prisma does.
+    const [strings, ...values] = queryRaw.mock.calls[0] as [
+      TemplateStringsArray,
+      ...unknown[],
+    ];
+    const sql = Prisma.sql(strings, ...values).sql.replace(/\s+/g, ' ');
+    // The list is shared by a whole campus, so it is built for a viewer who
+    // follows nobody: community posts (limited to public communities above)
+    // and public authors' posts count; a private author's own posts do not.
+    expect(sql).toContain(
+      'AND (p."communityId" IS NOT NULL OR NOT EXISTS ( SELECT 1 FROM "UserSettings" us WHERE us."userId" = p."authorId" AND us."privateProfile" = true ))',
+    );
+    // It sits in the `recent` set that every count reads from.
+    expect(sql.indexOf('us."privateProfile" = true')).toBeLessThan(
+      sql.indexOf('counts AS ('),
+    );
+    // And it never consults who follows whom: no viewer, no follow branch.
+    expect(sql).not.toContain('"Follow"');
   });
 });

@@ -850,6 +850,51 @@ export class NotificationsService implements OnModuleInit {
   }
 
   /**
+   * Withdraws every live notification of one type addressed to a recipient.
+   *
+   * For when the thing they were about is discarded wholesale (a private
+   * account going public drops all its pending follow requests) rather than
+   * one actor at a time. The unread badge is recomputed from the table instead
+   * of decremented per row: how many of them were unread is not known without
+   * reading each, and a stale badge is exactly what this avoids.
+   */
+  async cancelNotificationsByType(params: {
+    recipientId: string;
+    type: NotificationType;
+  }): Promise<number> {
+    const { recipientId, type } = params;
+    const rows = await this.prisma.notification.findMany({
+      where: { recipientId, type, deletedAt: null },
+      select: { id: true },
+    });
+    if (rows.length === 0) return 0;
+
+    await this.prisma.notification.updateMany({
+      where: { id: { in: rows.map((r) => r.id) } },
+      data: { deletedAt: new Date() },
+    });
+
+    if (this.redis) {
+      await this.redis
+        .del(`notifications:unread:v2:${recipientId}`)
+        .catch(() => {});
+    }
+    await this.emitUnreadCount(recipientId);
+    for (const row of rows) {
+      void this.domainEventService.emit(
+        'notification:cancelled',
+        { notificationId: row.id, recipientId },
+        [recipientId],
+      );
+    }
+
+    this.logger.log(
+      `Notifications cancelled type=${type} recipient=${recipientId} count=${rows.length}`,
+    );
+    return rows.length;
+  }
+
+  /**
    * Creates the invite notifications for one `inviteFriends` call and announces
    * them.
    *

@@ -4,6 +4,7 @@ import { affiliatedWith } from '../common/campus/testing/affiliation.fixture';
 import type { ActivityAuthorizationService } from '../activities/activity-authorization.service';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { BlocksService } from '../users/blocks.service';
+import { authorVisibilityWhere } from '../posts/author-visibility';
 
 /**
  * Post search: which community posts a searcher may be shown, and that paging
@@ -135,6 +136,65 @@ describe('SearchService — post search scope and paging', () => {
     expect(findMany.mock.calls[0][0].where.author).toEqual({
       deletedAt: null,
       accountStatus: 'ACTIVE',
+    });
+  });
+
+  describe("a private author's own posts", () => {
+    const authorRule = (viewer: string | undefined) =>
+      authorVisibilityWhere(viewer);
+
+    it('are searchable only by the author and their followers: the rule is in the query', async () => {
+      const { service, findMany } = build(rows(1));
+      await service.globalSearch('hello', 'viewer', 3, 'posts');
+
+      expect(findMany.mock.calls[0][0].where.AND).toContainEqual(
+        authorRule('viewer'),
+      );
+    });
+
+    it('applies to a hashtag search as well as a text search', async () => {
+      const { service, findMany } = build(rows(1));
+      await service.globalSearch('#music', 'viewer', 3, 'posts');
+
+      const where = findMany.mock.calls[0][0].where;
+      expect(where).toHaveProperty('hashtags');
+      expect(where.AND).toContainEqual(authorRule('viewer'));
+    });
+
+    it('applies to the discovery posts shown for an empty query', async () => {
+      const { service, findMany } = build(rows(1));
+      await service.globalSearch('', 'viewer', 3, 'posts');
+
+      expect(findMany.mock.calls[0][0].where.AND).toContainEqual(
+        authorRule('viewer'),
+      );
+    });
+
+    it('keeps the rule on later pages, next to the keyset cursor', async () => {
+      const { service, findMany } = build(rows(7));
+      const first = await service.globalSearch('hello', 'viewer', 3, 'posts');
+      await service.globalSearch(
+        'hello',
+        'viewer',
+        3,
+        'posts',
+        first.nextCursor,
+      );
+
+      const second = findMany.mock.calls[1][0].where.AND;
+      expect(second).toContainEqual(authorRule('viewer'));
+      expect(second.length).toBeGreaterThan(
+        findMany.mock.calls[0][0].where.AND.length,
+      );
+    });
+
+    it('shows a signed-out searcher public authors only', async () => {
+      const { service, findMany } = build(rows(1));
+      await service.globalSearch('hello', undefined, 3, 'posts');
+
+      expect(findMany.mock.calls[0][0].where.AND).toContainEqual(
+        authorRule(undefined),
+      );
     });
   });
 });

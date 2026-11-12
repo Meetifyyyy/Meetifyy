@@ -13,6 +13,7 @@ import type {
 } from '../uploads/uploads.service';
 import { PayloadTooLargeException } from '@nestjs/common';
 import type { ContentDeletionAuthorizer } from './content-deletion.authorizer';
+import { PUBLIC_AUTHOR } from './testing/author-privacy.fake';
 
 /**
  * Once the row is committed, nothing after it may surface as a thrown error.
@@ -96,6 +97,9 @@ describe('PostsService — post-commit side effects never fail the write', () =>
         ),
         update: jest.fn(() => Promise.resolve({ id: 'p1' })),
       },
+      // The post's author, for the private-account check on a non-community
+      // post; a public one, as these cases are about the commit.
+      user: { findUnique: jest.fn(() => Promise.resolve(PUBLIC_AUTHOR)) },
       pollOption: {
         createMany: outsideTx('pollOption.createMany'),
         findMany: outsideTx('pollOption.findMany'),

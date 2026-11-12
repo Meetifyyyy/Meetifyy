@@ -10,6 +10,7 @@ import type { BlocksService } from '../users/blocks.service';
 import { buildGateway, fakeSocket } from './testing/gateway.fixture';
 import { ActivityAuthorizationService as ActivityPolicy } from '../activities/activity-authorization.service';
 import { affiliatedWith } from '../common/campus/testing/affiliation.fixture';
+import { authorVisibilityWhere } from '../posts/author-visibility';
 
 /** A session row as the handshake reads it. */
 type SessionRow = { revoked: boolean; expiresAt: Date; userId: string };
@@ -277,6 +278,11 @@ describe('RealtimeGateway — Authentication', () => {
       email: 'user@meetifyy.com',
       user_metadata: { displayName: 'Verified User', username: 'vuser' },
     });
+    prisma.user.findUnique.mockResolvedValue({
+      accountStatus: 'ACTIVE',
+      username: 'vuser',
+      displayName: 'Verified User',
+    });
 
     await gateway.handleConnection(client);
     expect(client.disconnect).not.toHaveBeenCalled();
@@ -290,9 +296,11 @@ describe('RealtimeGateway — Authentication', () => {
   });
 
   describe('the display name shown in typing indicators', () => {
+    // The row the single lifecycle query returns: status plus the profile
+    // names. `lifecycle` is what that one query yields (or a rejection).
     const connectAs = async (
       metadata: Record<string, unknown> | undefined,
-      profile: () => Promise<unknown>,
+      lifecycle: () => Promise<unknown>,
     ) => {
       const client = fakeSocket({
         data: {},
@@ -303,6 +311,7 @@ describe('RealtimeGateway — Authentication', () => {
         },
         disconnect: jest.fn(),
         join: jest.fn(),
+        emit: jest.fn(),
       });
       sessionOwner = 'user-uuid-789';
       jwtGuard.validateToken.mockResolvedValue({
@@ -310,57 +319,86 @@ describe('RealtimeGateway — Authentication', () => {
         email: 'private.person@example.com',
         user_metadata: metadata,
       });
-      // The lifecycle check also reads the user row; only the profile lookup
-      // (which selects `username`) is under test here.
-      prisma.user.findUnique.mockImplementation(
-        (args: { select?: { username?: boolean } }) =>
-          args.select?.username
-            ? profile()
-            : Promise.resolve({ accountStatus: 'ACTIVE' }),
-      );
+      prisma.user.findUnique.mockImplementation(lifecycle);
       await gateway.handleConnection(client);
       return client;
     };
 
-    const profileLookups = () =>
-      (
-        prisma.user.findUnique.mock.calls as Array<
-          [{ select?: { username?: boolean } }]
-        >
-      ).filter(([args]) => args.select?.username);
+    const active = (extra: Record<string, unknown>) => () =>
+      Promise.resolve({ accountStatus: 'ACTIVE', ...extra });
 
-    it('reads the username from the profile when metadata has none, never the email', async () => {
-      const client = await connectAs({}, () =>
-        Promise.resolve({ username: 'db_user', displayName: 'Db User' }),
+    it('uses the profile username, never the email', async () => {
+      const client = await connectAs(
+        {},
+        active({ username: 'db_user', displayName: 'Db User' }),
       );
 
       expect(client.data.userName).toBe('db_user');
       expect(client.data.userName).not.toContain('@');
-      expect(profileLookups()).toHaveLength(1);
     });
 
-    it('makes no profile lookup when metadata carries a username', async () => {
-      const client = await connectAs({ username: 'meta_user' }, () =>
-        Promise.resolve({ username: 'db_user' }),
+    it('ignores a name the user set in their own auth metadata', async () => {
+      const client = await connectAs(
+        { username: 'admin', displayName: 'Meetifyy Support' },
+        active({ username: 'db_user', displayName: 'Db User' }),
       );
 
-      expect(client.data.userName).toBe('meta_user');
-      expect(profileLookups()).toHaveLength(0);
+      expect(client.data.userName).toBe('db_user');
     });
 
-    it("falls back to 'Someone' when the profile yields nothing", async () => {
-      const client = await connectAs(undefined, () => Promise.resolve(null));
+    it('falls back to the display name when the profile has no username', async () => {
+      const client = await connectAs(
+        { username: 'admin' },
+        active({ username: null, displayName: 'Db User' }),
+      );
+
+      expect(client.data.userName).toBe('Db User');
+    });
+
+    it('reads the user row once: the name rides on the lifecycle query', async () => {
+      await connectAs({}, active({ username: 'db_user' }));
+
+      expect(prisma.user.findUnique).toHaveBeenCalledTimes(1);
+      expect(prisma.user.findUnique).toHaveBeenCalledWith({
+        where: { id: 'user-uuid-789' },
+        select: { accountStatus: true, username: true, displayName: true },
+      });
+    });
+
+    it("falls back to 'Someone' when the profile has no name", async () => {
+      const client = await connectAs(
+        { username: 'admin' },
+        active({ username: null, displayName: null }),
+      );
 
       expect(client.data.userName).toBe('Someone');
     });
 
-    it("falls back to 'Someone' when the profile lookup throws", async () => {
-      const client = await connectAs({}, () =>
+    it("falls back to 'Someone' when the row is missing, ignoring metadata", async () => {
+      const client = await connectAs({ username: 'admin' }, () =>
+        Promise.resolve(null),
+      );
+
+      expect(client.data.userName).toBe('Someone');
+    });
+
+    it("falls back to 'Someone' and still connects when the lifecycle read throws", async () => {
+      const client = await connectAs({ username: 'admin' }, () =>
         Promise.reject(new Error('db down')),
       );
 
       expect(client.disconnect).not.toHaveBeenCalled();
       expect(client.data.userName).toBe('Someone');
+    });
+
+    it('still refuses a suspended account on the same read', async () => {
+      const client = await connectAs(
+        { username: 'admin' },
+        active({ accountStatus: 'SUSPENDED', username: 'db_user' }),
+      );
+
+      expect(client.disconnect).toHaveBeenCalled();
+      expect(client.data.userName).toBeUndefined();
     });
   });
 
@@ -510,6 +548,34 @@ describe('RealtimeGateway — room join authorization', () => {
       const client = socket();
       await gateway.handlePostJoin(client, { postId: 'p1' });
       expect(client.join).not.toHaveBeenCalled();
+    });
+
+    describe("a private author's own post", () => {
+      it('is refused inside the room query: the rule rides on the lookup the join already makes', async () => {
+        // What the database answers when the rule excludes the row.
+        prisma.post.findFirst.mockResolvedValue(null);
+        const client = socket();
+        const result = await gateway.handlePostJoin(client, { postId: 'p1' });
+
+        const [query] = prisma.post.findFirst.mock.calls[0] as [
+          { where: { AND: unknown[] } },
+        ];
+        expect(query.where.AND).toEqual([authorVisibilityWhere('viewer')]);
+        expect(client.join).not.toHaveBeenCalled();
+        // The same silent answer a missing post gets: nothing says why.
+        expect(client.leave).toHaveBeenCalledWith('post_p1');
+        expect(result).toBeUndefined();
+      });
+
+      it('admits a viewer the rule lets through (a follower, the author, or a community post)', async () => {
+        prisma.post.findFirst.mockResolvedValue({
+          authorId: 'author',
+          community: null,
+        });
+        const client = socket();
+        await gateway.handlePostJoin(client, { postId: 'p1' });
+        expect(client.join).toHaveBeenCalledWith('post_p1');
+      });
     });
 
     it('refuses a deleted post, and a post in a deleted community', async () => {

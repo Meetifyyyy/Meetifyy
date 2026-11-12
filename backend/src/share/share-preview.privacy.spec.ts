@@ -3,6 +3,7 @@ import { stub } from '../common/testing/stub';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { StorageService } from '../uploads/uploads.service';
 import type { MediaCleanupService } from '../uploads/media-cleanup.service';
+import { authorVisibilityWhere } from '../posts/author-visibility';
 import {
   pollPost,
   postWithImages,
@@ -140,6 +141,23 @@ describe('SharePreviewService — what may be shared publicly', () => {
           },
         },
       ]);
+    });
+
+    it("refuses a private account's own post, which a link has no follower to check", async () => {
+      const { service, findFirst } = setup();
+      await service.getPublicPost(POST_ID);
+
+      // Community posts pass on their own branch; a post with no community
+      // must have an author who is not private.
+      expect(findFirst.mock.calls[0][0].where).toMatchObject({
+        AND: [authorVisibilityWhere(undefined)],
+      });
+    });
+
+    it('answers the 404 for a private account’s post, as for a missing one', async () => {
+      // The database finds no row once the rule excludes it.
+      const { service } = setup(null);
+      await expect(service.getPublicPost(POST_ID)).resolves.toBeNull();
     });
 
     it('answers everything in one round trip', async () => {

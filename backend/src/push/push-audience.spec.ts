@@ -55,6 +55,7 @@ function build() {
     },
     comment: { findUnique: jest.fn() },
     follow: { findUnique: jest.fn() },
+    followRequest: { findUnique: jest.fn() },
     activityInvitation: { findUnique: jest.fn() },
     crewActivity: { findUnique: jest.fn() },
     crewActivityMember: { findUnique: jest.fn() },
@@ -225,6 +226,62 @@ describe('PushAudienceService.forNotification', () => {
     prisma.follow.findUnique.mockResolvedValue({ followerId: 'liker' });
     expect(await audience.forNotification('n4', 'author')).toMatchObject({
       actorUsername: 'aarav',
+    });
+  });
+});
+
+describe('PushAudienceService follow requests', () => {
+  const requestRow = (type: 'FOLLOW_REQUEST' | 'FOLLOW_ACCEPTED') => ({
+    id: 'n5',
+    recipientId: 'author',
+    actorId: 'liker',
+    type,
+    entityType: null,
+    entityId: 'liker',
+    metadata: {},
+    readAt: null,
+    deletedAt: null,
+    updatedAt: new Date(),
+  });
+
+  it('request: suppressed once it is no longer pending', async () => {
+    const { audience, prisma } = build();
+    prisma.notification.findUnique.mockResolvedValue(
+      requestRow('FOLLOW_REQUEST'),
+    );
+    prisma.followRequest.findUnique.mockResolvedValue(null);
+    expect(await audience.forNotification('n5', 'author')).toBeNull();
+
+    prisma.followRequest.findUnique.mockResolvedValue({ requesterId: 'liker' });
+    expect(await audience.forNotification('n5', 'author')).toMatchObject({
+      type: 'FOLLOW_REQUEST',
+      actorUsername: 'aarav',
+    });
+    // The pair is read the right way round: requester = actor, target = recipient.
+    expect(prisma.followRequest.findUnique).toHaveBeenLastCalledWith({
+      where: {
+        requesterId_targetId: { requesterId: 'liker', targetId: 'author' },
+      },
+      select: { requesterId: true },
+    });
+  });
+
+  it('accepted: suppressed after the recipient unfollows the accepter', async () => {
+    const { audience, prisma } = build();
+    prisma.notification.findUnique.mockResolvedValue(
+      requestRow('FOLLOW_ACCEPTED'),
+    );
+    prisma.follow.findUnique.mockResolvedValue(null);
+    expect(await audience.forNotification('n5', 'author')).toBeNull();
+
+    prisma.follow.findUnique.mockResolvedValue({ followerId: 'author' });
+    expect(await audience.forNotification('n5', 'author')).not.toBeNull();
+    // The recipient is the follower here, the actor is who they follow.
+    expect(prisma.follow.findUnique).toHaveBeenLastCalledWith({
+      where: {
+        followerId_followingId: { followerId: 'author', followingId: 'liker' },
+      },
+      select: { followerId: true },
     });
   });
 });

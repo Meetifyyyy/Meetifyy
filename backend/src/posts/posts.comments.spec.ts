@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { PostsService } from './posts.service';
 import { ContentDeletionAuthorizer } from './content-deletion.authorizer';
+import { PUBLIC_AUTHOR } from './testing/author-privacy.fake';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationFactory } from '../notifications/notification.factory';
@@ -56,6 +57,9 @@ describe('PostsService — comments', () => {
         ),
         update: jest.fn(() => Promise.resolve({})),
       },
+      // The post's author, for the private-account check on a non-community
+      // post. These cases are about the thread, so the author is public.
+      user: { findUnique: jest.fn(() => Promise.resolve(PUBLIC_AUTHOR)) },
       comment: {
         findUnique: jest.fn(
           ({ where }: { where: { id: string } }): Promise<CommentRow | null> =>

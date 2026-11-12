@@ -7,7 +7,13 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { isSafeCoverCss, looksLikeCoverCss } from './cover-css.util';
-import { Gender, Prisma, UserRole, VerificationStatus } from '@prisma/client';
+import {
+  Gender,
+  NotificationType,
+  Prisma,
+  UserRole,
+  VerificationStatus,
+} from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationFactory } from '../notifications/notification.factory';
 import { DomainEventService } from '../events/domain-event.service';
@@ -26,9 +32,13 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import {
   NOTIFICATIONS_QUEUE,
+  FollowAcceptedNotifJob,
   FollowNotifJob,
+  FollowRequestNotifJob,
 } from '../notifications/notifications.processor';
 import { clearAuthSyncCache } from '../auth/auth.service';
+import { parseKeysetCursor } from '../common/pagination.util';
+import { errorMessage } from '../common/utils/error.util';
 import { pickReason } from './follow-recommendation.scoring';
 import {
   PickerSocial,
@@ -52,6 +62,13 @@ import {
   activeAffiliationCollegeId,
 } from '../common/campus/campus-access.service';
 import { activeAffiliationCollegeIdSql } from '../common/campus/campus-affiliation.sql';
+import {
+  accountContentVisibleTo,
+  authorPrivacySelect,
+} from '../posts/author-visibility';
+
+/** How long one follow-request push to a given pair suppresses the next. */
+const FOLLOW_REQUEST_PUSH_WINDOW_SECONDS = 24 * 60 * 60;
 
 /** The follow CTE's single row (see followUser). */
 interface FollowCteRow {
@@ -64,6 +81,13 @@ interface FollowCteRow {
   followerAvatar: string | null;
   isBlocked: boolean;
   newlyFollowed: boolean;
+  /**
+   * The target is private and the caller is not yet one of their followers, so
+   * this call left (or found) a pending request instead of a Follow.
+   */
+  requested: boolean;
+  /** The request row was inserted by this call (not already pending). */
+  newlyRequested: boolean;
   targetFollowers: number;
   targetFollowing: number;
   currentFollowing: number;
@@ -74,6 +98,8 @@ interface UnfollowCteRow {
   targetId: string;
   targetUsername: string;
   unfollowed: boolean;
+  /** A pending follow request from the caller was deleted by this call. */
+  requestWithdrawn: boolean;
   targetFollowers: number;
   targetFollowing: number;
   currentFollowing: number;
@@ -907,6 +933,7 @@ export class UsersService {
       blockDirection,
       followRecord,
       followedByRecord,
+      requestRecord,
       presence,
       canSeeOnline,
     ] = await Promise.all([
@@ -935,6 +962,20 @@ export class UsersService {
                 followingId: currentUserId!,
               },
             },
+          })
+        : Promise.resolve(null),
+      // A request can only be pending against a private account, so a public
+      // profile (the usual case) skips the lookup; for a private one it joins
+      // this batch and adds no round trip of its own.
+      needsRelational && targetUser.settings?.privateProfile
+        ? this.prisma.followRequest.findUnique({
+            where: {
+              requesterId_targetId: {
+                requesterId: currentUserId!,
+                targetId: targetUser.id,
+              },
+            },
+            select: { requesterId: true },
           })
         : Promise.resolve(null),
       this.presenceService.getPresence(targetUser.id),
@@ -1023,6 +1064,9 @@ export class UsersService {
       isFollowing,
       isFollowedBy,
       isMutual: isFollowing && isFollowedBy,
+      // The viewer's request to follow this private account is still pending.
+      // Never true alongside `isFollowing`: the two are mutually exclusive.
+      followRequested: !isFollowing && !!requestRecord,
       /**
        * True when the VIEWER has blocked this profile.
        *
@@ -1048,17 +1092,23 @@ export class UsersService {
     // Reduces database network round-trips from 4 down to 1!
     const rows = await this.prisma.$queryRaw<FollowCteRow[]>`
       WITH target_user AS (
-        SELECT "id", "username", "displayName", "avatar"
+        SELECT u."id", u."username", u."displayName", u."avatar",
+               -- Read here, in the same statement, so the decision between a
+               -- Follow and a request is made against the same snapshot as
+               -- the insert and costs no extra round trip. No settings row
+               -- means the default: public.
+               COALESCE(s."privateProfile", false) AS "isPrivate"
         FROM "User" u
-        WHERE ("username" = ${cleanUsername} OR "id" = ${cleanUsername})
+        LEFT JOIN "UserSettings" s ON s."userId" = u."id"
+        WHERE (u."username" = ${cleanUsername} OR u."id" = ${cleanUsername})
           -- Unavailable accounts are not followable. During the 30-day
           -- deletion window the username is still the real one, so anybody
           -- who already knew it could otherwise follow an account that is
           -- 404 everywhere else — and the follow row would then have to be
           -- cleaned up again at purge time.
-          AND "deletedAt" IS NULL
+          AND u."deletedAt" IS NULL
           -- Same for a suspended or banned account.
-          AND "accountStatus"::text = 'ACTIVE'
+          AND u."accountStatus"::text = 'ACTIVE'
         LIMIT 1
       ),
       follower_user AS (
@@ -1073,14 +1123,37 @@ export class UsersService {
            OR (b."blockerId" = tu."id" AND b."blockedId" = ${followerId})
         LIMIT 1
       ),
+      -- A private account takes a request from anyone who is not already
+      -- following it. Existing followers stay followers (and a repeat follow
+      -- stays the idempotent no-op below), so only the not-yet-following case
+      -- is diverted.
+      needs_request AS (
+        SELECT 1 FROM target_user tu
+        WHERE tu."isPrivate"
+          AND NOT EXISTS (SELECT 1 FROM block_check)
+          AND tu."id" != ${followerId}
+          AND NOT EXISTS (
+            SELECT 1 FROM "Follow" f
+            WHERE f."followerId" = ${followerId} AND f."followingId" = tu."id"
+          )
+      ),
       ins AS (
         INSERT INTO "Follow" ("followerId", "followingId", "createdAt")
         SELECT ${followerId}, tu."id", NOW()
         FROM target_user tu
         WHERE NOT EXISTS (SELECT 1 FROM block_check)
           AND tu."id" != ${followerId}
+          AND NOT EXISTS (SELECT 1 FROM needs_request)
         ON CONFLICT ("followerId", "followingId") DO NOTHING
         RETURNING "followingId"
+      ),
+      req_ins AS (
+        INSERT INTO "FollowRequest" ("requesterId", "targetId", "createdAt")
+        SELECT ${followerId}, tu."id", NOW()
+        FROM target_user tu
+        WHERE EXISTS (SELECT 1 FROM needs_request)
+        ON CONFLICT ("requesterId", "targetId") DO NOTHING
+        RETURNING "targetId"
       )
       SELECT 
         tu."id" AS "targetId",
@@ -1092,6 +1165,8 @@ export class UsersService {
         fu."avatar" AS "followerAvatar",
         EXISTS(SELECT 1 FROM block_check) AS "isBlocked",
         EXISTS(SELECT 1 FROM ins) AS "newlyFollowed",
+        EXISTS(SELECT 1 FROM needs_request) AS "requested",
+        EXISTS(SELECT 1 FROM req_ins) AS "newlyRequested",
         ((SELECT COUNT(*)::int FROM "Follow" f, target_user tu WHERE f."followingId" = tu."id") + CASE WHEN EXISTS(SELECT 1 FROM ins) THEN 1 ELSE 0 END) AS "targetFollowers",
         (SELECT COUNT(*)::int FROM "Follow" f, target_user tu WHERE f."followerId" = tu."id") AS "targetFollowing",
         ((SELECT COUNT(*)::int FROM "Follow" f WHERE f."followerId" = ${followerId}) + CASE WHEN EXISTS(SELECT 1 FROM ins) THEN 1 ELSE 0 END) AS "currentFollowing"
@@ -1115,21 +1190,40 @@ export class UsersService {
       throw new BadRequestException('Action not allowed due to user block');
     }
 
-    if (res.newlyFollowed) {
-      // The auth bootstrap (`/api/auth/sync`) serves `followingList` from a
-      // 60-second in-process LRU. Nothing used to drop that entry when the
-      // graph changed, so any auth event inside that window — a token refresh,
-      // a tab return, a reload — answered with the PRE-follow list, the client
-      // overwrote `currentUser.followingList` with it wholesale, and every
-      // account followed in the last minute reverted to "Follow" in the UI.
-      // That is the flip-back bug, and it got worse the more follows a session
-      // performed because each stale answer reverted all of them at once.
-      //
-      // The LRU is per process, so this also broadcasts over Redis to the
-      // other replicas — see clearAuthSyncCache. Without that, whether the UI
-      // reverted came down to which replica the next sync happened to reach.
-      clearAuthSyncCache(followerId);
+    // Only a request that did not already exist tells the target anything: a
+    // repeat tap on "Requested" must not ping them again. And a request that
+    // was withdrawn and re-made is a new row every time, so the claim below
+    // also caps a follow/unfollow loop at one push per pair per day. No Follow
+    // was written, so there is no follow.created and nothing to invalidate.
+    if (
+      res.newlyRequested &&
+      (await this.claimFollowRequestPush(followerId, res.targetId))
+    ) {
+      const requestJob: FollowRequestNotifJob = {
+        requesterId: followerId,
+        targetId: res.targetId,
+        actor: {
+          username: res.followerUsername,
+          displayName: res.followerDisplayName,
+          avatar: res.followerAvatar,
+        },
+      };
+      this.notifQueue
+        .add('follow-request-notification', requestJob, {
+          removeOnComplete: true,
+          removeOnFail: { count: 50 },
+          attempts: 3,
+          backoff: { type: 'exponential', delay: 1000 },
+        })
+        .catch((err) =>
+          this.logger.warn(
+            'Failed to enqueue follow request notification',
+            err,
+          ),
+        );
+    }
 
+    if (res.newlyFollowed) {
       // Async non-blocking notification queue
       const jobData: FollowNotifJob = {
         followerId,
@@ -1151,18 +1245,13 @@ export class UsersService {
           this.logger.warn('Failed to enqueue follow notification', err),
         );
 
-      // Async non-blocking domain event broadcast
-      this.domainEventService
-        .emit('follow.created', {
-          followerId,
-          followingId: res.targetId,
-          followingUsername: res.targetUsername,
-          followerStats: { followingCount: res.currentFollowing },
-          targetStats: { followersCount: res.targetFollowers },
-        })
-        .catch((err) =>
-          this.logger.warn('Failed to emit follow.created event', err),
-        );
+      this.announceNewFollow({
+        followerId,
+        followingId: res.targetId,
+        followingUsername: res.targetUsername,
+        followingCount: res.currentFollowing,
+        followersCount: res.targetFollowers,
+      });
     }
 
     const tEnd = performance.now();
@@ -1170,9 +1259,14 @@ export class UsersService {
       `[TIMING followUser] singleQueryDb=${(tDb - t0).toFixed(1)}ms total=${(tEnd - t0).toFixed(1)}ms (1 round-trip)`,
     );
 
+    // `requested` is new; every key that was here stays. An installed app that
+    // knows nothing of requests reads `isFollowing: false` and shows "Follow",
+    // which is the correct degradation for a follow that has not happened.
+    const requested = Boolean(res.requested);
     return {
       success: true,
-      isFollowing: true,
+      isFollowing: !requested,
+      requested,
       targetUser: {
         id: res.targetId,
         username: res.targetUsername,
@@ -1181,6 +1275,84 @@ export class UsersService {
       },
       currentUserStats: { followingCount: res.currentFollowing },
     };
+  }
+
+  /**
+   * One follow-request push per requester/target pair per day.
+   *
+   * The in-app line is an upsert, so a follow -> unfollow -> follow loop
+   * leaves one row; the push is what would repeat, once per cycle. `SET NX`
+   * makes the check and the claim one atomic step, so two replicas handling
+   * the same loop cannot both send.
+   *
+   * Fails open: a Redis problem means one extra push at worst, which is better
+   * than silently dropping the only signal a private account gets that someone
+   * asked to follow them.
+   */
+  private async claimFollowRequestPush(
+    requesterId: string,
+    targetId: string,
+  ): Promise<boolean> {
+    try {
+      const redis = this.redisService?.getClient?.();
+      if (!redis) return true;
+      const claimed = await redis.set(
+        `follow-request:notified:${requesterId}:${targetId}`,
+        '1',
+        'EX',
+        FOLLOW_REQUEST_PUSH_WINDOW_SECONDS,
+        'NX',
+      );
+      return claimed === 'OK';
+    } catch (err) {
+      this.logger.debug(
+        `follow request push not throttled for ${requesterId}->${targetId}: ${errorMessage(err)}`,
+      );
+      return true;
+    }
+  }
+
+  /**
+   * What a brand-new Follow edge sets in motion, shared by the direct follow
+   * and by a private account accepting a request so the two cannot drift.
+   *
+   * The auth bootstrap (`/api/auth/sync`) serves `followingList` from a
+   * 60-second in-process LRU. Nothing used to drop that entry when the graph
+   * changed, so any auth event inside that window — a token refresh, a tab
+   * return, a reload — answered with the PRE-follow list, the client
+   * overwrote `currentUser.followingList` with it wholesale, and every account
+   * followed in the last minute reverted to "Follow" in the UI. That is the
+   * flip-back bug, and it got worse the more follows a session performed
+   * because each stale answer reverted all of them at once.
+   *
+   * The LRU is per process, so this also broadcasts over Redis to the other
+   * replicas — see clearAuthSyncCache. Without that, whether the UI reverted
+   * came down to which replica the next sync happened to reach.
+   *
+   * Notifications are deliberately not here: who is told, and what they are
+   * told, differs between the two callers.
+   */
+  private announceNewFollow(edge: {
+    followerId: string;
+    followingId: string;
+    followingUsername: string;
+    followingCount: number;
+    followersCount: number;
+  }): void {
+    clearAuthSyncCache(edge.followerId);
+
+    // Async non-blocking domain event broadcast
+    this.domainEventService
+      .emit('follow.created', {
+        followerId: edge.followerId,
+        followingId: edge.followingId,
+        followingUsername: edge.followingUsername,
+        followerStats: { followingCount: edge.followingCount },
+        targetStats: { followersCount: edge.followersCount },
+      })
+      .catch((err) =>
+        this.logger.warn('Failed to emit follow.created event', err),
+      );
   }
 
   async unfollowUser(followerId: string, followingUsername: string) {
@@ -1201,11 +1373,20 @@ export class UsersService {
         USING target_user tu
         WHERE f."followerId" = ${followerId} AND f."followingId" = tu."id"
         RETURNING f."followingId"
+      ),
+      -- Unfollowing also withdraws a request still waiting on a private
+      -- account, so the same button works for "Following" and "Requested".
+      req_del AS (
+        DELETE FROM "FollowRequest" r
+        USING target_user tu
+        WHERE r."requesterId" = ${followerId} AND r."targetId" = tu."id"
+        RETURNING r."targetId"
       )
       SELECT 
         tu."id" AS "targetId",
         tu."username" AS "targetUsername",
         EXISTS(SELECT 1 FROM del) AS "unfollowed",
+        EXISTS(SELECT 1 FROM req_del) AS "requestWithdrawn",
         GREATEST(0, (SELECT COUNT(*)::int FROM "Follow" f, target_user tu WHERE f."followingId" = tu."id") - CASE WHEN EXISTS(SELECT 1 FROM del) THEN 1 ELSE 0 END) AS "targetFollowers",
         (SELECT COUNT(*)::int FROM "Follow" f, target_user tu WHERE f."followerId" = tu."id") AS "targetFollowing",
         GREATEST(0, (SELECT COUNT(*)::int FROM "Follow" f WHERE f."followerId" = ${followerId}) - CASE WHEN EXISTS(SELECT 1 FROM del) THEN 1 ELSE 0 END) AS "currentFollowing"
@@ -1239,6 +1420,12 @@ export class UsersService {
         );
     }
 
+    if (res.requestWithdrawn) {
+      // The request is gone, so the "requested to follow you" line it left in
+      // the target's notifications would point at nothing.
+      this.cancelFollowRequestNotification(res.targetId, followerId);
+    }
+
     const tEnd = performance.now();
     this.logger.log(
       `[TIMING unfollowUser] singleQueryDb=${(tDb - t0).toFixed(1)}ms total=${(tEnd - t0).toFixed(1)}ms (1 round-trip)`,
@@ -1247,6 +1434,7 @@ export class UsersService {
     return {
       success: true,
       isFollowing: false,
+      requested: false,
       targetUser: {
         id: res.targetId,
         username: res.targetUsername,
@@ -1255,6 +1443,200 @@ export class UsersService {
       },
       currentUserStats: { followingCount: res.currentFollowing },
     };
+  }
+
+  /**
+   * The caller's pending follow requests, newest first.
+   *
+   * Requests from anyone the caller is blocked with, or whose account is no
+   * longer active, are left out of the page AND the total, so the badge never
+   * counts a row the list cannot show. (Blocking also deletes the request, so
+   * the block filter is a second line of defence, not the first.)
+   *
+   * Keyset-paged on (createdAt, requesterId): the table has no id column, and
+   * a requester is unique per target, so that pair is a total order.
+   */
+  async listFollowRequests(userId: string, limit: number, cursor?: string) {
+    const take = Math.min(Math.max(Math.trunc(limit) || 20, 1), 50);
+    const excluded = await this.blocksService.getExcludedUserIds(userId);
+
+    const base: Prisma.FollowRequestWhereInput = {
+      targetId: userId,
+      requester: { deletedAt: null, accountStatus: 'ACTIVE' },
+      ...(excluded.length > 0 ? { requesterId: { notIn: excluded } } : {}),
+    };
+    const after = parseKeysetCursor(cursor);
+    const pageWhere: Prisma.FollowRequestWhereInput = after
+      ? {
+          AND: [
+            base,
+            {
+              OR: [
+                { createdAt: { lt: after.date } },
+                { createdAt: after.date, requesterId: { lt: after.id } },
+              ],
+            },
+          ],
+        }
+      : base;
+
+    const [rows, total] = await Promise.all([
+      this.prisma.followRequest.findMany({
+        where: pageWhere,
+        orderBy: [{ createdAt: 'desc' }, { requesterId: 'desc' }],
+        // One extra row says whether another page exists without a COUNT.
+        take: take + 1,
+        select: {
+          requesterId: true,
+          createdAt: true,
+          requester: {
+            select: {
+              id: true,
+              username: true,
+              displayName: true,
+              avatar: true,
+            },
+          },
+        },
+      }),
+      this.prisma.followRequest.count({ where: base }),
+    ]);
+
+    const hasMore = rows.length > take;
+    const page = hasMore ? rows.slice(0, take) : rows;
+    const last = page[page.length - 1];
+
+    return {
+      requests: page.map((row) => ({
+        user: row.requester,
+        createdAt: row.createdAt,
+      })),
+      nextCursor:
+        hasMore && last
+          ? `${last.createdAt.toISOString()}|${last.requesterId}`
+          : null,
+      total,
+    };
+  }
+
+  /**
+   * Accept a pending request: the requester becomes a follower of `targetId`.
+   *
+   * Deleting the request is what claims it, and it happens first inside the
+   * transaction. A second accept (a double tap, a retry) waits on that row,
+   * finds nothing once the first commits, and answers 404 instead of
+   * announcing the same follow twice.
+   */
+  async acceptFollowRequest(targetId: string, requesterId: string) {
+    const accepter = await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.followRequest.deleteMany({
+        where: { requesterId, targetId },
+      });
+      if (claimed.count === 0) {
+        throw new NotFoundException('Follow request not found');
+      }
+
+      // One read for both people: the requester must still be a live account,
+      // and the accepter's name goes into the notification.
+      const people = await tx.user.findMany({
+        where: { id: { in: [requesterId, targetId] } },
+        select: {
+          id: true,
+          username: true,
+          displayName: true,
+          avatar: true,
+          deletedAt: true,
+          accountStatus: true,
+        },
+      });
+      const requester = people.find((p) => p.id === requesterId);
+      const me = people.find((p) => p.id === targetId);
+      if (
+        !me ||
+        !requester ||
+        requester.deletedAt ||
+        requester.accountStatus !== 'ACTIVE'
+      ) {
+        // Rolls the claim back too: the request stays as it was.
+        throw new NotFoundException('Follow request not found');
+      }
+
+      await tx.follow.createMany({
+        data: [{ followerId: requesterId, followingId: targetId }],
+        skipDuplicates: true,
+      });
+      return me;
+    });
+
+    const [followersCount, requesterFollowing] = await Promise.all([
+      this.prisma.follow.count({ where: { followingId: targetId } }),
+      this.prisma.follow.count({ where: { followerId: requesterId } }),
+    ]);
+
+    this.announceNewFollow({
+      followerId: requesterId,
+      followingId: targetId,
+      followingUsername: accepter.username,
+      followingCount: requesterFollowing,
+      followersCount,
+    });
+
+    const job: FollowAcceptedNotifJob = {
+      accepterId: targetId,
+      requesterId,
+      actor: {
+        username: accepter.username,
+        displayName: accepter.displayName,
+        avatar: accepter.avatar,
+      },
+    };
+    this.notifQueue
+      .add('follow-accepted-notification', job, {
+        removeOnComplete: true,
+        removeOnFail: { count: 50 },
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 1000 },
+      })
+      .catch((err) =>
+        this.logger.warn('Failed to enqueue follow accepted notification', err),
+      );
+
+    this.cancelFollowRequestNotification(targetId, requesterId);
+
+    return { success: true, followersCount };
+  }
+
+  /**
+   * Decline a pending request. The requester is not told: their button simply
+   * stays "Requested" until they withdraw it, which is the same thing a
+   * request nobody has answered looks like.
+   */
+  async declineFollowRequest(targetId: string, requesterId: string) {
+    const deleted = await this.prisma.followRequest.deleteMany({
+      where: { requesterId, targetId },
+    });
+    if (deleted.count === 0) {
+      throw new NotFoundException('Follow request not found');
+    }
+    this.cancelFollowRequestNotification(targetId, requesterId);
+    return { success: true };
+  }
+
+  /** Drops the "requested to follow you" line for one answered request. */
+  private cancelFollowRequestNotification(
+    targetId: string,
+    requesterId: string,
+  ): void {
+    this.notificationsService
+      .cancelNotificationByCriteria({
+        recipientId: targetId,
+        actorId: requesterId,
+        entityId: requesterId,
+        type: NotificationType.FOLLOW_REQUEST,
+      })
+      .catch((err) =>
+        this.logger.warn('Failed to cancel follow request notification', err),
+      );
   }
 
   /**
@@ -1283,9 +1665,15 @@ export class UsersService {
 
     const targetUser = await this.prisma.user.findUnique({
       where: { username: cleanUsername },
-      select: { id: true },
+      select: { id: true, ...authorPrivacySelect(currentUserId) },
     });
     if (!targetUser) throw new NotFoundException('User not found');
+    // A private account's follower list is for themselves and their followers.
+    // Anyone else gets the empty list a quiet account has, so the client
+    // renders it as it always has; the counts beside it stay visible.
+    if (!accountContentVisibleTo(currentUserId, targetUser.id, targetUser)) {
+      return [];
+    }
 
     // Blocked users must not surface in a follower list. Excluded in SQL, before
     // LIMIT/OFFSET, so pages stay full and the offset cursor does not skip —
@@ -1382,9 +1770,15 @@ export class UsersService {
 
     const targetUser = await this.prisma.user.findUnique({
       where: { username: cleanUsername },
-      select: { id: true },
+      select: { id: true, ...authorPrivacySelect(currentUserId) },
     });
     if (!targetUser) throw new NotFoundException('User not found');
+    // A private account's follower list is for themselves and their followers.
+    // Anyone else gets the empty list a quiet account has, so the client
+    // renders it as it always has; the counts beside it stay visible.
+    if (!accountContentVisibleTo(currentUserId, targetUser.id, targetUser)) {
+      return [];
+    }
 
     // Same exclusion as getFollowers, applied to the followed side of the edge.
     const excludedUserIds = currentUserId
@@ -1866,11 +2260,47 @@ export class UsersService {
       payload.whoCanSeeOnline = data.whoCanSeeOnline;
     }
 
-    const updated = await this.prisma.userSettings.upsert({
-      where: { userId },
-      create: { userId, ...payload },
-      update: { ...payload },
-    });
+    // Going public discards every request still waiting on this account (no
+    // one is notified). It goes in the same transaction as the settings write so
+    // a failure cannot leave a public account with a stale inbox. Requests are
+    // only ever created while the account is private, so deleting on every
+    // "public" write is the same as deleting on the true -> false change, and
+    // saves reading the old value first.
+    let discarded = 0;
+    const updated =
+      payload.privateProfile === false
+        ? await this.prisma.$transaction(async (tx) => {
+            const row = await tx.userSettings.upsert({
+              where: { userId },
+              create: { userId, ...payload },
+              update: { ...payload },
+            });
+            const dropped = await tx.followRequest.deleteMany({
+              where: { targetId: userId },
+            });
+            discarded = dropped.count;
+            return row;
+          })
+        : await this.prisma.userSettings.upsert({
+            where: { userId },
+            create: { userId, ...payload },
+            update: { ...payload },
+          });
+
+    if (discarded > 0) {
+      // The notifications go with the requests they announced.
+      this.notificationsService
+        .cancelNotificationsByType({
+          recipientId: userId,
+          type: NotificationType.FOLLOW_REQUEST,
+        })
+        .catch((err) =>
+          this.logger.warn(
+            'Failed to cancel follow request notifications',
+            err,
+          ),
+        );
+    }
 
     void this.domainEventService.emit(
       'user.settings_updated',
@@ -1913,6 +2343,17 @@ export class UsersService {
         },
       });
 
+      // A pending request is an unfinished follow, so it goes the same way —
+      // otherwise accepting it later would recreate the edge the block cut.
+      await tx.followRequest.deleteMany({
+        where: {
+          OR: [
+            { requesterId: blockerId, targetId: blockedId },
+            { requesterId: blockedId, targetId: blockerId },
+          ],
+        },
+      });
+
       // Any live Instant Match between the two ends immediately. The pair is
       // kept out of each other's future match pool by the block filter rather
       // than by deleting their queue entries — both stay matchable with
@@ -1936,6 +2377,11 @@ export class UsersService {
         },
       });
     });
+    // The requests were deleted above, so the "requested to follow you" lines
+    // they left would open onto nothing. Both directions, like the rows.
+    this.cancelFollowRequestNotification(blockerId, blockedId);
+    this.cancelFollowRequestNotification(blockedId, blockerId);
+
     // Invalidate cached block lists AND the conversation-list cache for both
     // users so the `blocked` flag / hidden presence reflect the change
     // immediately instead of lingering for the 60s conversation-cache TTL.

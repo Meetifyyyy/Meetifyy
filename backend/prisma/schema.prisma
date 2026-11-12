@@ -247,6 +247,8 @@ model User {
   deletedMessages            DeletedMessage[]
   following                  Follow[]                    @relation("follower")
   followers                  Follow[]                    @relation("following")
+  followRequestsSent         FollowRequest[]             @relation("followRequester")
+  followRequestsReceived     FollowRequest[]             @relation("followRequestTarget")
   affinities                 UserAffinity[]              @relation("affinityFrom")
   affinityTargets            UserAffinity[]              @relation("affinityTo")
   matchQueueEntry            MatchQueueEntry?
@@ -498,6 +500,21 @@ model Follow {
   @@index([followingId])
   @@index([followingId, createdAt(sort: Desc)])
   @@index([followerId, createdAt(sort: Desc)])
+}
+
+/// A pending request to follow a private account. It becomes a Follow when the
+/// target accepts and is simply deleted when they decline, when the requester
+/// withdraws, when either blocks the other, or when the account goes public.
+model FollowRequest {
+  requesterId String
+  targetId    String
+  createdAt   DateTime @default(now())
+  requester   User     @relation("followRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  target      User     @relation("followRequestTarget", fields: [targetId], references: [id], onDelete: Cascade)
+
+  @@id([requesterId, targetId])
+  /// The target's inbox, newest first.
+  @@index([targetId, createdAt(sort: Desc)])
 }
 
 /// How much a user interacts with another, recomputed by the ranking worker
@@ -1587,6 +1604,10 @@ enum NotificationType {
   COMMUNITY_JOIN
   /// Someone asked to join a private community the recipient can review.
   COMMUNITY_JOIN_REQUEST
+  /// Someone asked to follow the recipient's private account.
+  FOLLOW_REQUEST
+  /// The account the recipient asked to follow accepted the request.
+  FOLLOW_ACCEPTED
 }
 
 enum ConversationType {

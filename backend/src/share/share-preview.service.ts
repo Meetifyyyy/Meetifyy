@@ -3,6 +3,7 @@ import { config } from '../config';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../uploads/uploads.service';
 import { MediaCleanupService } from '../uploads/media-cleanup.service';
+import { authorVisibilityWhere } from '../posts/author-visibility';
 import { normaliseWhitespace, truncateToChars } from './share-text.util';
 
 /**
@@ -29,6 +30,9 @@ import { normaliseWhitespace, truncateToChars } from './share-text.util';
  *     private, and not a campus community. A campus community is restricted to
  *     verified students of one college even for its own members, so its posts
  *     are by definition not externally shareable.
+ *   - A post outside any community is not the own post of a private account:
+ *     those are limited to the author's followers (`author-visibility.ts`), and
+ *     a link has no follower to check.
  *
  * WHAT IS DELIBERATELY NOT CHECKED
  *
@@ -100,6 +104,9 @@ export class SharePreviewService {
             },
           },
         ],
+        // A private account's own posts are for its followers; a link preview
+        // has no viewer, so it is the weakest case of the same rule.
+        AND: [authorVisibilityWhere(undefined)],
       },
       select: {
         id: true,

@@ -42,7 +42,10 @@ import { NotificationFactory } from '../notifications/notification.factory';
 import { BlocksService } from '../users/blocks.service';
 import { DomainEventService } from '../events/domain-event.service';
 import { RedisService } from '../redis/redis.service';
-import { MentionsService } from '../mentions/mentions.service';
+import {
+  MentionsService,
+  type SanitizedMention,
+} from '../mentions/mentions.service';
 import { StorageService } from '../uploads/uploads.service';
 import { MediaCleanupService } from '../uploads/media-cleanup.service';
 import { isProtectedMediaKey } from '../uploads/media-ownership.util';
@@ -54,6 +57,12 @@ import {
   canViewCommunity,
   type CommunityVisibilityFields,
 } from './community-visibility';
+import {
+  authorVisibilitySql,
+  authorAudienceAmong,
+  authorVisibilityWhere,
+  canSeeAuthorPosts,
+} from './author-visibility';
 import type Redis from 'ioredis';
 import { config } from '../config';
 import { VerificationAccessService } from '../common/verification/verification-access.service';
@@ -285,7 +294,7 @@ export class PostsService {
    *  - a private community is limited to its owner and members.
    *
    * Every single-post route funnels through this (via
-   * `assertCanViewPostCommunity`), so holding a post id is never enough to read
+   * `assertCanViewPost`), so holding a post id is never enough to read
    * or interact with a post you could not see in the feed.
    */
   private canViewCommunity(
@@ -299,21 +308,53 @@ export class PostsService {
 
   /**
    * Throws 404 (not 403: do not confirm the post exists) unless the viewer may
-   * see the community a post belongs to. A post outside any community passes
-   * without a query.
+   * see the post. A post in a community is decided by the community's rule
+   * above; a post outside any community is the author's own, so a private
+   * author's is limited to the author and their followers
+   * (`author-visibility.ts`). The two never both apply, and either way the
+   * refusal is the same not-found answer a missing post gets.
    */
-  private async assertCanViewPostCommunity(
+  private async assertCanViewPost(
     userId: string,
-    communityId: string | null | undefined,
+    post: { communityId?: string | null; authorId: string },
   ): Promise<void> {
-    if (!communityId) return;
+    if (!post.communityId) {
+      if (!(await canSeeAuthorPosts(userId, post.authorId, this.prisma))) {
+        throw new NotFoundException('Post not found');
+      }
+      return;
+    }
     const community = await this.prisma.community.findUnique({
-      where: { id: communityId },
+      where: { id: post.communityId },
       select: PostsService.communityAccessSelect(userId),
     });
     if (!community || !(await this.canViewCommunity(userId, community))) {
       throw new NotFoundException('Post not found');
     }
+  }
+
+  /**
+   * The mentions whose target may open the post they are being told about.
+   *
+   * A private author's own post (or a comment under it) is closed to anyone
+   * who does not follow them, so notifying a stranger would hand them a
+   * notification whose link answers not-found. Those mentions are dropped,
+   * not queued: the mention text stays on the post, only the ping is withheld.
+   * A post in a community keeps that community's behaviour and is untouched.
+   */
+  private async mentionsWhoCanSeePost(
+    mentions: SanitizedMention[],
+    post: { authorId: string; communityId?: string | null },
+  ): Promise<SanitizedMention[]> {
+    if (post.communityId || mentions.length === 0) return mentions;
+    const allowed = new Set(
+      await authorAudienceAmong(
+        post.authorId,
+        mentions.map((m) => m.userId),
+        this.prisma,
+      ),
+    );
+    return mentions.filter((m) => allowed.has(m.userId));
   }
 
   /**
@@ -729,16 +770,19 @@ export class PostsService {
     // Fire-and-forget: indexing + notifying mentioned users must never add
     // latency to the post-creation request or roll back the already-committed post.
     if (sanitizedMentions.length > 0 && post.author) {
-      this.mentionsService
-        .persistAndNotify({
-          mentions: sanitizedMentions,
-          sourceType: MentionSource.POST,
-          sourceId: post.id,
-          actor: post.author,
-          entityType: NotificationEntityType.POST,
-          entityId: post.id,
-          contextText: text,
-        })
+      const author = post.author;
+      this.mentionsWhoCanSeePost(sanitizedMentions, post)
+        .then((mentions) =>
+          this.mentionsService.persistAndNotify({
+            mentions,
+            sourceType: MentionSource.POST,
+            sourceId: post.id,
+            actor: author,
+            entityType: NotificationEntityType.POST,
+            entityId: post.id,
+            contextText: text,
+          }),
+        )
         .catch((err) =>
           this.logger.warn('Failed to process post mentions', err),
         );
@@ -1286,6 +1330,10 @@ export class PostsService {
               OR COALESCE(c."collegeId" = (SELECT me."collegeId" FROM me), false)
             )
           ))
+          -- A private author's own posts reach only their followers; the home
+          -- feed reads every active author's non-community posts, so this is
+          -- where a private account's posts would otherwise leak.
+          AND ${authorVisibilitySql(userId, 'p')}
           ${excludedUserIds.length > 0 ? Prisma.sql`AND p."authorId" NOT IN (${Prisma.join(excludedUserIds)})` : Prisma.empty}
         ORDER BY p."createdAt" DESC, p.id DESC
         LIMIT ${PostsService.RANK_CANDIDATES}
@@ -1576,6 +1624,10 @@ export class PostsService {
               : Prisma.sql`AND p."createdAt" < ${cursorDate}`
             : Prisma.empty
         }
+        -- Also applies to the ranked feed's page loads (restrictToIds), so a
+        -- post whose author turned private after the ranking was built drops
+        -- out of the page rather than being served from the cached order.
+        AND ${authorVisibilitySql(userId, 'p')}
         ${excludedUserIds.length > 0 ? Prisma.sql`AND p."authorId" NOT IN (${Prisma.join(excludedUserIds)})` : Prisma.empty}
         ${restrictToIds ? Prisma.sql`AND p.id IN (${Prisma.join(restrictToIds)})` : Prisma.empty}
       ORDER BY p."createdAt" DESC, p.id DESC
@@ -1700,6 +1752,11 @@ export class PostsService {
         deletedAt: null,
         authorId: targetAuthor.id,
         communityId: null, // STRICTLY ONLY PROFILE POSTS — NO COMMUNITY POSTS
+        // A private author's profile shows nothing to a stranger: the same
+        // empty page a user with no posts returns, so the client renders it
+        // as it always has. (communityId is null here, so the rule reduces to
+        // "author is public, the viewer, or followed by the viewer".)
+        AND: [authorVisibilityWhere(userId)],
         ...(cursorDate
           ? cursorId
             ? {
@@ -1806,7 +1863,7 @@ export class PostsService {
     ]);
     if (!post || post.deletedAt || excludedUserIds.includes(post.authorId))
       throw new NotFoundException('Post not found');
-    await this.assertCanViewPostCommunity(userId, post.communityId);
+    await this.assertCanViewPost(userId, post);
 
     const lockKey = `toggle:like:${userId}:${postId}`;
 
@@ -1892,7 +1949,7 @@ export class PostsService {
     const post = await this.prisma.post.findUnique({ where: { id: postId } });
     if (!post || post.deletedAt)
       throw new NotFoundException('Post has been deleted');
-    await this.assertCanViewPostCommunity(userId, post.communityId);
+    await this.assertCanViewPost(userId, post);
 
     // Share the SAME lock key as likePost so like/unlike for a given user+post
     // can never interleave. The decrement is tied to an atomic DELETE — it only
@@ -2048,7 +2105,7 @@ export class PostsService {
     ) {
       throw new NotFoundException('Comment has been deleted');
     }
-    await this.assertCanViewPostCommunity(userId, post.communityId);
+    await this.assertCanViewPost(userId, post);
 
     const lockKey = `toggle:commentlike:${userId}:${commentId}`;
 
@@ -2142,14 +2199,11 @@ export class PostsService {
   async unlikeComment(commentId: string, userId: string) {
     const comment = await this.prisma.comment.findUnique({
       where: { id: commentId },
-      include: { post: { select: { communityId: true } } },
+      include: { post: { select: { communityId: true, authorId: true } } },
     });
     if (!comment || comment.isDeleted)
       throw new NotFoundException('Comment has been deleted');
-    await this.assertCanViewPostCommunity(
-      userId,
-      comment.post?.communityId ?? null,
-    );
+    await this.assertCanViewPost(userId, comment.post);
 
     // Same lock key as likeComment so like/unlike can't interleave; decrement is
     // tied to an atomic DELETE and floored at 0 (no double-decrement drift).
@@ -2221,7 +2275,7 @@ export class PostsService {
       ]);
     if (!post || post.deletedAt || excludedUserIds.includes(post.authorId))
       throw new NotFoundException('Post not found');
-    await this.assertCanViewPostCommunity(authorId, post.communityId);
+    await this.assertCanViewPost(authorId, post);
 
     if (parentId) {
       // The parent was accepted on trust: an id for a comment on a *different*
@@ -2335,17 +2389,19 @@ export class PostsService {
       // "commented on your post" AND a "mentioned you" notification).
       attempt('mention notifications', () => {
         if (sanitizedMentions.length > 0) {
-          this.mentionsService
-            .persistAndNotify({
-              mentions: sanitizedMentions,
-              sourceType: MentionSource.COMMENT,
-              sourceId: comment.id,
-              actor,
-              entityType: NotificationEntityType.COMMENT,
-              entityId: comment.id,
-              contextText: text,
-              extraMetadata: { postId },
-            })
+          this.mentionsWhoCanSeePost(sanitizedMentions, post)
+            .then((mentions) =>
+              this.mentionsService.persistAndNotify({
+                mentions,
+                sourceType: MentionSource.COMMENT,
+                sourceId: comment.id,
+                actor,
+                entityType: NotificationEntityType.COMMENT,
+                entityId: comment.id,
+                contextText: text,
+                extraMetadata: { postId },
+              }),
+            )
             .catch((err) =>
               this.logger.warn('Failed to process comment mentions', err),
             );
@@ -2398,7 +2454,7 @@ export class PostsService {
         throw new NotFoundException('Post not found');
       }
     }
-    await this.assertCanViewPostCommunity(userId, meta.communityId);
+    await this.assertCanViewPost(userId, meta);
     return { updatedAt: meta.updatedAt };
   }
 
@@ -2715,7 +2771,13 @@ export class PostsService {
     cursor?: string,
   ) {
     const post = await this.prisma.post.findUnique({
-      where: { id: postId, deletedAt: null },
+      // A private author's post answers like a missing one, from the same
+      // query: the comment list must not outlast the post's own visibility.
+      where: {
+        id: postId,
+        deletedAt: null,
+        AND: [authorVisibilityWhere(userId)],
+      },
       select: {
         id: true,
         authorId: true,
@@ -2778,6 +2840,10 @@ export class PostsService {
             id: postId,
             deletedAt: null,
             ...PostsService.AVAILABLE_AUTHOR,
+            // A private author's own post is a 404 for anyone who does not
+            // follow them. Done in this query, not after it, so the check
+            // costs no round trip and the answer is the missing-post one.
+            AND: [authorVisibilityWhere(userId)],
           },
           include: {
             author: {
@@ -2957,7 +3023,7 @@ export class PostsService {
       throw new NotFoundException('Post has been deleted');
     if (excludedUserIds.includes(post.authorId))
       throw new NotFoundException('Post not found');
-    await this.assertCanViewPostCommunity(userId, post.communityId);
+    await this.assertCanViewPost(userId, post);
 
     await this.prisma.postBookmark.upsert({
       where: { userId_postId: { userId, postId } },
@@ -3000,7 +3066,9 @@ export class PostsService {
     );
     // Bookmarks of posts in a community the viewer can no longer see (left or
     // removed from a private one, college changed, community deleted) stop
-    // resolving, exactly as they would in the feed.
+    // resolving, exactly as they would in the feed. So does a bookmark of a
+    // post whose author has since gone private and is not followed by the
+    // viewer; the row stays, and it resolves again if the follow is restored.
     const visibility = await this.communityVisibilityWhere(userId);
     // Compound keyset cursor "<iso>__<postId>" — postId is unique within a
     // user's bookmarks, so it's a stable tiebreaker for equal createdAt.
@@ -3028,7 +3096,7 @@ export class PostsService {
     const bookmarks = await this.prisma.postBookmark.findMany({
       where: {
         userId,
-        post: { AND: [postFilter, visibility] },
+        post: { AND: [postFilter, visibility, authorVisibilityWhere(userId)] },
         ...(cursorDate
           ? cursorPostId
             ? {
@@ -3128,7 +3196,7 @@ export class PostsService {
     if (!post || post.deletedAt || excludedUserIds.includes(post.authorId)) {
       throw new NotFoundException('Post not found');
     }
-    await this.assertCanViewPostCommunity(userId, post.communityId);
+    await this.assertCanViewPost(userId, post);
 
     const pollOptions = post.pollOptions || [];
     if (pollOptions.length === 0) {

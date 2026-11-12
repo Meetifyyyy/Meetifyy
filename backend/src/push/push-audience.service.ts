@@ -178,6 +178,36 @@ export class PushAudienceService {
         });
         return Boolean(follow);
       }
+      case NotificationType.FOLLOW_REQUEST: {
+        // Still waiting on the recipient: answered, withdrawn or discarded
+        // requests have nothing left to push.
+        if (!actorId) return false;
+        const request = await this.prisma.followRequest.findUnique({
+          where: {
+            requesterId_targetId: {
+              requesterId: actorId,
+              targetId: recipientId,
+            },
+          },
+          select: { requesterId: true },
+        });
+        return Boolean(request);
+      }
+      case NotificationType.FOLLOW_ACCEPTED: {
+        // The actor accepted, so the recipient (the requester) follows them.
+        // If they have since unfollowed, "accepted your request" is stale.
+        if (!actorId) return false;
+        const follow = await this.prisma.follow.findUnique({
+          where: {
+            followerId_followingId: {
+              followerId: recipientId,
+              followingId: actorId,
+            },
+          },
+          select: { followerId: true },
+        });
+        return Boolean(follow);
+      }
       case NotificationType.ACTIVITY_INVITE: {
         if (!entityId) return false;
         const invite = await this.prisma.activityInvitation.findUnique({

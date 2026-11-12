@@ -94,6 +94,7 @@ import { publicMessage } from '../messages/message-alert.util';
 import { CONVERSATION_REVIVED } from '../messages/core/conversation-revive';
 import { SESSIONS_REVOKED_EVENT } from '../auth/session/user-session.service';
 import { canViewCommunity } from '../posts/community-visibility';
+import { authorVisibilityWhere } from '../posts/author-visibility';
 import { SocketRelay, type RelayOp } from './socket-relay';
 import { SeenMessageIds } from '../common/utils/pubsub-dedupe.util';
 
@@ -1130,7 +1131,12 @@ export class RealtimeGateway
     const lifecycle = await this.prisma.user
       .findUnique({
         where: { id: user.id },
-        select: { accountStatus: true },
+        // The name is read here, in the lifecycle query we already make, so
+        // the typing indicator costs no extra round trip. It comes from the
+        // profile row and never from `user_metadata`: that is writable by the
+        // account holder through the Supabase client, and this string is
+        // broadcast to every conversation member as-is.
+        select: { accountStatus: true, username: true, displayName: true },
       })
       .catch(() => null);
 
@@ -1223,30 +1229,9 @@ export class RealtimeGateway
       // Never block a reconnect because the limiter itself failed.
     }
 
-    // Provider metadata is arbitrary JSON; only a string is a name.
-    const metaName = (key: string): string | undefined => {
-      const value = user.user_metadata?.[key];
-      return typeof value === 'string' && value ? value : undefined;
-    };
-    userName = metaName('username') || metaName('displayName') || '';
-    if (!userName) {
-      // This string is broadcast to every conversation member in `typing:start`
-      // and shown as-is, so it must never be the account email. Metadata is
-      // missing for some accounts; the profile row is the source of truth, read
-      // only in that case so the common path adds no query.
-      try {
-        const profile = await this.prisma.user.findUnique({
-          where: { id: userId },
-          select: { username: true, displayName: true },
-        });
-        userName = profile?.username || profile?.displayName || '';
-      } catch (err) {
-        this.logger.warn(
-          `Could not read display name for user=${userId}: ${errorMessage(err)}`,
-        );
-      }
-    }
-    userName = userName || 'Someone';
+    // Never the account email. A failed or empty lifecycle read leaves a
+    // neutral name rather than blocking the connection.
+    userName = lifecycle?.username || lifecycle?.displayName || 'Someone';
 
     client.data.userId = userId;
     client.data.userName = userName;
@@ -1550,11 +1535,11 @@ export class RealtimeGateway
    * Deliberately mirrors `PostsService.getPostById`'s denial set — deleted post,
    * unavailable author, a block in either direction, and the community rule
    * (deleted, private-and-not-a-member, or a campus community of another
-   * college), which is the very function `getPostById` calls — because a
-   * viewer who cannot open the post must not be able to subscribe to it
-   * either. It answers a bare
-   * boolean for the same reason that route answers a neutral 404: the caller
-   * must not be able to tell "no such post" from "not for you".
+   * college), which is the very function `getPostById` calls, and a private
+   * author's own post (`authorVisibilityWhere`) — because a viewer who cannot
+   * open the post must not be able to subscribe to it either. It answers a
+   * bare boolean for the same reason that route answers a neutral 404: the
+   * caller must not be able to tell "no such post" from "not for you".
    */
   private async checkPostRoomAccess(
     userId: string,
@@ -1562,7 +1547,14 @@ export class RealtimeGateway
   ): Promise<boolean> {
     try {
       const post = await this.prisma.post.findFirst({
-        where: { id: postId, deletedAt: null, author: { deletedAt: null } },
+        where: {
+          id: postId,
+          deletedAt: null,
+          author: { deletedAt: null },
+          // A private author's own post is for their followers, here as in
+          // `getPostById`; a refusal is the same "no such post" answer.
+          AND: [authorVisibilityWhere(userId)],
+        },
         select: {
           authorId: true,
           community: {

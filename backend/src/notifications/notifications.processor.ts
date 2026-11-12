@@ -18,6 +18,28 @@ export interface FollowNotifJob {
   };
 }
 
+/** Someone asked to follow a private account; the target is the recipient. */
+export interface FollowRequestNotifJob {
+  requesterId: string;
+  targetId: string;
+  actor: {
+    username: string;
+    displayName: string | null;
+    avatar: string | null;
+  };
+}
+
+/** The target accepted; the requester is the recipient and the accepter the actor. */
+export interface FollowAcceptedNotifJob {
+  accepterId: string;
+  requesterId: string;
+  actor: {
+    username: string;
+    displayName: string | null;
+    avatar: string | null;
+  };
+}
+
 export interface ActivityInvitationsJob {
   activityId: string;
   inviterId: string;
@@ -51,6 +73,14 @@ export class NotificationsProcessor extends DrainingWorkerHost {
     try {
       if (job.name === 'follow-notification') {
         await this.handleFollowNotification(job.data as FollowNotifJob);
+      } else if (job.name === 'follow-request-notification') {
+        await this.handleFollowRequestNotification(
+          job.data as FollowRequestNotifJob,
+        );
+      } else if (job.name === 'follow-accepted-notification') {
+        await this.handleFollowAcceptedNotification(
+          job.data as FollowAcceptedNotifJob,
+        );
       } else if (job.name === 'activity-invitations') {
         await this.handleActivityInvitations(
           job.data as ActivityInvitationsJob,
@@ -84,6 +114,60 @@ export class NotificationsProcessor extends DrainingWorkerHost {
       },
       prePopulatedActor: {
         id: followerId,
+        username: actor.username,
+        displayName: actor.displayName,
+        avatar: actor.avatar,
+      },
+    });
+  }
+
+  private async handleFollowRequestNotification(data: FollowRequestNotifJob) {
+    const { requesterId, targetId, actor } = data;
+    // Keyed on the requester like a follow notification is, so a request that
+    // is withdrawn and sent again updates the one row instead of stacking.
+    await this.notificationsService.createNotification({
+      recipientId: targetId,
+      actorId: requesterId,
+      type: 'FOLLOW_REQUEST',
+      entityType: undefined,
+      entityId: requesterId,
+      title: 'Follow request',
+      body: `${actor.displayName || actor.username || 'Someone'} requested to follow you.`,
+      metadata: {
+        version: 1,
+        actorId: requesterId,
+        username: actor.username,
+        actorDisplayName: actor.displayName,
+        actorAvatar: actor.avatar,
+      },
+      prePopulatedActor: {
+        id: requesterId,
+        username: actor.username,
+        displayName: actor.displayName,
+        avatar: actor.avatar,
+      },
+    });
+  }
+
+  private async handleFollowAcceptedNotification(data: FollowAcceptedNotifJob) {
+    const { accepterId, requesterId, actor } = data;
+    await this.notificationsService.createNotification({
+      recipientId: requesterId,
+      actorId: accepterId,
+      type: 'FOLLOW_ACCEPTED',
+      entityType: undefined,
+      entityId: accepterId,
+      title: 'Follow request accepted',
+      body: `${actor.displayName || actor.username || 'Someone'} accepted your follow request.`,
+      metadata: {
+        version: 1,
+        actorId: accepterId,
+        username: actor.username,
+        actorDisplayName: actor.displayName,
+        actorAvatar: actor.avatar,
+      },
+      prePopulatedActor: {
+        id: accepterId,
         username: actor.username,
         displayName: actor.displayName,
         avatar: actor.avatar,
