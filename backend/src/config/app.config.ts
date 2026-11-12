@@ -192,6 +192,13 @@ export const appConfigValues = {
     cspImgSrc: csv('CSP_IMG_SRC'),
     cspConnectSrc: csv('CSP_CONNECT_SRC'),
     hstsEnabled: bool('HSTS_ENABLED', { default: String(IS_PRODUCTION) }),
+    /**
+     * Shared secret Cloudflare adds to every request it forwards (header
+     * `x-origin-auth`). When set, a request without it is refused, so the
+     * origin cannot be reached through someone else's Cloudflare zone. Empty
+     * turns the check off. See common/security/origin-auth.ts.
+     */
+    originAuthSecret: str('ORIGIN_AUTH_SECRET'),
   },
 
   observability: {
@@ -235,6 +242,12 @@ invariant(
 invariant(
   !IS_PRODUCTION || appConfigValues.security.hstsEnabled,
   'Invalid HSTS_ENABLED: must be true in production',
+);
+
+invariant(
+  appConfigValues.security.originAuthSecret === '' ||
+    appConfigValues.security.originAuthSecret.length >= 32,
+  'Invalid ORIGIN_AUTH_SECRET: must be at least 32 characters when set',
 );
 
 export type AppConfig = typeof appConfigValues;
