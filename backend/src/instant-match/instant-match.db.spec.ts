@@ -453,4 +453,22 @@ describeDb('Instant Match (database)', () => {
     });
     expect(left.map((r) => r.id).sort()).toEqual(kept.map((r) => r.id).sort());
   });
+
+  it('migration 43: Instant Match chats get an expiry index, the queue loses its unused one', async () => {
+    const indexes = await prisma.$queryRaw<
+      Array<{ indexname: string; indexdef: string }>
+    >`SELECT indexname::text AS indexname, indexdef FROM pg_indexes
+      WHERE tablename IN ('Conversation', 'MatchQueueEntry')`;
+    const byName = new Map(indexes.map((i) => [i.indexname, i.indexdef]));
+
+    expect(byName.get('Conversation_instantMatch_expiresAt_idx')).toMatch(
+      /\("expiresAt"\) WHERE "isInstantMatch"$/,
+    );
+    expect(
+      byName.has(
+        'MatchQueueEntry_campus_activity_timePreference_expiresAt_idx',
+      ),
+    ).toBe(false);
+    expect(byName.has('MatchQueueEntry_expiresAt_idx')).toBe(true);
+  });
 });

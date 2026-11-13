@@ -589,6 +589,8 @@ model Conversation {
 
   @@index([ownerId])
   @@index([updatedAt(sort: Desc)])
+  // Also: a partial index on ("expiresAt") WHERE "isInstantMatch", for the
+  // Instant Match chat cleanup (migration 43). Prisma cannot express it.
 }
 
 model ConversationParticipant {
@@ -993,7 +995,6 @@ model MatchQueueEntry {
   expiresAt      DateTime
   user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([campus, activity, timePreference, expiresAt])
   @@index([expiresAt])
 }
 
