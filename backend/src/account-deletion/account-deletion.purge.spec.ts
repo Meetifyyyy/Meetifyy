@@ -84,8 +84,12 @@ describe('AccountDeletionPurgeService — permanent deletion', () => {
   };
   let mediaCleanupService: {
     extractStorageKey: jest.Mock;
-    queueMediaDeletion: jest.Mock<Promise<void>, [string[]]>;
+    recordPendingDeletions: jest.Mock<Promise<string[]>, [string[], unknown]>;
+    drainSoon: jest.Mock<void, [string[]]>;
   };
+  /** The transaction client the purge was handed. */
+  let txClient: unknown;
+  let committed: boolean;
   let domainEventService: { emit: jest.Mock };
   let revokeAllForUser: jest.Mock;
   let row: UserRow;
@@ -323,13 +327,25 @@ describe('AccountDeletionPurgeService — permanent deletion', () => {
       },
       $transaction: jest.fn(
         (fn: (tx: unknown) => unknown, _opts?: TransactionOptions) =>
-          Promise.resolve(fn(tx)),
+          Promise.resolve(fn(tx)).then((value) => {
+            committed = true;
+            return value;
+          }),
       ),
     };
+    txClient = tx;
+    committed = false;
 
     mediaCleanupService = {
       extractStorageKey: jest.fn((v: string | null) => v ?? null),
-      queueMediaDeletion: jest.fn((_keys: string[]) => Promise.resolve()),
+      // Records happen inside the transaction; a drain only after it commits.
+      recordPendingDeletions: jest.fn((keys: string[], _writer: unknown) => {
+        expect(committed).toBe(false);
+        return Promise.resolve(keys);
+      }),
+      drainSoon: jest.fn((_keys: string[]) => {
+        expect(committed).toBe(true);
+      }),
     };
     domainEventService = { emit: jest.fn() };
     revokeAllForUser = jest.fn(() => Promise.resolve(1));
@@ -533,8 +549,13 @@ describe('AccountDeletionPurgeService — permanent deletion', () => {
       });
     });
 
-    it('queues every owned media object for storage deletion', () => {
-      const [keys] = mediaCleanupService.queueMediaDeletion.mock.calls[0];
+    it('records every owned media object as owed a delete, inside the purge transaction', () => {
+      expect(mediaCleanupService.recordPendingDeletions).toHaveBeenCalledTimes(
+        1,
+      );
+      const [keys, writer] =
+        mediaCleanupService.recordPendingDeletions.mock.calls[0];
+      expect(writer).toBe(txClient);
       expect(keys).toEqual(
         expect.arrayContaining([
           'https://cdn/avatars/me.jpg',
@@ -544,6 +565,12 @@ describe('AccountDeletionPurgeService — permanent deletion', () => {
           'uploads/stray.jpg',
         ]),
       );
+    });
+
+    it('starts deleting the recorded objects once the purge has committed', () => {
+      const [recorded] =
+        mediaCleanupService.recordPendingDeletions.mock.calls[0];
+      expect(mediaCleanupService.drainSoon).toHaveBeenCalledWith(recorded);
     });
 
     it('revokes the session — recovery is no longer possible', () => {

@@ -1,10 +1,32 @@
-import { Injectable, Logger, Inject } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  Inject,
+  OnModuleDestroy,
+  OnModuleInit,
+  Optional,
+} from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { StorageProvider } from './providers/storage-provider.interface';
 import { config } from '../config';
 import { detach } from '../common/utils/detach.util';
 import { errorMessage } from '../common/utils/error.util';
 import { isProtectedMediaKey } from './media-ownership.util';
+import { RedisService } from '../redis/redis.service';
+import { runOnOneReplica } from '../redis/run-on-one-replica';
+import { traceBackground } from '../observability/background-trace';
+
+/** Where owed deletes are recorded: the client, or the caller's transaction. */
+type PendingDeletionWriter = Pick<
+  Prisma.TransactionClient,
+  'pendingStorageDeletion'
+>;
+
+/** How long to wait before attempt `attempts + 1`: 1 min, doubling, at most 6 h. */
+export function pendingDeletionRetryDelayMs(attempts: number): number {
+  return Math.min(60_000 * 2 ** Math.max(attempts - 1, 0), 6 * 60 * 60_000);
+}
 
 export type ReplaceableEntityType =
   | 'USER_AVATAR'
@@ -25,14 +47,44 @@ export interface CleanupResult {
 }
 
 @Injectable()
-export class MediaCleanupService {
+export class MediaCleanupService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(MediaCleanupService.name);
+  private drainTimer?: NodeJS.Timeout;
+
+  /** How often every replica offers to drain owed deletes; one does it. */
+  private static readonly DRAIN_INTERVAL_MS = 10 * 60 * 1000;
+  /** Well over a pass of DRAIN_BATCH deletes; only matters if the holder dies. */
+  private static readonly DRAIN_LOCK_TTL_MS = 15 * 60 * 1000;
+  private static readonly DRAIN_BATCH = 200;
 
   constructor(
     private readonly prisma: PrismaService,
     @Inject('STORAGE_PROVIDER')
     private readonly storageProvider: StorageProvider,
+    @Optional() private readonly redis?: RedisService,
   ) {}
+
+  /**
+   * Drains owed deletes shortly after boot (whatever a stopped process left)
+   * and every ten minutes after. Not under Jest: a spec drives the drain
+   * itself, and a timer would outlive it.
+   */
+  onModuleInit(): void {
+    if (config.isTest) return;
+    const pass = () =>
+      void traceBackground(
+        { name: 'task media.pending-deletions', op: 'task' },
+        () => this.drainOnOneReplica(),
+      );
+    const boot = setTimeout(pass, 30_000);
+    boot.unref?.();
+    this.drainTimer = setInterval(pass, MediaCleanupService.DRAIN_INTERVAL_MS);
+    this.drainTimer.unref?.();
+  }
+
+  onModuleDestroy(): void {
+    if (this.drainTimer) clearInterval(this.drainTimer);
+  }
 
   /**
    * Robustly extracts the canonical R2 storage key from any URL, path, or key string.
@@ -790,34 +842,154 @@ export class MediaCleanupService {
     return result;
   }
 
+  /** Storage keys worth deleting: ours, not external, not platform assets. */
+  private deletableKeys(keysOrUrls: (string | null | undefined)[]): string[] {
+    return [
+      ...new Set(
+        keysOrUrls
+          .map((k) => this.extractStorageKey(k))
+          .filter((k): k is string => Boolean(k && !this.isProtectedKey(k))),
+      ),
+    ];
+  }
+
   /**
-   * Asynchronously queues media deletion with retry capability.
-   * If R2 is temporarily down, retries up to 3 times with exponential backoff.
-   * Pending Media rows remain in the DB if all retries fail, ensuring no untracked orphans.
+   * Records storage objects that must be deleted, durably (ID-4).
+   *
+   * Pass the transaction that deletes the rows pointing at them: then either
+   * both happen or neither, and no restart in between can lose the keys. A
+   * key already waiting is left as it is. Returns the keys recorded, for
+   * `drainSoon` once the transaction has committed.
    */
-  queueMediaDeletion(keysOrUrls: (string | null | undefined)[]): Promise<void> {
-    // Not `async` (nothing here is awaited), but it keeps the promise contract
-    // `async` gave it: callers `void` it, so a synchronous throw would escape
-    // into the post or community deletion that called it.
+  async recordPendingDeletions(
+    keysOrUrls: (string | null | undefined)[],
+    writer: PendingDeletionWriter = this.prisma,
+  ): Promise<string[]> {
+    const keys = this.deletableKeys(keysOrUrls);
+    if (keys.length === 0) return [];
+    await writer.pendingStorageDeletion.createMany({
+      data: keys.map((objectKey) => ({ objectKey })),
+      skipDuplicates: true,
+    });
+    return keys;
+  }
+
+  /**
+   * Deletes these recorded keys now, in the background. Anything it cannot
+   * finish stays recorded for the sweep.
+   */
+  drainSoon(keys: string[]): void {
+    if (keys.length === 0) return;
+    setImmediate(() =>
+      detach('pending storage deletions', () =>
+        this.drainPendingDeletions(keys),
+      ),
+    );
+  }
+
+  /**
+   * Deletes owed objects, then forgets each one whose object is gone or is
+   * still in use elsewhere (then it was never ours to delete). A failure keeps
+   * the row and pushes its next attempt back; nothing is ever given up on,
+   * because the owner asked for it to be gone. Safe to run on two replicas at
+   * once: deleting an object that is already gone is not an error.
+   *
+   * With `onlyKeys`, just those rows whatever their schedule (the drain right
+   * after a delete); otherwise up to DRAIN_BATCH rows that are due.
+   */
+  async drainPendingDeletions(
+    onlyKeys?: string[],
+  ): Promise<{ done: number; failed: number }> {
+    const due = await this.prisma.pendingStorageDeletion.findMany({
+      where: onlyKeys
+        ? { objectKey: { in: onlyKeys } }
+        : { nextAttemptAt: { lte: new Date() } },
+      orderBy: { nextAttemptAt: 'asc' },
+      take: MediaCleanupService.DRAIN_BATCH,
+      select: { objectKey: true, attempts: true },
+    });
+
+    let done = 0;
+    let failed = 0;
+    for (const row of due) {
+      const outcome = await this.deletePermanently(row.objectKey);
+      if (outcome.success || outcome.skipped) {
+        await this.prisma.pendingStorageDeletion.deleteMany({
+          where: { objectKey: row.objectKey },
+        });
+        done += 1;
+        continue;
+      }
+      const attempts = row.attempts + 1;
+      await this.prisma.pendingStorageDeletion.updateMany({
+        where: { objectKey: row.objectKey },
+        data: {
+          attempts,
+          lastError: (outcome.error ?? 'unknown').slice(0, 500),
+          nextAttemptAt: new Date(
+            Date.now() + pendingDeletionRetryDelayMs(attempts),
+          ),
+        },
+      });
+      failed += 1;
+    }
+    if (failed > 0) {
+      this.logger.warn(
+        `pending storage deletions: ${failed} of ${due.length} failed, kept for retry`,
+      );
+    }
+    return { done, failed };
+  }
+
+  /** One sweep pass, on one replica at a time. Never throws: it runs from a timer. */
+  private async drainOnOneReplica(): Promise<void> {
     try {
-      this.scheduleMediaDeletion(keysOrUrls);
-      return Promise.resolve();
+      await runOnOneReplica(
+        this.redis,
+        'media:pending-deletions',
+        MediaCleanupService.DRAIN_LOCK_TTL_MS,
+        () => this.drainPendingDeletions(),
+      );
     } catch (err) {
-      return Promise.reject(
-        err instanceof Error ? err : new Error(String(err)),
+      this.logger.error(
+        `pending storage deletions sweep failed: ${errorMessage(err)}`,
       );
     }
   }
 
-  private scheduleMediaDeletion(
+  /**
+   * Deletes storage objects whose rows the caller has already deleted (a
+   * post, a community, an event).
+   *
+   * Records them first, so a restart or a storage outage cannot lose them,
+   * then deletes them in the background; whatever fails is retried by the
+   * sweep. Only if they cannot even be recorded does it fall back to three
+   * attempts in this process, as it always used to.
+   */
+  async queueMediaDeletion(
     keysOrUrls: (string | null | undefined)[],
-  ): void {
-    const validKeys = keysOrUrls
-      .map((k) => this.extractStorageKey(k))
-      .filter((k): k is string => Boolean(k && !this.isProtectedKey(k)));
+  ): Promise<void> {
+    // Callers `void` this, so nothing below may reject.
+    let keys: string[];
+    try {
+      keys = this.deletableKeys(keysOrUrls);
+    } catch (err) {
+      this.logger.error(`queueMediaDeletion: bad keys: ${errorMessage(err)}`);
+      return;
+    }
+    if (keys.length === 0) return;
+    try {
+      this.drainSoon(await this.recordPendingDeletions(keys));
+    } catch (err) {
+      this.logger.warn(
+        `queueMediaDeletion: could not record deletes (${errorMessage(err)}); trying in process`,
+      );
+      this.scheduleMediaDeletion(keys);
+    }
+  }
 
-    if (validKeys.length === 0) return;
-
+  /** The old in-process retry, kept only for keys that could not be recorded. */
+  private scheduleMediaDeletion(validKeys: string[]): void {
     setImmediate(() =>
       detach('media cleanup sweep', async () => {
         let pending = [...validKeys];
@@ -837,7 +1009,7 @@ export class MediaCleanupService {
         }
         if (pending.length > 0) {
           this.logger.error(
-            `queueMediaDeletion: exhausted retries for ${pending.length} media keys: ${pending.join(', ')} (Media rows preserved in DB for recovery)`,
+            `queueMediaDeletion: exhausted retries for ${pending.length} media keys, which were never recorded: ${pending.join(', ')}`,
           );
         }
       }),

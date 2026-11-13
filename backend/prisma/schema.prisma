@@ -114,6 +114,24 @@ model NotificationPreferences {
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
+/// Storage objects owed a delete after the rows that pointed at them are gone
+/// (an account purge, a deleted post, community or event). The purge writes
+/// its keys in the same transaction as those deletes, so a restart or a storage
+/// outage can no longer leave a deleted person's files in the bucket with
+/// nothing pointing at them. `MediaCleanupService` drains it: a row goes once
+/// its object is gone (or is still in use elsewhere, so was never ours to
+/// delete); a failure keeps the row and pushes `nextAttemptAt` back.
+model PendingStorageDeletion {
+  objectKey     String   @id
+  createdAt     DateTime @default(now())
+  attempts      Int      @default(0)
+  nextAttemptAt DateTime @default(now())
+  lastError     String?
+
+  /// The drain's queue: due rows, oldest first.
+  @@index([nextAttemptAt])
+}
+
 model Media {
   id                  String                @id @default(uuid())
   provider            String                @default("supabase")

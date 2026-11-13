@@ -182,10 +182,12 @@ export class AccountDeletionPurgeService {
    * Permanently deletes one account. Safe to call twice.
    *
    * Order matters in one place only: media object keys are collected *inside*
-   * the transaction, before the rows referencing them are deleted, and the
-   * storage deletes are issued *after* it commits. Deleting from R2 first would
-   * orphan live rows if the transaction then rolled back; deleting inside it
-   * would leave objects orphaned in storage if it rolled back after the call.
+   * the transaction, before the rows referencing them are deleted, and recorded
+   * as owed deletes in that same transaction; the storage deletes run *after*
+   * it commits. Deleting from R2 first would orphan live rows if the
+   * transaction then rolled back; deleting inside it would leave objects
+   * orphaned in storage if it rolled back after the call; and keeping the keys
+   * only in memory lost them to any restart before the deletes finished.
    */
   async purgeUser(userId: string): Promise<{ purged: boolean }> {
     const user = await this.prisma.user.findUnique({
@@ -220,6 +222,7 @@ export class AccountDeletionPurgeService {
     pushKey(user.avatar);
     pushKey(user.cover);
 
+    let owedKeys: string[] = [];
     const now = new Date();
     const anonUsername = `deleted_${userId.slice(0, 8)}_${Date.now()}`;
     const anonEmail = `deleted_${userId}@deleted.meetifyy`;
@@ -388,6 +391,16 @@ export class AccountDeletionPurgeService {
         });
         strayMedia.forEach((m) => mediaKeys.push(m.objectKey));
 
+        // Every storage object this purge owes a delete, recorded with the
+        // deletes of the rows that pointed at them (ID-4): if this commits,
+        // the keys are on record even if the process stops right after.
+        if (this.mediaCleanupService) {
+          owedKeys = await this.mediaCleanupService.recordPendingDeletions(
+            mediaKeys,
+            tx,
+          );
+        }
+
         // 7. Disposable relational data. None of this belongs to anyone else.
         await this.purgeUserRelations(tx, userId);
       },
@@ -399,12 +412,10 @@ export class AccountDeletionPurgeService {
       },
     );
 
-    // 8. Post-commit storage cleanup, with its own retries. Failing here does
-    //    not resurrect the account; it leaves orphaned objects, which the
-    //    cleanup service logs loudly and `scripts/audit-r2-media.ts` can find.
-    if (mediaKeys.length > 0 && this.mediaCleanupService) {
-      await this.mediaCleanupService.queueMediaDeletion(mediaKeys);
-    }
+    // 8. Delete the recorded objects now that the rows are gone. Whatever
+    //    fails, or is cut short by a restart, stays recorded and the cleanup
+    //    sweep retries it.
+    this.mediaCleanupService?.drainSoon(owedKeys);
 
     await this.presenceService.removePresence(userId).catch(() => {});
     await this.invalidateCaches(userId);
