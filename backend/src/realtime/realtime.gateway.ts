@@ -46,6 +46,7 @@ import {
 } from '../instant-match/dto/join-queue.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { checkPresenceVisibilityBatch } from '../users/privacy.helper';
+import { presenceViewerIds } from './presence-viewers';
 import { RedisService } from '../redis/redis.service';
 import {
   ACTIVE_AFFILIATION_SELECT,
@@ -418,23 +419,7 @@ export class RealtimeGateway
       // checkPresenceVisibilityBatch and emit to those personal user rooms.
       // (checkPresenceVisibilityBatch already handles 'everyone' by returning
       // all non-hidden viewers.)
-      const sharedConvs = await this.prisma.conversationParticipant.findMany({
-        where: {
-          conversation: {
-            participants: {
-              some: { userId: userId, deletedAt: null, leftAt: null },
-            },
-          },
-          deletedAt: null,
-          leftAt: null,
-        },
-        select: { userId: true },
-      });
-      const uniqueViewerIds = [
-        ...new Set(
-          sharedConvs.map((p) => p.userId).filter((id) => id !== userId),
-        ),
-      ];
+      const uniqueViewerIds = await presenceViewerIds(this.prisma, userId);
 
       if (uniqueViewerIds.length > 0) {
         const allowedViewerIds = await checkPresenceVisibilityBatch(
