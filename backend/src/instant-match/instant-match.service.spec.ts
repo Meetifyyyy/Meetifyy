@@ -51,14 +51,24 @@ describe('InstantMatchService', () => {
     ...overrides,
   });
 
+  /**
+   * A join request. Someone "from another campus" (`campus` other than the
+   * default) is also given that campus's verified college: the college is
+   * what the campus signal reads now (D4), the typed text is ignored.
+   */
   const joinDto = (
     userId: string,
     overrides: Partial<JoinQueueDto> = {},
-  ): JoinQueueDto => ({
-    userId,
-    ...snapshot(),
-    ...overrides,
-  });
+  ): JoinQueueDto => {
+    if (overrides.campus && overrides.campus !== 'campus-a') {
+      if (!prisma.users.has(userId)) prisma.seedUser(userId);
+      prisma.seedAffiliation(
+        userId,
+        overrides.campus.replace('campus', 'college'),
+      );
+    }
+    return { userId, ...snapshot(), ...overrides };
+  };
 
   /** A fresh fake with the cast seeded. Extracted so a test that needs many
    *  independent runs — the weighted tie draw — can rebuild between them. */
@@ -220,11 +230,15 @@ describe('InstantMatchService', () => {
         emitter.emitMatchFound.mock.calls;
       expect([aliceId, bobId].sort()).toEqual(['alice', 'bob']);
       expect(alicePayload.matchId).toBe(bobPayload.matchId);
-      // Each side is shown the *other* person.
-      expect(alicePayload.candidate.id).not.toBe(alicePayload.matchId);
-      expect(
-        [alicePayload.candidate.id, bobPayload.candidate.id].sort(),
-      ).toEqual(['alice', 'bob']);
+      // Each side is shown the *other* person — by their card, without the
+      // internal id, which only arrives once both accept (D1).
+      const shown = Object.fromEntries([
+        [aliceId, alicePayload.candidate.username],
+        [bobId, bobPayload.candidate.username],
+      ]);
+      expect(shown).toEqual({ alice: 'bob', bob: 'alice' });
+      expect(alicePayload.candidate).not.toHaveProperty('id');
+      expect(bobPayload.candidate).not.toHaveProperty('id');
     });
 
     it('sends an absolute deadline so a slow client cannot desync its countdown', async () => {
@@ -244,8 +258,11 @@ describe('InstantMatchService', () => {
     it('holds out for a compatible partner before settling for a distant one', async () => {
       // Same activity, different campus: matchable, but not immediately —
       // the opening threshold expects better than this.
+      // The campus is the verified college now (D4), not the typed text.
+      prisma.seedUser('bob');
+      prisma.seedAffiliation('bob', 'college-b');
       await service.joinQueue(joinDto('alice'));
-      await service.joinQueue(joinDto('bob', { campus: 'campus-b' }));
+      await service.joinQueue(joinDto('bob'));
       expect(prisma.sessions).toHaveLength(0);
     });
 
@@ -254,10 +271,9 @@ describe('InstantMatchService', () => {
       // area, GPS and time preference are all preferences — none of them may
       // leave a willing user searching indefinitely.
       const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
-      prisma.seedQueueEntry('bob', {
-        campus: 'campus-b',
-        joinedAt: fiveMinutesAgo,
-      });
+      prisma.seedUser('bob');
+      prisma.seedAffiliation('bob', 'college-b');
+      prisma.seedQueueEntry('bob', { joinedAt: fiveMinutesAgo });
 
       await service.joinQueue(joinDto('alice'));
 
@@ -618,7 +634,8 @@ describe('InstantMatchService', () => {
       const byUser = Object.fromEntries(emitter.emitMatchFound.mock.calls);
       expect(byUser.alice.awaitingOther).toBe(true);
       expect(byUser.bob.requested).toBe(true);
-      expect(byUser.bob.candidate.id).toBe('alice');
+      expect(byUser.bob.candidate.username).toBe('alice');
+      expect(byUser.bob.candidate).not.toHaveProperty('id');
     });
 
     it('completes the match when the other person accepts', async () => {
@@ -645,7 +662,7 @@ describe('InstantMatchService', () => {
       );
 
       const byUser = Object.fromEntries(emitter.emitMatchDeclined.mock.calls);
-      expect(byUser.alice.reason).toMatch(/passed on your request/i);
+      expect(byUser.alice.reason).toMatch(/^They are not available right now/);
       expect(byUser.alice.requeued).toBe(true);
       expect(byUser.bob.reason).toMatch(/you passed on this request/i);
       expect(byUser.bob.requeued).toBe(true);
@@ -662,7 +679,7 @@ describe('InstantMatchService', () => {
       ]);
       const byUser = Object.fromEntries(emitter.emitMatchDeclined.mock.calls);
       expect(byUser.alice.reason).toMatch(/request cancelled/i);
-      expect(byUser.bob.reason).toMatch(/withdrew/i);
+      expect(byUser.bob.reason).toMatch(/^This request has ended/);
     });
 
     it('waits exactly 30 seconds for a yes, whatever the activity, and schedules the withdrawal', async () => {
@@ -698,9 +715,9 @@ describe('InstantMatchService', () => {
         'bob',
       ]);
       const byUser = Object.fromEntries(emitter.emitMatchDeclined.mock.calls);
-      expect(byUser.alice.reason).toMatch(/request withdrawn/i);
+      expect(byUser.alice.reason).toMatch(/^They are not available right now/);
       expect(byUser.alice.requeued).toBe(true);
-      expect(byUser.bob.reason).toMatch(/request expired/i);
+      expect(byUser.bob.reason).toMatch(/^This request has ended/);
       expect(byUser.bob.requeued).toBe(true);
     });
 
@@ -820,7 +837,7 @@ describe('InstantMatchService', () => {
       const byUser = Object.fromEntries(emitter.emitMatchDeclined.mock.calls);
       expect(byUser.alice.reason).toMatch(/you passed/i);
       expect(byUser.alice.requeued).toBe(false);
-      expect(byUser.bob.reason).toMatch(/unavailable/i);
+      expect(byUser.bob.reason).toMatch(/^No match this time/);
     });
 
     it('puts the declined user back in the queue server-side, without their client asking', async () => {
@@ -1042,7 +1059,8 @@ describe('InstantMatchService', () => {
       await service.joinQueue(joinDto('bob'));
 
       const state = await service.getStateFor('alice');
-      expect(state.pendingMatch?.candidate.id).toBe('bob');
+      expect(state.pendingMatch?.candidate.username).toBe('bob');
+      expect(state.pendingMatch?.candidate).not.toHaveProperty('id');
       expect(state.pendingMatch?.matchId).toBe(prisma.sessions[0].id);
       expect(state.pendingMatch?.expiresAt).toBe(
         prisma.sessions[0].expiresAt.getTime(),

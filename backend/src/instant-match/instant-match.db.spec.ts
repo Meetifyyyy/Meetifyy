@@ -276,6 +276,54 @@ describeDb('Instant Match (database)', () => {
     expect(stats.avgWaitSecs).toBeLessThanOrEqual(163);
   });
 
+  it('ranks the roster per viewer from verified colleges on Postgres', async () => {
+    const [viewer, sameCollege, otherCollege] = await users(3);
+    const [a, b] = await Promise.all([
+      prisma.college.create({ data: { name: `IM A ${viewer.slice(0, 4)}` } }),
+      prisma.college.create({ data: { name: `IM B ${viewer.slice(0, 4)}` } }),
+    ]);
+    await prisma.collegeAffiliation.createMany({
+      data: [
+        {
+          userId: viewer,
+          collegeId: a.id,
+          email: `${viewer}@a.test`,
+          emailNormalized: `${viewer}@a.test`,
+          method: 'CAMPUS_OTP',
+        },
+        {
+          userId: sameCollege,
+          collegeId: a.id,
+          email: `${sameCollege}@a.test`,
+          emailNormalized: `${sameCollege}@a.test`,
+          method: 'CAMPUS_OTP',
+        },
+        {
+          userId: otherCollege,
+          collegeId: b.id,
+          email: `${otherCollege}@b.test`,
+          emailNormalized: `${otherCollege}@b.test`,
+          method: 'CAMPUS_OTP',
+        },
+      ],
+    });
+    // The other-college waiter joined first and typed the viewer's campus.
+    await queue(otherCollege);
+    await prisma.matchQueueEntry.create({
+      data: {
+        userId: sameCollege,
+        campus: 'typed-anything',
+        activity: 'study',
+        timePreference: 'now',
+        joinedAt: new Date(),
+        expiresAt: new Date(Date.now() + 30 * 60_000),
+      },
+    });
+
+    const roster = await service.getSearchingNow(viewer);
+    expect(roster.map((e) => e.user.id)).toEqual([sameCollege, otherCollege]);
+  });
+
   it('migration 41 clears stored requests of answered matches and keeps pending ones', async () => {
     const [a, b, c, d] = await users(4);
     const withGps = {

@@ -119,7 +119,7 @@ describe('Instant Match lifecycle (E-7a)', () => {
       expect(queued('alice')).toBeDefined();
       expect(queued('bob')).toBeUndefined();
       expect(declinedTo('bob')).toEqual([
-        { reason: 'Match timed out', requeued: false },
+        { reason: 'No match this time', requeued: false },
       ]);
       expect(declinedTo('alice')[0]).toMatchObject({ requeued: true });
     });
@@ -188,12 +188,8 @@ describe('Instant Match lifecycle (E-7a)', () => {
       expect(prisma.sessions.find((x) => x.id === s.id)?.status).toBe(
         'EXPIRED',
       );
-      expect(declinedTo('alice')[0]?.reason).toMatch(
-        /^This match is no longer available/,
-      );
-      expect(declinedTo('bob')[0]?.reason).toMatch(
-        /^This match is no longer available/,
-      );
+      expect(declinedTo('alice')[0]?.reason).toMatch(/^No match this time/);
+      expect(declinedTo('bob')[0]?.reason).toMatch(/^No match this time/);
       // Both people's locks were held while it was decided.
       expect(prisma.advisoryLocks).toEqual([
         'instant-match:live:alice',

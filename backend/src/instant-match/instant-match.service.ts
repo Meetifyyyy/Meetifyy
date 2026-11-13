@@ -15,9 +15,14 @@ import { BlocksService } from '../users/blocks.service';
 import { VerificationAccessService } from '../common/verification/verification-access.service';
 import { MessagesService } from '../messages/messages.service';
 import { PresenceService } from '../presence/presence.service';
+import {
+  ACTIVE_AFFILIATION_SELECT,
+  activeAffiliationCollegeId,
+} from '../common/campus/campus-access.service';
 import { MediaCleanupService } from '../uploads/media-cleanup.service';
 import { MatchScore, explainPair, scorePair } from './matching/engine';
 import { orderCandidates } from './matching/selection';
+import { ROSTER, rosterVisibility } from './matching/roster';
 import {
   PairFeedback,
   PairSocial,
@@ -48,11 +53,6 @@ const REMATCH_COOLDOWN_MS = 30 * 60 * 1000;
  *  nothing left to link to. */
 const RECENT_MATCH_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-/** How many waiting people the browse list shows. Same reasoning as the scan
- *  limit above: bounded work per read, and oldest-first so the people who
- *  have waited longest are the ones on screen. */
-const SEARCHING_NOW_LIMIT = 50;
-
 /** Pending sessions expired per sweep tick (every 10 s); a backlog after an
  *  outage is worked off over a few ticks rather than in one pass. */
 const EXPIRE_BATCH = 100;
@@ -69,9 +69,17 @@ export interface MatchCandidateDto {
   bio: string | null;
 }
 
+/**
+ * The card shown BEFORE both people accept: everything on the profile card,
+ * but not the internal user id (owner decision D1). The id arrives with
+ * `match:accepted`, once there is a chat to open; the app only reads it after
+ * that point.
+ */
+export type MatchCandidateCard = Omit<MatchCandidateDto, 'id'>;
+
 export interface MatchFoundPayload {
   matchId: string;
-  candidate: MatchCandidateDto;
+  candidate: MatchCandidateCard;
   activity: string;
   area: string | null;
   timer: number;
@@ -565,6 +573,7 @@ export class InstantMatchService implements OnModuleInit {
       myEntry,
       me,
       relations.myCommunityIds,
+      relations.campusByUser.get(userId) ?? null,
     );
 
     const scored = candidates
@@ -582,6 +591,7 @@ export class InstantMatchService implements OnModuleInit {
             candidate,
             candidate.user,
             relations.sharedCommunityIds.get(candidate.userId) ?? null,
+            relations.campusByUser.get(candidate.userId) ?? null,
           ),
           {
             feedback: relations.feedback.get(candidate.userId) ?? null,
@@ -625,7 +635,7 @@ export class InstantMatchService implements OnModuleInit {
 
       realtimeGatewayRef?.emitMatchFound(userId, {
         matchId: session.id,
-        candidate: this.toCandidateDto(candidate.user),
+        candidate: this.toCardBeforeAccept(candidate.user),
         activity: myEntry.activity,
         area,
         timer,
@@ -634,7 +644,7 @@ export class InstantMatchService implements OnModuleInit {
       });
       realtimeGatewayRef?.emitMatchFound(candidate.userId, {
         matchId: session.id,
-        candidate: this.toCandidateDto(me),
+        candidate: this.toCardBeforeAccept(me),
         activity: myEntry.activity,
         area,
         timer,
@@ -715,6 +725,7 @@ export class InstantMatchService implements OnModuleInit {
       myEntry,
       me,
       relations.myCommunityIds,
+      relations.campusByUser.get(userId) ?? null,
     );
 
     const rows = candidates.map((candidate) => {
@@ -725,6 +736,7 @@ export class InstantMatchService implements OnModuleInit {
           candidate,
           candidate.user,
           relations.sharedCommunityIds.get(candidate.userId) ?? null,
+          relations.campusByUser.get(candidate.userId) ?? null,
         ),
         {
           feedback,
@@ -786,19 +798,27 @@ export class InstantMatchService implements OnModuleInit {
     social: Map<string, PairSocial>;
     sharedCommunityIds: Map<string, string[]>;
     myCommunityIds: string[] | null;
+    campusByUser: Map<string, string | null>;
   }> {
     const feedback = new Map<string, PairFeedback>();
     const social = new Map<string, PairSocial>();
     const sharedCommunityIds = new Map<string, string[]>();
     let myCommunityIds: string[] | null = null;
+    const campusByUser = new Map<string, string | null>();
 
     if (candidateIds.length === 0) {
-      return { feedback, social, sharedCommunityIds, myCommunityIds };
+      return {
+        feedback,
+        social,
+        sharedCommunityIds,
+        myCommunityIds,
+        campusByUser,
+      };
     }
 
     const since = new Date(Date.now() - FEEDBACK.windowMs);
 
-    const [sessions, follows, myMemberships] = await Promise.all([
+    const [sessions, follows, myMemberships, affiliations] = await Promise.all([
       this.prisma.matchSession
         .findMany({
           where: {
@@ -842,7 +862,21 @@ export class InstantMatchService implements OnModuleInit {
       this.prisma.communityMember
         .findMany({ where: { userId }, select: { communityId: true } })
         .catch(() => [] as Array<{ communityId: string }>),
+      // The campus each side really belongs to: the college of their ACTIVE
+      // affiliation (owner decision D4). The `campus` a client sends with its
+      // queue request is free text, so anyone could claim any campus and earn
+      // the campus signal's weight with a stranger's typed string.
+      this.prisma.collegeAffiliation
+        .findMany({
+          where: { userId: { in: [userId, ...candidateIds] } },
+          select: { userId: true, ...ACTIVE_AFFILIATION_SELECT },
+        })
+        .catch(() => []),
     ]);
+
+    for (const row of affiliations) {
+      campusByUser.set(row.userId, activeAffiliationCollegeId(row));
+    }
 
     for (const session of sessions) {
       const other =
@@ -909,7 +943,13 @@ export class InstantMatchService implements OnModuleInit {
       }
     }
 
-    return { feedback, social, sharedCommunityIds, myCommunityIds };
+    return {
+      feedback,
+      social,
+      sharedCommunityIds,
+      myCommunityIds,
+      campusByUser,
+    };
   }
 
   /**
@@ -938,9 +978,13 @@ export class InstantMatchService implements OnModuleInit {
       passingYear: number | null;
     },
     communityIds: string[] | null = null,
+    campus: string | null = null,
   ): SideContext {
     return {
-      campus: entry.campus,
+      // The verified college, never the typed `entry.campus` (D4). No
+      // affiliation means no campus evidence: the signal drops out rather than
+      // counting against anyone.
+      campus,
       activity: entry.activity,
       timePreference: entry.timePreference,
       area: entry.area,
@@ -1195,7 +1239,7 @@ export class InstantMatchService implements OnModuleInit {
 
     realtimeGatewayRef?.emitMatchFound(requesterId, {
       matchId: session.id,
-      candidate: this.toCandidateDto(them),
+      candidate: this.toCardBeforeAccept(them),
       activity: theirs.activity,
       area,
       timer,
@@ -1204,7 +1248,7 @@ export class InstantMatchService implements OnModuleInit {
     });
     realtimeGatewayRef?.emitMatchFound(targetUserId, {
       matchId: session.id,
-      candidate: this.toCandidateDto(me),
+      candidate: this.toCardBeforeAccept(me),
       activity: theirs.activity,
       area,
       timer,
@@ -1329,11 +1373,9 @@ export class InstantMatchService implements OnModuleInit {
     });
     realtimeGatewayRef?.emitMatchDeclined(otherUserId, {
       reason: !isRequest
-        ? withSearching('The other student was unavailable', requeued)
+        ? withSearching(NO_MATCH, requeued)
         : withSearching(
-            declinerIsRequester
-              ? 'They withdrew the request'
-              : 'They passed on your request',
+            declinerIsRequester ? REQUEST_ENDED : REQUEST_NOT_ANSWERED,
             requeued,
           ),
       requeued,
@@ -1652,14 +1694,14 @@ export class InstantMatchService implements OnModuleInit {
           : false;
         // A request nobody answered is withdrawn, not "timed out": the sender
         // should know it is gone, and the other person that it lapsed.
-        const subject =
-          why === 'unavailable'
-            ? 'This match is no longer available'
-            : !wasRequest
-              ? 'Match timed out'
-              : uid === session.userAId
-                ? 'Request withdrawn — no answer in 30 seconds'
-                : 'Request expired';
+        // The same words whether the other person passed, never answered, or
+        // the match could not open (owner decision D5): a different message
+        // per cause told people who had passed on them.
+        const subject = !wasRequest
+          ? NO_MATCH
+          : uid === session.userAId
+            ? REQUEST_NOT_ANSWERED
+            : REQUEST_ENDED;
         realtimeGatewayRef?.emitMatchDeclined(uid, {
           reason: requeued ? `${subject} — back to searching` : subject,
           requeued,
@@ -1799,8 +1841,7 @@ export class InstantMatchService implements OnModuleInit {
    * `getExcludedUserIds`, so there is one definition of who is off-limits
    * rather than two that can disagree.
    *
-   * Ordered oldest-first, the queue's own fairness order, and bounded — a
-   * list nobody can scroll to the end of is not worth the query.
+   * Ranked for this viewer (D2, D3: see matching/roster.ts) and bounded.
    */
   async getSearchingNow(userId: string): Promise<SearchingNowEntry[]> {
     // The roster is for eligible members only. The `queue:list` socket event
@@ -1812,27 +1853,87 @@ export class InstantMatchService implements OnModuleInit {
       );
     }
 
-    const excludedIds = await this.getExcludedUserIds(userId);
+    const now = Date.now();
+    const [excludedIds, waiting, viewerEntry, viewer] = await Promise.all([
+      // Blocks both ways and the recent decline/timeout cooldown: the same
+      // definition matching uses.
+      this.getExcludedUserIds(userId),
+      this.waitingSnapshot(),
+      this.prisma.matchQueueEntry.findUnique({ where: { userId } }),
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        select: USER_CARD_SELECT,
+      }),
+    ]);
+    if (!viewer) return [];
+    const excluded = new Set(excludedIds);
+    const pool = waiting.filter(
+      (e) =>
+        e.userId !== userId &&
+        !excluded.has(e.userId) &&
+        e.expiresAt.getTime() > now,
+    );
+    if (pool.length === 0) return [];
 
-    const entries = await this.prisma.matchQueueEntry.findMany({
-      where: {
-        expiresAt: { gt: new Date() },
-        user: {
-          verificationStatus: 'VERIFIED',
-          accountStatus: 'ACTIVE',
-          deletedAt: null,
-        },
-        userId: {
-          not: userId,
-          notIn: excludedIds.length ? excludedIds : undefined,
-        },
-      },
-      include: { user: { select: USER_CARD_SELECT } },
-      orderBy: { joinedAt: 'asc' },
-      take: SEARCHING_NOW_LIMIT,
-    });
+    // One batched read for everything the viewer has with these people.
+    const relations = await this.collectRelations(
+      userId,
+      pool.map((e) => e.userId),
+    );
 
-    return entries.map((entry) => ({
+    const myCampus = relations.campusByUser.get(userId) ?? null;
+    const searching = viewerEntry && viewerEntry.expiresAt.getTime() > now;
+    const me: SideContext = searching
+      ? this.toScoringContext(
+          viewerEntry,
+          viewer,
+          relations.myCommunityIds,
+          myCampus,
+        )
+      : {
+          // Browsing without searching: only the profile is known.
+          campus: myCampus,
+          interests: viewer.interests ?? [],
+          course: viewer.course,
+          branch: viewer.branch,
+          passingYear: viewer.passingYear,
+          communityIds: relations.myCommunityIds,
+        };
+
+    const ranked = pool
+      .map((e) => {
+        const detail = scorePair(
+          me,
+          this.toScoringContext(
+            e,
+            e.user,
+            relations.sharedCommunityIds.get(e.userId) ?? null,
+            relations.campusByUser.get(e.userId) ?? null,
+          ),
+          {
+            feedback: relations.feedback.get(e.userId) ?? null,
+            social: relations.social.get(e.userId) ?? null,
+            now,
+          },
+        );
+        return {
+          entry: e,
+          visibility: rosterVisibility(detail.score, {
+            sameActivity: Boolean(searching) && e.activity === me.activity,
+            passedOnViewer:
+              relations.feedback.get(e.userId)?.declinedByThem ?? 0,
+          }),
+        };
+      })
+      // Best first; ties go to whoever has waited longest.
+      .sort(
+        (x, y) =>
+          y.visibility - x.visibility ||
+          x.entry.joinedAt.getTime() - y.entry.joinedAt.getTime(),
+      )
+      .slice(0, ROSTER.limit);
+
+    return ranked.map(({ entry }) => ({
       user: this.toCandidateDto(entry.user),
       activity: entry.activity,
       timePreference: entry.timePreference,
@@ -1840,6 +1941,50 @@ export class InstantMatchService implements OnModuleInit {
       area: entry.area,
       joinedAt: entry.joinedAt.getTime(),
     }));
+  }
+
+  /**
+   * Everyone waiting, with their cards: the part of the roster that is the
+   * same for every viewer, read once and shared for ROSTER.snapshotTtlMs (and
+   * dropped whenever this process changes the queue). Every roster viewer
+   * re-reads when the queue moves, so without this each of them re-read the
+   * whole queue at the same moment.
+   */
+  private rosterSnapshot: {
+    at: number;
+    rows: Promise<Awaited<ReturnType<InstantMatchService['readWaiting']>>>;
+  } | null = null;
+
+  private waitingSnapshot() {
+    const now = Date.now();
+    if (
+      !this.rosterSnapshot ||
+      now - this.rosterSnapshot.at > ROSTER.snapshotTtlMs
+    ) {
+      const rows = this.readWaiting();
+      this.rosterSnapshot = { at: now, rows };
+      // A failed read is not kept: the next viewer tries again.
+      rows.catch(() => {
+        if (this.rosterSnapshot?.rows === rows) this.rosterSnapshot = null;
+      });
+    }
+    return this.rosterSnapshot.rows;
+  }
+
+  private readWaiting() {
+    return this.prisma.matchQueueEntry.findMany({
+      where: {
+        expiresAt: { gt: new Date() },
+        user: {
+          verificationStatus: 'VERIFIED',
+          accountStatus: 'ACTIVE',
+          deletedAt: null,
+        },
+      },
+      include: { user: { select: USER_CARD_SELECT } },
+      orderBy: { joinedAt: 'asc' },
+      take: ROSTER.scanLimit,
+    });
   }
 
   /** Shared by the single-reader and the broadcast path so both can never
@@ -1881,6 +2026,8 @@ export class InstantMatchService implements OnModuleInit {
    * Requests inside one window share a single broadcast.
    */
   private requestQueueBroadcast(): void {
+    // The queue moved: the shared roster snapshot is out of date.
+    this.rosterSnapshot = null;
     if (!realtimeGatewayRef || this.queueBroadcastTimer) return;
     this.queueBroadcastTimer = setTimeout(
       () =>
@@ -1988,7 +2135,7 @@ export class InstantMatchService implements OnModuleInit {
         );
         pendingMatch = {
           matchId: session.id,
-          candidate: this.toCandidateDto(other),
+          candidate: this.toCardBeforeAccept(other),
           activity: session.activity,
           area: snapshot?.area ?? null,
           timer: isDirectRequest(session.snapshotA)
@@ -2586,6 +2733,14 @@ export class InstantMatchService implements OnModuleInit {
     };
   }
 
+  /** The card before acceptance: the same, minus the internal id (D1). */
+  private toCardBeforeAccept(
+    u: Parameters<InstantMatchService['toCandidateDto']>[0],
+  ): MatchCandidateCard {
+    const { id: _id, ...card } = this.toCandidateDto(u);
+    return card;
+  }
+
   private entryToSnapshot(entry: {
     campus: string;
     activity: string;
@@ -2652,6 +2807,15 @@ function isDirectRequest(snapshotA: unknown): boolean {
     (snapshotA as { requested?: unknown }).requested === true
   );
 }
+
+/**
+ * What the other person is told when a match or a request does not go ahead,
+ * whatever the reason: a pass, no answer in time, or a match that could not
+ * open (D5). Only the person who passed is told it was their pass.
+ */
+const NO_MATCH = 'No match this time';
+const REQUEST_NOT_ANSWERED = 'They are not available right now';
+const REQUEST_ENDED = 'This request has ended';
 
 function withSearching(reason: string, requeued: boolean): string {
   return requeued ? `${reason} — back to searching` : reason;

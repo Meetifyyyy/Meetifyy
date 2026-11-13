@@ -171,6 +171,48 @@ export class PrismaFake {
     return this as unknown as PrismaService;
   }
 
+  /**
+   * Verified college affiliations, which is where the campus signal now comes
+   * from (D4). Every seeded user gets one to `college-a` unless a spec says
+   * otherwise, mirroring the `campus-a` every queue entry used to carry.
+   */
+  affiliations: Array<{
+    userId: string;
+    collegeId: string;
+    revokedAt: Date | null;
+    college: { isActive: boolean; status: string; deletedAt: Date | null };
+  }> = [];
+
+  seedAffiliation(
+    userId: string,
+    collegeId: string | null,
+    overrides: { revokedAt?: Date | null; isActive?: boolean } = {},
+  ) {
+    this.affiliations = this.affiliations.filter((a) => a.userId !== userId);
+    if (collegeId === null) return;
+    this.affiliations.push({
+      userId,
+      collegeId,
+      revokedAt: overrides.revokedAt ?? null,
+      college: {
+        isActive: overrides.isActive ?? true,
+        status: 'APPROVED',
+        deletedAt: null,
+      },
+    });
+  }
+
+  get collegeAffiliation() {
+    return {
+      findMany: ({ where, select }: FindArgs) =>
+        Promise.resolve(
+          this.affiliations
+            .filter((a) => matchesWhere(a, where))
+            .map((a) => project(a, select)),
+        ),
+    };
+  }
+
   seedUser(id: string, overrides: Partial<FakeUser> = {}): FakeUser {
     const user: FakeUser = {
       id,
@@ -188,6 +230,9 @@ export class PrismaFake {
       ...overrides,
     };
     this.users.set(id, user);
+    if (!this.affiliations.some((a) => a.userId === id)) {
+      this.seedAffiliation(id, 'college-a');
+    }
     return user;
   }
 
