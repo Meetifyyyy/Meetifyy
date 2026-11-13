@@ -25,6 +25,17 @@ import { dropFromUnreadSummary } from './unreadSummary';
 /** The server's refusal code for a request from someone no longer in the conversation. */
 export const NOT_A_MEMBER = 'NOT_A_MEMBER';
 
+/**
+ * The most people a group can hold, its owner included. The server enforces
+ * it on every way in (creating, adding, links, approved requests); the picker
+ * stops at it so nobody builds a list the server will refuse.
+ */
+export const MAX_GROUP_MEMBERS = 50;
+
+/** The server's refusal code when a group has no place left. */
+export const GROUP_FULL = 'GROUP_FULL';
+export const GROUP_FULL_MESSAGE = `This group is full. A group can have up to ${MAX_GROUP_MEMBERS} members.`;
+
 const timeOf = (value) => {
   const t = typeof value === 'string' || typeof value === 'number' ? Date.parse(value) : NaN;
   return Number.isFinite(t) ? t : 0;

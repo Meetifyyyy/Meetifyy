@@ -43,6 +43,7 @@ import { useSheetDrag } from '@shared/hooks/useSheetDrag';
 import { selectableUsers } from '@shared/lib/conversationTargets';
 import { publicOrigin } from '@shared/utils/publicOrigin';
 import { newForwardOperationId } from '@features/messages/shared/utils/forwardDelivery';
+import { GROUP_FULL, GROUP_FULL_MESSAGE } from '@features/messages/shared/utils/groupMembership';
 
 /** How long the "Invited" confirmation shows before the sheet closes itself. */
 const SENT_CLOSE_MS = 900;
@@ -55,6 +56,7 @@ const STOP_REASON = {
   NOT_A_MEMBER: 'You’re no longer in this group.',
   GROUP_CLOSED: 'This group has ended.',
   GROUP_NOT_FOUND: 'This group no longer exists.',
+  [GROUP_FULL]: GROUP_FULL_MESSAGE,
 };
 
 function stopReason(err) {

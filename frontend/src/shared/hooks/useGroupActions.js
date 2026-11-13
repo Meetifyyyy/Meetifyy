@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { showToast } from '../utils/toast';
 import { applyGroupRoleChange, matchesConversationId, removeGroupJoinRequest } from '../../features/messages/shared/utils/cacheUtils';
 import { scheduleConversationWrite } from '../utils/conversationWriteQueue';
+import { GROUP_FULL, GROUP_FULL_MESSAGE } from '../../features/messages/shared/utils/groupMembership';
 
 /**
  * The group-chat / conversation admin actions.
@@ -322,6 +323,12 @@ export function useGroupActions() {
         showToast(JOIN_REQUEST_INELIGIBLE_MESSAGE, 'error');
         queryClient.invalidateQueries({ queryKey: ['conversations'] });
         queryClient.invalidateQueries({ queryKey: ['groupDetails'] });
+        return false;
+      }
+      // No place left: the request stays pending, so it can be approved once
+      // someone leaves.
+      if (err?.code === GROUP_FULL) {
+        showToast(GROUP_FULL_MESSAGE, 'error');
         return false;
       }
       showToast("Couldn't accept the request", 'error');

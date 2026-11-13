@@ -14,8 +14,11 @@ import styles from './NewMessageModal.module.css';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
 import { KEYBOARD_OVERLAYS_PAGE } from '@shared/utils/keyboardOverlay';
+import { MAX_GROUP_MEMBERS } from '@features/messages/shared/utils/groupMembership';
 
 const RECENT_LIMIT = 10;
+/** The viewer is the group's first member, so this many others fill it. */
+const MAX_PICKS = MAX_GROUP_MEMBERS - 1;
 const GROUP_NAME_MAX = 120;
 
 const nameOf = (u) => u?.displayName || u?.name || u?.username || '';
@@ -165,13 +168,17 @@ export default function NewMessageModal({ onClose, onStartChat, onCreateGroup })
 
   const selectedIds = useMemo(() => new Set(selected.map((u) => String(u.id))), [selected]);
 
+  // Unpicking always works; picking stops once the group would be full (the
+  // note in the action bar says why).
   const toggle = (user) => {
-    setSelected((prev) =>
-      prev.some((u) => String(u.id) === String(user.id))
-        ? prev.filter((u) => String(u.id) !== String(user.id))
-        : [...prev, user],
-    );
+    setSelected((prev) => {
+      if (prev.some((u) => String(u.id) === String(user.id))) {
+        return prev.filter((u) => String(u.id) !== String(user.id));
+      }
+      return prev.length >= MAX_PICKS ? prev : [...prev, user];
+    });
   };
+  const atLimit = selected.length >= MAX_PICKS;
 
   const goBack = useCallback(() => {
     setStep('pick');
@@ -406,6 +413,11 @@ export default function NewMessageModal({ onClose, onStartChat, onCreateGroup })
             </div>
 
             <div className={`${styles.actionBar} ${selected.length ? styles.actionBarShown : ''}`} aria-hidden={!selected.length}>
+              {atLimit && (
+                <p className={styles.limitNote} role="status">
+                  A group can have up to {MAX_GROUP_MEMBERS} members, you included.
+                </p>
+              )}
               <button
                 type="button"
                 className={styles.primaryBtn}

@@ -7,7 +7,11 @@ import { openVerificationModal } from '@shared/stores/verificationModalStore';
 import { isMessagingEligibleStatus } from '@shared/utils/messagingEligibility';
 import { useGuardedMutation } from '@shared/hooks/useGuardedMutation';
 import { OfflineError } from '@shared/lib/offlineGuard';
-import { seedJoinedGroup } from '@features/messages/shared/utils/groupMembership';
+import {
+  GROUP_FULL,
+  GROUP_FULL_MESSAGE,
+  seedJoinedGroup,
+} from '@features/messages/shared/utils/groupMembership';
 
 /** What `join` resolves with when the live-selfie check stopped it client side. */
 export const JOIN_NEEDS_VERIFICATION = 'VERIFICATION_REQUIRED';
@@ -94,6 +98,7 @@ export function inviteErrorCode(err) {
     'INVITE_REVOKED',
     'INVITE_INVALID',
     'REQUEST_DECLINED',
+    GROUP_FULL,
   ];
   if (known.includes(raw)) return raw;
   if (isVerificationRequiredError(err)) return 'VERIFICATION_REQUIRED';
@@ -121,6 +126,8 @@ export function inviteErrorMessage(err) {
       return 'This invite link is no longer valid.';
     case 'REQUEST_DECLINED':
       return 'An admin declined your request. You can ask again later.';
+    case GROUP_FULL:
+      return GROUP_FULL_MESSAGE;
     case 'VERIFICATION_REQUIRED':
       return JOIN_VERIFY_MESSAGE;
     case 'FORBIDDEN':
