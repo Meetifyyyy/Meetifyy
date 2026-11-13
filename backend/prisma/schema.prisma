@@ -67,7 +67,6 @@ model CollegeDomain {
   updatedAt  DateTime     @updatedAt
   college    College      @relation(fields: [collegeId], references: [id], onDelete: Cascade)
 
-  @@index([collegeId])
   @@index([collegeId, isPrimary])
   @@index([status])
   @@index([domain, status])
@@ -308,7 +307,6 @@ model User {
   @@index([collegeId])
   @@index([collegeId, createdAt(sort: Desc)])
   // Campus directory filter patterns: WHERE collegeId=? AND course=? / branch=? / passingYear=?.
-  @@index([collegeId, course])
   @@index([collegeId, course, branch])
   @@index([collegeId, passingYear])
   @@index([deletedAt, createdAt])
@@ -391,7 +389,6 @@ model Post {
 
   @@index([authorId])
   @@index([createdAt])
-  @@index([deletedAt, createdAt])
   @@index([authorId, deletedAt, createdAt(sort: Desc)])
   @@index([deletedAt, createdAt(sort: Desc), authorId])
   // Covers (deletedAt, createdAt DESC, id DESC) — the exact keyset-pagination order
@@ -447,7 +444,6 @@ model CommentLike {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@id([userId, commentId])
-  @@index([userId])
   @@index([commentId])
 }
 
@@ -505,7 +501,6 @@ model CommunityMember {
 
   @@id([userId, communityId])
   @@index([userId])
-  @@index([communityId])
   @@index([communityId, role])
 }
 
@@ -619,7 +614,6 @@ model ConversationParticipant {
 
   @@id([userId, conversationId])
   @@index([userId, deletedAt, leftAt])
-  @@index([conversationId, deletedAt, userId])
   @@index([conversationId, deletedAt, leftAt, userId])
   // Chat-list ordering: pinned rows first, most recently pinned at the top.
   @@index([userId, isPinned, pinnedAt(sort: Desc)])
@@ -686,7 +680,6 @@ model CrewActivity {
 
   @@index([creatorId])
   @@index([createdAt])
-  @@index([status])
   @@index([deletedAt, status, createdAt])
   @@index([status, createdAt(sort: Desc)])
   @@index([collegeId, status, createdAt(sort: Desc)])
@@ -713,8 +706,6 @@ model CrewActivityMember {
   user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@id([userId, activityId])
-  @@index([userId])
-  @@index([activityId])
   @@index([activityId, status])
 }
 
@@ -769,7 +760,6 @@ model CampusEvent {
   @@index([campusId, status, startTime])
   // Ongoing/past discovery + auto-expire sweep: filter/sort by endTime.
   @@index([campusId, status, endTime])
-  @@index([createdBy])
   @@index([deletedAt, campusId, status, startTime])
 }
 
@@ -809,7 +799,6 @@ model PostBookmark {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, postId])
-  @@index([userId])
   @@index([postId])
   @@index([createdAt])
   @@index([userId, createdAt(sort: Desc)])
@@ -824,7 +813,6 @@ model ActivityBookmark {
   user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, activityId])
-  @@index([userId])
   @@index([activityId])
   @@index([createdAt])
   @@index([userId, createdAt(sort: Desc)])
@@ -838,8 +826,6 @@ model PostShare {
   post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([userId])
-  @@index([postId])
   @@index([postId, userId])
   @@index([userId, createdAt(sort: Desc)])
 }
@@ -879,7 +865,6 @@ model Mute {
   muter      User           @relation("Muter", fields: [muterId], references: [id], onDelete: Cascade)
 
   @@unique([muterId, targetType, targetId])
-  @@index([muterId])
 }
 
 model Hashtag {
@@ -910,7 +895,6 @@ model Mention {
   user       User          @relation("MentionedUser", fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, sourceType, sourceId])
-  @@index([userId])
   @@index([userId, createdAt(sort: Desc)])
   @@index([sourceType, sourceId])
 }
@@ -925,7 +909,6 @@ model MessageReaction {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([messageId, userId, emoji])
-  @@index([messageId])
   @@index([userId])
 }
 
@@ -1444,7 +1427,6 @@ model HelpArticle {
   category    HelpCategory      @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
   @@index([categoryId, sortOrder])
-  @@index([status])
   @@index([status, isFeatured])
 }
 
@@ -1501,7 +1483,6 @@ model ConversationJoinRequest {
   decidedBy      User?        @relation("JoinRequestDecider", fields: [decidedById], references: [id], onDelete: SetNull)
 
   @@unique([conversationId, userId])
-  @@index([conversationId])
   @@index([userId])
 }
 
@@ -1532,7 +1513,6 @@ model DeletedMessage {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, messageId])
-  @@index([userId])
   @@index([messageId])
 }
 
@@ -1556,9 +1536,7 @@ model ActivityInvitation {
   inviter     User                     @relation("ActivityInvitationsSent", fields: [inviterId], references: [id], onDelete: Cascade)
 
   @@unique([activityId, inviteeId])
-  @@index([activityId, inviteeId])
   @@index([activityId, inviteeId, status])
-  @@index([inviteeId, status])
   @@index([inviteeId, status, createdAt(sort: Desc)])
   @@index([inviterId])
   @@index([activityId, status])
@@ -2136,7 +2114,6 @@ model LegalDocumentVersion {
   /// Two concurrent publishes cannot both win.
   @@unique([documentType, versionNumber])
   /// The admin list view: every version of one document, newest first.
-  @@index([documentType, versionNumber(sort: Desc)])
   /// The public page and the consent gate: WHERE documentType=? AND isCurrent.
   @@index([documentType, isCurrent])
   /// The gate's "which versions require acknowledgement" read.
@@ -2169,7 +2146,6 @@ model LegalAcknowledgement {
   /// Idempotent acceptance: a double-submitted modal, a retry after a network
   /// failure, or two tabs agreeing at once all collapse onto one row.
   @@unique([userId, versionId])
-  @@index([userId])
   @@index([versionId])
   @@index([documentType, acknowledgedAt])
 }
