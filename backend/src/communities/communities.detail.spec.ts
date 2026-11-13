@@ -267,114 +267,36 @@ describe('CommunitiesService — community detail', () => {
     });
   });
 
-  describe('online count read', () => {
-    // The count loads every member id and then their presence, so it is the one
-    // read on this page that grows with the community. It is thrown away for a
-    // viewer who cannot read the roster, so it must not be issued for one.
-
-    it('is not issued for an outsider of a private community', async () => {
-      build({
-        community: { isPrivate: true },
-        members: [member('a'), member('b')],
-      });
-
-      const result = await service.getCommunityById(ID, VIEWER);
-
-      expect(prisma.communityMember.findMany).not.toHaveBeenCalled();
-      expect(result.onlineCount).toBe(0);
-      expect(result.canViewPosts).toBe(false);
-    });
-
-    it('is not issued for an anonymous viewer of a private community', async () => {
-      build({ community: { isPrivate: true }, members: [member('a')] });
-
-      const result = await service.getCommunityById(ID, undefined);
-
-      expect(prisma.communityMember.findMany).not.toHaveBeenCalled();
-      expect(result.onlineCount).toBe(0);
-    });
-
-    it('is not issued for an outsider of a private community the strip cannot settle', async () => {
-      // A full strip without the viewer asks the database for their row; it
-      // finds none, so they are still an outsider.
-      build({
-        community: { isPrivate: true },
-        members: Array.from({ length: 50 }, (_, i) => member(`u${i}`)),
-        viewerMembership: null,
-      });
-
-      const result = await service.getCommunityById(ID, VIEWER);
-
-      expect(prisma.communityMember.findUnique).toHaveBeenCalledTimes(1);
-      expect(prisma.communityMember.findMany).not.toHaveBeenCalled();
-      expect(result.onlineCount).toBe(0);
-    });
-
+  describe('no "active now" count (owner, 2026-11-14)', () => {
+    // It read every member's id, then their presence, on each view, and the
+    // app no longer shows it. The fields stay, as 0, for installed builds.
     it.each([
+      ['an outsider of a private community', { isPrivate: true }, 'none'],
       ['a member of a private community', { isPrivate: true }, 'member'],
-      ['a member found only in the database', { isPrivate: true }, 'outside'],
       ['the owner of a private community', { isPrivate: true }, 'owner'],
       ['any viewer of a public community', {}, 'none'],
-    ])('is issued once for %s', async (_who, community, how) => {
-      const strip = Array.from({ length: how === 'outside' ? 50 : 1 }, (_, i) =>
-        member(`u${i}`),
-      );
+    ])('is not computed for %s', async (_who, community, how) => {
       build({
         community,
-        members: strip,
-        viewerMembership:
-          how === 'member' || how === 'outside' ? { role: 'MEMBER' } : null,
-        viewerOutsideStrip: how === 'outside',
+        members: [member('a'), member('b')],
+        viewerMembership: how === 'member' ? { role: 'MEMBER' } : null,
       });
+      const presence = jest.spyOn(
+        service['presenceService'],
+        'getPresenceMany',
+      );
 
-      await service.getCommunityById(ID, how === 'owner' ? 'owner' : VIEWER);
+      const result = await service.getCommunityById(
+        ID,
+        how === 'owner' ? 'owner' : VIEWER,
+      );
 
-      expect(prisma.communityMember.findMany).toHaveBeenCalledTimes(1);
-    });
-
-    it('still counts every member and the ownerless-row owner, in bounded presence reads', async () => {
-      build({ members: [member('a')], viewerMembership: { role: 'MEMBER' } });
-      const everyone = Array.from({ length: 1200 }, (_, i) => ({
-        userId: `m${i}`,
-      }));
-      prisma.communityMember.findMany.mockResolvedValue(everyone);
-      const onlineIds = new Set(['m0', 'm499', 'm500', 'm1199', 'owner']);
-      const read = jest
-        .spyOn(service['presenceService'], 'getPresenceMany')
-        .mockImplementation((ids: string[]) =>
-          Promise.resolve(
-            new Map(
-              ids.map((id) => [
-                id,
-                {
-                  status: onlineIds.has(id)
-                    ? ('online' as const)
-                    : ('offline' as const),
-                  lastSeen: '2026-10-01T10:00:00.000Z',
-                  socketIds: [],
-                },
-              ]),
-            ),
-          ),
-        );
-
-      const count = await service.countOnlineMembers(ID, 'owner');
-
-      expect(count).toBe(5);
-      // 1,201 ids in chunks of at most 500: no single Redis MGET is unbounded.
-      expect(read).toHaveBeenCalledTimes(3);
-      for (const [ids] of read.mock.calls)
-        expect(ids.length).toBeLessThanOrEqual(500);
-    });
-
-    it('reports zero rather than failing the page when presence cannot be read', async () => {
-      build();
-      jest.spyOn(service['logger'], 'warn').mockImplementation(() => {});
-      jest
-        .spyOn(service['presenceService'], 'getPresenceMany')
-        .mockRejectedValue(new Error('redis down'));
-
-      await expect(service.countOnlineMembers(ID, 'owner')).resolves.toBe(0);
+      // Nothing reads the whole membership any more.
+      expect(prisma.communityMember.findMany).not.toHaveBeenCalled();
+      // Presence is read for the loaded strip only, never in chunks of everyone.
+      expect(presence.mock.calls.length).toBeLessThanOrEqual(1);
+      expect(result.onlineCount).toBe(0);
+      expect(result.online).toBe(0);
     });
   });
 
@@ -563,7 +485,6 @@ describe('CommunitiesService — community detail', () => {
         members: [member('a'), member('b')],
       });
       presence = online(['a', 'b']);
-      service['countOnlineMembers'] = () => Promise.resolve(2);
 
       const result = await service.getCommunityById(ID, VIEWER);
 
@@ -584,7 +505,6 @@ describe('CommunitiesService — community detail', () => {
         members: [member('a')],
         viewerCollegeId: 'college-b',
       });
-      service['countOnlineMembers'] = () => Promise.resolve(1);
 
       const result = await service.getCommunityById(ID, VIEWER);
 
@@ -599,7 +519,6 @@ describe('CommunitiesService — community detail', () => {
         members: [member('a')],
         viewerMembership: { role: 'MEMBER' },
       });
-      service['countOnlineMembers'] = () => Promise.resolve(1);
 
       const result = await service.getCommunityById(ID, VIEWER);
 
@@ -609,7 +528,8 @@ describe('CommunitiesService — community detail', () => {
         'a',
         VIEWER,
       ]);
-      expect(result.onlineCount).toBe(1);
+      // Member presence still shows on the strip; there is no count.
+      expect(result.onlineCount).toBe(0);
     });
 
     it('asks only for live, active accounts when loading the member strip', async () => {

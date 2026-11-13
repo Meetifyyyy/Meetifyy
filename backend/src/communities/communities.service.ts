@@ -1062,19 +1062,10 @@ export class CommunitiesService implements OnModuleInit {
     const isJoined = !!viewerMembership || isOwner;
 
     /**
-     * The online count is thrown away for a viewer who cannot read the roster
-     * (`canViewPosts` below), and for a private community that is exactly
-     * "not joined". It is the one read in the batch that grows with the
-     * community (every member id, then their presence), so it is not issued
-     * for the outsider who lands on a private community's join-request page.
-     */
-    const onlineCountHidden = community.isPrivate && !isJoined;
-
-    /**
      * Everything this viewer needs on top of the shared community body.
      *
-     * The four reads below used to run strictly one after another — block
-     * list, presence, the viewer's college, the online count — and the client
+     * The reads below used to run strictly one after another — block list,
+     * presence, the viewer's college — and the client
      * made a fifth HTTP request of its own for the moderator notice. None of
      * them depends on another, so the page paid the sum where it only ever
      * needed the slowest.
@@ -1094,34 +1085,30 @@ export class CommunitiesService implements OnModuleInit {
       userId && community.isCampusCommunity && community.collegeId,
     );
 
-    const [visibleIdList, presenceMap, viewerCollegeId, onlineCount] =
-      await Promise.all([
-        // Hide blocked members from this viewer only. Membership itself is
-        // never touched by a block — both users stay in the community with
-        // full access — so this filters the loaded strip and nothing else.
-        // `_count.members` is left alone deliberately: the count must stay
-        // accurate ("2,341 members") even though some of them are not
-        // rendered for this viewer.
-        //
-        // Applied after the viewer-independent Redis cache is read, so one
-        // cached community body can still serve every viewer with a different
-        // block list.
-        userId && loadedMemberIds.length
-          ? this.blocksService.filterBlockedUsers(userId, loadedMemberIds)
-          : Promise.resolve(null),
-        // Fetched for every loaded member rather than only the unblocked ones,
-        // which is what lets it run alongside the block query instead of after
-        // it. The strip is capped, so this is at most a few dozen extra keys
-        // in an MGET that was already being issued, and the entries for
-        // filtered-out members are simply never read.
-        loadedMemberIds.length
-          ? this.presenceService.getPresenceMany(loadedMemberIds)
-          : Promise.resolve(new Map<string, UserPresence>()),
-        needsCollege ? this.resolveCollegeId(userId!) : Promise.resolve(null),
-        onlineCountHidden
-          ? Promise.resolve(0)
-          : this.countOnlineMembers(id, community.ownerId),
-      ]);
+    const [visibleIdList, presenceMap, viewerCollegeId] = await Promise.all([
+      // Hide blocked members from this viewer only. Membership itself is
+      // never touched by a block — both users stay in the community with
+      // full access — so this filters the loaded strip and nothing else.
+      // `_count.members` is left alone deliberately: the count must stay
+      // accurate ("2,341 members") even though some of them are not
+      // rendered for this viewer.
+      //
+      // Applied after the viewer-independent Redis cache is read, so one
+      // cached community body can still serve every viewer with a different
+      // block list.
+      userId && loadedMemberIds.length
+        ? this.blocksService.filterBlockedUsers(userId, loadedMemberIds)
+        : Promise.resolve(null),
+      // Fetched for every loaded member rather than only the unblocked ones,
+      // which is what lets it run alongside the block query instead of after
+      // it. The strip is capped, so this is at most a few dozen extra keys
+      // in an MGET that was already being issued, and the entries for
+      // filtered-out members are simply never read.
+      loadedMemberIds.length
+        ? this.presenceService.getPresenceMany(loadedMemberIds)
+        : Promise.resolve(new Map<string, UserPresence>()),
+      needsCollege ? this.resolveCollegeId(userId!) : Promise.resolve(null),
+    ]);
 
     if (visibleIdList) {
       const visibleIds = new Set(visibleIdList);
@@ -1241,7 +1228,6 @@ export class CommunitiesService implements OnModuleInit {
           };
         })
       : [];
-    const shownOnlineCount = canViewPosts ? onlineCount : 0;
 
     // The synthesised owner row used to share its `user` object with
     // `community.owner`, and the presence fields were written onto it in place,
@@ -1256,8 +1242,11 @@ export class CommunitiesService implements OnModuleInit {
         ownerIndex >= 0 ? presentedMembers[ownerIndex].user : community.owner,
       members: presentedMembers,
       isJoined,
-      online: shownOnlineCount,
-      onlineCount: shownOnlineCount,
+      // The community "active now" count is gone (owner, 2026-11-14): it read
+      // every member's id and presence on each view, and the app no longer
+      // shows it. Still sent, as 0, because installed builds read the fields.
+      online: 0,
+      onlineCount: 0,
       userRole,
       isEligibleToJoin,
       eligibilityMessage,
@@ -1265,59 +1254,6 @@ export class CommunitiesService implements OnModuleInit {
       hasPendingRequest,
       moderatorNotice,
     };
-  }
-
-  /**
-   * How many of a community's members are online right now.
-   *
-   * Counted over *every* member, not over the 50 loaded for the member
-   * strip — that cap is why a large community could show "0 active now"
-   * while plenty of people were on. Deliberately computed outside the 60s
-   * community cache: a cached presence count is worse than none, because it
-   * keeps reporting people who left minutes ago.
-   *
-   * One indexed id-only read plus a single Redis MGET, so this stays cheap
-   * even on a community with thousands of members.
-   */
-  async countOnlineMembers(
-    communityId: string,
-    ownerId?: string | null,
-  ): Promise<number> {
-    try {
-      const members = await this.prisma.communityMember.findMany({
-        where: { communityId },
-        select: { userId: true },
-      });
-
-      const ids = new Set(members.map((m) => m.userId));
-      // The owner is shown in the member strip whether or not they hold a
-      // CommunityMember row, so they must count the same way.
-      if (ownerId) ids.add(ownerId);
-      if (ids.size === 0) return 0;
-
-      // Chunked, because this is one MGET per community view over every member
-      // the community has. Redis executes a command to completion on its single
-      // thread, so a ten-thousand-key MGET is ten thousand lookups during which
-      // no other client — the session store and the job queues share this
-      // instance — is served. Slicing it bounds that stall; the answer is
-      // identical, since the counts are summed either way.
-      const allIds = [...ids];
-      const CHUNK = 500;
-      let online = 0;
-      for (let i = 0; i < allIds.length; i += CHUNK) {
-        const presence = await this.presenceService.getPresenceMany(
-          allIds.slice(i, i + CHUNK),
-        );
-        for (const p of presence.values()) {
-          if (p?.status === 'online') online += 1;
-        }
-      }
-      return online;
-    } catch {
-      // A presence read must never take the community page down with it.
-      this.logger.warn(`Failed to count online members for ${communityId}`);
-      return 0;
-    }
   }
 
   async joinCommunity(communityId: string, userId: string) {
