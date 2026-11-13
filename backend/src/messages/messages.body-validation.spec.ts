@@ -505,12 +505,26 @@ describe('messaging controllers: body validation', () => {
         'user-1',
         'Trip',
       );
-      await start({}, '?userIds=a,b').expect(201);
+      await start({}, `?userIds=${uuid(1)},${uuid(2)}`).expect(201);
       expect(service.startConversation).toHaveBeenLastCalledWith(
-        ['a', 'b'],
+        [uuid(1), uuid(2)],
         'user-1',
         undefined,
       );
+    });
+
+    it('holds the query string to the same cap and id rules as the body', async () => {
+      // It used to be a raw split: uncapped, and anything reached the service.
+      await start(
+        {},
+        `?userIds=${uuids(MAX_NEW_GROUP_MEMBERS).join(',')}`,
+      ).expect(201);
+      await start(
+        {},
+        `?userIds=${uuids(MAX_NEW_GROUP_MEMBERS + 1).join(',')}`,
+      ).expect(400);
+      await start({}, '?userIds=a,b').expect(400);
+      expect(service.startConversation).toHaveBeenCalledTimes(1);
     });
 
     it('accepts the cap and refuses one more', async () => {

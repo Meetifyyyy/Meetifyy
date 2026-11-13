@@ -1,5 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
+import { isUUID } from 'class-validator';
 import { isRecord } from '../../common/utils/type-guards.util';
+import { MAX_NEW_GROUP_MEMBERS } from './message-limits';
 
 /**
  * The user ids a start-conversation body names in `userIds`.
@@ -29,6 +31,32 @@ export function requestedUserIds(body: unknown): string[] {
       throw new BadRequestException('userIds must contain user ids');
     }
     ids.push(id);
+  }
+  return ids;
+}
+
+/**
+ * The user ids of a start-conversation request that names them in the query
+ * string (`?userIds=a,b`) instead of the body.
+ *
+ * The body's list is checked by `StartConversationDto` (at most
+ * MAX_NEW_GROUP_MEMBERS UUIDs), but the query string reached the service as a
+ * raw split: a URL could name as many people as fit in it, so the founding
+ * fan-out cap did not hold on this form. It now passes the same checks, with
+ * the same refusal. Empty entries (`a,,b`, a trailing comma) are skipped.
+ */
+export function queryUserIds(raw: string): string[] {
+  const ids = raw
+    .split(',')
+    .map((id) => id.trim())
+    .filter((id) => id !== '');
+  if (
+    ids.length > MAX_NEW_GROUP_MEMBERS ||
+    !ids.every((id) => isUUID(id, 'all'))
+  ) {
+    throw new BadRequestException(
+      `userIds must be a user id or a list of at most ${MAX_NEW_GROUP_MEMBERS} user ids`,
+    );
   }
   return ids;
 }

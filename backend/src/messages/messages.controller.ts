@@ -11,7 +11,7 @@ import {
   Delete,
   Optional,
 } from '@nestjs/common';
-import { requestedUserIds } from './core/requested-user-ids';
+import { queryUserIds, requestedUserIds } from './core/requested-user-ids';
 import type { AuthenticatedRequest } from '../common/types/authenticated-request';
 import { MessagesService } from './messages.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
@@ -350,7 +350,7 @@ export class MessagesController {
     if (body.userIds) {
       targetUserIds = requestedUserIds(body.userIds);
     } else if (userIdsQuery) {
-      targetUserIds = userIdsQuery.split(',');
+      targetUserIds = queryUserIds(userIdsQuery);
     }
     const res = await this.messagesService.startConversation(
       targetUserIds,
