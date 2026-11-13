@@ -27,6 +27,7 @@
  */
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { IS_MOBILE_BUILD } from '@config';
 import ShareModalAvatar, { isGroupTarget } from '@shared/components/avatar/ShareModalAvatar';
 import ShareTargets from '@shared/components/share/ShareTargets';
@@ -77,8 +78,11 @@ function webPayload(kind, entity, author) {
  * A chat that already received this share is never sent it twice.
  *
  * `sendOne(convId)` delivers to one chat; null while there is nothing to send.
+ * Each send leaves the conversation list alone (`deferListRefresh`), and
+ * `onSettled` refreshes it once when every send has an answer: a refresh per
+ * send meant N inbox and picker refetches for a share to N chats.
  */
-function useChatSend(sendOne) {
+function useChatSend(sendOne, onSettled) {
   const [status, setStatus] = useState({});
   const inFlight = useRef(false);
 
@@ -92,6 +96,7 @@ function useChatSend(sendOne) {
       const results = await Promise.allSettled(
         targets.map((id) => sendOne(id)),
       );
+      onSettled?.();
       const next = {};
       results.forEach((r, i) => {
         next[targets[i]] = r.status === 'fulfilled' ? 'sent' : 'failed';
@@ -100,7 +105,7 @@ function useChatSend(sendOne) {
       inFlight.current = false;
       return results.every((r) => r.status === 'fulfilled');
     },
-    [sendOne, status],
+    [sendOne, onSettled, status],
   );
 
   const reset = useCallback(() => {
@@ -114,9 +119,13 @@ function useChatSend(sendOne) {
 /** How long the "Sent" confirmation shows before the sheet closes itself. */
 const SENT_CLOSE_MS = 900;
 
+/** Send options for each chat of a share: the sheet refreshes the list once. */
+const LIST_REFRESHED_ONCE = Object.freeze({ deferListRefresh: true });
+
 /**
  * @param {object} [props.forward] forward mode instead of sharing an entity:
- *   `{ send(convId, clientId) }`. Each recipient's client id is derived from one
+ *   `{ send(convId, clientId, options) }`, `options` to be passed on to
+ *   sendDirectMessage (it defers the list refresh). Each recipient's client id is derived from one
  *   operation id per opening, so the server recognises a retry as a repeat.
  */
 export default function ShareSheet({ isOpen, onClose, kind, entity, author, forward }) {
@@ -144,10 +153,23 @@ export default function ShareSheet({ isOpen, onClose, kind, entity, author, forw
   const [operationId] = useState(() => (forward ? newForwardOperationId() : null));
   const forwardSend = forward?.send;
   const sendOne = useMemo(() => {
-    if (forwardSend) return (id) => forwardSend(id, forwardClientId(operationId, id));
+    if (forwardSend) {
+      return (id) => forwardSend(id, forwardClientId(operationId, id), LIST_REFRESHED_ONCE);
+    }
     if (!invite) return null;
-    return (id) => sendDirectMessage(id, { text: '', inviteData: invite });
+    return (id) =>
+      sendDirectMessage(
+        id,
+        { text: '', inviteData: invite },
+        undefined, undefined, undefined, undefined, undefined, undefined,
+        LIST_REFRESHED_ONCE,
+      );
   }, [forwardSend, operationId, invite, sendDirectMessage]);
+  const queryClient = useQueryClient();
+  const refreshList = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: ['conversations'] }),
+    [queryClient],
+  );
   // App only: while the sheet is open, load the story panel's code and start
   // its fonts and downloads, so tapping Story shows a finished card quickly.
   useEffect(() => {
@@ -158,7 +180,7 @@ export default function ShareSheet({ isOpen, onClose, kind, entity, author, forw
       .catch(() => {});
   }, [isOpen, content]);
 
-  const { status, sendAll, reset: resetSend } = useChatSend(sendOne);
+  const { status, sendAll, reset: resetSend } = useChatSend(sendOne, refreshList);
 
   // The parents keep this mounted while closed, so every opening starts from
   // a clean slate rather than the previous one's picks, search and results.

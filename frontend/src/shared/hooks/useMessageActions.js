@@ -187,7 +187,12 @@ export function useMessageActions() {
       markMessageFailed(convId, tempId);
       throw error;
     } finally {
-      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      // A multi-recipient share sends this once per chat and refreshes the
+      // list itself when all of them have settled (`deferListRefresh`): one
+      // refresh per send started an inbox and a picker refetch each time.
+      if (!options?.deferListRefresh) {
+        queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      }
     }
   };
 

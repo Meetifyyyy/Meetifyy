@@ -33,8 +33,10 @@ vi.mock('@shared/components/share/ShareTargets', () => ({
 
 import ShareSheet from '../ShareSheet';
 
+let lastClient;
 const renderSheet = (onClose = vi.fn()) => {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  lastClient = qc;
   render(
     <QueryClientProvider client={qc}>
       <ShareSheet isOpen onClose={onClose} kind="post" entity={{ id: 'p1', text: 'hello' }} author={{ username: 'al' }} />
@@ -88,6 +90,22 @@ describe('<ShareSheet>', () => {
     expect(sendMock.mock.calls[0][1].inviteData).toMatchObject({ type: 'postShare', post: { id: 'p1' } });
   });
 
+  it('refreshes the conversation list once for the whole share, not once per chat', async () => {
+    renderSheet();
+    const refresh = vi.spyOn(lastClient, 'invalidateQueries');
+    fireEvent.click(await screen.findByRole('option', { name: /Asha/ }));
+    fireEvent.click(screen.getByRole('option', { name: /Ravi/ }));
+    fireEvent.click(screen.getByRole('option', { name: /Crew/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Send to 3' }));
+    await screen.findByRole('button', { name: 'Sent' });
+    // Each send leaves the list to the sheet...
+    expect(sendMock).toHaveBeenCalledTimes(3);
+    for (const call of sendMock.mock.calls) expect(call[8]).toEqual({ deferListRefresh: true });
+    // ...which refreshes it once, after every send has an answer.
+    const listRefreshes = refresh.mock.calls.filter(([f]) => f?.queryKey?.[0] === 'conversations');
+    expect(listRefreshes).toHaveLength(1);
+  });
+
   it('retries only the chats that failed, never re-sending to the rest', async () => {
     sendMock.mockImplementation(async (id) => {
       if (id === 'c2') throw new Error('nope');
@@ -118,7 +136,10 @@ describe('<ShareSheet>', () => {
     fireEvent.click(await screen.findByRole('option', { name: /Asha/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
     await waitFor(() => expect(sendMock).toHaveBeenCalledTimes(1));
-    expect(sendMock).toHaveBeenCalledWith('c1', { text: '', inviteData: { type: 'confessionShare', confessionId: 'cf1' } });
+    const [convId, payload, ...rest] = sendMock.mock.calls[0];
+    expect([convId, payload]).toEqual(['c1', { text: '', inviteData: { type: 'confessionShare', confessionId: 'cf1' } }]);
+    // The positional gap up to the options bag, which defers the list refresh.
+    expect(rest).toEqual([undefined, undefined, undefined, undefined, undefined, undefined, { deferListRefresh: true }]);
   });
 });
 

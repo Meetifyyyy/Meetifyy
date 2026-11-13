@@ -1263,11 +1263,12 @@ function LazyForwardModal({ isOpen, mediaUrl, mediaType, onClose }) {
         forward={{
           // The ninth positional argument is the options bag; `tempId` is how a
           // client id reaches the request (see useMessageActions.sendDirectMessage).
-          send: (id, clientId) => sendDirectMessage(
+          send: (id, clientId, sendOptions) => sendDirectMessage(
             id,
             { text: '', mediaUrl, mediaType },
             undefined, undefined, undefined, undefined, undefined, undefined,
-            { tempId: clientId },
+            // The sheet passes `deferListRefresh`: it refreshes the list once.
+            { tempId: clientId, ...sendOptions },
           ),
         }}
       />

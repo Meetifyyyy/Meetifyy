@@ -285,7 +285,7 @@ export default function ChatAreaLayout({
               // Same send as before: the client id comes from the sheet's
               // operation id, so a retry is recognised by the server rather
               // than delivered twice.
-              send: (id, clientId) => sendDirectMessage(
+              send: (id, clientId, sendOptions) => sendDirectMessage(
                 id,
                 {
                   text: forwardingMsg.text || forwardingMsg.payload?.text || '',
@@ -294,7 +294,8 @@ export default function ChatAreaLayout({
                   inviteData: forwardedInviteData(forwardingMsg),
                 },
                 undefined, undefined, undefined, undefined, undefined, undefined,
-                { tempId: clientId },
+                // The sheet passes `deferListRefresh`: it refreshes the list once.
+                { tempId: clientId, ...sendOptions },
               ),
             }}
           />

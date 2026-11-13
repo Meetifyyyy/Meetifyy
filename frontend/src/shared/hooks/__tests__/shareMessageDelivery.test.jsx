@@ -136,6 +136,31 @@ describe('sending from a share flow', () => {
     expect(new Set(ids).size).toBe(2);
   });
 
+  it('refreshes the conversation list after a send, unless the caller will do it once itself', async () => {
+    // A share to N chats used to refresh it N times: an inbox and a picker
+    // refetch per recipient.
+    sendMessage.mockResolvedValue({ id: 'server-1', text: '' });
+    const refresh = vi.spyOn(qc, 'invalidateQueries');
+    const { result } = renderHook(() => useMessageActions(), { wrapper: wrap });
+    const conversationRefreshes = () =>
+      refresh.mock.calls.filter(([f]) => f?.queryKey?.[0] === 'conversations').length;
+
+    await act(async () => {
+      await result.current.sendDirectMessage('conv-internal', { text: 'hi' });
+    });
+    expect(conversationRefreshes()).toBe(1);
+
+    await act(async () => {
+      await result.current.sendDirectMessage(
+        'conv-internal',
+        { text: 'hi' },
+        undefined, undefined, undefined, undefined, undefined, undefined,
+        { deferListRefresh: true },
+      );
+    });
+    expect(conversationRefreshes()).toBe(1);
+  });
+
   it('marks the message failed rather than losing it when the send fails', async () => {
     sendMessage.mockRejectedValue(new Error('offline'));
     const { result } = renderHook(() => useMessageActions(), { wrapper: wrap });
