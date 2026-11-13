@@ -15,8 +15,9 @@ import {
 function build(count = 1) {
   const prisma = {
     userSession: {
-      findMany: jest.fn(() =>
-        Promise.resolve([{ id: 's1', familyId: 'fam-1' }]),
+      findMany: jest.fn(
+        (): Promise<{ id: string; familyId: string; userId?: string }[]> =>
+          Promise.resolve([{ id: 's1', familyId: 'fam-1' }]),
       ),
       findFirst: jest.fn(() => Promise.resolve({ familyId: 'fam-1' })),
       findUnique: jest.fn(() => Promise.resolve({ familyId: 'fam-1' })),
@@ -29,7 +30,7 @@ function build(count = 1) {
     stub<PrismaService>(prisma),
     stub<DomainEventService>({ emit }),
   );
-  return { service, emit };
+  return { service, emit, prisma };
 }
 
 describe('device names', () => {
@@ -90,6 +91,7 @@ describe('device names', () => {
   });
 });
 
+// Each announcement names the account, so a replica checks only its sockets.
 describe('signing a device out reaches its open sockets at once', () => {
   it('announces when one device is signed out', async () => {
     const { service, emit } = build();
@@ -98,7 +100,11 @@ describe('signing a device out reaches its open sockets at once', () => {
       's1',
       UserSessionRevokedReason.USER_LOGOUT,
     );
-    expect(emit).toHaveBeenCalledWith(SESSIONS_REVOKED_EVENT, {}, []);
+    expect(emit).toHaveBeenCalledWith(
+      SESSIONS_REVOKED_EVENT,
+      { userId: 'u1' },
+      [],
+    );
   });
 
   it('announces when every other device is signed out', async () => {
@@ -108,11 +114,33 @@ describe('signing a device out reaches its open sockets at once', () => {
       UserSessionRevokedReason.USER_LOGOUT,
       's0',
     );
-    expect(emit).toHaveBeenCalledWith(SESSIONS_REVOKED_EVENT, {}, []);
+    expect(emit).toHaveBeenCalledWith(
+      SESSIONS_REVOKED_EVENT,
+      { userId: 'u1' },
+      [],
+    );
   });
 
-  it('announces when a login ends (sign-out, replay detection)', async () => {
-    const { service, emit } = build();
+  it('announces when a login ends (sign-out, replay detection), naming its account', async () => {
+    const { service, emit, prisma } = build();
+    prisma.userSession.findMany.mockResolvedValueOnce([
+      { id: 's1', familyId: 'fam-1', userId: 'u1' },
+    ]);
+    await service.revokeFamily('fam-1', UserSessionRevokedReason.USER_LOGOUT);
+    expect(prisma.userSession.findMany).toHaveBeenCalledWith({
+      where: { familyId: 'fam-1' },
+      select: { id: true, userId: true },
+    });
+    expect(emit).toHaveBeenCalledWith(
+      SESSIONS_REVOKED_EVENT,
+      { userId: 'u1' },
+      [],
+    );
+  });
+
+  it('a login whose rows cannot be read still announces, naming nobody (every socket is checked)', async () => {
+    const { service, emit, prisma } = build();
+    prisma.userSession.findMany.mockRejectedValueOnce(new Error('db down'));
     await service.revokeFamily('fam-1', UserSessionRevokedReason.USER_LOGOUT);
     expect(emit).toHaveBeenCalledWith(SESSIONS_REVOKED_EVENT, {}, []);
   });

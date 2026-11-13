@@ -1,5 +1,6 @@
 import { buildGateway, fakeSocket } from './testing/gateway.fixture';
 import type { RealtimeGateway } from './realtime.gateway';
+import { SESSIONS_REVOKED_EVENT } from '../auth/session/user-session.service';
 
 /**
  * The minute sweep that closes sockets of sessions that ended.
@@ -91,5 +92,97 @@ describe('RealtimeGateway — session sweep', () => {
     const findMany = await run([ok], [live('fine', 'login-3')], []);
     expect(findMany).toHaveBeenCalledTimes(1);
     expect(ok.disconnect).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The sweep a sign-out announcement triggers (MSG-12): only the signed-out
+ * account's sockets are checked, so a replica holding none of them asks the
+ * database nothing. An announcement naming nobody, as an older replica sends,
+ * still checks every socket.
+ */
+describe('RealtimeGateway — sweep on a sign-out announcement', () => {
+  type InQuery = { where: { id: { in: string[] } } };
+  const socket = (userId: string, sessionId: string) =>
+    fakeSocket({
+      data: { userId, sessionId },
+      emit: jest.fn(),
+      disconnect: jest.fn(),
+    });
+
+  const setup = () => {
+    const sockets = [
+      socket('u1', 'sA'),
+      socket('u1', 'sB'),
+      socket('u2', 'sC'),
+      socket('u3', 'sD'),
+    ];
+    // Every asked-about session is live, so nothing is closed.
+    const sessionFind = jest.fn((query: InQuery) =>
+      Promise.resolve(
+        query.where.id.in.map((id) => ({
+          id,
+          familyId: `f-${id}`,
+          revoked: false,
+          expiresAt: new Date(Date.now() + 3_600_000),
+        })),
+      ),
+    );
+    const userFind = jest.fn((_query: InQuery) => Promise.resolve([]));
+    const gateway: RealtimeGateway = buildGateway({
+      redis: { getClient: jest.fn() },
+      prisma: {
+        user: { findMany: userFind },
+        userSession: { findMany: sessionFind },
+      },
+    });
+    (gateway as unknown as { server: unknown }).server = {
+      sockets: { sockets: new Map(sockets.map((s, i) => [`s${i}`, s])) },
+    };
+    const announce = (data: Record<string, string>) =>
+      gateway['handleDomainEvent']({ type: SESSIONS_REVOKED_EVENT, data });
+    const asked = (fn: jest.Mock) =>
+      fn.mock.calls.map(([query]: [InQuery]) => [...query.where.id.in].sort());
+    return { sockets, sessionFind, userFind, announce, asked };
+  };
+
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  it('checks only the signed-out account’s sockets', async () => {
+    const { sockets, sessionFind, userFind, announce, asked } = setup();
+    announce({ userId: 'u1' });
+    await jest.advanceTimersByTimeAsync(250);
+    expect(asked(sessionFind)).toEqual([['sA', 'sB']]);
+    expect(asked(userFind)).toEqual([['u1']]);
+    for (const s of sockets) expect(s.disconnect).not.toHaveBeenCalled();
+  });
+
+  it('a burst of sign-outs is one check of all their sockets', async () => {
+    const { sessionFind, announce, asked } = setup();
+    announce({ userId: 'u1' });
+    announce({ userId: 'u2' });
+    await jest.advanceTimersByTimeAsync(250);
+    expect(asked(sessionFind)).toEqual([['sA', 'sB', 'sC']]);
+  });
+
+  it('asks the database nothing when none of the account’s sockets are here', async () => {
+    const { sessionFind, userFind, announce } = setup();
+    announce({ userId: 'someone-elsewhere' });
+    await jest.advanceTimersByTimeAsync(250);
+    expect(sessionFind).not.toHaveBeenCalled();
+    expect(userFind).not.toHaveBeenCalled();
+  });
+
+  it('an announcement naming nobody checks every socket, even inside a burst', async () => {
+    const { sessionFind, announce, asked } = setup();
+    announce({ userId: 'u1' });
+    announce({});
+    await jest.advanceTimersByTimeAsync(250);
+    expect(asked(sessionFind)).toEqual([['sA', 'sB', 'sC', 'sD']]);
+    // The next burst starts targeted again.
+    announce({ userId: 'u3' });
+    await jest.advanceTimersByTimeAsync(250);
+    expect(asked(sessionFind)[1]).toEqual(['sD']);
   });
 });

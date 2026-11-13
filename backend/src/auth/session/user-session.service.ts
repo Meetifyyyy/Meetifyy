@@ -115,9 +115,16 @@ export class UserSessionService {
    * receiving messages over its open socket until the next minute's sweep.
    * Fire-and-forget: the sweep remains the backstop. Only for sign-outs, never
    * for a token rotation (that replaces a session within the same login).
+   *
+   * Naming the account lets each replica check only that account's sockets;
+   * without it (the login's rows could not be read) every socket is checked.
    */
-  private announceRevocation(): void {
-    void this.events?.emit(SESSIONS_REVOKED_EVENT, {}, []);
+  private announceRevocation(userId: string | undefined): void {
+    void this.events?.emit(
+      SESSIONS_REVOKED_EVENT,
+      userId ? { userId } : {},
+      [],
+    );
   }
 
   /**
@@ -623,8 +630,8 @@ export class UserSessionService {
     reason: UserSessionRevokedReason,
   ): Promise<void> {
     const affected = await this.prisma.userSession
-      .findMany({ where: { familyId }, select: { id: true } })
-      .catch(() => [] as { id: string }[]);
+      .findMany({ where: { familyId }, select: { id: true, userId: true } })
+      .catch(() => [] as { id: string; userId: string }[]);
 
     await this.prisma.userSession
       .updateMany({
@@ -635,7 +642,7 @@ export class UserSessionService {
 
     affected.forEach((s) => JwtGuard.forgetSession(s.id));
     await this.forgetPushDevices([familyId]);
-    this.announceRevocation();
+    this.announceRevocation(affected[0]?.userId);
   }
 
   /**
@@ -688,7 +695,7 @@ export class UserSessionService {
 
     affected.forEach((s) => JwtGuard.forgetSession(s.id));
     await this.forgetPushDevices([...new Set(affected.map((s) => s.familyId))]);
-    if (result.count > 0) this.announceRevocation();
+    if (result.count > 0) this.announceRevocation(userId);
     return result.count;
   }
 
@@ -783,7 +790,7 @@ export class UserSessionService {
     // window. Correctness does not depend on it — the cache expires either way
     // — but "sign out" should not appear to do nothing for ten seconds.
     JwtGuard.forgetSession(sessionId);
-    if (result.count > 0) this.announceRevocation();
+    if (result.count > 0) this.announceRevocation(userId);
     return result.count > 0;
   }
 

@@ -500,7 +500,7 @@ export class RealtimeGateway
     // A login was signed out somewhere: close its sockets on this replica now
     // rather than at the next minute's sweep. Nothing to forward to clients.
     if (type === SESSIONS_REVOKED_EVENT) {
-      this.sweepRevokedSessionsSoon();
+      this.sweepRevokedSessionsSoon(inData('userId'));
       return;
     }
 
@@ -827,31 +827,57 @@ export class RealtimeGateway
   /**
    * Runs the revoked-session sweep shortly, once for a burst of sign-outs
    * ("sign out of all other devices" revokes many logins in one go).
+   *
+   * Only the sockets of the accounts that signed out are checked (MSG-12).
+   * Every sign-out used to make every replica re-check every open socket: two
+   * or three queries with `IN` lists as long as the replica's socket count, on
+   * replicas that held no socket of that account at all. An announcement that
+   * names no account (sent by a replica still on the previous release) checks
+   * them all, as before; the minute sweep still covers everything.
    */
   private sweepSoonTimer: NodeJS.Timeout | null = null;
-  private sweepRevokedSessionsSoon(): void {
+  private sweepSoonUsers: Set<string> | 'all' = new Set();
+  private sweepRevokedSessionsSoon(userId?: string): void {
+    if (!userId) this.sweepSoonUsers = 'all';
+    else if (this.sweepSoonUsers !== 'all') this.sweepSoonUsers.add(userId);
     if (this.sweepSoonTimer) return;
     this.sweepSoonTimer = setTimeout(() => {
       this.sweepSoonTimer = null;
-      void this.disconnectRevokedSessions();
+      const users = this.sweepSoonUsers;
+      this.sweepSoonUsers = new Set();
+      if (users === 'all') {
+        void this.disconnectRevokedSessions();
+        return;
+      }
+      const sockets = this.server?.sockets?.sockets;
+      const theirs = sockets
+        ? Array.from(sockets.values()).filter((socket) => {
+            const id = socket.data.userId;
+            return typeof id === 'string' && users.has(id);
+          })
+        : [];
+      // None of theirs here: nothing to ask the database.
+      if (theirs.length > 0) void this.disconnectRevokedSessions(theirs);
     }, 250);
     this.sweepSoonTimer.unref?.();
   }
 
-  private async disconnectRevokedSessions(): Promise<void> {
+  /** `only` limits the check to those sockets; the minute sweep passes none. */
+  private async disconnectRevokedSessions(only?: AppSocket[]): Promise<void> {
     try {
-      const sockets = this.server?.sockets?.sockets;
-      if (!sockets || sockets.size === 0) return;
+      const open = this.server?.sockets?.sockets;
+      const sockets = only ?? (open ? Array.from(open.values()) : []);
+      if (sockets.length === 0) return;
 
       const bySession = new Map<string, AppSocket[]>();
-      for (const socket of sockets.values()) {
+      for (const socket of sockets) {
         const id = socket.data.sessionId;
         if (typeof id !== 'string' || !id) continue;
         const list = bySession.get(id) || [];
         list.push(socket);
         bySession.set(id, list);
       }
-      await this.disconnectInactiveAccounts(Array.from(sockets.values()));
+      await this.disconnectInactiveAccounts(sockets);
       if (bySession.size === 0) return;
 
       const ids = Array.from(bySession.keys());
