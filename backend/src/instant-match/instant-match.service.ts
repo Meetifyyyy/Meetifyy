@@ -104,9 +104,14 @@ export interface MatchFoundPayload {
    *  than to `timer` seconds from render, so a slow render, a backgrounded
    *  tab, or a late-arriving event cannot desync the ring from the server. */
   expiresAt: number;
-  /** This user has already said yes — they sent the request — so the card
-   *  shows the wait for the other side instead of asking again. */
+  /** This user has already said yes, so the card shows the wait for the
+   *  other side instead of asking again: they sent the request, or (after a
+   *  reload) they accepted a match the other side has not answered yet. */
   awaitingOther?: boolean;
+  /** This user sent the direct request now waiting on the other side. The
+   *  app labels the wait (and offers to withdraw it) by this, not by
+   *  `awaitingOther`, which also covers an accepted match. */
+  requestSent?: boolean;
   /** The other person asked for this pairing directly, from the roster. */
   requested?: boolean;
 }
@@ -270,6 +275,9 @@ export interface InstantMatchChatState {
 export interface InstantMatchEmitter {
   emitMatchFound(userId: string, p: MatchFoundPayload): void;
   emitMatchAccepted(userId: string, p: MatchAcceptedPayload): void;
+  /** This user's acceptance is recorded and the other side has not answered:
+   *  every screen they have open moves to the wait (IM-19). */
+  emitMatchWaiting(userId: string, p: { matchId: string }): void;
   emitMatchDeclined(
     userId: string,
     p: { reason: string; requeued: boolean },
@@ -1314,6 +1322,7 @@ export class InstantMatchService implements OnModuleInit {
       timer,
       expiresAt: expiresAtMs,
       awaitingOther: true,
+      requestSent: true,
     });
     realtimeGatewayRef?.emitMatchFound(targetUserId, {
       matchId: session.id,
@@ -1481,6 +1490,12 @@ export class InstantMatchService implements OnModuleInit {
     if (!fresh || fresh.status !== 'PENDING') return;
     if (!fresh.aAccepted || !fresh.bAccepted) {
       this.logger.log(`match:half-accepted ${session.id}`);
+      // Their other tabs and devices still show the card that asks; without
+      // this, a Pass there would decline what they have just accepted (IM-19).
+      realtimeGatewayRef?.emitMatchWaiting(
+        isUserA ? session.userAId : session.userBId,
+        { matchId: session.id },
+      );
       return;
     }
 
@@ -2293,6 +2308,8 @@ export class InstantMatchService implements OnModuleInit {
           // Accept they already gave; the other side keeps the request label.
           awaitingOther:
             session.userAId === userId ? session.aAccepted : session.bAccepted,
+          requestSent:
+            session.userAId === userId && isDirectRequest(session.snapshotA),
           requested:
             session.userBId === userId && isDirectRequest(session.snapshotA),
         };

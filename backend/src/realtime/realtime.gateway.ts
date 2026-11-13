@@ -2477,6 +2477,10 @@ export class RealtimeGateway
     this.emitToUser(userId, 'match:found', payload);
   }
 
+  emitMatchWaiting(userId: string, payload: { matchId: string }) {
+    this.emitToUser(userId, 'match:waiting', payload);
+  }
+
   emitMatchAccepted(userId: string, payload: MatchAcceptedPayload) {
     // Join every one of this user's live sockets to the new conversation's
     // rooms *before* announcing it. Room membership is otherwise established

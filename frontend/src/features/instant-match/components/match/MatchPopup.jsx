@@ -1,6 +1,6 @@
 import { useRef, useMemo, useId } from 'react';
 import { createPortal } from 'react-dom';
-import { useInstantMatch } from '../../context/InstantMatchContext';
+import { useInstantMatch, isRequestSent } from '../../context/InstantMatchContext';
 import { useMatchTimer } from '../../hooks/useMatchTimer';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
@@ -89,7 +89,7 @@ function MatchCard() {
           {!success && (
             <span className="im-match-tag">
               <MatchMark />
-              {activeMatch.awaitingOther
+              {isRequestSent(activeMatch)
                 ? 'Request sent'
                 : activeMatch.requested ? 'Match request' : 'Match found'}
             </span>
@@ -177,7 +177,7 @@ function MatchCard() {
               status={status}
               busy={busy}
               timeLeft={timeLeft}
-              requestSent={Boolean(activeMatch.awaitingOther)}
+              requestSent={isRequestSent(activeMatch)}
               name={firstName(name) || 'them'}
               onRespond={respondToMatch}
             />

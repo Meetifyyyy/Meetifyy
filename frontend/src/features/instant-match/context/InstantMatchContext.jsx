@@ -60,6 +60,18 @@ export function requestOpenInstantMatchChat() {
 }
 
 /**
+ * Whether this user sent the request now waiting on the other side. Read from
+ * `requestSent`; a server without it only sent `awaitingOther`, which was set
+ * for both a sent request and an accepted match (so the label could be wrong,
+ * but never the state).
+ */
+export function isRequestSent(match) {
+  if (!match) return false;
+  if (typeof match.requestSent === 'boolean') return match.requestSent;
+  return Boolean(match.awaitingOther);
+}
+
+/**
  * Client status. The server is authoritative for everything that outlives a
  * render — this only tracks what the user is currently looking at.
  *
@@ -197,6 +209,9 @@ export function InstantMatchProvider({ children }) {
   const chatRef = useRef(chat);
   chatRef.current = chat;
 
+  const activeMatchRef = useRef(activeMatch);
+  activeMatchRef.current = activeMatch;
+
   // Read by `requestMatch`, which must restore the form if a request fails
   // without re-creating itself on every keystroke in the form.
   const formDataRef = useRef(formData);
@@ -333,6 +348,16 @@ export function InstantMatchProvider({ children }) {
       if (!match.awaitingOther) notifyMatchFound(match);
     });
 
+    // Accepted on another tab or device (IM-19): this screen moves to the
+    // wait too, instead of still offering a Pass on a match already answered.
+    // Builds without this handler ignore the event and resync on focus.
+    const offWaiting = matchSocketClient.on('match:waiting', ({ matchId } = {}) => {
+      const current = activeMatchRef.current;
+      if (!matchId || current?.matchId !== matchId) return;
+      setActiveMatch({ ...current, awaitingOther: true, requestSent: false });
+      if (statusRef.current === 'match_found') setStatus('waiting');
+    });
+
     const offAccepted = matchSocketClient.on('match:accepted', (payload = {}) => {
       const { chatId, matchId, candidate, activity, expiresAt } = payload;
       setStatus('matched');
@@ -416,7 +441,7 @@ export function InstantMatchProvider({ children }) {
 
     return () => {
       document.removeEventListener('visibilitychange', onVisible);
-      offStatus(); offStats(); offFound(); offAccepted(); offDeclined(); offResumed();
+      offStatus(); offStats(); offFound(); offWaiting(); offAccepted(); offDeclined(); offResumed();
     };
   }, [currentUser?.id, isVerified, queryClient, resync, refreshChat]);
 
@@ -716,7 +741,7 @@ export function InstantMatchProvider({ children }) {
     // A request this user sent can be withdrawn while they wait; everything
     // else is answered only from the card that asks.
     const withdrawing = action === 'decline'
-      && statusRef.current === 'waiting' && Boolean(match.awaitingOther);
+      && statusRef.current === 'waiting' && isRequestSent(match);
     if (statusRef.current !== 'match_found' && !withdrawing) return;
 
     inFlightRef.current = true;

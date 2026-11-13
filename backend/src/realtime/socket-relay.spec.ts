@@ -445,6 +445,12 @@ describe('RealtimeGateway relay delivery', () => {
     expect(calls).toEqual(['to(user-1).except(sock-1).emit(message:new)']);
   });
 
+  it('tells every screen of the person who accepted to show the wait (IM-19)', () => {
+    const { gateway, calls } = gatewayWithServer();
+    gateway.emitMatchWaiting('user-1', { matchId: 'm1' });
+    expect(calls).toEqual(['to(user-1).emit(match:waiting)']);
+  });
+
   it('tells only the sockets that read the roster that the queue moved', () => {
     const { gateway, calls } = gatewayWithServer();
     gateway.emitQueueChanged();
