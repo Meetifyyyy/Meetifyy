@@ -30,7 +30,11 @@ import {
   SideContext,
   isHardSkippedEitherWay,
 } from './matching/signals';
-import { CANDIDATE_SCAN_LIMIT, FEEDBACK } from './matching/matching.config';
+import {
+  CANDIDATE_SCAN_LIMIT,
+  FEEDBACK,
+  THRESHOLD,
+} from './matching/matching.config';
 import {
   JoinQueueDto,
   QueueSnapshot,
@@ -39,6 +43,7 @@ import {
 } from './dto/join-queue.dto';
 import {
   QUEUE_TTL_MS,
+  EXPIRY_SWEEP_MS,
   ACCEPT_TIMER_GRACE_MS,
   REQUEST_WINDOW_SECS,
   getAcceptTimerSecs,
@@ -60,8 +65,12 @@ const EXPIRE_BATCH = 100;
 
 /** The sweep re-tries matching for people waiting at least this long… */
 const REMATCH_AFTER_MS = 30_000;
-/** …the longest-waiting this many per tick (every 10 s). */
+/** …the longest-waiting this many per tick (every 10 s)… */
 const REMATCH_BATCH = 20;
+/** …read from at most this many of the oldest live entries (one query). */
+const REMATCH_SCAN = 200;
+/** A waiter whose bar has stopped falling is re-tried only this often. */
+const REMATCH_SETTLED_EVERY_MS = 2 * 60_000;
 
 export interface MatchCandidateDto {
   id: string;
@@ -1707,27 +1716,67 @@ export class InstantMatchService implements OnModuleInit {
       this.logger.log(`instant-match:sweep-matched ${rematched}`);
   }
 
+  /** When the sweep last re-tried each waiter (this replica only). */
+  private readonly sweepTriedAt = new Map<string, number>();
+
   /**
    * Re-tries matching for the people who have waited longest (phase 1).
    *
    * The bar a pairing has to clear falls while someone waits, but nothing
-   * re-ran matching for them: a person whose bar had already reached zero was
-   * only paired when somebody else happened to join. The sweep now tries the
-   * longest waiters each tick, bounded, each on its own.
+   * re-ran matching for them: a pair that was below the bar when the second
+   * person joined was never looked at again.
+   *
+   * Only re-tries that can change something are made. A pair's bar uses the
+   * longer of the two waits, so when somebody joins, that join's own attempt
+   * already gets every waiter's lowered bar; the sweep only has to cover the
+   * bar falling with nobody joining. So a waiter is re-tried every tick while
+   * their bar is still falling, and every two minutes after that (a cooldown
+   * ending or someone coming back online can still change the answer). A
+   * waiter who is alone in their activity is not re-tried at all.
+   *
+   * The memory is per replica: with several, a waiter is at worst re-tried a
+   * little more often, never less.
    */
   private async rematchLongWaiters(): Promise<number> {
     const now = Date.now();
-    const waiters = await this.prisma.matchQueueEntry.findMany({
-      where: {
-        joinedAt: { lt: new Date(now - REMATCH_AFTER_MS) },
-        expiresAt: { gt: new Date(now) },
-      },
+    const live = await this.prisma.matchQueueEntry.findMany({
+      where: { expiresAt: { gt: new Date(now) } },
       orderBy: { joinedAt: 'asc' },
-      take: REMATCH_BATCH,
-      select: { userId: true },
+      take: REMATCH_SCAN,
+      select: { userId: true, activity: true, joinedAt: true },
     });
+
+    const liveIds = new Set(live.map((e) => e.userId));
+    for (const id of this.sweepTriedAt.keys()) {
+      if (!liveIds.has(id)) this.sweepTriedAt.delete(id);
+    }
+    if (live.length < 2) return 0;
+
+    // Counted only when every live entry was read; otherwise someone beyond
+    // the scan could share the activity.
+    const complete = live.length < REMATCH_SCAN;
+    const perActivity = new Map<string, number>();
+    for (const e of live) {
+      perActivity.set(e.activity, (perActivity.get(e.activity) ?? 0) + 1);
+    }
+    // The bar is at its floor after the longest relaxation, plus one tick so
+    // the attempt at the floor itself is made.
+    const settledAfter = THRESHOLD.relaxFullMs + EXPIRY_SWEEP_MS;
+
+    const due = live
+      .filter((e) => {
+        const waited = now - e.joinedAt.getTime();
+        if (waited < REMATCH_AFTER_MS) return false;
+        if (complete && (perActivity.get(e.activity) ?? 0) < 2) return false;
+        if (waited <= settledAfter) return true;
+        const last = this.sweepTriedAt.get(e.userId);
+        return last === undefined || now - last >= REMATCH_SETTLED_EVERY_MS;
+      })
+      .slice(0, REMATCH_BATCH);
+
     let matched = 0;
-    for (const { userId } of waiters) {
+    for (const { userId } of due) {
+      this.sweepTriedAt.set(userId, now);
       try {
         if (await this.tryMatch(userId)) matched += 1;
       } catch (err) {
@@ -2556,25 +2605,20 @@ export class InstantMatchService implements OnModuleInit {
     tx: Prisma.TransactionClient,
     conversationId: string,
   ): Promise<{ owed: string[]; sentBy: Map<string, number> }> {
-    // How many messages each side sent, read before they go: whether a match
-    // became a conversation is the outcome the learning plan cares about most,
-    // and it cannot be read afterwards. Counts only, never content.
-    const senders = await tx.message.findMany({
+    // One read before the messages go, for two things: how many each side
+    // sent (whether a match became a conversation is the outcome the learning
+    // plan cares about most, and it cannot be read afterwards; counts only,
+    // never content), and which files they carried.
+    const sent = await tx.message.findMany({
       where: { conversationId },
-      select: { senderId: true },
+      select: { senderId: true, attachmentMediaId: true },
     });
     const sentBy = new Map<string, number>();
-    for (const { senderId } of senders) {
+    const mediaIds: string[] = [];
+    for (const { senderId, attachmentMediaId } of sent) {
       sentBy.set(senderId, (sentBy.get(senderId) ?? 0) + 1);
+      if (attachmentMediaId !== null) mediaIds.push(attachmentMediaId);
     }
-
-    const attached = await tx.message.findMany({
-      where: { conversationId, attachmentMediaId: { not: null } },
-      select: { attachmentMediaId: true },
-    });
-    const mediaIds = attached
-      .map((m) => m.attachmentMediaId)
-      .filter((id): id is string => id !== null);
     const media = mediaIds.length
       ? await tx.media.findMany({
           where: { id: { in: mediaIds } },

@@ -13,7 +13,9 @@ import type { MessagesService } from '../messages/messages.service';
 import { createVerificationAccessMock } from '../common/verification/testing/verification-access.mock';
 import { relaxedThreshold, scoreMutual, scorePair } from './matching/engine';
 import { flipFeedback, type SideContext } from './matching/signals';
-import { FEATURE_VERSION } from './matching/features';
+import { FEATURE_VERSION, proposalFeatures } from './matching/features';
+import { FEEDBACK } from './matching/matching.config';
+import { MATCH_HISTORY_RETENTION_DAYS } from './instant-match.constants';
 
 /**
  * Phase 1 of the Instant Match learning plan
@@ -55,6 +57,39 @@ describe('Instant Match learning plan, phase 1', () => {
       const b = side({ interests: ['music', 'chess'] });
       expect(scoreMutual(a, b, { feedback: passed }).detail.score).toBe(
         scoreMutual(b, a, { feedback: flipFeedback(passed) }).detail.score,
+      );
+    });
+  });
+
+  it('keeps match history (120 days) well past what ranking reads', () => {
+    expect(MATCH_HISTORY_RETENTION_DAYS * 24 * 60 * MIN).toBeGreaterThan(
+      3 * FEEDBACK.windowMs,
+    );
+  });
+
+  describe('what is recorded is rounded', () => {
+    it('keeps three decimals of each signal value', () => {
+      const mutual = scoreMutual(
+        side({ interests: ['music', 'chess', 'art'] }),
+        side({ interests: ['music', 'hiking'] }),
+      );
+      const raw = mutual.detail.signals.find((s) => s.key === 'interests');
+      expect(raw?.value).not.toBe(Math.round((raw?.value ?? 0) * 1000) / 1000);
+
+      const features = proposalFeatures({
+        source: 'ranker',
+        mutual,
+        threshold: 40,
+        picked: 'lead',
+        waitedMs: 1_000,
+        poolSize: 3,
+      });
+      const signals = features.signals as Record<
+        string,
+        { value: number | null; weight: number }
+      >;
+      expect(signals.interests.value).toBe(
+        Math.round((raw?.value ?? 0) * 1000) / 1000,
       );
     });
   });
@@ -147,6 +182,64 @@ describe('Instant Match learning plan, phase 1', () => {
       await service.expireStale();
 
       expect(prisma.sessions).toHaveLength(0);
+    });
+
+    describe('the sweep re-tries only when it can change something', () => {
+      /** Both waiting, same activity, but inside each other's cooldown, so
+       *  every attempt fails and only the cadence is observed. */
+      const waitingApart = (waitedMs: number) => {
+        prisma.seedSession({
+          userAId: 'alice',
+          userBId: 'bob',
+          status: 'DECLINED',
+          declinedById: 'alice',
+          createdAt: new Date(Date.now() - 10 * MIN),
+        });
+        for (const id of ['alice', 'bob']) {
+          prisma.seedQueueEntry(id, {
+            joinedAt: new Date(Date.now() - waitedMs),
+          });
+        }
+      };
+
+      it('every tick while the bar is still falling', async () => {
+        waitingApart(60_000);
+        const tried = jest.spyOn(service, 'tryMatch');
+        await service.expireStale();
+        await service.expireStale();
+        expect(tried).toHaveBeenCalledTimes(4);
+      });
+
+      it('every two minutes once the bar has reached its floor', async () => {
+        waitingApart(10 * MIN);
+        const tried = jest.spyOn(service, 'tryMatch');
+        await service.expireStale();
+        expect(tried).toHaveBeenCalledTimes(2);
+
+        await service.expireStale();
+        expect(tried).toHaveBeenCalledTimes(2);
+
+        const triedAt = service['sweepTriedAt'];
+        for (const id of triedAt.keys()) {
+          triedAt.set(id, Date.now() - 2 * MIN - 1);
+        }
+        await service.expireStale();
+        expect(tried).toHaveBeenCalledTimes(4);
+      });
+
+      it('never for someone alone in their activity', async () => {
+        prisma.seedQueueEntry('alice', {
+          activity: 'study',
+          joinedAt: new Date(Date.now() - 5 * MIN),
+        });
+        prisma.seedQueueEntry('bob', {
+          activity: 'gaming',
+          joinedAt: new Date(Date.now() - 5 * MIN),
+        });
+        const tried = jest.spyOn(service, 'tryMatch');
+        await service.expireStale();
+        expect(tried).not.toHaveBeenCalled();
+      });
     });
 
     it('records what a ranked pairing was judged on — values and weights, never the raw inputs', async () => {

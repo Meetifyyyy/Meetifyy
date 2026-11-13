@@ -26,6 +26,8 @@ export type MessageRow = Row & {
   id: string;
   conversationId: string;
   senderId: string;
+  /** Nullable column: absent in a seed means null, as Postgres returns it. */
+  attachmentMediaId?: string | null;
 };
 export type ParticipantRow = Row & {
   userId: string;
@@ -553,7 +555,7 @@ export class PrismaFake {
         Promise.resolve(
           this.messages
             .filter((m) => matchesWhere(m, where))
-            .map((m) => project(m, select)),
+            .map((m) => project({ attachmentMediaId: null, ...m }, select)),
         ),
       deleteMany: ({ where }: { where: Row }) => {
         const failure = this.failNext.messageDelete;

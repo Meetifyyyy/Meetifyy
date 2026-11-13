@@ -13,6 +13,12 @@
  */
 import type { MutualScore } from './engine';
 
+/** Three decimals: finer than any signal is meaningful, and about a sixth
+ *  smaller stored than a full double. */
+function round3(value: number | null): number | null {
+  return value === null ? null : Math.round(value * 1000) / 1000;
+}
+
 /** Bumped whenever the shape or the meaning of a field changes. */
 export const FEATURE_VERSION = 1;
 
@@ -33,7 +39,7 @@ export function proposalFeatures(input: {
   const { detail } = input.mutual;
   const signals: { [key: string]: Json } = {};
   for (const s of detail.signals) {
-    signals[s.key] = { value: s.value, weight: s.weight };
+    signals[s.key] = { value: round3(s.value), weight: s.weight };
   }
   return {
     v: FEATURE_VERSION,

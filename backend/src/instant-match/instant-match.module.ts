@@ -10,6 +10,7 @@ import {
   InstantMatchService,
   setRequestExpiryScheduler,
 } from './instant-match.service';
+import { MatchHistoryRetentionService } from './match-history-retention.service';
 import { InstantMatchController } from './instant-match.controller';
 import { InstantMatchRateLimiter } from './instant-match.rate-limiter';
 import {
@@ -42,6 +43,7 @@ import { BlocksService } from '../users/blocks.service';
     InstantMatchService,
     InstantMatchProcessor,
     InstantMatchRateLimiter,
+    MatchHistoryRetentionService,
     BlocksService,
   ],
   exports: [InstantMatchService, InstantMatchRateLimiter],

@@ -60,6 +60,12 @@ export const ACCEPT_TIMER_GRACE_MS = 5_000;
 /** How long a queue entry survives without being matched. */
 export const QUEUE_TTL_MS = 30 * 60 * 1000;
 
+/** How long Instant Match history (who was proposed to whom, and how it went)
+ *  is kept: owner decision of 2026-11-14. Ranking reads 30 days of it
+ *  (`FEEDBACK.windowMs`) and a learned ranker trains on what is left, so
+ *  this must stay well above 30 days. */
+export const MATCH_HISTORY_RETENTION_DAYS = 120;
+
 /** Free-text `optionalDetail` limit — mirrors the input's maxLength. */
 export const OPTIONAL_DETAIL_MAX = 60;
 

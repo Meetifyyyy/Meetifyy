@@ -14,12 +14,15 @@ import {
   setRealtimeGatewayRef,
 } from './instant-match.service';
 import { createEmitterMock } from './testing/prisma-fake';
+import { MatchHistoryRetentionService } from './match-history-retention.service';
+import { MATCH_HISTORY_RETENTION_DAYS } from './instant-match.constants';
 
 /**
  * Instant Match against a real Postgres (E-7a): the SQL the in-memory fake
  * cannot vouch for. The advisory locks, the "holds a live match" filter, the
  * stored requests cleared to SQL NULL, a closed chat's photos recorded and
- * deleted, and migration 41 on rows written before it.
+ * deleted, migration 41 on rows written before it, and the 120-day history
+ * retention.
  *
  * Needs a disposable database with every migration applied, named in BOTH
  * `DATABASE_URL` and `INSTANT_MATCH_TEST_DATABASE_URL`, on localhost. Skipped
@@ -406,5 +409,48 @@ describeDb('Instant Match (database)', () => {
       snapshotB: withGps,
     });
     expect(Prisma.DbNull).toBeDefined();
+  });
+
+  it('keeps 120 days of history: older finished rows go, in batches; live ones stay', async () => {
+    const [a, b] = await users(2);
+    const DAY = 24 * 60 * 60 * 1000;
+    const old = new Date(Date.now() - (MATCH_HISTORY_RETENTION_DAYS + 1) * DAY);
+    const recent = new Date(
+      Date.now() - (MATCH_HISTORY_RETENTION_DAYS - 1) * DAY,
+    );
+    const row = (over: Partial<Prisma.MatchSessionUncheckedCreateInput>) =>
+      prisma.matchSession.create({
+        data: {
+          userAId: a,
+          userBId: b,
+          activity: 'study',
+          expiresAt: new Date(),
+          ...over,
+        },
+        select: { id: true },
+      });
+    const gone = await Promise.all([
+      row({ createdAt: old, status: 'DECLINED' }),
+      row({ createdAt: old, status: 'EXPIRED' }),
+      row({ createdAt: old, status: 'ACCEPTED', chatStatus: 'ENDED_BY_USER' }),
+      row({ createdAt: old, status: 'ACCEPTED', chatStatus: 'EXPIRED' }),
+    ]);
+    const kept = await Promise.all([
+      row({ createdAt: recent, status: 'DECLINED' }),
+      // Still waiting for answers, and a chat still open: the 10-second
+      // sweep ends those (and deletes the chat's messages) first.
+      row({ createdAt: old, status: 'PENDING' }),
+      row({ createdAt: old, status: 'ACCEPTED', chatStatus: 'ACTIVE' }),
+    ]);
+
+    const retention = new MatchHistoryRetentionService(prisma);
+    retention['batchSize'] = 3;
+    await expect(retention.sweep()).resolves.toBe(4);
+
+    const left = await prisma.matchSession.findMany({
+      where: { id: { in: [...gone, ...kept].map((r) => r.id) } },
+      select: { id: true },
+    });
+    expect(left.map((r) => r.id).sort()).toEqual(kept.map((r) => r.id).sort());
   });
 });
