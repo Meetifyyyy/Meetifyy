@@ -75,6 +75,24 @@ describe('Instant Match on more than one screen (IM-19)', () => {
     expect(emitter.emitMatchAccepted).not.toHaveBeenCalled();
   });
 
+  it('the other side is told they are the one being waited for (IM-26)', async () => {
+    rankerMatch();
+    await service.respondToMatch('alice', 'm1', 'accept');
+
+    expect(emitter.emitMatchPartnerAccepted).toHaveBeenCalledTimes(1);
+    expect(emitter.emitMatchPartnerAccepted).toHaveBeenCalledWith('bob', {
+      matchId: 'm1',
+    });
+    expect((await service.getStateFor('bob')).pendingMatch).toMatchObject({
+      matchId: 'm1',
+      awaitingOther: false,
+      partnerAccepted: true,
+    });
+    expect((await service.getStateFor('alice')).pendingMatch).toMatchObject({
+      partnerAccepted: false,
+    });
+  });
+
   it('the second acceptance opens the chat instead of another wait', async () => {
     rankerMatch();
     await service.respondToMatch('alice', 'm1', 'accept');

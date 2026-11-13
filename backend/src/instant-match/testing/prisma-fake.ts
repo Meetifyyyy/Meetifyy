@@ -735,6 +735,7 @@ export function createEmitterMock() {
     emitMatchFound: jest.fn<void, Args<'emitMatchFound'>>(),
     emitMatchAccepted: jest.fn<void, Args<'emitMatchAccepted'>>(),
     emitMatchWaiting: jest.fn<void, Args<'emitMatchWaiting'>>(),
+    emitMatchPartnerAccepted: jest.fn<void, Args<'emitMatchPartnerAccepted'>>(),
     emitMatchDeclined: jest.fn<void, Args<'emitMatchDeclined'>>(),
     emitSearchResumed: jest.fn<void, Args<'emitSearchResumed'>>(),
     emitQueueStats: jest.fn<void, Args<'emitQueueStats'>>(),

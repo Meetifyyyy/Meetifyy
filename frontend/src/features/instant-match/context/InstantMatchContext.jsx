@@ -72,6 +72,23 @@ export function isRequestSent(match) {
 }
 
 /**
+ * The other side has accepted and this person is the one being waited for
+ * (IM-26). A request card already says the other person wants this, so it is
+ * not repeated there.
+ */
+export function isPartnerIn(match) {
+  return Boolean(match?.partnerAccepted) && !match.requested && !isRequestSent(match);
+}
+
+/** The label on the match card's tag. */
+export function matchTagLabel(match) {
+  if (isRequestSent(match)) return 'Request sent';
+  if (match?.requested) return 'Match request';
+  if (isPartnerIn(match)) return 'They\'re in';
+  return 'Match found';
+}
+
+/**
  * Client status. The server is authoritative for everything that outlives a
  * render — this only tracks what the user is currently looking at.
  *
@@ -358,6 +375,13 @@ export function InstantMatchProvider({ children }) {
       if (statusRef.current === 'match_found') setStatus('waiting');
     });
 
+    // The other side has accepted this match (IM-26): the card says so.
+    const offPartnerAccepted = matchSocketClient.on('match:partner_accepted', ({ matchId } = {}) => {
+      const current = activeMatchRef.current;
+      if (!matchId || current?.matchId !== matchId) return;
+      setActiveMatch({ ...current, partnerAccepted: true });
+    });
+
     const offAccepted = matchSocketClient.on('match:accepted', (payload = {}) => {
       const { chatId, matchId, candidate, activity, expiresAt } = payload;
       setStatus('matched');
@@ -441,7 +465,7 @@ export function InstantMatchProvider({ children }) {
 
     return () => {
       document.removeEventListener('visibilitychange', onVisible);
-      offStatus(); offStats(); offFound(); offWaiting(); offAccepted(); offDeclined(); offResumed();
+      offStatus(); offStats(); offFound(); offWaiting(); offPartnerAccepted(); offAccepted(); offDeclined(); offResumed();
     };
   }, [currentUser?.id, isVerified, queryClient, resync, refreshChat]);
 

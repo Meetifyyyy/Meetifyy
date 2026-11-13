@@ -112,6 +112,9 @@ export interface MatchFoundPayload {
    *  app labels the wait (and offers to withdraw it) by this, not by
    *  `awaitingOther`, which also covers an accepted match. */
   requestSent?: boolean;
+  /** The other side has already accepted; the card says so (IM-26, owner
+   *  decision 2026-11-14). */
+  partnerAccepted?: boolean;
   /** The other person asked for this pairing directly, from the roster. */
   requested?: boolean;
 }
@@ -278,6 +281,8 @@ export interface InstantMatchEmitter {
   /** This user's acceptance is recorded and the other side has not answered:
    *  every screen they have open moves to the wait (IM-19). */
   emitMatchWaiting(userId: string, p: { matchId: string }): void;
+  /** The other side of this match has accepted (IM-26). */
+  emitMatchPartnerAccepted(userId: string, p: { matchId: string }): void;
   emitMatchDeclined(
     userId: string,
     p: { reason: string; requeued: boolean },
@@ -1496,6 +1501,11 @@ export class InstantMatchService implements OnModuleInit {
         isUserA ? session.userAId : session.userBId,
         { matchId: session.id },
       );
+      // And the other side is told they are the one being waited for (IM-26).
+      realtimeGatewayRef?.emitMatchPartnerAccepted(
+        isUserA ? session.userBId : session.userAId,
+        { matchId: session.id },
+      );
       return;
     }
 
@@ -2310,6 +2320,8 @@ export class InstantMatchService implements OnModuleInit {
             session.userAId === userId ? session.aAccepted : session.bAccepted,
           requestSent:
             session.userAId === userId && isDirectRequest(session.snapshotA),
+          partnerAccepted:
+            session.userAId === userId ? session.bAccepted : session.aAccepted,
           requested:
             session.userBId === userId && isDirectRequest(session.snapshotA),
         };

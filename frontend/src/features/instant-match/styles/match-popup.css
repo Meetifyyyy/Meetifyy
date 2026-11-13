@@ -332,6 +332,14 @@
   list-style: none;
 }
 
+/* The other side has accepted (IM-26): one line, close to the buttons. */
+.im-match-partner-in {
+  margin-bottom: -6px;
+  font-weight: 600;
+  color: var(--im-text);
+  text-align: center;
+}
+
 .im-match-actions {
   display: grid;
   grid-template-columns: 1fr 1.8fr;

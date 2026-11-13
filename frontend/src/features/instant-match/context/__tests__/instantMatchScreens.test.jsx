@@ -137,6 +137,19 @@ describe('accepting on another screen (IM-19)', () => {
   });
 });
 
+describe('the other side accepting (IM-26)', () => {
+  it('marks the match on screen, and only that one', async () => {
+    await flush();
+    act(() => socket.fire('match:found', card));
+    act(() => socket.fire('match:partner_accepted', { matchId: 'other' }));
+    expect(ctx.activeMatch.partnerAccepted).toBeUndefined();
+
+    act(() => socket.fire('match:partner_accepted', { matchId: 'm1' }));
+    expect(ctx.activeMatch.partnerAccepted).toBe(true);
+    expect(ctx.status).toBe('match_found');
+  });
+});
+
 describe('isRequestSent', () => {
   it('reads requestSent, and falls back to awaitingOther from an older server', () => {
     expect(isRequestSent({ requestSent: true })).toBe(true);

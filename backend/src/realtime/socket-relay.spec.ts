@@ -451,6 +451,12 @@ describe('RealtimeGateway relay delivery', () => {
     expect(calls).toEqual(['to(user-1).emit(match:waiting)']);
   });
 
+  it('tells the other side that their match has accepted (IM-26)', () => {
+    const { gateway, calls } = gatewayWithServer();
+    gateway.emitMatchPartnerAccepted('user-2', { matchId: 'm1' });
+    expect(calls).toEqual(['to(user-2).emit(match:partner_accepted)']);
+  });
+
   it('tells only the sockets that read the roster that the queue moved', () => {
     const { gateway, calls } = gatewayWithServer();
     gateway.emitQueueChanged();

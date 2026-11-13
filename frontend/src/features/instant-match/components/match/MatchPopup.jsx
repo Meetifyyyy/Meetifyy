@@ -1,6 +1,8 @@
 import { useRef, useMemo, useId } from 'react';
 import { createPortal } from 'react-dom';
-import { useInstantMatch, isRequestSent } from '../../context/InstantMatchContext';
+import {
+  useInstantMatch, isRequestSent, isPartnerIn, matchTagLabel,
+} from '../../context/InstantMatchContext';
 import { useMatchTimer } from '../../hooks/useMatchTimer';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
@@ -89,9 +91,7 @@ function MatchCard() {
           {!success && (
             <span className="im-match-tag">
               <MatchMark />
-              {isRequestSent(activeMatch)
-                ? 'Request sent'
-                : activeMatch.requested ? 'Match request' : 'Match found'}
+              {matchTagLabel(activeMatch)}
             </span>
           )}
           <MeetScene variant="match" className="im-match-scene">
@@ -178,6 +178,7 @@ function MatchCard() {
               busy={busy}
               timeLeft={timeLeft}
               requestSent={isRequestSent(activeMatch)}
+              partnerIn={isPartnerIn(activeMatch)}
               name={firstName(name) || 'them'}
               onRespond={respondToMatch}
             />
@@ -189,7 +190,7 @@ function MatchCard() {
   );
 }
 
-function MatchFooter({ status, busy, timeLeft, name, requestSent, onRespond }) {
+function MatchFooter({ status, busy, timeLeft, name, requestSent, partnerIn, onRespond }) {
   if (status === 'waiting') {
     return (
       <>
@@ -233,6 +234,11 @@ function MatchFooter({ status, busy, timeLeft, name, requestSent, onRespond }) {
 
   return (
     <>
+      {partnerIn && (
+        <p className="im-match-sub im-match-partner-in" role="status" aria-live="polite">
+          {name} is in. Accept to start chatting.
+        </p>
+      )}
       <div className="im-match-actions">
         <button
           type="button"
