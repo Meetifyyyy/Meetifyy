@@ -19,7 +19,7 @@ import { RedisService } from '../redis/redis.service';
 import { PresenceService } from '../presence/presence.service';
 import type { UserPresence } from '../presence/presence.service';
 import { BlocksService } from '../users/blocks.service';
-import { maskPresenceForViewer } from '../users/privacy.helper';
+import { maskPresenceForViewer, showsOnline } from '../users/privacy.helper';
 import { DefaultAssetsService } from '../uploads/default-assets.service';
 import { weightedSample } from '../common/utils/weighted-sample.util';
 import { pickCommunityReason } from './community-recommendation.scoring';
@@ -1181,9 +1181,17 @@ export class CommunitiesService implements OnModuleInit {
     // avatars, roles and live presence, which is exactly what a join-request
     // landing page does not need and an outsider must not get.
     const memberIdsShown = canViewPosts ? members.map((m) => m.userId) : [];
+    // The viewer's own row rides in the same read: their `showOnlineStatus`
+    // decides whether they see anyone online, and was a second query.
     const memberSettings = memberIdsShown.length
       ? await this.prisma.userSettings.findMany({
-          where: { userId: { in: memberIdsShown } },
+          where: {
+            userId: {
+              in: userId
+                ? [...new Set([...memberIdsShown, userId])]
+                : memberIdsShown,
+            },
+          },
           select: {
             userId: true,
             showOnlineStatus: true,
@@ -1204,6 +1212,9 @@ export class CommunitiesService implements OnModuleInit {
       presenceMap,
       this.prisma,
       this.blocksService,
+      userId
+        ? { viewerShowsOnline: showsOnline(settingsById.get(userId)) }
+        : {},
     );
 
     // Built as new objects: the rows may be the ones just written to the

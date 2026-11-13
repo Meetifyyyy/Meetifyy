@@ -663,6 +663,58 @@ describe('CommunitiesService — community detail', () => {
       });
     });
 
+    const onlineOpen = () =>
+      new Map([
+        [
+          'open',
+          {
+            status: 'online' as const,
+            lastSeen: '2026-10-01T10:05:00.000Z',
+            socketIds: [],
+          },
+        ],
+      ]);
+
+    it('a viewer who hid their own status sees nobody online, decided from the one settings read', async () => {
+      build({ members: [member('open')] });
+      presence = onlineOpen();
+      memberSettings = [
+        { userId: 'open', showOnlineStatus: true, whoCanSeeOnline: 'everyone' },
+        {
+          userId: VIEWER,
+          showOnlineStatus: false,
+          whoCanSeeOnline: 'everyone',
+        },
+      ];
+
+      const result = await service.getCommunityById(ID, VIEWER);
+      const open = result.members.find((m) => m.userId === 'open');
+
+      expect(open?.user).toMatchObject({ isOnline: false, lastActive: null });
+      expect(prisma.userSettings.findMany).toHaveBeenCalledTimes(1);
+      const [args] = prisma.userSettings.findMany.mock.calls[0] as [
+        { where: { userId: { in: string[] } } },
+      ];
+      expect(args.where.userId.in).toEqual(
+        expect.arrayContaining(['open', VIEWER]),
+      );
+      expect(prisma.userSettings.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('a viewer with no settings row shows their status, with no second read', async () => {
+      build({ members: [member('open')] });
+      presence = onlineOpen();
+      memberSettings = [
+        { userId: 'open', showOnlineStatus: true, whoCanSeeOnline: 'everyone' },
+      ];
+
+      const result = await service.getCommunityById(ID, VIEWER);
+      const open = result.members.find((m) => m.userId === 'open');
+
+      expect(open?.user).toMatchObject({ isOnline: true });
+      expect(prisma.userSettings.findUnique).not.toHaveBeenCalled();
+    });
+
     it('masks lastActive for a member whose showOnlineStatus is off', async () => {
       build({ members: [member('hidden')] });
       presence = new Map([

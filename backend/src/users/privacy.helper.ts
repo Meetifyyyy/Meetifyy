@@ -105,11 +105,28 @@ export async function checkPresenceVisibility(
  * same row) plus a `follow` lookup per row. This does one viewer-settings read
  * and at most two batched `follow` queries total.
  */
+/**
+ * The viewer's own `showOnlineStatus`, when the caller has already read it
+ * (typically in the same batch as the targets' settings), so it is not read
+ * again. A viewer with no settings row shows their status.
+ */
+export interface KnownViewerPresence {
+  viewerShowsOnline?: boolean;
+}
+
+/** `showOnlineStatus` from a settings row, or true when there is no row. */
+export function showsOnline(
+  row: { showOnlineStatus: boolean | null } | null | undefined,
+): boolean {
+  return row?.showOnlineStatus !== false;
+}
+
 export async function resolvePresenceVisibilityForViewer(
   viewerUserId: string,
   targets: { userId: string; rule: string; isEnabled: boolean }[],
   prisma: PrismaService,
   blocksService: BlocksService,
+  known: KnownViewerPresence = {},
 ): Promise<Set<string>> {
   const visible = new Set<string>();
   if (!viewerUserId || targets.length === 0) return visible;
@@ -124,12 +141,15 @@ export async function resolvePresenceVisibilityForViewer(
   }
 
   // Reciprocity: a viewer who hid their own online status sees nobody.
-  const viewerSettings = await prisma.userSettings.findUnique({
-    where: { userId: viewerUserId },
-    select: { showOnlineStatus: true },
-  });
-  if (viewerSettings && viewerSettings.showOnlineStatus === false)
-    return visible;
+  const viewerShowsOnline =
+    known.viewerShowsOnline ??
+    showsOnline(
+      await prisma.userSettings.findUnique({
+        where: { userId: viewerUserId },
+        select: { showOnlineStatus: true },
+      }),
+    );
+  if (!viewerShowsOnline) return visible;
 
   const followingTargets: string[] = [];
   const mutualTargets: string[] = [];
@@ -206,6 +226,7 @@ export async function maskPresenceForViewer(
   presence: Map<string, { status?: string | null; lastSeen?: string | null }>,
   prisma: PrismaService,
   blocksService: BlocksService,
+  known: KnownViewerPresence = {},
 ): Promise<Map<string, MaskedPresence>> {
   const visible = viewerUserId
     ? await resolvePresenceVisibilityForViewer(
@@ -213,6 +234,7 @@ export async function maskPresenceForViewer(
         targets,
         prisma,
         blocksService,
+        known,
       )
     : new Set<string>();
   const out = new Map<string, MaskedPresence>();

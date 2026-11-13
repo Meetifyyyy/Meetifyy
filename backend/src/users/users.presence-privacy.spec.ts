@@ -133,8 +133,8 @@ describe('UsersService — follower / following lists and presence', () => {
         ),
       ),
       userSettings: {
-        findMany: () => Promise.resolve(settings),
-        findUnique: () => Promise.resolve(null),
+        findMany: jest.fn(() => Promise.resolve(settings)),
+        findUnique: jest.fn(() => Promise.resolve(null)),
       },
       follow: { findMany: () => Promise.resolve([]) },
     });
@@ -178,6 +178,33 @@ describe('UsersService — follower / following lists and presence', () => {
         online: false,
         lastActive: null,
       });
+    },
+  );
+
+  it.each(['getFollowers', 'getFollowing'] as const)(
+    '%s shows nothing to a viewer who hid their own status, read with the rest',
+    async (method) => {
+      const service = build([
+        ...settings,
+        {
+          userId: VIEWER,
+          showOnlineStatus: false,
+          whoCanSeeOnline: 'everyone',
+        },
+      ]);
+      const rows = await service[method]('target', VIEWER, 50, 0);
+      expect(rows.every((r) => !r.isOnline && r.lastActive === null)).toBe(
+        true,
+      );
+      const { findMany, findUnique } = service['prisma'].userSettings;
+      expect(findUnique).not.toHaveBeenCalled();
+      expect(findMany).toHaveBeenCalledTimes(1);
+      const [args] = jest.mocked(findMany).mock.calls[0] as unknown as [
+        { where: { userId: { in: string[] } } },
+      ];
+      expect(args.where.userId.in).toEqual(
+        expect.arrayContaining([VIEWER, 'open']),
+      );
     },
   );
 

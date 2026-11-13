@@ -26,6 +26,7 @@ import {
   checkPresenceVisibility,
   maskPresenceForViewer,
   resolvePresenceVisibilityForViewer,
+  showsOnline,
   type MaskedPresence,
 } from './privacy.helper';
 import { InjectQueue } from '@nestjs/bullmq';
@@ -1874,10 +1875,15 @@ export class UsersService {
     userIds: string[],
   ): Promise<Map<string, MaskedPresence>> {
     if (userIds.length === 0) return new Map();
+    // The viewer's own row rides in the same read (see communities' detail).
     const [presence, settings] = await Promise.all([
       this.presenceService.getPresenceMany(userIds),
       this.prisma.userSettings.findMany({
-        where: { userId: { in: userIds } },
+        where: {
+          userId: {
+            in: viewerId ? [...new Set([...userIds, viewerId])] : userIds,
+          },
+        },
         select: {
           userId: true,
           showOnlineStatus: true,
@@ -1896,6 +1902,9 @@ export class UsersService {
       presence,
       this.prisma,
       this.blocksService,
+      viewerId
+        ? { viewerShowsOnline: showsOnline(settingsById.get(viewerId)) }
+        : {},
     );
   }
 
