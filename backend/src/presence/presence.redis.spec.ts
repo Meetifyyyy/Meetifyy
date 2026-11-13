@@ -60,7 +60,7 @@ describeRedis('presence on Redis', () => {
       const service = new PresenceService(
         stub<RedisService>({ getClient: () => redis }),
         stub<PrismaService>({
-          user: { update: jest.fn(() => Promise.resolve({})) },
+          $executeRaw: jest.fn(() => Promise.resolve(1)),
         }),
       );
       const held = new Set<string>();

@@ -20,7 +20,7 @@ describe('PresenceService announcements', () => {
     service = new PresenceService(
       stub<RedisService>({ getClient: () => null }),
       stub<PrismaService>({
-        user: { update: jest.fn(() => Promise.resolve({})) },
+        $executeRaw: jest.fn(() => Promise.resolve(1)),
       }),
     );
     said = [];
@@ -41,6 +41,29 @@ describe('PresenceService announcements', () => {
     local.delete(socketId);
     await service.setOffline(USER, socketId);
   };
+
+  it('records last seen with lastSeenAt alone, never bumping updatedAt', async () => {
+    const executeRaw = jest.fn((..._args: unknown[]) => Promise.resolve(1));
+    const update = jest.fn(() => Promise.resolve({}));
+    service = new PresenceService(
+      stub<RedisService>({ getClient: () => null }),
+      stub<PrismaService>({ $executeRaw: executeRaw, user: { update } }),
+    );
+
+    await service['touchLastSeen'](USER);
+
+    expect(update).not.toHaveBeenCalled();
+    expect(executeRaw).toHaveBeenCalledTimes(1);
+    const [strings, ...values] = executeRaw.mock.calls[0] as [
+      readonly string[],
+      ...unknown[],
+    ];
+    const sql = strings.join('?');
+    expect(sql).toMatch(/SET "lastSeenAt" = \?/);
+    // `updatedAt` is part of the share-card cache key: presence must not move it.
+    expect(sql).not.toContain('updatedAt');
+    expect(values).toEqual([new Date(Date.UTC(2026, 10, 13, 12, 0, 0)), USER]);
+  });
 
   it('says online once for the first socket, not for a second device or a heartbeat', async () => {
     await connect('a');

@@ -119,10 +119,12 @@ export class PresenceService {
         // Someone already claimed this window.
         if (claimed !== 'OK') return;
       }
-      await this.prisma.user.update({
-        where: { id: userId },
-        data: { lastSeenAt: new Date() },
-      });
+      // `lastSeenAt` alone, as a HOT update (migration 44 dropped its index).
+      // Not `user.update`: that also bumped `updatedAt`, which is part of the
+      // share-card cache key, so fifteen minutes online retired the author's
+      // cards for re-rendering. And it read the whole row back for nothing.
+      await this.prisma.$executeRaw`
+        UPDATE "User" SET "lastSeenAt" = ${new Date()} WHERE "id" = ${userId}`;
     } catch (error) {
       this.logger.debug(
         `lastSeenAt not recorded for ${userId}: ${(error as Error).message}`,

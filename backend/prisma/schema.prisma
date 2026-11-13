@@ -208,6 +208,10 @@ model User {
   deletedAt                  DateTime?
   birthday                   String?
   interests                  String[]
+  /// Written at most every 15 minutes per active user (PresenceService), as
+  /// a HOT update: deliberately NOT indexed (migration 44). The index made
+  /// every presence write add an entry to all of User's indexes; its only
+  /// readers are the admin dashboard and the nightly affinity rebuild.
   lastSeenAt                 DateTime?
   phoneVerified              Boolean                     @default(false)
   profileCompleted           Boolean                     @default(false)
@@ -308,7 +312,6 @@ model User {
   @@index([collegeId, course, branch])
   @@index([collegeId, passingYear])
   @@index([deletedAt, createdAt])
-  @@index([lastSeenAt])
   @@index([createdAt])
   // Campus Representatives listing (Super Admin portal), scoped per campus.
   @@index([collegeId, isCampusRep])
