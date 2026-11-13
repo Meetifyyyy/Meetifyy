@@ -43,7 +43,8 @@ describe('NotificationsService.cancelNotificationsByType', () => {
           >,
       }),
       new EventEmitter2(),
-      stub<BlocksService>({}),
+      // The recount applies blocks (visibleTo); nobody is blocked here.
+      stub<BlocksService>({ getExcludedUserIds: () => Promise.resolve([]) }),
     );
     return { service, findMany, updateMany, emit, del, count };
   };

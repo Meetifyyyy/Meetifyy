@@ -83,11 +83,18 @@ function build(dispatcher: DispatcherDouble = dispatcherDouble()) {
       ),
       update: jest.fn(),
       count: jest.fn().mockResolvedValue(1),
+      // No earlier row for the same (recipient, actor, entity, type).
+      findUnique: jest.fn().mockResolvedValue(null),
     },
     notificationPreferences: { findUnique: jest.fn().mockResolvedValue(null) },
     user: { findUnique: jest.fn().mockResolvedValue(actor) },
+    // A follow row asks whether the recipient follows back.
+    follow: { findUnique: jest.fn().mockResolvedValue(null) },
   };
-  const blocks = { isBlocked: jest.fn().mockResolvedValue(false) };
+  const blocks = {
+    isBlocked: jest.fn().mockResolvedValue(false),
+    getExcludedUserIds: jest.fn().mockResolvedValue([]),
+  };
   dispatcher.enqueueForNotification.mockImplementation(() =>
     writes.push('enqueue'),
   );

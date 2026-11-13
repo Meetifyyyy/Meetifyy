@@ -16,6 +16,8 @@ describe('NotificationsService - Event Driven Reconciliation', () => {
     notification: {
       findFirst: jest.fn(),
       update: jest.fn(),
+      // The cancel is a conditional soft delete: unread rows first.
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       create: jest.fn(),
       upsert: jest.fn(),
       count: jest.fn().mockResolvedValue(0),
@@ -97,8 +99,8 @@ describe('NotificationsService - Event Driven Reconciliation', () => {
         deletedAt: null,
       },
     });
-    expect(mockPrisma.notification.update).toHaveBeenCalledWith({
-      where: { id: 'notif-100' },
+    expect(mockPrisma.notification.updateMany).toHaveBeenCalledWith({
+      where: { id: 'notif-100', deletedAt: null, readAt: null },
       data: { deletedAt: expect.any(Date) },
     });
     expect(mockDomainEventService.emit).toHaveBeenCalledWith(
@@ -137,8 +139,8 @@ describe('NotificationsService - Event Driven Reconciliation', () => {
         deletedAt: null,
       },
     });
-    expect(mockPrisma.notification.update).toHaveBeenCalledWith({
-      where: { id: 'notif-200' },
+    expect(mockPrisma.notification.updateMany).toHaveBeenCalledWith({
+      where: { id: 'notif-200', deletedAt: null, readAt: null },
       data: { deletedAt: expect.any(Date) },
     });
   });

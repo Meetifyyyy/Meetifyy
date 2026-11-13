@@ -53,12 +53,17 @@ describe('NotificationsService — deleted actors', () => {
       // rather than by comparing two `where` objects: a copy-pasted clause
       // would satisfy a deep-equality check today and still drift the next time
       // one side is edited. Sharing the constant is the property that matters.
+      // Both now go through `visibleTo` (which adds the block filter), and
+      // that one helper is where the constant lives.
       expect(
         NotificationsService.prototype.getNotifications.toString(),
-      ).toContain('AVAILABLE_ACTOR');
+      ).toContain('visibleTo');
       expect(
         NotificationsService.prototype.getUnreadCount.toString(),
-      ).toContain('AVAILABLE_ACTOR');
+      ).toContain('visibleTo');
+      expect(NotificationsService.prototype['visibleTo'].toString()).toContain(
+        'AVAILABLE_ACTOR',
+      );
     });
   });
 });

@@ -53,6 +53,8 @@ type PopulatedNotification = Notification & {
     username: string;
     displayName: string | null;
     avatar: string | null;
+    /** Follow rows only: whether the recipient follows the actor back. */
+    isFollowing?: boolean;
   } | null;
 };
 
@@ -81,6 +83,58 @@ export class NotificationsService implements OnModuleInit {
     OR: [{ actorId: null }, { actor: { deletedAt: null } }],
   };
 
+  /**
+   * What the recipient may see: AVAILABLE_ACTOR, and nothing from anyone they
+   * are blocked with in either direction (FEAT-25). Delivery already stops at
+   * a block; this hides what arrived before it. SYSTEM rows stay, exactly as
+   * delivery exempts them. Shared by the list and the unread count, which
+   * must agree.
+   */
+  private async visibleTo(
+    userId: string,
+  ): Promise<Prisma.NotificationWhereInput[]> {
+    const blocked = await this.blocksService.getExcludedUserIds(userId);
+    if (blocked.length === 0) return [NotificationsService.AVAILABLE_ACTOR];
+    return [
+      NotificationsService.AVAILABLE_ACTOR,
+      {
+        OR: [
+          { type: NotificationType.SYSTEM },
+          { actorId: null },
+          { actorId: { notIn: blocked } },
+        ],
+      },
+    ];
+  }
+
+  /** The cached bell count; absent means the next read counts the table. */
+  private unreadKey(userId: string): string {
+    return `notifications:unread:v2:${userId}`;
+  }
+
+  /**
+   * Forgets the cached count and pushes a fresh one, counted from the table
+   * with today's blocks applied. For changes the counter cannot follow one
+   * row at a time, such as a block hiding a whole person's notifications.
+   */
+  async recountUnread(userId: string): Promise<void> {
+    if (this.redis) {
+      await this.redis.del(this.unreadKey(userId)).catch(() => 0);
+    }
+    await this.emitUnreadCount(userId);
+  }
+
+  /**
+   * One step of the bell count, taken only when a row really changed state
+   * (FEAT-12). The counter used to move on every write: a repeat like or
+   * follow on an unread row counted it twice, and a repeated or concurrent
+   * read or delete took it off twice.
+   */
+  private async countBecameUnread(recipientId: string): Promise<void> {
+    const newCount = await this.incrementUnreadCount(recipientId);
+    await this.emitUnreadCount(recipientId, newCount ?? undefined);
+  }
+
   private readonly logger = new Logger('NOTIF');
   private redis: Redis | null = null;
 
@@ -102,6 +156,19 @@ export class NotificationsService implements OnModuleInit {
   }
 
   onModuleInit() {
+    // A block hides everything either person sent the other (visibleTo), and
+    // an unblock shows it again: each side's bell is recounted. The event is
+    // published once per side, addressed to that side.
+    for (const type of ['user:blocked', 'user:unblocked']) {
+      this.eventEmitter.on(type, (payload: DomainEventPayload) =>
+        detach('notification listener', async () => {
+          for (const userId of payload.targetUserIds ?? []) {
+            await this.recountUnread(userId);
+          }
+        }),
+      );
+    }
+
     // Follow notifications are now handled by BullMQ (NotificationsProcessor).
     // The follow.created event is still emitted for real-time socket broadcasts
     // (presence updates, feed invalidation) but notification creation is decoupled.
@@ -179,7 +246,7 @@ export class NotificationsService implements OnModuleInit {
    */
   private async incrementUnreadCount(userId: string): Promise<number | null> {
     if (!this.redis) return null;
-    const redisKey = `notifications:unread:v2:${userId}`;
+    const redisKey = this.unreadKey(userId);
     // Lua: only increment if the key exists (non-false GET means key present)
     const luaScript = `
       local v = redis.call('GET', KEYS[1])
@@ -204,7 +271,7 @@ export class NotificationsService implements OnModuleInit {
    */
   private async decrementUnreadCount(userId: string): Promise<number | null> {
     if (!this.redis) return null;
-    const redisKey = `notifications:unread:v2:${userId}`;
+    const redisKey = this.unreadKey(userId);
     // Lua: only decrement if the key exists and value > 0.
     const luaScript = `
       local v = redis.call('GET', KEYS[1])
@@ -281,13 +348,19 @@ export class NotificationsService implements OnModuleInit {
         return null;
     }
 
-    // Fix BUG-29: Deduplicate system notifications (where actorId is null)
-    if (dto.actorId === null) {
+    // Fix BUG-29: Deduplicate notifications that have no actor. A fast path
+    // only; the check that holds is the locked one at the insert below.
+    //
+    // A missing actor arrives as `undefined` (the DTO's field is optional), so
+    // the `=== null` this used to test never matched and the dedupe never ran.
+    // `entityId` is pinned to null for the same reason: an undefined value in
+    // a Prisma filter means "any", which would match some other entity's row.
+    if (!dto.actorId) {
       const existingSystemNotif = await this.prisma.notification.findFirst({
         where: {
           recipientId: dto.recipientId,
           actorId: null,
-          entityId: dto.entityId,
+          entityId: dto.entityId ?? null,
           type: dto.type,
           deletedAt: null,
         },
@@ -382,16 +455,20 @@ export class NotificationsService implements OnModuleInit {
             ]);
             // After the row is written; a push failure cannot reach here.
             this.pushDispatcher?.enqueueForNotification(updated);
-            await this.incrementUnreadCount(dto.recipientId);
-            await this.emitUnreadCount(dto.recipientId);
+            // A row that was still unread is already counted.
+            if (existing.readAt !== null) {
+              await this.countBecameUnread(dto.recipientId);
+            }
             return updated;
           }
           return existing; // Ignore duplicate like from same user
         }
       }
 
-      // 3. Create or update Notification
+      // 3. Create or update Notification. `becameUnread` is whether the row
+      // goes from not counted (absent, read, or deleted) to counted.
       let notification;
+      let becameUnread = true;
       if (dto.type === NotificationType.FOLLOW && dto.actorId && dto.entityId) {
         const existingNotif = await this.prisma.notification.findFirst({
           where: {
@@ -403,6 +480,8 @@ export class NotificationsService implements OnModuleInit {
         });
 
         if (existingNotif) {
+          becameUnread =
+            existingNotif.readAt !== null || existingNotif.deletedAt !== null;
           notification = await this.prisma.notification.update({
             where: { id: existingNotif.id },
             data: {
@@ -420,6 +499,19 @@ export class NotificationsService implements OnModuleInit {
 
       if (!notification) {
         if (dto.actorId && dto.entityId) {
+          const prior = await this.prisma.notification.findUnique({
+            where: {
+              recipientId_actorId_entityId_type: {
+                recipientId: dto.recipientId,
+                actorId: dto.actorId,
+                entityId: dto.entityId,
+                type: dto.type,
+              },
+            },
+            select: { readAt: true, deletedAt: true },
+          });
+          becameUnread =
+            !prior || prior.readAt !== null || prior.deletedAt !== null;
           notification = await this.prisma.notification.upsert({
             where: {
               recipientId_actorId_entityId_type: {
@@ -452,19 +544,47 @@ export class NotificationsService implements OnModuleInit {
             },
           });
         } else {
-          notification = await this.prisma.notification.create({
-            data: {
-              recipientId: dto.recipientId,
-              actorId: dto.actorId,
-              type: dto.type,
-              entityType: dto.entityType,
-              entityId: dto.entityId,
-              title: dto.title,
-              body: dto.body,
-              metadata: dto.metadata ?? Prisma.DbNull,
-              expiresAt: dto.expiresAt,
-            },
-          });
+          const data: Prisma.NotificationUncheckedCreateInput = {
+            recipientId: dto.recipientId,
+            actorId: dto.actorId,
+            type: dto.type,
+            entityType: dto.entityType,
+            entityId: dto.entityId,
+            title: dto.title,
+            body: dto.body,
+            metadata: dto.metadata ?? Prisma.DbNull,
+            expiresAt: dto.expiresAt,
+          };
+          if (!dto.actorId) {
+            // A system notification is one per (recipient, entity, type), and
+            // the unique key cannot say so: Postgres treats the null actor as
+            // distinct (FEAT-27). The check and the insert share a lock on that
+            // triple, so two at once cannot both find nothing and both insert.
+            const { row, created } = await this.prisma.$transaction(
+              async (tx) => {
+                const lockKey = `notification:system:${dto.recipientId}:${dto.type}:${dto.entityId ?? ''}`;
+                await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+                const existingRow = await tx.notification.findFirst({
+                  where: {
+                    recipientId: dto.recipientId,
+                    actorId: null,
+                    entityId: dto.entityId ?? null,
+                    type: dto.type,
+                    deletedAt: null,
+                  },
+                });
+                if (existingRow) return { row: existingRow, created: false };
+                return {
+                  row: await tx.notification.create({ data }),
+                  created: true,
+                };
+              },
+            );
+            if (!created) return row;
+            notification = row;
+          } else {
+            notification = await this.prisma.notification.create({ data });
+          }
         }
       }
 
@@ -484,6 +604,23 @@ export class NotificationsService implements OnModuleInit {
             },
           }));
         populatedNotif = { ...notification, actor };
+        // A follow row shows a Follow / Following button: carry the answer so
+        // the app need not look the person up (FEP-11).
+        if (actor && notification.type === NotificationType.FOLLOW) {
+          const followsBack = await this.prisma.follow.findUnique({
+            where: {
+              followerId_followingId: {
+                followerId: dto.recipientId,
+                followingId: actor.id,
+              },
+            },
+            select: { followerId: true },
+          });
+          populatedNotif = {
+            ...populatedNotif,
+            actor: { ...actor, isFollowing: followsBack !== null },
+          };
+        }
       }
 
       void this.domainEventService.emit('notification:new', populatedNotif, [
@@ -499,9 +636,7 @@ export class NotificationsService implements OnModuleInit {
       // and counting it here would show a count the notifications list can
       // never clear. JOIN_REQUEST is NOT excluded: activity joins are direct,
       // so it is an ordinary notification that lives in the main list.
-      const newCount = await this.incrementUnreadCount(dto.recipientId);
-      // Pass newCount to avoid a Redis re-read inside emitUnreadCount
-      await this.emitUnreadCount(dto.recipientId, newCount ?? undefined);
+      if (becameUnread) await this.countBecameUnread(dto.recipientId);
 
       this.logger.log(
         `Notification delivered type=${dto.type} to=${dto.recipientId}`,
@@ -544,7 +679,7 @@ export class NotificationsService implements OnModuleInit {
       where: {
         recipientId: userId,
         deletedAt: null,
-        AND: [NotificationsService.AVAILABLE_ACTOR],
+        AND: await this.visibleTo(userId),
         // MESSAGE has its own unread surface and is never listed here, so an
         // explicit `type` still cannot be used to pull one into this feed.
         ...(type && type !== NotificationType.MESSAGE
@@ -579,9 +714,42 @@ export class NotificationsService implements OnModuleInit {
     }
 
     return {
-      data: await this.reconcileInviteNotifications(userId, notifications),
+      data: await this.withFollowBack(
+        userId,
+        await this.reconcileInviteNotifications(userId, notifications),
+      ),
       nextCursor,
     };
+  }
+
+  /**
+   * Follow rows show a Follow / Following button. Each one used to look its
+   * person up with its own profile request (FEP-11); the answer is now on the
+   * row, from one query for the whole page.
+   */
+  private async withFollowBack<
+    T extends Pick<Notification, 'type'> & {
+      actor: { id: string } | null;
+    },
+  >(userId: string, rows: T[]): Promise<T[]> {
+    const actorIds = [
+      ...new Set(
+        rows
+          .filter((r) => r.type === NotificationType.FOLLOW && r.actor)
+          .map((r) => r.actor!.id),
+      ),
+    ];
+    if (actorIds.length === 0) return rows;
+    const follows = await this.prisma.follow.findMany({
+      where: { followerId: userId, followingId: { in: actorIds } },
+      select: { followingId: true },
+    });
+    const followed = new Set(follows.map((f) => f.followingId));
+    return rows.map((r) =>
+      r.type === NotificationType.FOLLOW && r.actor
+        ? { ...r, actor: { ...r.actor, isFollowing: followed.has(r.actor.id) } }
+        : r,
+    );
   }
 
   /**
@@ -702,7 +870,7 @@ export class NotificationsService implements OnModuleInit {
   }
 
   async getUnreadCount(userId: string) {
-    const redisKey = `notifications:unread:v2:${userId}`;
+    const redisKey = this.unreadKey(userId);
     if (this.redis) {
       try {
         const cached = await this.redis.get(redisKey);
@@ -726,7 +894,7 @@ export class NotificationsService implements OnModuleInit {
         // deleted-actor filter below, which is why both are shared constants
         // rather than two hand-copied clauses.
         type: { notIn: [NotificationType.MESSAGE] },
-        AND: [NotificationsService.AVAILABLE_ACTOR],
+        AND: await this.visibleTo(userId),
       },
     });
 
@@ -753,23 +921,48 @@ export class NotificationsService implements OnModuleInit {
     ]);
   }
 
+  /**
+   * The count goes down only for the request that actually flipped the row:
+   * the condition is in the UPDATE, so a double tap or two devices at once
+   * decrement once (FEAT-12). A deleted row is left alone; its delete already
+   * took it off the count.
+   */
   async markAsRead(id: string, userId: string) {
-    const notification = await this.prisma.notification.findUnique({
-      where: { id },
-    });
-    if (!notification || notification.recipientId !== userId) {
-      throw new NotFoundException('Notification not found');
-    }
-    const updated = await this.prisma.notification.update({
-      where: { id },
+    const flipped = await this.prisma.notification.updateMany({
+      where: { id, recipientId: userId, readAt: null, deletedAt: null },
       data: { readAt: new Date() },
     });
-    let newCount: number | null = null;
-    if (!notification.readAt) {
-      newCount = await this.decrementUnreadCount(userId);
+    const notification = await this.prisma.notification.findFirst({
+      where: { id, recipientId: userId },
+    });
+    if (!notification) {
+      throw new NotFoundException('Notification not found');
     }
+    const newCount =
+      flipped.count > 0 ? await this.decrementUnreadCount(userId) : null;
     await this.emitUnreadCount(userId, newCount ?? undefined);
-    return updated;
+    return notification;
+  }
+
+  /**
+   * Soft-deletes one live row, and says whether it was unread. Unread first,
+   * then read: each UPDATE carries its own condition, so a concurrent read or
+   * a second delete cannot make the same row count twice.
+   */
+  private async softDeleteCounting(
+    where: Prisma.NotificationWhereInput,
+  ): Promise<{ deleted: boolean; wasUnread: boolean }> {
+    const deletedAt = new Date();
+    const unread = await this.prisma.notification.updateMany({
+      where: { ...where, deletedAt: null, readAt: null },
+      data: { deletedAt },
+    });
+    if (unread.count > 0) return { deleted: true, wasUnread: true };
+    const read = await this.prisma.notification.updateMany({
+      where: { ...where, deletedAt: null },
+      data: { deletedAt },
+    });
+    return { deleted: read.count > 0, wasUnread: false };
   }
 
   async markAllAsRead(userId: string) {
@@ -782,23 +975,20 @@ export class NotificationsService implements OnModuleInit {
     return { success: true };
   }
 
+  /** Soft delete. Deleting one already deleted is a success that counts nothing. */
   async deleteNotification(id: string, userId: string) {
-    const notification = await this.prisma.notification.findUnique({
-      where: { id },
+    const { deleted, wasUnread } = await this.softDeleteCounting({
+      id,
+      recipientId: userId,
     });
-    if (!notification || notification.recipientId !== userId) {
-      throw new NotFoundException('Notification not found');
+    if (!deleted) {
+      const exists = await this.prisma.notification.findFirst({
+        where: { id, recipientId: userId },
+        select: { id: true },
+      });
+      if (!exists) throw new NotFoundException('Notification not found');
     }
-    // Soft delete
-    await this.prisma.notification.update({
-      where: { id },
-      data: { deletedAt: new Date() },
-    });
-
-    let newCount: number | null = null;
-    if (!notification.readAt) {
-      newCount = await this.decrementUnreadCount(userId);
-    }
+    const newCount = wasUnread ? await this.decrementUnreadCount(userId) : null;
     await this.emitUnreadCount(userId, newCount ?? undefined);
     return { success: true };
   }
@@ -823,14 +1013,15 @@ export class NotificationsService implements OnModuleInit {
 
     if (!existing) return null;
 
-    const updated = await this.prisma.notification.update({
-      where: { id: existing.id },
-      data: { deletedAt: new Date() },
+    const { deleted, wasUnread } = await this.softDeleteCounting({
+      id: existing.id,
     });
+    // Someone else (a second unlike, the recipient deleting it) got there first.
+    if (!deleted) return null;
+    const updated = { ...existing, deletedAt: new Date() };
 
-    let newCount: number | null = null;
-    if (!existing.readAt) {
-      newCount = await this.decrementUnreadCount(recipientId);
+    if (wasUnread) {
+      const newCount = await this.decrementUnreadCount(recipientId);
       await this.emitUnreadCount(recipientId, newCount ?? undefined);
     }
 
@@ -942,7 +1133,7 @@ export class NotificationsService implements OnModuleInit {
     } = data;
 
     for (const { inviteeId, invitationId } of invitations) {
-      const notif = await this.createNotification({
+      await this.createNotification({
         recipientId: inviteeId,
         actorId: inviterId,
         type: 'ACTIVITY_INVITE',
@@ -1006,11 +1197,8 @@ export class NotificationsService implements OnModuleInit {
         [inviteeId],
       );
 
-      if (notif) {
-        void this.domainEventService.emit('notification:new', notif, [
-          inviteeId,
-        ]);
-      }
+      // No `notification:new` here: createNotification already sent one for
+      // this row, and the second made every invite refresh the app twice.
     }
   }
 
