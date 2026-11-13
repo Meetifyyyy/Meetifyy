@@ -52,6 +52,16 @@ export const MESSAGE_DEBOUNCE_MS = 3_000;
 export class PushDispatcherService {
   private readonly logger = new Logger('PushDispatch');
 
+  /**
+   * Message pushes asked for during the current tick, sent together by
+   * flushMessages. A group message asks for one per unmuted member, in a
+   * synchronous loop (the socket path and every HTTP send controller), and
+   * each used to cost its own SET NX and its own queue add: two round trips
+   * per member. A batch costs one pipeline and one addBulk.
+   */
+  private pendingMessages: MessagePushJob[] = [];
+  private flushScheduled = false;
+
   constructor(
     @InjectQueue(PUSH_QUEUE) private readonly queue: Queue,
     private readonly redisService: RedisService,
@@ -135,9 +145,14 @@ export class PushDispatcherService {
         job.recipientId === job.senderId
       )
         return;
-      void this.enqueueMessage(job).catch((err) =>
-        this.logger.warn(`push enqueue failed: ${String(err)}`),
-      );
+      this.pendingMessages.push(job);
+      if (this.flushScheduled) return;
+      this.flushScheduled = true;
+      setImmediate(() => {
+        void this.flushMessages().catch((err) =>
+          this.logger.warn(`push enqueue failed: ${String(err)}`),
+        );
+      });
     } catch (err) {
       this.logger.warn(`push enqueue threw: ${String(err)}`);
     }
@@ -226,41 +241,66 @@ export class PushDispatcherService {
     }
   }
 
-  private async enqueueMessage(job: MessagePushJob): Promise<void> {
-    const base = `m_${job.recipientId}_${job.conversationId}`;
+  /** Sends the message pushes collected this tick: one pipeline, one addBulk. */
+  private async flushMessages(): Promise<void> {
+    const jobs = this.pendingMessages;
+    this.pendingMessages = [];
+    this.flushScheduled = false;
+    if (jobs.length === 0) return;
+    const leads = await this.opensBursts(jobs);
     const now = Date.now();
-    const opensBurst = await this.opensBurst(job);
-    await this.queue.add(PUSH_JOB.message, job, {
-      jobId: opensBurst
-        ? `${base}_lead_${now}`
-        : `${base}_${Math.floor(now / MESSAGE_DEBOUNCE_MS)}`,
-      delay: opensBurst ? 0 : MESSAGE_DEBOUNCE_MS,
-      attempts: 5,
-      backoff: { type: 'exponential', delay: 2_000 },
-      removeOnComplete: true,
-      removeOnFail: true,
-    });
+    await this.queue.addBulk(
+      jobs.map((job, i) => {
+        const base = `m_${job.recipientId}_${job.conversationId}`;
+        return {
+          name: PUSH_JOB.message,
+          data: job,
+          opts: {
+            jobId: leads[i]
+              ? `${base}_lead_${now}`
+              : `${base}_${Math.floor(now / MESSAGE_DEBOUNCE_MS)}`,
+            delay: leads[i] ? 0 : MESSAGE_DEBOUNCE_MS,
+            attempts: 5,
+            backoff: { type: 'exponential', delay: 2_000 },
+            removeOnComplete: true,
+            removeOnFail: true,
+          },
+        };
+      }),
+    );
   }
 
   /**
-   * True for the first message to this recipient in this conversation within
-   * MESSAGE_DEBOUNCE_MS. Without Redis (or on an error) false: the message
-   * then takes the delayed, collapsing path, which is the older behaviour.
+   * For each job, true if it is the first message to that recipient in that
+   * conversation within MESSAGE_DEBOUNCE_MS. One SET NX per job, sent as one
+   * pipeline; within a batch the first job for a pair wins it, as it did when
+   * they were sent one by one. Without Redis (or on an error) false: the
+   * message then takes the delayed, collapsing path, the older behaviour.
    */
-  private async opensBurst(job: MessagePushJob): Promise<boolean> {
+  private async opensBursts(
+    jobs: readonly MessagePushJob[],
+  ): Promise<boolean[]> {
     const redis = this.redisService.getClient();
-    if (!redis) return false;
+    if (!redis) return jobs.map(() => false);
     try {
-      const set = await redis.set(
-        `push:mburst:${job.recipientId}:${job.conversationId}`,
-        '1',
-        'PX',
-        MESSAGE_DEBOUNCE_MS,
-        'NX',
-      );
-      return set === 'OK';
+      const pipe = redis.pipeline();
+      for (const job of jobs) {
+        pipe.set(
+          `push:mburst:${job.recipientId}:${job.conversationId}`,
+          '1',
+          'PX',
+          MESSAGE_DEBOUNCE_MS,
+          'NX',
+        );
+      }
+      const results = await pipe.exec();
+      // In order; a command that failed alone takes the delayed path.
+      return jobs.map((_, i) => {
+        const [err, reply] = results?.[i] ?? [null, null];
+        return !err && reply === 'OK';
+      });
     } catch {
-      return false;
+      return jobs.map(() => false);
     }
   }
 }

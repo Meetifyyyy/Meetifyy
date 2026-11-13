@@ -1,27 +1,55 @@
 import { Queue } from 'bullmq';
-import Redis from 'ioredis';
+import Redis, { type ChainableCommander } from 'ioredis';
 import { NotificationType } from '@prisma/client';
 import { stub } from '../common/testing/stub';
 import { RedisService } from '../redis/redis.service';
 import {
   DispatchableNotification,
+  MESSAGE_DEBOUNCE_MS,
   PushDispatcherService,
 } from './push-dispatcher.service';
 import { PUSH_JOB } from './push.types';
 import { setPushConfig } from './testing/push-config.fixture';
 
-/** A tiny in-memory stand-in for the two Redis calls the dispatcher makes. */
+/**
+ * A tiny in-memory stand-in for the Redis calls the dispatcher makes: SET NX,
+ * alone or queued on a pipeline (message pushes are sent as one batch).
+ */
 function fakeRedis() {
   const keys = new Set<string>();
-  return {
-    keys,
-    set: jest.fn((key: string, ..._rest: Array<string | number>) => {
-      if (keys.has(key)) return Promise.resolve(null);
-      keys.add(key);
-      return Promise.resolve('OK');
-    }),
+  const set = jest.fn((key: string, ..._rest: Array<string | number>) => {
+    if (keys.has(key)) return Promise.resolve(null);
+    keys.add(key);
+    return Promise.resolve('OK');
+  });
+  /** How many pipelines were sent, and how many commands each carried. */
+  const pipelines: number[] = [];
+  const pipeline = (): ChainableCommander => {
+    const queued: Array<[string, Array<string | number>]> = [];
+    const pipe: ChainableCommander = stub<ChainableCommander>({
+      set: jest.fn((key: string, ...rest: Array<string | number>) => {
+        queued.push([key, rest]);
+        return pipe;
+      }),
+      exec: jest.fn(async () => {
+        pipelines.push(queued.length);
+        const out: Array<[null, string | null]> = [];
+        for (const [key, rest] of queued) {
+          out.push([null, await set(key, ...rest)]);
+        }
+        return out;
+      }),
+    });
+    return pipe;
   };
+  return { keys, set, pipeline, pipelines };
 }
+
+type BulkJob = {
+  name: string;
+  data: unknown;
+  opts: { jobId: string; delay: number; removeOnComplete: boolean };
+};
 
 const flush = () => new Promise((r) => setImmediate(r));
 
@@ -41,12 +69,20 @@ function build(addImpl?: () => Promise<unknown>) {
   const add = jest.fn<Promise<unknown>, [string, unknown, { jobId?: string }]>(
     addImpl ?? (() => Promise.resolve({})),
   );
+  const addBulk = jest.fn<Promise<unknown>, [BulkJob[]]>(
+    addImpl ?? (() => Promise.resolve([])),
+  );
   const redis = fakeRedis();
   const dispatcher = new PushDispatcherService(
-    stub<Queue>({ add }),
-    stub<RedisService>({ getClient: () => stub<Redis>({ set: redis.set }) }),
+    stub<Queue>({ add, addBulk }),
+    stub<RedisService>({
+      getClient: () =>
+        stub<Redis>({ set: redis.set, pipeline: redis.pipeline }),
+    }),
   );
-  return { add, redis, dispatcher };
+  /** Every message job sent, in order, across all batches. */
+  const messageJobs = () => addBulk.mock.calls.flatMap(([jobs]) => jobs);
+  return { add, addBulk, messageJobs, redis, dispatcher };
 }
 
 describe('PushDispatcherService', () => {
@@ -59,7 +95,7 @@ describe('PushDispatcherService', () => {
   it('does nothing while PUSH_ENABLED is off (the default)', async () => {
     restore();
     restore = setPushConfig({ enabled: false, web: true, fcm: true });
-    const { add, dispatcher } = build();
+    const { add, addBulk, dispatcher } = build();
     dispatcher.enqueueForNotification(row());
     dispatcher.enqueueForMessage({
       recipientId: 'b',
@@ -68,6 +104,7 @@ describe('PushDispatcherService', () => {
     });
     await flush();
     expect(add).not.toHaveBeenCalled();
+    expect(addBulk).not.toHaveBeenCalled();
   });
 
   it('enqueues a committed row once, keyed by row id and version', async () => {
@@ -101,7 +138,7 @@ describe('PushDispatcherService', () => {
   });
 
   it('never notifies yourself and never pushes SYSTEM rows', async () => {
-    const { add, dispatcher } = build();
+    const { add, addBulk, dispatcher } = build();
     dispatcher.enqueueForNotification(row({ actorId: 'author' }));
     dispatcher.enqueueForNotification(row({ type: NotificationType.SYSTEM }));
     dispatcher.enqueueForMessage({
@@ -111,6 +148,7 @@ describe('PushDispatcherService', () => {
     });
     await flush();
     expect(add).not.toHaveBeenCalled();
+    expect(addBulk).not.toHaveBeenCalled();
   });
 
   it('a queue that is down never throws into the action', async () => {
@@ -133,7 +171,7 @@ describe('PushDispatcherService', () => {
       throw new Error('boom');
     });
     const dispatcher = new PushDispatcherService(
-      stub<Queue>({ add }),
+      stub<Queue>({ add, addBulk: add }),
       stub<RedisService>({ getClient: () => null }),
     );
     expect(() =>
@@ -146,25 +184,23 @@ describe('PushDispatcherService', () => {
   });
 
   it('pushes the first message of a burst at once', async () => {
-    const { add, dispatcher } = build();
+    const { messageJobs, dispatcher } = build();
     dispatcher.enqueueForMessage({
       recipientId: 'b',
       conversationId: 'conv-1',
       senderId: 'a',
     });
     await flush();
-    const opts = add.mock.calls[0][2] as {
-      jobId: string;
-      delay: number;
-      removeOnComplete: boolean;
-    };
+    const [job] = messageJobs();
+    expect(job.name).toBe(PUSH_JOB.message);
+    const opts = job.opts;
     expect(opts.jobId).toMatch(/^m_b_conv-1_lead_/);
     expect(opts.delay).toBe(0);
     expect(opts.removeOnComplete).toBe(true);
   });
 
   it('collapses the rest of a burst into one delayed job per window', async () => {
-    const { add, dispatcher } = build();
+    const { messageJobs, dispatcher } = build();
     const send = () =>
       dispatcher.enqueueForMessage({
         recipientId: 'b',
@@ -177,9 +213,7 @@ describe('PushDispatcherService', () => {
     await flush();
     send();
     await flush();
-    const [lead, second, third] = add.mock.calls.map(
-      (c) => c[2] as { jobId: string; delay: number },
-    );
+    const [lead, second, third] = messageJobs().map((j) => j.opts);
     expect(lead.delay).toBe(0);
     expect(second.delay).toBeGreaterThan(0);
     // Same window, same id: BullMQ keeps one job for both.
@@ -188,7 +222,7 @@ describe('PushDispatcherService', () => {
   });
 
   it('a different conversation opens its own burst', async () => {
-    const { add, dispatcher } = build();
+    const { messageJobs, dispatcher } = build();
     dispatcher.enqueueForMessage({
       recipientId: 'b',
       conversationId: 'c1',
@@ -201,9 +235,52 @@ describe('PushDispatcherService', () => {
       senderId: 'a',
     });
     await flush();
-    expect(
-      add.mock.calls.map((c) => (c[2] as { delay: number }).delay),
-    ).toEqual([0, 0]);
+    expect(messageJobs().map((j) => j.opts.delay)).toEqual([0, 0]);
+  });
+
+  it('sends a group message to every member as one pipeline and one queue call', async () => {
+    // A message to a full group (49 others) used to cost 49 SET NX and 49
+    // queue adds, two round trips per member.
+    const { add, addBulk, messageJobs, redis, dispatcher } = build();
+    const members = Array.from({ length: 49 }, (_, i) => `m${i}`);
+    for (const recipientId of members) {
+      dispatcher.enqueueForMessage({
+        recipientId,
+        conversationId: 'g1',
+        senderId: 'a',
+      });
+    }
+    await flush();
+    expect(addBulk).toHaveBeenCalledTimes(1);
+    expect(add).not.toHaveBeenCalled();
+    expect(redis.pipelines).toEqual([49]);
+    expect(messageJobs().map((j) => j.data)).toEqual(
+      members.map((recipientId) => ({
+        recipientId,
+        conversationId: 'g1',
+        senderId: 'a',
+      })),
+    );
+    // Each member's first message is pushed at once, under their own id.
+    expect(messageJobs().every((j) => j.opts.delay === 0)).toBe(true);
+    expect(new Set(messageJobs().map((j) => j.opts.jobId)).size).toBe(49);
+  });
+
+  it('within one batch, a second message to the same person joins the delayed job', async () => {
+    const { messageJobs, dispatcher } = build();
+    const send = () =>
+      dispatcher.enqueueForMessage({
+        recipientId: 'b',
+        conversationId: 'c1',
+        senderId: 'a',
+      });
+    send();
+    send();
+    await flush();
+    expect(messageJobs().map((j) => j.opts.delay)).toEqual([
+      0,
+      MESSAGE_DEBOUNCE_MS,
+    ]);
   });
 
   it('a removal is one job per removal, retried, and safe to enqueue twice', async () => {
