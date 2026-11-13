@@ -1,4 +1,16 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+// sanitize-html is ESM-only under ts-jest; the real EmailService used below
+// imports it through the support-email builder and never sanitizes here.
+jest.mock('../common/utils/sanitize-html.util', () => ({}));
+
+import {
+  ConflictException,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+import type { Queue } from 'bullmq';
+import { QueueNotReadyError } from '../common/queues/producer-queue';
+import { EmailService } from '../email/email.service';
+import type { EmailJobData } from '../email/email-jobs';
 import { AccountDeletionService } from './account-deletion.service';
 import {
   RECOVERY_WINDOW_DAYS,
@@ -400,6 +412,30 @@ describe('AccountDeletionService — 30-day recovery window', () => {
         await expect(service.requestDeletionOtp(USER_ID)).rejects.toThrow(
           'smtp down',
         );
+        expect(otpService.invalidate).toHaveBeenCalledWith(
+          USER_ID,
+          'ACCOUNT_DELETION',
+        );
+      });
+
+      it('drops the code row and answers 503 when the email queue is unreachable', async () => {
+        // The real mailer over a queue that gives up, not a stand-in for it:
+        // the 503 mapping must not stop the discard-then-rethrow from running.
+        const queue = {
+          add: jest.fn(() => Promise.reject(new QueueNotReadyError(5_000))),
+        } as unknown as Queue<EmailJobData>;
+        const outageService = new AccountDeletionService(
+          stub<PrismaService>(prisma),
+          stub<RedisService>({ getClient: () => null }),
+          stub<PresenceService>(presenceService),
+          stub<DomainEventService>(domainEventService),
+          stub<UserOtpService>(otpService),
+          new EmailService(queue),
+        );
+
+        await expect(
+          outageService.requestDeletionOtp(USER_ID),
+        ).rejects.toBeInstanceOf(ServiceUnavailableException);
         expect(otpService.invalidate).toHaveBeenCalledWith(
           USER_ID,
           'ACCOUNT_DELETION',

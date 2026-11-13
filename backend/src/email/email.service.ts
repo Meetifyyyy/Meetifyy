@@ -1,7 +1,13 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { config } from '../config';
+import { isQueueUnavailableError } from '../common/queues/producer-queue';
+import { errorMessage } from '../common/utils/error.util';
 import { SUPPORT_EMAIL_JOBS } from './support-email.builder';
 import type { EmailJobData } from './email-jobs';
 
@@ -11,9 +17,36 @@ export class EmailService {
 
   constructor(@InjectQueue('email') private emailQueue: Queue<EmailJobData>) {}
 
+  /**
+   * The one place a job is queued, so a Redis outage is answered the same way
+   * everywhere. The queue gives up within a couple of seconds (see
+   * ProducerQueue); what reaches the caller is a 503 the client can retry,
+   * not a 500 that reads as a bug. A caller that already handles a failed
+   * send (discarding its code, marking a ticket, reporting `emailSent: false`)
+   * still sees a rejection and handles it as before. Anything else a queue
+   * throws is left alone.
+   */
+  private async enqueue(
+    ...args: Parameters<Queue<EmailJobData>['add']>
+  ): Promise<void> {
+    try {
+      await this.emailQueue.add(...args);
+    } catch (err) {
+      if (!isQueueUnavailableError(err)) throw err;
+      // Only the job name: payloads hold codes and addresses.
+      this.logger.warn(
+        `email queue unavailable for ${args[0]}: ${errorMessage(err)}`,
+      );
+      throw new ServiceUnavailableException(
+        'Email is temporarily unavailable. Please try again.',
+        { cause: err },
+      );
+    }
+  }
+
   async sendWelcomeEmail(email: string, name: string) {
     this.logger.log(`Queuing welcome email for ${email}`);
-    await this.emailQueue.add('send-welcome-email', { email, name });
+    await this.enqueue('send-welcome-email', { email, name });
   }
 
   async sendNewLoginEmail(
@@ -27,7 +60,7 @@ export class EmailService {
     ip?: string,
   ) {
     this.logger.log(`Queuing new login email for ${email}`);
-    await this.emailQueue.add('send-new-login-email', {
+    await this.enqueue('send-new-login-email', {
       email,
       name,
       device,
@@ -41,7 +74,7 @@ export class EmailService {
 
   async sendResetPasswordEmail(email: string, name: string, resetLink: string) {
     this.logger.log(`Queuing reset password email for ${email}`);
-    await this.emailQueue.add('send-reset-password-email', {
+    await this.enqueue('send-reset-password-email', {
       email,
       name,
       resetLink,
@@ -56,7 +89,7 @@ export class EmailService {
     ip?: string,
   ) {
     this.logger.log(`Queuing password changed email for ${email}`);
-    await this.emailQueue.add('send-password-changed-email', {
+    await this.enqueue('send-password-changed-email', {
       email,
       name,
       time,
@@ -67,7 +100,7 @@ export class EmailService {
 
   async sendVerificationOtpEmail(email: string, name: string, otp: string) {
     this.logger.log(`Queuing verification OTP email for ${email}`);
-    await this.emailQueue.add('send-verification-otp', { email, name, otp });
+    await this.enqueue('send-verification-otp', { email, name, otp });
   }
 
   async sendAdminVerificationOtpEmail(
@@ -76,7 +109,7 @@ export class EmailService {
     otp: string,
   ) {
     this.logger.log(`Queuing Super Admin verification OTP email for ${email}`);
-    await this.emailQueue.add('send-admin-verification-otp', {
+    await this.enqueue('send-admin-verification-otp', {
       email,
       name,
       otp,
@@ -95,7 +128,7 @@ export class EmailService {
     collegeName?: string,
   ) {
     this.logger.log('Queuing college-email OTP email');
-    await this.emailQueue.add('send-college-email-otp', {
+    await this.enqueue('send-college-email-otp', {
       email,
       name,
       otp,
@@ -107,7 +140,7 @@ export class EmailService {
   /** A code proving control of a new personal sign-in address. */
   async sendPersonalEmailOtp(email: string, name: string, otp: string) {
     this.logger.log('Queuing personal-email OTP email');
-    await this.emailQueue.add('send-personal-email-otp', {
+    await this.enqueue('send-personal-email-otp', {
       email,
       name,
       otp,
@@ -117,7 +150,7 @@ export class EmailService {
 
   async sendReauthCode(email: string, name: string, otp: string) {
     this.logger.log('Queuing reauthentication OTP email');
-    await this.emailQueue.add('send-reauth-otp', {
+    await this.enqueue('send-reauth-otp', {
       email,
       name,
       otp,
@@ -139,7 +172,7 @@ export class EmailService {
     idempotencyKey?: string,
   ) {
     this.logger.log('Queuing sign-in email changed notice');
-    await this.emailQueue.add(
+    await this.enqueue(
       'send-signin-email-changed',
       {
         email: previousEmail,
@@ -168,7 +201,7 @@ export class EmailService {
   async sendAccountDeletionOtpEmail(email: string, name: string, otp: string) {
     // Note the absence of the code from this line. Codes never reach a log.
     this.logger.log(`Queuing account-deletion OTP email for ${email}`);
-    await this.emailQueue.add('send-account-deletion-otp', {
+    await this.enqueue('send-account-deletion-otp', {
       email,
       name,
       otp,
@@ -190,7 +223,7 @@ export class EmailService {
     scheduledDeletionDate?: string,
   ) {
     this.logger.log(`Queuing account-recovery OTP email for ${email}`);
-    await this.emailQueue.add('send-account-recovery-otp', {
+    await this.enqueue('send-account-recovery-otp', {
       email,
       name,
       otp,
@@ -209,7 +242,7 @@ export class EmailService {
   /** Confirmation to the person who filed the request. */
   async sendSupportRequestReceivedEmail(ticketId: string) {
     this.logger.log(`Queuing support confirmation for ticket ${ticketId}`);
-    await this.emailQueue.add(SUPPORT_EMAIL_JOBS.requestReceived, { ticketId });
+    await this.enqueue(SUPPORT_EMAIL_JOBS.requestReceived, { ticketId });
   }
 
   /**
@@ -219,6 +252,6 @@ export class EmailService {
    */
   async sendSupportReplyEmail(messageId: string) {
     this.logger.log(`Queuing support reply email for message ${messageId}`);
-    await this.emailQueue.add(SUPPORT_EMAIL_JOBS.reply, { messageId });
+    await this.enqueue(SUPPORT_EMAIL_JOBS.reply, { messageId });
   }
 }

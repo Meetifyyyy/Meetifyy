@@ -46,7 +46,7 @@ import { PushModule } from './push/push.module';
 import { PresenceModule } from './presence/presence.module';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { BullModule } from '@nestjs/bullmq';
-import type { RedisOptions } from 'bullmq';
+import { buildBullConnection } from './common/queues/bull-connection';
 import type {
   SerializedError,
   SerializedRequest,
@@ -225,55 +225,7 @@ import { requestDbStats } from './common/request-context/request-context';
     BullModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: () => {
-        let connection: RedisOptions;
-        const redisUrlString = config.redis.url;
-
-        if (redisUrlString) {
-          const url = new URL(redisUrlString);
-          connection = {
-            host: url.hostname,
-            port: parseInt(url.port, 10) || 6379,
-            username: url.username || undefined,
-            password: url.password || undefined,
-            /**
-             * TLS with the certificate actually verified.
-             *
-             * This passed `rejectUnauthorized: false`, which accepts any
-             * certificate at all — including one presented by whoever is
-             * between us and the cache. That is not a weaker TLS
-             * configuration, it is TLS with the part that authenticates the
-             * server switched off, and what travels over this connection is
-             * session state and queue jobs.
-             *
-             * Verification is the Node default, so the option is simply gone.
-             * `servername` is set explicitly rather than left to be inferred,
-             * so SNI and the hostname the certificate is checked against are
-             * the same value on every path into here.
-             */
-            tls:
-              url.protocol === 'rediss:'
-                ? { servername: url.hostname }
-                : undefined,
-            maxRetriesPerRequest: null,
-            enableReadyCheck: false,
-            skipVersionCheck: true,
-          };
-        } else {
-          connection = {
-            host: config.redis.host,
-            port: config.redis.port,
-            password: config.redis.password,
-            // Same reasoning as the URL branch above. This is the path taken
-            // when the connection is configured as discrete host/port/password
-            // rather than a single URL, and it had the same switch thrown.
-            tls: config.redis.tls
-              ? { servername: config.redis.host }
-              : undefined,
-            maxRetriesPerRequest: null,
-            enableReadyCheck: false,
-            skipVersionCheck: true,
-          };
-        }
+        const connection = buildBullConnection(config.redis);
 
         return {
           connection,

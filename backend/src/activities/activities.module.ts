@@ -10,7 +10,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { UsersModule } from '../users/users.module';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { RedisModule } from '../redis/redis.module';
-import { BullModule } from '@nestjs/bullmq';
+import { registerProducerQueue } from '../common/queues/producer-queue';
 import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
 import { PresenceModule } from '../presence/presence.module';
 
@@ -23,7 +23,7 @@ import { PresenceModule } from '../presence/presence.module';
     UsersModule,
     RedisModule,
     PresenceModule,
-    BullModule.registerQueue({ name: NOTIFICATIONS_QUEUE }),
+    registerProducerQueue({ name: NOTIFICATIONS_QUEUE }),
     forwardRef(() => RealtimeModule),
   ],
   controllers: [ActivitiesController, ActivityDiscussionController],

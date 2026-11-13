@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { BullModule } from '@nestjs/bullmq';
+import { registerProducerQueue } from '../common/queues/producer-queue';
 import { PrismaModule } from '../prisma/prisma.module';
 import { RedisModule } from '../redis/redis.module';
 import { PushController } from './push.controller';
@@ -20,7 +20,7 @@ import { PUSH_QUEUE } from './push.types';
   imports: [
     PrismaModule,
     RedisModule,
-    BullModule.registerQueue({ name: PUSH_QUEUE }),
+    registerProducerQueue({ name: PUSH_QUEUE }),
   ],
   controllers: [PushController],
   providers: [

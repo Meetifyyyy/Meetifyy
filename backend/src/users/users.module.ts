@@ -10,7 +10,7 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { BlocksService } from './blocks.service';
 import { RedisModule } from '../redis/redis.module';
-import { BullModule } from '@nestjs/bullmq';
+import { registerProducerQueue } from '../common/queues/producer-queue';
 import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
 import { PresenceModule } from '../presence/presence.module';
 import { AccountDeletionModule } from '../account-deletion/account-deletion.module';
@@ -24,7 +24,7 @@ import { AccountDeletionModule } from '../account-deletion/account-deletion.modu
     // Only for the `DELETE /api/users/me` alias, which forwards into the
     // 30-day-window request rather than deleting on the spot.
     AccountDeletionModule,
-    BullModule.registerQueue({ name: NOTIFICATIONS_QUEUE }),
+    registerProducerQueue({ name: NOTIFICATIONS_QUEUE }),
   ],
   controllers: [
     UsersController,

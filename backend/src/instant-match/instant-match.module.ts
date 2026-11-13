@@ -1,5 +1,10 @@
 import { Module, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
-import { BullModule, InjectQueue } from '@nestjs/bullmq';
+import { InjectQueue } from '@nestjs/bullmq';
+import {
+  registerInBackground,
+  type BackgroundRegistration,
+} from '../common/queues/background-registration';
+import { registerProducerQueue } from '../common/queues/producer-queue';
 import { Queue } from 'bullmq';
 import {
   InstantMatchService,
@@ -26,7 +31,7 @@ import { BlocksService } from '../users/blocks.service';
     PrismaModule,
     MessagesModule,
     RedisModule,
-    BullModule.registerQueue({ name: INSTANT_MATCH_QUEUE }),
+    registerProducerQueue({ name: INSTANT_MATCH_QUEUE }),
   ],
   // BlocksService is provided here rather than by importing UsersModule (which
   // would drag in notifications, presence and a queue registration this module
@@ -46,13 +51,14 @@ export class InstantMatchModule implements OnModuleInit, OnModuleDestroy {
 
   /** In-process fallback sweep, armed only if BullMQ scheduling failed. */
   private fallbackTimer: NodeJS.Timeout | null = null;
+  private registration: BackgroundRegistration | null = null;
 
   constructor(
     @InjectQueue(INSTANT_MATCH_QUEUE) private readonly queue: Queue,
     private readonly instantMatchService: InstantMatchService,
   ) {}
 
-  async onModuleInit() {
+  onModuleInit(): void {
     // A request is withdrawn at its own deadline by a delayed job; the sweep
     // below is the backstop if that job never runs.
     setRequestExpiryScheduler((sessionId, delayMs) => {
@@ -75,52 +81,58 @@ export class InstantMatchModule implements OnModuleInit, OnModuleDestroy {
         });
     });
 
-    try {
-      // Repeatable jobs are keyed by name + pattern, so re-registering on every
-      // boot is a no-op rather than a duplicate schedule.
-      await this.queue.add(
-        JOB_EXPIRE_STALE,
-        {},
-        {
-          repeat: { every: EXPIRY_SWEEP_MS },
-          jobId: JOB_EXPIRE_STALE,
-          removeOnComplete: true,
-          removeOnFail: 50,
-        },
-      );
-      this.logger.log(
-        `Instant Match expiry sweep scheduled every ${EXPIRY_SWEEP_MS}ms`,
-      );
-    } catch (err) {
+    // Behind boot, retried until Redis accepts it (see registerInBackground).
+    this.registration = registerInBackground({
+      description: 'the Instant Match expiry sweep',
+      logger: this.logger,
+      attempt: async () => {
+        // Repeatable jobs are keyed by name + pattern, so re-registering on
+        // every boot is a no-op rather than a duplicate schedule.
+        await this.queue.add(
+          JOB_EXPIRE_STALE,
+          {},
+          {
+            repeat: { every: EXPIRY_SWEEP_MS },
+            jobId: JOB_EXPIRE_STALE,
+            removeOnComplete: true,
+            removeOnFail: 50,
+          },
+        );
+        this.logger.log(
+          `Instant Match expiry sweep scheduled every ${EXPIRY_SWEEP_MS}ms`,
+        );
+      },
+      firstFailureNote: 'falling back to an in-process timer meanwhile',
       // Without a sweep, an unanswered match never expires: both users stay
       // locked out of re-queueing and neither is put back in the queue. A
       // single-process timer is a worse sweep than the queue (it can double
       // up across replicas) but every transition it drives is claimed by a
       // conditional update, so duplicates are dropped rather than
       // double-notifying. Far better than no expiry at all.
-      this.logger.error(
-        'Could not schedule the Instant Match expiry sweep on the queue — ' +
-          'falling back to an in-process timer',
-        err,
-      );
-      this.fallbackTimer = setInterval(() => {
-        // Every 10 s, like the queued sweep, so traced at the same 1%.
-        void traceBackground(
-          {
-            name: 'task instant-match.expiry-sweep',
-            op: 'task',
-            traceRate: SWEEP_TRACE_RATE,
-          },
-          () => this.instantMatchService.expireStale(),
-        ).catch((sweepErr) => {
-          this.logger.error('Fallback expiry sweep failed', sweepErr);
-        });
-      }, EXPIRY_SWEEP_MS);
-      this.fallbackTimer.unref?.();
-    }
+      onFirstFailure: () => this.armFallbackTimer(),
+    });
+  }
+
+  private armFallbackTimer(): void {
+    if (this.fallbackTimer) return;
+    this.fallbackTimer = setInterval(() => {
+      // Every 10 s, like the queued sweep, so traced at the same 1%.
+      void traceBackground(
+        {
+          name: 'task instant-match.expiry-sweep',
+          op: 'task',
+          traceRate: SWEEP_TRACE_RATE,
+        },
+        () => this.instantMatchService.expireStale(),
+      ).catch((sweepErr) => {
+        this.logger.error('Fallback expiry sweep failed', sweepErr);
+      });
+    }, EXPIRY_SWEEP_MS);
+    this.fallbackTimer.unref?.();
   }
 
   onModuleDestroy() {
+    this.registration?.stop();
     setRequestExpiryScheduler(null);
     if (this.fallbackTimer) clearInterval(this.fallbackTimer);
   }

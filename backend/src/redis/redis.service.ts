@@ -45,6 +45,13 @@ export function redisReconnectDelay(
 export const COMMAND_TIMEOUT_MS = 2_000;
 
 /**
+ * Failed reconnects after which ioredis rejects, and empties, the commands
+ * queued for a down server. Shared with the queue producers
+ * (common/queues/producer-queue.ts) so both bound an outage identically.
+ */
+export const COMMAND_MAX_RETRIES_PER_REQUEST = 2;
+
+/**
  * Options for one of the two connections. They differ only in how long a
  * command may wait, because the two connections are used in opposite ways:
  *
@@ -77,7 +84,10 @@ export function redisConnectionOptions(
   const isTls = url.protocol === 'rediss:';
   return {
     ...(role === 'command'
-      ? { maxRetriesPerRequest: 2, commandTimeout: COMMAND_TIMEOUT_MS }
+      ? {
+          maxRetriesPerRequest: COMMAND_MAX_RETRIES_PER_REQUEST,
+          commandTimeout: COMMAND_TIMEOUT_MS,
+        }
       : { maxRetriesPerRequest: null, autoResubscribe: true }),
     enableReadyCheck: false,
     keepAlive: 10000,

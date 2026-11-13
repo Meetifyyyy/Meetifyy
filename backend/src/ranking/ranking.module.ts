@@ -1,5 +1,10 @@
-import { Logger, Module, OnModuleInit } from '@nestjs/common';
-import { BullModule, InjectQueue } from '@nestjs/bullmq';
+import { Logger, Module, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import {
+  registerInBackground,
+  type BackgroundRegistration,
+} from '../common/queues/background-registration';
+import { registerProducerQueue } from '../common/queues/producer-queue';
 import { Queue } from 'bullmq';
 import { PrismaModule } from '../prisma/prisma.module';
 import { RedisModule } from '../redis/redis.module';
@@ -25,32 +30,41 @@ import {
   imports: [
     PrismaModule,
     RedisModule,
-    BullModule.registerQueue({ name: RANKING_QUEUE }),
+    registerProducerQueue({ name: RANKING_QUEUE }),
   ],
   controllers: [TrendingController],
   providers: [AffinityService, AffinityProcessor, TrendingService],
   exports: [AffinityService],
 })
-export class RankingModule implements OnModuleInit {
+export class RankingModule implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(RankingModule.name);
+  private registration: BackgroundRegistration | null = null;
 
   constructor(@InjectQueue(RANKING_QUEUE) private readonly queue: Queue) {}
 
-  async onModuleInit(): Promise<void> {
-    try {
-      // Keyed by name + interval, so re-registering on every boot is a no-op.
-      await this.queue.add(
-        JOB_AFFINITY_REBUILD,
-        {},
-        {
-          repeat: { every: AFFINITY_REBUILD_MS },
-          jobId: JOB_AFFINITY_REBUILD,
-          removeOnComplete: true,
-          removeOnFail: 20,
-        },
-      );
-    } catch (err) {
-      this.logger.error('Could not schedule the affinity rebuild', err);
-    }
+  onModuleInit(): void {
+    // Behind boot, retried until Redis accepts it: with no fallback timer, a
+    // registration that gave up would leave the rebuild unscheduled until the
+    // next restart.
+    this.registration = registerInBackground({
+      description: 'the affinity rebuild',
+      logger: this.logger,
+      attempt: () =>
+        // Keyed by name + interval, so re-registering on every boot is a no-op.
+        this.queue.add(
+          JOB_AFFINITY_REBUILD,
+          {},
+          {
+            repeat: { every: AFFINITY_REBUILD_MS },
+            jobId: JOB_AFFINITY_REBUILD,
+            removeOnComplete: true,
+            removeOnFail: 20,
+          },
+        ),
+    });
+  }
+
+  onModuleDestroy(): void {
+    this.registration?.stop();
   }
 }

@@ -4,7 +4,7 @@ import { ModerationService } from './moderation.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { ReportTargetResolver } from './report-target.resolver';
 import { ReportRateLimitService } from './report-ratelimit.service';
-import { BullModule } from '@nestjs/bullmq';
+import { registerProducerQueue } from '../common/queues/producer-queue';
 import { ActivityAccessModule } from '../activities/activity-access.module';
 
 @Module({
@@ -14,7 +14,7 @@ import { ActivityAccessModule } from '../activities/activity-access.module';
     // rest of the app uses; the policy module is dependency-free so this adds
     // no coupling between feature modules.
     ActivityAccessModule,
-    BullModule.registerQueue({
+    registerProducerQueue({
       name: 'notifications',
     }),
   ],

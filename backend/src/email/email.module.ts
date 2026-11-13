@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { BullModule } from '@nestjs/bullmq';
+import { registerProducerQueue } from '../common/queues/producer-queue';
 import { EmailService } from './email.service';
 import { EmailProcessor } from './email.processor';
 import { EmailQueueJanitor } from './email-queue-janitor';
@@ -33,7 +33,7 @@ export const EMAIL_QUEUE_DEFAULT_JOB_OPTIONS = {
     PrismaModule,
     // The per-provider daily counters the processor increments on each send.
     EmailUsageModule,
-    BullModule.registerQueue({
+    registerProducerQueue({
       name: 'email',
       defaultJobOptions: EMAIL_QUEUE_DEFAULT_JOB_OPTIONS,
     }),

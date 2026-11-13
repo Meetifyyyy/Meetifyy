@@ -3,7 +3,7 @@ import { NotificationsController } from './notifications.controller';
 import { NotificationsService } from './notifications.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { NotificationFactory } from './notification.factory';
-import { BullModule } from '@nestjs/bullmq';
+import { registerProducerQueue } from '../common/queues/producer-queue';
 import {
   NotificationsProcessor,
   NOTIFICATIONS_QUEUE,
@@ -17,7 +17,7 @@ import { PushModule } from '../push/push.module';
     PrismaModule,
     RedisModule,
     PushModule,
-    BullModule.registerQueue({ name: NOTIFICATIONS_QUEUE }),
+    registerProducerQueue({ name: NOTIFICATIONS_QUEUE }),
   ],
   controllers: [NotificationsController],
   // Provided directly, not via UsersModule — UsersModule imports this module,
