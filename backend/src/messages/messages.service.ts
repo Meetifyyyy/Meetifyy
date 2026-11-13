@@ -387,10 +387,29 @@ export class MessagesService
         select: { id: true, participants: { select: { userId: true } } },
       });
       if (expiring.length === 0) return;
+      const ids = expiring.map((c) => c.id);
 
-      await this.prisma.conversation.deleteMany({
-        where: { id: { in: expiring.map((c) => c.id) } },
+      // The photos and videos these chats carried go with them (IM-8): the
+      // delete cascades the messages, never the files they pointed to. Their
+      // keys are recorded as owed deletes in the same transaction.
+      const attached = await this.prisma.message.findMany({
+        where: {
+          conversationId: { in: ids },
+          attachmentMediaId: { not: null },
+        },
+        select: { attachmentMedia: { select: { objectKey: true } } },
       });
+      const keys = attached
+        .map((m) => m.attachmentMedia?.objectKey)
+        .filter((key): key is string => Boolean(key));
+      const owed = await this.prisma.$transaction(async (tx) => {
+        const recorded =
+          (await this.mediaCleanupService?.recordPendingDeletions(keys, tx)) ??
+          [];
+        await tx.conversation.deleteMany({ where: { id: { in: ids } } });
+        return recorded;
+      });
+      this.mediaCleanupService?.drainSoon(owed);
 
       const affected = [
         ...new Set(

@@ -284,12 +284,17 @@ export class PrismaFake {
         update: Partial<MatchQueueEntry>;
       }) => {
         const existing = this.queue.find((e) => e.userId === where.userId);
+        let row: MatchQueueEntry;
         if (existing) {
           Object.assign(existing, update);
-          return Promise.resolve(existing);
+          row = existing;
+        } else {
+          row = { id: `q${++this.seq}`, ...create };
+          this.queue.push(row);
         }
-        const row: MatchQueueEntry = { id: `q${++this.seq}`, ...create };
-        this.queue.push(row);
+        // Lets a spec land a competing pairing between a join's checks and
+        // the moment its row is written back (IM-2).
+        this.afterQueueWrite?.(where.userId);
         return Promise.resolve(row);
       },
       deleteMany: ({ where }: { where: Row }) => {
@@ -370,6 +375,11 @@ export class PrismaFake {
         where: { id: string };
         data: Partial<MatchSession>;
       }) => {
+        const failure = this.failNext.sessionUpdate;
+        if (failure) {
+          this.failNext.sessionUpdate = undefined;
+          return Promise.reject(failure);
+        }
         const row = this.sessions.find((s) => s.id === where.id);
         if (!row)
           return Promise.reject(new Error('prisma-fake: session not found'));
@@ -459,9 +469,34 @@ export class PrismaFake {
     };
   }
 
+  /** Media rows, for the photos and videos a chat's messages point at. */
+  mediaRows: Array<{ id: string; objectKey: string }> = [];
+
+  get media() {
+    return {
+      findMany: ({ where, select }: FindArgs) =>
+        Promise.resolve(
+          this.mediaRows
+            .filter((m) => matchesWhere(m, where))
+            .map((m) => project(m, select)),
+        ),
+    };
+  }
+
   get message() {
     return {
+      findMany: ({ where, select }: FindArgs) =>
+        Promise.resolve(
+          this.messages
+            .filter((m) => matchesWhere(m, where))
+            .map((m) => project(m, select)),
+        ),
       deleteMany: ({ where }: { where: Row }) => {
+        const failure = this.failNext.messageDelete;
+        if (failure) {
+          this.failNext.messageDelete = undefined;
+          return Promise.reject(failure);
+        }
         const before = this.messages.length;
         this.messages = this.messages.filter((m) => !matchesWhere(m, where));
         return Promise.resolve({ count: before - this.messages.length });
@@ -529,6 +564,23 @@ export class PrismaFake {
         );
       },
     };
+  }
+
+  /** Called after every queue upsert, with the user whose row it wrote. */
+  afterQueueWrite?: (userId: string) => void;
+  /** Makes the next write of that kind fail, once (failure-path specs). */
+  failNext: { sessionUpdate?: Error; messageDelete?: Error } = {};
+
+  /** Advisory locks: every call is recorded; the fake runs one thing at a
+   *  time, so there is nothing to wait for. */
+  advisoryLocks: string[] = [];
+
+  $executeRaw(strings: TemplateStringsArray, ...values: unknown[]) {
+    if (!strings.join('?').includes('pg_advisory_xact_lock')) {
+      throw new Error('prisma-fake: unsupported raw statement');
+    }
+    this.advisoryLocks.push(String(values[0]));
+    return Promise.resolve(1);
   }
 
   async $transaction<T>(fn: (tx: PrismaFake) => Promise<T>): Promise<T> {

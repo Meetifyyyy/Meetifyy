@@ -1032,7 +1032,10 @@ model MatchSession {
   matchReason    String?
   /// Snapshot of each side's original queue request, so the server can
   /// re-queue the other user when a match is declined or times out without
-  /// depending on that client still being connected to replay it.
+  /// depending on that client still being connected to replay it. Holds GPS,
+  /// so it lives only while the session is PENDING: every transition out of
+  /// PENDING clears it, keeping only `{"requested": true}` on a direct
+  /// request's snapshotA (migration 41 cleared the older rows).
   snapshotA      Json?
   snapshotB      Json?
   userA          User                   @relation("MatchUserA", fields: [userAId], references: [id])

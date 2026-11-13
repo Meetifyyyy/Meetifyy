@@ -13,6 +13,8 @@ import { RedisService } from '../redis/redis.service';
 import { BlocksService } from '../users/blocks.service';
 import { VerificationAccessService } from '../common/verification/verification-access.service';
 import { MessagesService } from '../messages/messages.service';
+import { PresenceService } from '../presence/presence.service';
+import { MediaCleanupService } from '../uploads/media-cleanup.service';
 import { MatchScore, explainPair, scorePair } from './matching/engine';
 import { orderCandidates } from './matching/selection';
 import {
@@ -49,6 +51,10 @@ const RECENT_MATCH_WINDOW_MS = 24 * 60 * 60 * 1000;
  *  limit above: bounded work per read, and oldest-first so the people who
  *  have waited longest are the ones on screen. */
 const SEARCHING_NOW_LIMIT = 50;
+
+/** Pending sessions expired per sweep tick (every 10 s); a backlog after an
+ *  outage is worked off over a few ticks rather than in one pass. */
+const EXPIRE_BATCH = 100;
 
 export interface MatchCandidateDto {
   id: string;
@@ -306,7 +312,56 @@ export class InstantMatchService implements OnModuleInit {
     // Optional: serialises per-user queue changes. Without it (tests, a dev
     // box with no Redis service wired) the changes run unserialised, as before.
     @Optional() private readonly redisService?: RedisService,
+    // Optional: who is actually here (IM-1). Without it a timed-out match
+    // re-queues both people, as it always did.
+    @Optional() private readonly presenceService?: PresenceService,
+    // Optional: durable deletion of a closed chat's photos and videos (IM-8).
+    @Optional() private readonly mediaCleanup?: MediaCleanupService,
   ) {}
+
+  /**
+   * Sessions that still hold these people (IM-2): a proposal not yet
+   * answered, or a chat that is open or being opened (ACCEPTED before its
+   * conversation is linked counts, which is what closes the window the old
+   * accept check left).
+   */
+  private static liveFor(
+    userIds: string[],
+    now: Date,
+  ): Prisma.MatchSessionWhereInput {
+    return {
+      AND: [
+        { OR: userIds.flatMap((id) => [{ userAId: id }, { userBId: id }]) },
+        {
+          OR: [
+            { status: 'PENDING', expiresAt: { gt: now } },
+            {
+              status: 'ACCEPTED',
+              chatStatus: 'ACTIVE',
+              OR: [{ chatExpiresAt: null }, { chatExpiresAt: { gt: now } }],
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  /**
+   * Whether a person who did not answer a proposal is still around (IM-1).
+   * A timed-out match used to put both people back in the queue with a fresh
+   * 30 minutes, so someone who had closed the app was offered to real people
+   * every minute or so, indefinitely. Fails open: no presence service, or a
+   * presence read that fails, keeps the old behaviour.
+   */
+  private async isPresent(userId: string): Promise<boolean> {
+    if (!this.presenceService) return true;
+    try {
+      const presence = await this.presenceService.getPresence(userId);
+      return presence?.status === 'online';
+    } catch {
+      return true;
+    }
+  }
 
   /**
    * Runs a change to one user's queue state under a per-user lock, so a
@@ -388,6 +443,17 @@ export class InstantMatchService implements OnModuleInit {
         create: { userId: dto.userId, joinedAt: new Date(), ...shared },
         update: { joinedAt: new Date(), ...shared },
       });
+
+      // The checks above and the write are not one step, and a pairing takes
+      // no lock: one can claim this person between them, and the write would
+      // then put them back in the queue while they hold a match (IM-2). Seen
+      // after the write, it is undone.
+      if (await this.holdsLiveSession(dto.userId)) {
+        await this.prisma.matchQueueEntry.deleteMany({
+          where: { userId: dto.userId },
+        });
+        throw new BadRequestException('Respond to your current match first');
+      }
     });
 
     this.logger.log(
@@ -541,8 +607,12 @@ export class InstantMatchService implements OnModuleInit {
 
     for (const { item, picked } of ordered) {
       const { candidate, detail, score } = item;
-      const session = await this.claimPair(myEntry, candidate, timer);
-      if (!session) continue; // lost the race for this candidate — try the next
+      const claim = await this.claimPair(myEntry, candidate, timer);
+      // The searcher was taken (or holds a match): nobody else is worth a
+      // transaction (IM-18). Otherwise this candidate was lost — try the next.
+      if (claim.outcome === 'searcher-gone') return;
+      if (claim.outcome !== 'claimed') continue;
+      const { session } = claim;
 
       const area = myEntry.area ?? candidate.area ?? null;
       const expiresAtMs = session.expiresAt.getTime();
@@ -903,7 +973,7 @@ export class InstantMatchService implements OnModuleInit {
        *  deadline the server enforces. */
       exactDeadline?: boolean;
     } = {},
-  ): Promise<{ id: string; expiresAt: Date } | null> {
+  ): Promise<ClaimResult> {
     const expiresAt = new Date(
       Date.now() +
         timerSecs * 1000 +
@@ -911,19 +981,42 @@ export class InstantMatchService implements OnModuleInit {
     );
 
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      const session = await this.prisma.$transaction(async (tx) => {
         const a = await tx.matchQueueEntry.findUnique({
           where: { userId: myEntry.userId },
         });
         const b = await tx.matchQueueEntry.findUnique({
           where: { userId: candidate.userId },
         });
-        if (!a || !b) throw new PairClaimLost();
+        if (!a) throw new PairClaimLost('searcher');
+        if (!b) throw new PairClaimLost('candidate');
 
         const removed = await tx.matchQueueEntry.deleteMany({
           where: { userId: { in: [myEntry.userId, candidate.userId] } },
         });
-        if (removed.count !== 2) throw new PairClaimLost();
+        if (removed.count !== 2) throw new PairClaimLost('candidate');
+
+        // Neither may already hold a match (IM-2). A queue row can outlive
+        // the pairing that should have removed it, written by a join or a
+        // re-queue that checked just before that pairing committed; pairing
+        // such a person again gave them two pending matches, and then two
+        // chats. Checked after the deletes, inside the claim, so it sees any
+        // pairing that won the rows first.
+        const busy = await tx.matchSession.findFirst({
+          where: InstantMatchService.liveFor(
+            [myEntry.userId, candidate.userId],
+            new Date(),
+          ),
+          select: { userAId: true, userBId: true },
+        });
+        if (busy) {
+          const searcherBusy =
+            busy.userAId === myEntry.userId || busy.userBId === myEntry.userId;
+          throw new PairClaimLost(
+            searcherBusy ? 'searcher' : 'candidate',
+            searcherBusy ? myEntry.userId : candidate.userId,
+          );
+        }
 
         return tx.matchSession.create({
           data: {
@@ -946,10 +1039,29 @@ export class InstantMatchService implements OnModuleInit {
           select: { id: true, expiresAt: true },
         });
       });
+      return { outcome: 'claimed', session };
     } catch (err) {
-      if (err instanceof PairClaimLost) return null;
-      throw err;
+      if (!(err instanceof PairClaimLost)) throw err;
+      // The row of someone who holds a match is a leftover: it must not keep
+      // them listed as searching, nor be claimed again.
+      if (err.staleRowOf) {
+        await this.prisma.matchQueueEntry
+          .deleteMany({ where: { userId: err.staleRowOf } })
+          .catch(() => undefined);
+      }
+      return {
+        outcome: err.side === 'searcher' ? 'searcher-gone' : 'candidate-lost',
+      };
     }
+  }
+
+  /** Whether this person holds a match or an open chat right now. */
+  private async holdsLiveSession(userId: string): Promise<boolean> {
+    const live = await this.prisma.matchSession.findFirst({
+      where: InstantMatchService.liveFor([userId], new Date()),
+      select: { id: true },
+    });
+    return live !== null;
   }
 
   // ─── Requesting someone directly ─────────────────────────────────────────────
@@ -1057,16 +1169,20 @@ export class InstantMatchService implements OnModuleInit {
     // What they are up for is the activity, but the wait is the same for every
     // request: 30 seconds, then it is withdrawn and both go back to searching.
     const timer = REQUEST_WINDOW_SECS;
-    const session = await this.claimPair(mine, theirs, timer, {
+    const claim = await this.claimPair(mine, theirs, timer, {
       requestedByA: true,
       exactDeadline: true,
       // What they are up for is what was asked for: it is the activity both
       // cards describe and the reason the chat opens with.
       activity: theirs.activity,
     });
-    if (!session) {
+    if (claim.outcome === 'searcher-gone') {
+      throw new BadRequestException('Respond to your current match first');
+    }
+    if (claim.outcome !== 'claimed') {
       throw new BadRequestException('They were just matched with someone else');
     }
+    const { session } = claim;
 
     const area = theirs.area ?? mine.area ?? null;
     const expiresAtMs = session.expiresAt.getTime();
@@ -1141,6 +1257,8 @@ export class InstantMatchService implements OnModuleInit {
       id: string;
       userAId: string;
       userBId: string;
+      aAccepted: boolean;
+      bAccepted: boolean;
       snapshotA: unknown;
       snapshotB: unknown;
     },
@@ -1156,7 +1274,11 @@ export class InstantMatchService implements OnModuleInit {
     // penalise the wrong person for a decision they did not make.
     const claimed = await this.prisma.matchSession.updateMany({
       where: { id: session.id, status: 'PENDING' },
-      data: { status: 'DECLINED', declinedById: userId },
+      data: {
+        status: 'DECLINED',
+        declinedById: userId,
+        ...scrubbedSnapshots(session.snapshotA),
+      },
     });
     if (claimed.count !== 1) return;
 
@@ -1165,8 +1287,13 @@ export class InstantMatchService implements OnModuleInit {
     const otherSnapshot = readQueueSnapshot(
       session.userAId === userId ? session.snapshotB : session.snapshotA,
     );
+    const otherAccepted =
+      session.userAId === userId ? session.bAccepted : session.aAccepted;
 
-    const requeued = await this.requeue(otherUserId, otherSnapshot);
+    // Back to searching only if they are still here (IM-1).
+    const requeued =
+      (otherAccepted || (await this.isPresent(otherUserId))) &&
+      (await this.requeue(otherUserId, otherSnapshot));
 
     // A direct request interrupted two searches, so backing out of it — the
     // target passing, or the requester withdrawing — returns *both* people to
@@ -1245,72 +1372,78 @@ export class InstantMatchService implements OnModuleInit {
     // The `@VerifiedOnly()` guard on `match:respond` only vouches for whoever
     // is calling right now; it says nothing about the other side, whose
     // verification may have been revoked at any point while this match sat
-    // PENDING. Without this, a pair matched minutes ago could still be handed
-    // a 24h conversation with someone who is no longer allowed to message —
-    // and the messaging layer would then refuse every send inside a chat the
-    // product had just promised them.
+    // PENDING. A block placed in that window counts the same (IM-7). Either
+    // way the match is withdrawn and both people are told, rather than left
+    // on a card that can never open (IM-3).
     const eligibility = await this.verificationAccess.getEligibilityMap([
       session.userAId,
       session.userBId,
     ]);
     if (
       eligibility.get(session.userAId) === false ||
-      eligibility.get(session.userBId) === false
+      eligibility.get(session.userBId) === false ||
+      (await this.blocksService.isBlocked(session.userAId, session.userBId))
     ) {
       this.logger.warn(
-        `match:refused-ineligible ${session.id} — a participant is no longer eligible`,
+        `match:refused ${session.id} — a participant is no longer eligible, or they are blocked`,
       );
-      await this.prisma.matchSession.updateMany({
-        where: { id: session.id, status: 'PENDING' },
-        data: { status: 'EXPIRED' },
-      });
+      await this.expireSession(session.id, 'unavailable');
       return;
     }
 
-    // Neither person may hold two live chats at once.
-    //
-    // The queue guards the entry to matching, but nothing guarded the exit
-    // until here: a stale PENDING session accepted late — a second tab, a
-    // reconnect replaying an accept — could open a second conversation for
-    // someone who is already mid-chat, and from then on "the active session"
-    // was whichever row a given query happened to order first. One live
-    // session per user is what makes `getActiveChatSession` a well-defined
-    // question, so it is enforced at the one transition that creates them.
-    const liveElsewhere = await this.prisma.matchSession.findFirst({
-      where: {
-        id: { not: session.id },
-        status: 'ACCEPTED',
-        chatStatus: 'ACTIVE',
-        conversationId: { not: null },
-        chatExpiresAt: { gt: new Date() },
-        OR: [
-          { userAId: session.userAId },
-          { userBId: session.userAId },
-          { userAId: session.userBId },
-          { userBId: session.userBId },
-        ],
-      },
-      select: { id: true },
+    // Neither person may hold two live chats at once, and the check and the
+    // claim are one step (IM-2, FEAT-29): both people's advisory locks are
+    // held while it is decided, so two accepts for one person cannot both
+    // find nothing. An ACCEPTED session whose conversation is still being
+    // created counts as live, which closes the window the old check left.
+    const outcome = await this.prisma.$transaction(async (tx) => {
+      for (const id of [session.userAId, session.userBId].sort()) {
+        const key = `instant-match:live:${id}`;
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))`;
+      }
+      const now = new Date();
+      const liveElsewhere = await tx.matchSession.findFirst({
+        where: {
+          id: { not: session.id },
+          status: 'ACCEPTED',
+          chatStatus: 'ACTIVE',
+          OR: [
+            { userAId: session.userAId },
+            { userBId: session.userAId },
+            { userAId: session.userBId },
+            { userBId: session.userBId },
+          ],
+          AND: [
+            { OR: [{ chatExpiresAt: null }, { chatExpiresAt: { gt: now } }] },
+          ],
+        },
+        select: { id: true },
+      });
+      if (liveElsewhere)
+        return { kind: 'live-elsewhere' as const, liveElsewhere };
+      const current = await tx.matchSession.findUnique({
+        where: { id: session.id },
+        select: { snapshotA: true },
+      });
+      // Both sides are in. Claim the finalize transition so that two
+      // simultaneous accepts create exactly one conversation.
+      const claimed = await tx.matchSession.updateMany({
+        where: { id: session.id, status: 'PENDING' },
+        data: { status: 'ACCEPTED', ...scrubbedSnapshots(current?.snapshotA) },
+      });
+      return {
+        kind: claimed.count === 1 ? ('claimed' as const) : ('lost' as const),
+      };
     });
-    if (liveElsewhere) {
+    if (outcome.kind === 'live-elsewhere') {
       this.logger.warn(
         `match:refused-already-matched ${session.id} — a participant already ` +
-          `has live session ${liveElsewhere.id}`,
+          `has live session ${outcome.liveElsewhere.id}`,
       );
-      await this.prisma.matchSession.updateMany({
-        where: { id: session.id, status: 'PENDING' },
-        data: { status: 'EXPIRED' },
-      });
+      await this.expireSession(session.id, 'unavailable');
       return;
     }
-
-    // Both sides are in. Claim the finalize transition so that two
-    // simultaneous accepts create exactly one conversation.
-    const claimed = await this.prisma.matchSession.updateMany({
-      where: { id: session.id, status: 'PENDING' },
-      data: { status: 'ACCEPTED' },
-    });
-    if (claimed.count !== 1) return;
+    if (outcome.kind !== 'claimed') return;
 
     let conv: { id: string; internalId: string; expiresAt: number };
     try {
@@ -1333,20 +1466,42 @@ export class InstantMatchService implements OnModuleInit {
       throw new BadRequestException('Could not open your chat — try again');
     }
 
-    await this.prisma.matchSession.update({
-      where: { id: session.id },
-      data: {
-        // Store the internal id: it is the stable foreign key, while the
-        // public id is what the client routes on.
-        conversationId: conv.internalId,
-        // The chat's own lifecycle starts here, and the deadline is recorded
-        // on the session rather than inferred from the conversation — this is
-        // the row every send is authorized against.
-        chatStatus: 'ACTIVE',
-        chatExpiresAt: new Date(conv.expiresAt),
-        matchReason: session.activity,
-      },
-    });
+    try {
+      await this.prisma.matchSession.update({
+        where: { id: session.id },
+        data: {
+          // Store the internal id: it is the stable foreign key, while the
+          // public id is what the client routes on.
+          conversationId: conv.internalId,
+          // The chat's own lifecycle starts here, and the deadline is
+          // recorded on the session rather than inferred from the
+          // conversation — this is the row every send is authorized against.
+          chatStatus: 'ACTIVE',
+          chatExpiresAt: new Date(conv.expiresAt),
+          matchReason: session.activity,
+        },
+      });
+    } catch (err) {
+      // Linking failed (IM-4). Left alone, the session sat ACCEPTED with no
+      // chat, nobody was told, and no sweep looks at ACCEPTED rows. Undo it as
+      // a failed conversation insert is undone: the session goes back to
+      // PENDING (the sweep then expires it and tells both people) and the
+      // empty conversation is closed for the cleanup to remove.
+      await this.prisma.matchSession
+        .updateMany({
+          where: { id: session.id, status: 'ACCEPTED' },
+          data: { status: 'PENDING' },
+        })
+        .catch(() => undefined);
+      await this.prisma.conversation
+        .updateMany({
+          where: { id: conv.internalId },
+          data: { status: 'ENDED', expiresAt: new Date() },
+        })
+        .catch(() => undefined);
+      this.logger.error(`match:accept failed to link ${session.id}`, err);
+      throw new BadRequestException('Could not open your chat — try again');
+    }
 
     // Both users' cards are looked up so each side's `match:accepted` carries
     // the person they matched with. The client renders the Matched state and
@@ -1409,14 +1564,23 @@ export class InstantMatchService implements OnModuleInit {
     });
     if (removed.count > 0) await this.broadcastQueueStats();
 
+    // Bounded (IM-18): after an outage the backlog is worked off a tick at a
+    // time instead of in one unbounded pass.
     const expired = await this.prisma.matchSession.findMany({
       where: { status: 'PENDING', expiresAt: { lt: now } },
       select: { id: true },
+      orderBy: { expiresAt: 'asc' },
+      take: EXPIRE_BATCH,
     });
 
     let handled = 0;
     for (const { id } of expired) {
-      if (await this.expireSession(id)) handled += 1;
+      // One session's failure must not strand everyone after it (IM-3).
+      try {
+        if (await this.expireSession(id)) handled += 1;
+      } catch (err) {
+        this.logger.error(`match:expire failed ${id}`, err);
+      }
     }
 
     if (handled > 0) this.logger.log(`match:expired ${handled} session(s)`);
@@ -1436,44 +1600,68 @@ export class InstantMatchService implements OnModuleInit {
    * queue. Returns false when another worker claimed it first, which keeps
    * the notifications single-delivery across multiple backend instances.
    */
-  private async expireSession(sessionId: string): Promise<boolean> {
-    const claimed = await this.prisma.matchSession.updateMany({
-      where: { id: sessionId, status: 'PENDING' },
-      data: { status: 'EXPIRED' },
-    });
-    if (claimed.count !== 1) return false;
-
+  private async expireSession(
+    sessionId: string,
+    why: 'timeout' | 'unavailable' = 'timeout',
+  ): Promise<boolean> {
+    // Read before the claim: the claim clears the stored requests (IM-9), and
+    // they are what puts people back in the queue.
     const session = await this.prisma.matchSession.findUnique({
       where: { id: sessionId },
       select: {
+        status: true,
         userAId: true,
         userBId: true,
+        aAccepted: true,
+        bAccepted: true,
         snapshotA: true,
         snapshotB: true,
       },
     });
-    if (!session) return false;
+    if (!session || session.status !== 'PENDING') return false;
+
+    const claimed = await this.prisma.matchSession.updateMany({
+      where: { id: sessionId, status: 'PENDING' },
+      data: { status: 'EXPIRED', ...scrubbedSnapshots(session.snapshotA) },
+    });
+    if (claimed.count !== 1) return false;
 
     const wasRequest = isDirectRequest(session.snapshotA);
-    const sides: Array<[string, unknown]> = [
-      [session.userAId, session.snapshotA],
-      [session.userBId, session.snapshotB],
+    const sides: Array<[string, unknown, boolean]> = [
+      [session.userAId, session.snapshotA, session.aAccepted],
+      [session.userBId, session.snapshotB, session.bAccepted],
     ];
 
-    for (const [uid, snap] of sides) {
-      const requeued = await this.requeue(uid, readQueueSnapshot(snap));
-      // A request nobody answered is withdrawn, not "timed out": the sender
-      // should know it is gone, and the other person that it lapsed.
-      const subject = !wasRequest
-        ? 'Match timed out'
-        : uid === session.userAId
-          ? 'Request withdrawn — no answer in 30 seconds'
-          : 'Request expired';
-      realtimeGatewayRef?.emitMatchDeclined(uid, {
-        reason: requeued ? `${subject} — back to searching` : subject,
-        requeued,
-      });
-      if (requeued) await this.tryMatch(uid);
+    for (const [uid, snap, accepted] of sides) {
+      // Each person separately: a failure for one must not leave the other
+      // unqueued and untold (IM-3).
+      try {
+        // Back to searching only if they answered or are still here (IM-1):
+        // otherwise someone who closed the app is offered to real people
+        // every time a match times out.
+        const resume =
+          why === 'unavailable' || accepted || (await this.isPresent(uid));
+        const requeued = resume
+          ? await this.requeue(uid, readQueueSnapshot(snap))
+          : false;
+        // A request nobody answered is withdrawn, not "timed out": the sender
+        // should know it is gone, and the other person that it lapsed.
+        const subject =
+          why === 'unavailable'
+            ? 'This match is no longer available'
+            : !wasRequest
+              ? 'Match timed out'
+              : uid === session.userAId
+                ? 'Request withdrawn — no answer in 30 seconds'
+                : 'Request expired';
+        realtimeGatewayRef?.emitMatchDeclined(uid, {
+          reason: requeued ? `${subject} — back to searching` : subject,
+          requeued,
+        });
+        if (requeued) await this.tryMatch(uid);
+      } catch (err) {
+        this.logger.error(`match:expire side failed ${sessionId} ${uid}`, err);
+      }
     }
 
     return true;
@@ -1506,6 +1694,16 @@ export class InstantMatchService implements OnModuleInit {
         ) {
           return false;
         }
+        // Already searching again, on their own newer request: that one
+        // stands (IM-5). A late re-queue used to overwrite it with the old
+        // criteria and reset the wait.
+        const current = await this.prisma.matchQueueEntry.findUnique({
+          where: { userId },
+          select: { expiresAt: true },
+        });
+        if (current && current.expiresAt.getTime() > Date.now()) {
+          return 'already';
+        }
         const expiresAt = new Date(Date.now() + QUEUE_TTL_MS);
         const shared = {
           campus: snapshot.campus,
@@ -1522,8 +1720,15 @@ export class InstantMatchService implements OnModuleInit {
           create: { userId, joinedAt: new Date(), ...shared },
           update: { joinedAt: new Date(), ...shared },
         });
+        // As in joinQueue: a pairing may have claimed them between the
+        // checks and the write (IM-2).
+        if (await this.holdsLiveSession(userId)) {
+          await this.prisma.matchQueueEntry.deleteMany({ where: { userId } });
+          return false;
+        }
         return true;
       });
+      if (resumed === 'already') return true;
       if (!resumed) return false;
       realtimeGatewayRef?.emitSearchResumed(userId);
       await this.broadcastQueueStats();
@@ -1938,105 +2143,148 @@ export class InstantMatchService implements OnModuleInit {
       throw new ForbiddenException('Not part of this match');
     }
 
-    const claimed = await this.prisma.matchSession.updateMany({
-      where: { id: session.id, chatStatus: 'ACTIVE' },
-      data: {
-        chatStatus: 'ENDED_BY_USER',
-        endedById: userId,
-        endedAt: new Date(),
-      },
+    const ended = await this.endChat(session.id, {
+      chatStatus: 'ENDED_BY_USER',
+      endedById: userId,
+      endedAt: new Date(),
     });
-
-    const fresh = await this.prisma.matchSession.findUnique({
-      where: { id: session.id },
-    });
-    if (!fresh) return { ended: false, session: null };
-
-    if (claimed.count === 1) {
+    if (ended) {
       this.logger.log(`instant-match:chat-ended ${session.id} by=${userId}`);
-      // Close the conversation itself too, so any path that reads the
-      // conversation rather than the session also sees a dead chat.
-      await this.closeConversation(fresh.conversationId);
-      this.notifyChatEnded(fresh);
     }
 
+    const fresh =
+      ended ??
+      (await this.prisma.matchSession.findUnique({
+        where: { id: session.id },
+      }));
+    if (!fresh) return { ended: false, session: null };
+
     return {
-      ended: claimed.count === 1,
+      ended: ended !== null,
       session: this.toChatState(fresh, userId),
     };
+  }
+
+  /**
+   * Ends a chat: the claim and the teardown in ONE transaction (IM-9).
+   *
+   * They used to be two steps — claim the session ended, then close the
+   * conversation, swallowing any error — so a failed close left the
+   * transcript in place behind a session that said it was gone, and nothing
+   * ever retried (the sweep only looks at ACTIVE chats). Now a failure undoes
+   * the claim: leaving reports the error and can be tried again, and expiry
+   * is retried by the next sweep. Only an ACCEPTED session's chat can end
+   * (IM-6): every session row starts with `chatStatus` ACTIVE, so without the
+   * status check a pending match could be "left" by id.
+   *
+   * The photos and videos the chat carried are recorded for deletion in the
+   * same transaction and deleted once it commits (IM-8); deleting the
+   * messages alone left them in storage. Returns the ended session, or null
+   * when it was not this call that ended it.
+   */
+  private async endChat(
+    sessionId: string,
+    data: Prisma.MatchSessionUpdateManyMutationInput,
+  ): Promise<InstantMatchSession | null> {
+    const result = await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.matchSession.updateMany({
+        where: { id: sessionId, status: 'ACCEPTED', chatStatus: 'ACTIVE' },
+        data,
+      });
+      if (claimed.count !== 1) return null;
+      const fresh = await tx.matchSession.findUnique({
+        where: { id: sessionId },
+      });
+      if (!fresh) return null;
+      const media = fresh.conversationId
+        ? await this.tearDownConversation(tx, fresh.conversationId)
+        : [];
+      return { fresh, media };
+    });
+    if (!result) return null;
+    this.mediaCleanup?.drainSoon(result.media);
+    this.notifyChatEnded(result.fresh);
+    return result.fresh;
   }
 
   /** Ends a chat because its 24h window closed. Same claim-once discipline as
    *  leaving, so the sweep and a concurrent read cannot both notify. */
   private async expireChatSession(sessionId: string): Promise<boolean> {
-    const claimed = await this.prisma.matchSession.updateMany({
-      where: { id: sessionId, chatStatus: 'ACTIVE' },
-      data: { chatStatus: 'EXPIRED', endedAt: new Date() },
-    });
-    if (claimed.count !== 1) return false;
-
-    const fresh = await this.prisma.matchSession.findUnique({
-      where: { id: sessionId },
-    });
-    if (!fresh) return false;
-
-    this.logger.log(`instant-match:chat-expired ${sessionId}`);
-    await this.closeConversation(fresh.conversationId);
-    this.notifyChatEnded(fresh);
-    return true;
+    try {
+      const ended = await this.endChat(sessionId, {
+        chatStatus: 'EXPIRED',
+        endedAt: new Date(),
+      });
+      if (!ended) return false;
+      this.logger.log(`instant-match:chat-expired ${sessionId}`);
+      return true;
+    } catch (err) {
+      // Nothing changed; the next sweep (or the next read) tries again.
+      this.logger.warn(
+        `Could not end instant-match chat ${sessionId}`,
+        err instanceof Error ? err.stack : undefined,
+      );
+      return false;
+    }
   }
 
   /**
-   * Tears a session's conversation down for good.
+   * Tears a session's conversation down for good, inside the caller's
+   * transaction (see endChat). Returns the storage keys of the photos and
+   * videos it carried, already recorded as owed deletes.
    *
    * Marking the row ENDED is not enough on its own. The messages stay
    * queryable by anything that reads the conversation directly — a stale tab
-   * replaying its history request, an IndexedDB rehydrate, a future session
-   * that somehow lands on the same id — and "the chat is over" has to mean
-   * the transcript is gone, not merely hidden. So the messages are deleted
-   * and the conversation is stamped closed in one transaction: either the
-   * session's chat is fully torn down or nothing changed and the sweep will
-   * retry.
-   *
-   * `expiresAt` is pulled back to now as well, so every window-based query in
-   * the codebase agrees with `status` about this conversation being dead.
+   * replaying its history request, an IndexedDB rehydrate — and "the chat is
+   * over" has to mean the transcript is gone, not merely hidden. `expiresAt`
+   * is pulled back to now as well, so every window-based query in the
+   * codebase agrees with `status` about this conversation being dead.
    */
-  private async closeConversation(
-    conversationId: string | null,
-  ): Promise<void> {
-    if (!conversationId) return;
-    try {
-      await this.prisma.$transaction(async (tx) => {
-        // The denormalised preview is cleared before the messages it points
-        // at, so no ordering inside the transaction leaves a dangling
-        // `lastMessageId`.
-        await tx.conversation.updateMany({
-          where: { id: conversationId },
-          data: {
-            status: 'ENDED',
-            expiresAt: new Date(),
-            lastMessageId: null,
-            lastMessageText: null,
-            lastMessageType: null,
-            lastMessageAt: null,
-            lastMessageSenderId: null,
-          },
-        });
-        await tx.conversationParticipant.updateMany({
-          where: { conversationId },
-          data: { unreadCount: 0, lastReadAt: new Date() },
-        });
-        // Reactions, receipts and deleted-message rows cascade from Message;
-        // anything that does not is scoped to a message id that no longer
-        // exists.
-        await tx.message.deleteMany({ where: { conversationId } });
-      });
-    } catch (err) {
-      this.logger.warn(
-        `Could not close instant-match conversation ${conversationId}`,
-        err instanceof Error ? err.stack : undefined,
-      );
-    }
+  private async tearDownConversation(
+    tx: Prisma.TransactionClient,
+    conversationId: string,
+  ): Promise<string[]> {
+    const attached = await tx.message.findMany({
+      where: { conversationId, attachmentMediaId: { not: null } },
+      select: { attachmentMediaId: true },
+    });
+    const mediaIds = attached
+      .map((m) => m.attachmentMediaId)
+      .filter((id): id is string => id !== null);
+    const media = mediaIds.length
+      ? await tx.media.findMany({
+          where: { id: { in: mediaIds } },
+          select: { objectKey: true },
+        })
+      : [];
+    const owed =
+      (await this.mediaCleanup?.recordPendingDeletions(
+        media.map((m) => m.objectKey),
+        tx,
+      )) ?? [];
+
+    // The denormalised preview is cleared before the messages it points at,
+    // so no ordering inside the transaction leaves a dangling `lastMessageId`.
+    await tx.conversation.updateMany({
+      where: { id: conversationId },
+      data: {
+        status: 'ENDED',
+        expiresAt: new Date(),
+        lastMessageId: null,
+        lastMessageText: null,
+        lastMessageType: null,
+        lastMessageAt: null,
+        lastMessageSenderId: null,
+      },
+    });
+    await tx.conversationParticipant.updateMany({
+      where: { conversationId },
+      data: { unreadCount: 0, lastReadAt: new Date() },
+    });
+    // Reactions, receipts and deleted-message rows cascade from Message;
+    // anything that does not is scoped to a message id that no longer exists.
+    await tx.message.deleteMany({ where: { conversationId } });
+    return owed;
   }
 
   /** Tells both sides, each from their own point of view. Fire-and-forget:
@@ -2301,8 +2549,39 @@ export class InstantMatchService implements OnModuleInit {
   }
 }
 
-/** Internal signal used to roll back a pair claim that lost its race. */
-class PairClaimLost extends Error {}
+/**
+ * Internal signal used to roll back a pair claim that lost its race. `side`
+ * says whose row was the problem; `staleRowOf` names someone whose queue row
+ * should not exist because they already hold a match.
+ */
+class PairClaimLost extends Error {
+  constructor(
+    readonly side: 'searcher' | 'candidate',
+    readonly staleRowOf?: string,
+  ) {
+    super('pair claim lost');
+  }
+}
+
+type ClaimResult =
+  | { outcome: 'claimed'; session: { id: string; expiresAt: Date } }
+  | { outcome: 'searcher-gone' | 'candidate-lost' };
+
+/**
+ * What a session keeps of the two queue requests once it is no longer
+ * PENDING: nothing, apart from the marker that it was a direct request. The
+ * requests (campus, area, GPS) are only needed to re-queue people while the
+ * match is being answered (IM-9).
+ */
+function scrubbedSnapshots(snapshotA: unknown): {
+  snapshotA: Prisma.InputJsonValue | typeof Prisma.DbNull;
+  snapshotB: typeof Prisma.DbNull;
+} {
+  return {
+    snapshotA: isDirectRequest(snapshotA) ? { requested: true } : Prisma.DbNull,
+    snapshotB: Prisma.DbNull,
+  };
+}
 
 /** True for a session created by a direct request (see `claimPair`). */
 function isDirectRequest(snapshotA: unknown): boolean {
