@@ -92,6 +92,11 @@ function decodeCursor(raw?: string): SearchCursor {
   }
 }
 
+/** How many recent searches the list shows. */
+const RECENT_SEARCHES_SHOWN = 15;
+/** How many are kept per person (SOC-30); the rest are dropped. */
+const RECENT_SEARCHES_KEPT = 30;
+
 @Injectable()
 export class SearchService {
   private readonly logger = new Logger('SEARCH');
@@ -347,6 +352,7 @@ export class SearchService {
                 userSearchSql({
                   query: searchQuery,
                   viewerId: currentUserId ?? null,
+                  knownViewer: viewer ?? undefined,
                   excludedIds: searchExcludedUserIds,
                   includeBio: true,
                   take: limit,
@@ -361,6 +367,7 @@ export class SearchService {
                 communitySearchSql({
                   query: searchQuery,
                   viewerId: currentUserId ?? null,
+                  knownViewer: viewer ?? undefined,
                   includeDescription: true,
                   take: limit,
                 }),
@@ -766,6 +773,7 @@ export class SearchService {
         userSearchSql({
           query: searchQuery,
           viewerId: currentUserId ?? null,
+          knownViewer: suggestionViewer ?? undefined,
           excludedIds: suggestionExcludedUserIds,
           includeBio: false,
           take: 5,
@@ -775,6 +783,7 @@ export class SearchService {
         communitySearchSql({
           query: searchQuery,
           viewerId: currentUserId ?? null,
+          knownViewer: suggestionViewer ?? undefined,
           includeDescription: false,
           take: 5,
         }),
@@ -831,8 +840,8 @@ export class SearchService {
     try {
       const recents = await this.prisma.recentSearch.findMany({
         where: { userId },
-        orderBy: { updatedAt: 'desc' },
-        take: 15,
+        orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+        take: RECENT_SEARCHES_SHOWN,
         select: { term: true },
       });
       return recents.map((r) => r.term);
@@ -841,6 +850,12 @@ export class SearchService {
     }
   }
 
+  /**
+   * Remembers a term, keeping each person's newest RECENT_SEARCHES_KEPT
+   * (SOC-30). Only 15 are ever shown, but every distinct term used to be kept
+   * forever; the rest are now dropped as new ones arrive. A few more than are
+   * shown are kept, so removing one from the list brings the next one back.
+   */
   async addRecentSearch(userId: string, term: string) {
     if (!userId || !term || !term.trim()) return [];
     const cleanTerm = term.trim();
@@ -850,7 +865,23 @@ export class SearchService {
         create: { userId, term: cleanTerm },
         update: { updatedAt: new Date() },
       });
-      return this.getRecentSearches(userId);
+      const newest = await this.prisma.recentSearch.findMany({
+        where: { userId },
+        orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+        take: RECENT_SEARCHES_KEPT + 1,
+        select: { id: true, term: true },
+      });
+      if (newest.length > RECENT_SEARCHES_KEPT) {
+        await this.prisma.recentSearch.deleteMany({
+          where: {
+            userId,
+            id: {
+              notIn: newest.slice(0, RECENT_SEARCHES_KEPT).map((r) => r.id),
+            },
+          },
+        });
+      }
+      return newest.slice(0, RECENT_SEARCHES_SHOWN).map((r) => r.term);
     } catch {
       return [];
     }

@@ -75,9 +75,38 @@ export interface CommunitySearchRow {
  * college (both hold an active affiliation to it), recently active. Unavailable accounts — deleted, suspended,
  * blocked either way, and the viewer — never match.
  */
+/**
+ * The viewer as a search's caller already resolved them: their id and the
+ * college of their ACTIVE affiliation.
+ */
+export interface KnownViewer {
+  id: string;
+  collegeId: string | null;
+}
+
+/**
+ * The one-row `me` both searches start from. A caller that has already read
+ * the viewer passes them in: each search used to read the affiliation again
+ * itself, so a search across everything read it three times (E-6). Without
+ * one it is read here, as before. An anonymous viewer is no row at all.
+ */
+function meRow(viewerId: string | null, known?: KnownViewer): Prisma.Sql {
+  if (known) {
+    return Prisma.sql`SELECT ${known.id}::text AS "id", ${known.collegeId}::text AS "collegeId"`;
+  }
+  // The viewer's campus is their ACTIVE affiliation, not the User.collegeId
+  // mirror (legacy rows the backfill skipped keep it).
+  return Prisma.sql`
+      SELECT mu."id",
+        ${activeAffiliationCollegeIdSql(Prisma.raw('mu."id"'))} AS "collegeId"
+      FROM "User" mu WHERE mu."id" = ${viewerId ?? ''}`;
+}
+
 export function userSearchSql(opts: {
   query: string;
   viewerId: string | null;
+  /** The viewer already resolved by the caller; skips reading them again. */
+  knownViewer?: KnownViewer;
   excludedIds: string[];
   includeBio: boolean;
   take: number;
@@ -86,15 +115,8 @@ export function userSearchSql(opts: {
   const contains = `%${escapeLike(q)}%`;
   const prefix = `${escapeLike(q)}%`;
   const wordPrefix = `% ${escapeLike(q)}%`;
-  const viewer = opts.viewerId ?? '';
   return Prisma.sql`
-    WITH me AS (
-      -- The viewer's campus is their ACTIVE affiliation, not the
-      -- User.collegeId mirror (legacy rows the backfill skipped keep it).
-      SELECT mu."id",
-        ${activeAffiliationCollegeIdSql(Prisma.raw('mu."id"'))} AS "collegeId"
-      FROM "User" mu WHERE mu."id" = ${viewer}
-    ),
+    WITH me AS (${meRow(opts.viewerId, opts.knownViewer)}),
     candidates AS (
       SELECT u."id",
         -- Every branch is a bound parameter, so without ::int Postgres types the
@@ -174,6 +196,8 @@ export function userSearchSql(opts: {
 export function communitySearchSql(opts: {
   query: string;
   viewerId: string | null;
+  /** The viewer already resolved by the caller; skips reading them again. */
+  knownViewer?: KnownViewer;
   includeDescription: boolean;
   take: number;
 }): Prisma.Sql {
@@ -181,16 +205,9 @@ export function communitySearchSql(opts: {
   const contains = `%${escapeLike(q)}%`;
   const prefix = `${escapeLike(q)}%`;
   const wordPrefix = `% ${escapeLike(q)}%`;
-  const viewer = opts.viewerId ?? '';
   const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
   return Prisma.sql`
-    WITH me AS (
-      -- The viewer's campus is their ACTIVE affiliation, not the
-      -- User.collegeId mirror (legacy rows the backfill skipped keep it).
-      SELECT mu."id",
-        ${activeAffiliationCollegeIdSql(Prisma.raw('mu."id"'))} AS "collegeId"
-      FROM "User" mu WHERE mu."id" = ${viewer}
-    ),
+    WITH me AS (${meRow(opts.viewerId, opts.knownViewer)}),
     candidates AS (
       SELECT c."id",
         CASE
