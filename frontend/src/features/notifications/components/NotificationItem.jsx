@@ -18,6 +18,13 @@ function NotificationItem({
   const notifType = (notif.type || '').toLowerCase();
   const isFollow = notifType === 'follow';
   const targetUsername = actor?.username || notif.actor?.username || notif.metadata?.actorUsername || '';
+  // Whether the viewer follows this person back, when the server says (FEP-11);
+  // left undefined otherwise, so the button looks it up as it always did.
+  const followBack =
+    typeof notif.actor?.isFollowing === 'boolean' &&
+    notif.actor?.username?.toLowerCase() === targetUsername.toLowerCase()
+      ? notif.actor.isFollowing
+      : undefined;
 
   // Strictly "someone joined your activity" — exclude invites
   const isActivityJoin = notifType === 'join_request' || notifType === 'activity_join';
@@ -196,7 +203,7 @@ function NotificationItem({
         <div className={styles.actionSlot}>
           {isFollow && targetUsername ? (
             <div onClick={(e) => e.stopPropagation()}>
-              <FollowButton targetUsername={targetUsername} size="sm" />
+              <FollowButton targetUsername={targetUsername} initialFollowing={followBack} size="sm" />
             </div>
           ) : postMedia ? (
             <img src={postMedia} className={styles.previewImg} alt="" />

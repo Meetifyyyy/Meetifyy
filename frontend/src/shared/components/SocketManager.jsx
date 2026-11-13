@@ -13,6 +13,11 @@ import { appendMessageToCache, matchesConversationId, getConversationAliases, up
 import { isInstantChat, isInstantMatchChatOpen } from '../utils/instantChatRouting';
 import { requestOpenInstantMatchChat } from '../../features/instant-match/context/InstantMatchContext';
 import { patchInviteNotification } from '@features/notifications/utils/inviteLifecycle';
+import {
+  applyPushedUnreadCount,
+  insertPushedNotification,
+  isNotificationListQuery,
+} from '../hooks/useNotifications';
 import { applyOwnMembership, applyOthersMembership } from '../../features/messages/shared/utils/groupMembership';
 import { applyMessageToConversationList, applyReadToConversationList, markUnsentInConversationList } from '../../features/messages/shared/utils/conversationList';
 import { applyOwnConversationPrefs, refreshJoinRequests, applyJoinRequestDecided } from '../../features/messages/shared/utils/conversationLiveState';
@@ -145,7 +150,8 @@ export default function SocketManager() {
         activityId: notification.metadata?.activityId || notification.entityId,
         metadata: notification.metadata,
       });
-      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      // The lists only: a state change never changes the unread count.
+      queryClient.invalidateQueries({ predicate: isNotificationListQuery });
       queryClient.invalidateQueries({ queryKey: ['activity-pending-invitations'] });
     };
 
@@ -159,13 +165,19 @@ export default function SocketManager() {
       const actorId = notification.actor?.id || notification.actorId || notification.metadata?.actorId;
       const selfId = currentUserRef.current?.id;
       if (actorId && selfId && String(actorId) === String(selfId)) {
-        // Still invalidate queries so counts/lists stay fresh, but no toast.
-        queryClient.invalidateQueries({ queryKey: ['notifications'] });
+        // Still refresh the lists, but no toast. Never written in: an echo
+        // of something this user did is not a row of their own feed.
+        queryClient.invalidateQueries({ predicate: isNotificationListQuery });
         return;
       }
 
-      // Invalidate queries so useNotifications hook fetches the latest
-      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      // Written into the loaded lists; refetched only when it cannot be. The
+      // unread count arrives on its own event (applyPushedUnreadCount).
+      const mine =
+        !notification.recipientId || !selfId || String(notification.recipientId) === String(selfId);
+      if (!mine || !insertPushedNotification(queryClient, notification)) {
+        queryClient.invalidateQueries({ predicate: isNotificationListQuery });
+      }
       // A new request changes the Follow requests row and page.
       if (notification.type?.toUpperCase() === 'FOLLOW_REQUEST') {
         queryClient.invalidateQueries({ queryKey: FOLLOW_REQUESTS_KEY });
@@ -323,8 +335,8 @@ export default function SocketManager() {
       }
     };
 
-    const handleNotificationCount = ({ count }) => {
-      queryClient.setQueryData(['notifications', 'unreadCount'], { count });
+    const handleNotificationCount = (payload) => {
+      applyPushedUnreadCount(queryClient, payload);
     };
 
     const handlePresenceUpdate = ({ userId, status, lastActive }) => {
@@ -1118,6 +1130,7 @@ export default function SocketManager() {
     socket.on('conversation:seen', handleOwnConversationSeen);
     socket.on('notification:updated', handleNotificationUpdated);
     socket.on('notification:count', handleNotificationCount);
+    socket.on('notifications:unread_count', handleNotificationCount);
     socket.on('presence:update', handlePresenceUpdate);
     socket.on('user:blocked', handleBlockStateChange);
     socket.on('user:unblocked', handleBlockStateChange);
@@ -1153,6 +1166,7 @@ export default function SocketManager() {
       socket.off('conversation:seen', handleOwnConversationSeen);
       socket.off('notification:updated', handleNotificationUpdated);
       socket.off('notification:count', handleNotificationCount);
+      socket.off('notifications:unread_count', handleNotificationCount);
       socket.off('presence:update', handlePresenceUpdate);
       socket.off('user:blocked', handleBlockStateChange);
       socket.off('user:unblocked', handleBlockStateChange);

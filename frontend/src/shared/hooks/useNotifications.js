@@ -33,8 +33,73 @@ export function notificationsQueryOptions(type) {
  * invalidations this hook used to run took it out along with the feeds. The
  * count is a number the mutations below already know the new value of.
  */
-const isNotificationListQuery = (query) =>
+export const isNotificationListQuery = (query) =>
   query.queryKey[0] === 'notifications' && query.queryKey[1] !== 'unreadCount';
+
+/** The type a cached list is narrowed to; undefined for the main feed. */
+const listType = (queryKey) =>
+  queryKey[1] && typeof queryKey[1] === 'object' ? queryKey[1].type : undefined;
+
+const listsRow = (data, id) =>
+  Array.isArray(data?.pages) &&
+  data.pages.some((page) => Array.isArray(page?.data) && page.data.some((n) => n.id === id));
+
+/**
+ * A notification the socket pushed, put at the top of every loaded list it
+ * belongs in (FEP-3).
+ *
+ * Each push used to invalidate `['notifications']`: every loaded page of
+ * every list (the side panel, the page, the invites tab) refetched, and the
+ * unread count with them, for one new row. The row arrives whole, so it is
+ * written in and nothing is fetched.
+ *
+ * Returns false when it cannot be placed safely, and the caller refetches:
+ * a row that arrives without its actor (an aggregated like is pushed bare),
+ * or one already listed (a repeat that moves to the top would take the next
+ * page's cursor with it).
+ */
+export function insertPushedNotification(queryClient, notification) {
+  if (!notification?.id || !notification.type) return false;
+  if (notification.actorId && !notification.actor) return false;
+  const type = String(notification.type).toUpperCase();
+  if (type === 'MESSAGE') return true;
+  const lists = queryClient.getQueryCache().findAll({ predicate: isNotificationListQuery });
+  if (lists.some((query) => listsRow(query.state.data, notification.id))) return false;
+  for (const query of lists) {
+    const wanted = listType(query.queryKey);
+    if (wanted && String(wanted).toUpperCase() !== type) continue;
+    queryClient.setQueryData(query.queryKey, (old) => {
+      const first = old?.pages?.[0];
+      if (!Array.isArray(first?.data)) return old;
+      return {
+        ...old,
+        pages: [{ ...first, data: [notification, ...first.data] }, ...old.pages.slice(1)],
+      };
+    });
+  }
+  return true;
+}
+
+/**
+ * Marks the lists out of date without fetching them now: they refresh the
+ * next time they are shown. For events whose row arrives on its own
+ * `notification:new` (an invitation), so the push is not fetched twice.
+ */
+export function markNotificationListsStale(queryClient) {
+  queryClient.invalidateQueries({ predicate: isNotificationListQuery, refetchType: 'none' });
+}
+
+/**
+ * The bell count the server pushes after every change (FEP-2). The server
+ * sends it as `notifications:unread_count`; this app listened only for
+ * `notification:count`, which nothing sends, so the count was refetched
+ * instead. Anything but a non-negative number is ignored.
+ */
+export function applyPushedUnreadCount(queryClient, payload) {
+  const count = payload?.count;
+  if (typeof count !== 'number' || !Number.isFinite(count) || count < 0) return;
+  queryClient.setQueryData(UNREAD_COUNT_KEY, { count });
+}
 
 /** Apply `fn` to every notification row across all cached list pages. */
 function mapRows(old, fn) {

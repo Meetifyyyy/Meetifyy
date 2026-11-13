@@ -8,6 +8,7 @@ import { commentLikeKey, writeCommentLike } from '@features/feed/hooks/useLikeCo
 import { useAuth } from '../context/AuthContext';
 import { showToast } from '../utils/toast';
 import { useConversations } from './useMessages';
+import { markNotificationListsStale } from './useNotifications';
 import { PROFILE_KEYS, persistCachedProfile } from './useProfile';
 import { toggleRegistry } from '../utils/mutationRegistry';
 import { FOLLOW_REQUESTED, readFollowState, writeServerFollowState } from '../utils/followState';
@@ -802,8 +803,7 @@ export function useGlobalSocketSync() {
         case 'invitation:new':
         case 'invitation:updated': {
           queryClient.invalidateQueries({ queryKey: ['activity-pending-invitations'] });
-          queryClient.invalidateQueries({ queryKey: ['notifications'] });
-          queryClient.invalidateQueries({ queryKey: ['notifications', 'unreadCount'] });
+          markNotificationListsStale(queryClient);
           queryClient.invalidateQueries({ queryKey: ['activities'] });
           break;
         }
@@ -815,8 +815,7 @@ export function useGlobalSocketSync() {
 
     const handleDirectInvitationEvent = () => {
       queryClient.invalidateQueries({ queryKey: ['activity-pending-invitations'] });
-      queryClient.invalidateQueries({ queryKey: ['notifications'] });
-      queryClient.invalidateQueries({ queryKey: ['notifications', 'unreadCount'] });
+      markNotificationListsStale(queryClient);
       queryClient.invalidateQueries({ queryKey: ['activities'] });
     };
 
