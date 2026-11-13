@@ -4,7 +4,9 @@ import {
   ExecutionContext,
   Optional,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { RateLimitService } from '../rate-limit/rate-limit.service';
+import { SKIP_ANONYMOUS_GLOBAL_LIMIT_KEY } from '../rate-limit/rate-limit.decorator';
 import {
   applyRateLimitHeaders,
   rateLimitException,
@@ -58,6 +60,9 @@ export class RateLimitGuard implements CanActivate {
     // Optional so the guard still functions in test modules that do not wire
     // authentication; without it every request is treated as anonymous.
     @Optional() private readonly jwtGuard?: JwtGuard,
+    // Optional for the same reason: only routes that opt out of the anonymous
+    // tier need it.
+    @Optional() private readonly reflector?: Reflector,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -73,6 +78,10 @@ export class RateLimitGuard implements CanActivate {
 
     const userId = await this.resolveUserId(request);
 
+    // A route that is anonymous by nature (session refresh) governs itself;
+    // pooling its callers per IP here would limit a whole shared address.
+    if (!userId && this.skipsAnonymousTier(context)) return true;
+
     const decision = userId
       ? await this.rateLimit.consume('global.user', userId)
       : await this.rateLimit.consumeAll([
@@ -87,6 +96,15 @@ export class RateLimitGuard implements CanActivate {
     }
 
     return true;
+  }
+
+  private skipsAnonymousTier(context: ExecutionContext): boolean {
+    return (
+      this.reflector?.getAllAndOverride<boolean | undefined>(
+        SKIP_ANONYMOUS_GLOBAL_LIMIT_KEY,
+        [context.getHandler(), context.getClass()],
+      ) === true
+    );
   }
 
   /**

@@ -14,12 +14,14 @@ import {
   Prisma,
   ReauthPurpose,
   UserOtpPurpose,
+  UserSessionRevokedReason,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SupabaseService } from '../supabase/supabase.service';
 import { UserOtpService } from '../otp/user-otp.service';
 import { ADDRESS_MAILER, type AddressMailer } from '../otp/address-mailer';
 import { AuthService, clearAuthSyncCache } from '../auth/auth.service';
+import { UserSessionService } from '../auth/session/user-session.service';
 import type { AuthenticatedUser } from '../common/types/authenticated-request';
 import {
   checkEmailFormat,
@@ -102,11 +104,13 @@ export class AccountEmailService {
     private readonly policy: EmailChangePolicyService,
     private readonly rateLimit: RateLimitService,
     @Inject(ADDRESS_MAILER) private readonly mailer: AddressMailer,
+    private readonly sessions: UserSessionService,
   ) {}
 
   async getStatus(
     userId: string,
     reconciled = false,
+    sessionId: string | null = null,
   ): Promise<{
     email: string | null;
     collegeEmail: string | null;
@@ -134,8 +138,8 @@ export class AccountEmailService {
     ]);
     // Once at most: a reconcile that cannot reach Supabase leaves the intent.
     if (!reconciled && intent && intent.expiresAt <= new Date()) {
-      await this.reconcile(userId);
-      return this.getStatus(userId, true);
+      await this.reconcile(userId, sessionId);
+      return this.getStatus(userId, true, sessionId);
     }
     const affiliation = user?.collegeAffiliation ?? null;
     return {
@@ -270,7 +274,7 @@ export class AccountEmailService {
     const sessionId = proof.sessionId ?? null;
     if (!proof.reauthToken && !proof.currentPassword) throw reauthRequired();
 
-    await this.reconcile(user.id);
+    await this.reconcile(user.id, sessionId);
     const current = await this.prisma.user.findUnique({
       where: { id: user.id },
       select: { email: true, displayName: true },
@@ -381,6 +385,7 @@ export class AccountEmailService {
       // let the intent expire). It is complete and notified: never undo it.
       if (err instanceof ConflictException) {
         clearAuthSyncCache(user.id);
+        await this.signOutOtherSessions(user.id, sessionId);
         return { email: target };
       }
       await this.restoreAuthEmail(user.id, previousEmail);
@@ -395,6 +400,7 @@ export class AccountEmailService {
     }
 
     clearAuthSyncCache(user.id);
+    await this.signOutOtherSessions(user.id, sessionId);
     this.logger.log(`Sign-in email changed for user ${user.id}`);
     this.notifyPrevious(user.id, previousEmail, name, target, eventId);
     return { email: target };
@@ -469,7 +475,10 @@ export class AccountEmailService {
    * (still inside its window) belongs to a request in progress and is left
    * alone. Cheap when there is nothing to do: one primary-key lookup.
    */
-  async reconcile(userId: string): Promise<void> {
+  async reconcile(
+    userId: string,
+    keepSessionId: string | null = null,
+  ): Promise<void> {
     const intent = await this.prisma.authEmailChangeIntent.findUnique({
       where: { userId },
     });
@@ -496,6 +505,7 @@ export class AccountEmailService {
           intent.newEmail,
         );
         clearAuthSyncCache(userId);
+        await this.signOutOtherSessions(userId, keepSessionId);
         this.logger.warn(
           `Reconciled an interrupted email change for ${userId}`,
         );
@@ -526,6 +536,38 @@ export class AccountEmailService {
       );
     }
     await this.clearIntent(userId);
+  }
+
+  /**
+   * A changed sign-in email ends every OTHER login, like a password change.
+   *
+   * The address is the account's recovery path, so whoever held a session before
+   * the change (a stolen device, a forgotten browser) must not keep it. The
+   * caller's own session stays, so the person who just proved themselves is not
+   * signed out of the screen they are using; when it cannot be identified
+   * nothing is spared, the same as the password-change route.
+   *
+   * Best effort after the commit: the change is complete on both sides, and an
+   * error here would make the client retry a code that is already spent. A
+   * failure is logged at error level so it is noticed rather than swallowed.
+   */
+  private async signOutOtherSessions(
+    userId: string,
+    keepSessionId: string | null,
+  ): Promise<void> {
+    try {
+      // `USER_LOGOUT_ALL`: the existing reason for "signed out everywhere
+      // else"; a dedicated one would need a schema migration.
+      await this.sessions.revokeAllForUser(
+        userId,
+        UserSessionRevokedReason.USER_LOGOUT_ALL,
+        keepSessionId ?? undefined,
+      );
+    } catch (err) {
+      this.logger.error(
+        `Could not end other sessions after an email change for ${userId}: ${errorMessage(err)}`,
+      );
+    }
   }
 
   private async clearIntent(userId: string): Promise<void> {

@@ -42,8 +42,14 @@ import { IS_PRODUCTION, APP_ENV, int, oneOf, str } from './env';
  * v13: inviting people to an activity got a per-host budget; it had none.
  * v14: link previews got a per-user budget; the route makes the server fetch a
  *     caller-chosen URL and had only the global tier.
+ * v15: session refresh is counted per presented refresh token, with a per-IP
+ *     backstop sized for a shared campus address, and no longer also counts
+ *     against the anonymous per-IP global tier. Both keyed on the IP alone, so
+ *     a campus of devices renewing on the hour limited and blocked itself.
+ *     OTP send/verify and the account re-auth/email-verify/delete-confirm
+ *     routes gained per-user budgets, and the OTP limiter fails closed.
  */
-export const POLICY_VERSION = 14;
+export const POLICY_VERSION = 15;
 
 export type RateLimitAlgorithm = 'fixed-window' | 'token-bucket';
 
@@ -52,6 +58,7 @@ export type RateLimitDimension =
   | 'user' // authenticated user id — unforgeable, from a verified JWT
   | 'ip' // client address, after trust-proxy resolution and IPv6 /64 collapse
   | 'account' // a submitted email address, normalised and hashed
+  | 'credential' // an opaque secret the caller presents (a refresh token), keyed-hashed
   | 'resource'; // a server-resolved id (conversation, target user, …)
 
 export interface RateLimitPolicy {
@@ -380,6 +387,26 @@ export const RATE_LIMIT_POLICIES = {
   },
 
   /**
+   * Code verification per signed-in user, across every OTP-backed route
+   * (re-authentication, personal-email verify, account-deletion confirm).
+   *
+   * Each code already burns after five wrong guesses and `UserOtpService`
+   * counts verifications per IP, but neither bounds one account cycling through
+   * fresh codes from many addresses. A person can legitimately request up to
+   * five codes in 15 minutes (`auth.otp.user`) and make five attempts at each,
+   * so 30 leaves a mistyper room and still caps a guesser. No block period: the
+   * window is short and the user is already authenticated.
+   */
+  'auth.otp.verify.user': {
+    points: 30,
+    duration: 900,
+    dimension: 'user',
+    onRedisFailure: 'closed',
+    sensitive: true,
+    message: 'Too many attempts. Please try again later.',
+  },
+
+  /**
    * The authenticated endpoints that trigger transactional email (welcome,
    * new-login notice, password-changed notice). Each fires once per real
    * lifecycle event, so 3/hour is generous and still caps the amplifier.
@@ -518,27 +545,65 @@ export const RATE_LIMIT_POLICIES = {
     message: 'Too many notification setting changes. Please try again later.',
   },
 
+  /**
+   * Session refresh, per presented refresh token.
+   *
+   * This used to count per IP (60 / 5 min, 15-minute block). A refresh carries
+   * an EXPIRED access token by definition, so the caller is anonymous to every
+   * other tier, and a campus NAT with a couple of thousand devices renewing on
+   * the hour sent ~170 refreshes per 5 minutes from one address: the whole
+   * campus was limited and then blocked for fifteen minutes. The token is the
+   * identity here. It is hashed with the server secret before it becomes a Redis
+   * key, so the raw credential never reaches Redis.
+   *
+   * A legitimate client presents each token once (a rotation retires it) and
+   * perhaps a few more times on a retry after a provider timeout, so 20 per
+   * 5 minutes is far above real use and still stops a loop replaying one token.
+   * The block is short because the caller is a signed-in person, not a guesser.
+   *
+   * A caller can invent a fresh token per request to get a fresh bucket, which
+   * is why `auth.session.refresh.ip` exists as the backstop.
+   *
+   * OPEN, unlike every other auth policy here, and deliberately.
+   *
+   * This endpoint had no callers when it was written, so failing closed cost
+   * nothing. It has them now — every open tab renews through it as its access
+   * cookie expires — which turned a Redis outage into an application-wide
+   * sign-out: the limiter refuses, nobody can renew, and sessions drop one by
+   * one as their tokens age out.
+   *
+   * Failing open gives up a bound on replaying this route. That bound was
+   * worth little: the caller must already hold a valid refresh token, so it is
+   * not an oracle for guessing anything, and a replayed token is caught by
+   * rotation's own replay detection, which burns the family. Trading a weak
+   * limit for not signing everybody out when a cache blips is the right way
+   * round.
+   */
   'auth.session.refresh': {
-    points: 60,
+    points: 20,
     duration: 300,
-    blockDuration: 900,
+    blockDuration: 300,
+    dimension: 'credential',
+    onRedisFailure: 'open',
+    sensitive: true,
+    message: 'Too many attempts. Please try again later.',
+  },
+
+  /**
+   * The per-address backstop for session refresh, sized for a shared address.
+   *
+   * 2,000 devices renewing on a one-hour access-token lifetime is about 170
+   * refreshes per 5 minutes from one campus gateway, and a term-start surge or
+   * a restart that expires every token at once is several times that, so this
+   * sits an order of magnitude above steady state. It exists only to bound a
+   * caller minting a new made-up token per request, and a rejected one costs a
+   * single indexed lookup. No block period: a penalty on a shared address
+   * punishes everybody behind it.
+   */
+  'auth.session.refresh.ip': {
+    points: 3000,
+    duration: 300,
     dimension: 'ip',
-    /**
-     * OPEN, unlike every other auth policy here, and deliberately.
-     *
-     * This endpoint had no callers when it was written, so failing closed cost
-     * nothing. It has them now — every open tab renews through it as its access
-     * cookie expires — which turned a Redis outage into an application-wide
-     * sign-out: the limiter refuses, nobody can renew, and sessions drop one by
-     * one as their tokens age out.
-     *
-     * Failing open gives up a bound on replaying this route. That bound was
-     * worth little: the caller must already hold a valid refresh cookie, so it
-     * is not an oracle for guessing anything, and a replayed token is caught by
-     * rotation's own replay detection, which burns the family. Trading a weak
-     * limit for not signing everybody out when a cache blips is the right way
-     * round.
-     */
     onRedisFailure: 'open',
     sensitive: true,
     message: 'Too many attempts. Please try again later.',

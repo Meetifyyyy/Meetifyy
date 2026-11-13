@@ -263,9 +263,13 @@ export class RateLimitService {
     identifier: string,
   ): string {
     // User and resource ids are already internal, opaque and present in logs;
-    // IPs and email addresses are personal data and are hashed.
+    // IPs and email addresses are personal data and are hashed. A credential
+    // is hashed too, with the server secret, so a presented refresh token never
+    // becomes a Redis key (or shows up in a key dump) in a usable form.
     const needsHashing =
-      spec.dimension === 'ip' || spec.dimension === 'account';
+      spec.dimension === 'ip' ||
+      spec.dimension === 'account' ||
+      spec.dimension === 'credential';
     const id = needsHashing ? this.hashIdentifier(identifier) : identifier;
     return `${policy}:${spec.dimension}:${id}`;
   }

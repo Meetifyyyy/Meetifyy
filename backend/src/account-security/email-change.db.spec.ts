@@ -22,6 +22,7 @@ import type { AddressMailer } from '../otp/address-mailer';
 import type { AuthenticatedUser } from '../common/types/authenticated-request';
 import type { RateLimitService } from '../common/rate-limit/rate-limit.service';
 import type { CommunitiesService } from '../communities/communities.service';
+import { UserSessionService } from '../auth/session/user-session.service';
 
 /**
  * The email-change security controls, against a real Postgres.
@@ -275,6 +276,7 @@ describeDb('email change security (database)', () => {
       policy,
       rateLimit,
       mailer,
+      new UserSessionService(prisma),
     );
     campus = new CampusAffiliationService(
       prisma,

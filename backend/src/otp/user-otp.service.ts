@@ -7,10 +7,12 @@ import {
 } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { UserOtpPurpose } from '@prisma/client';
+import { RateLimiterMemory, RateLimiterRes } from 'rate-limiter-flexible';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { config } from '../config';
+import { errorMessage } from '../common/utils/error.util';
 import {
   OTP_LENGTH,
   OTP_MAX_ATTEMPTS,
@@ -88,6 +90,9 @@ export interface OtpChallengeState {
 @Injectable()
 export class UserOtpService {
   private readonly logger = new Logger(UserOtpService.name);
+
+  /** Per-instance counters used while Redis cannot answer, one per limit shape. */
+  private readonly memoryLimiters = new Map<string, RateLimiterMemory>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -462,9 +467,15 @@ export class UserOtpService {
   /**
    * Shared counter, mirroring `AdminAuthService.enforceRateLimit`.
    *
-   * Fails open when Redis is not configured, which is the same trade the admin
-   * flow already makes: the per-code attempt ceiling and the database-backed
-   * cooldown are the guards that do not depend on Redis being present.
+   * FAILS CLOSED. When Redis is absent or errors, the budget is counted
+   * per-instance in memory and still enforced, the same meaning "closed" has in
+   * the rate-limit policy map. It used to log and carry on, which left only the
+   * 60 s cooldown and five guesses per code — about 300 guesses an hour per
+   * user and purpose — exactly while an attacker would be waiting for the cache
+   * to fail. Redis commands now give up after two seconds, so an outage is a
+   * real state this path has to survive. Per instance is looser than the
+   * shared counter when there are several replicas, but it is a bound, and a
+   * legitimate user still gets through their handful of requests.
    */
   private async enforceRateLimit(
     bucket: string,
@@ -472,28 +483,58 @@ export class UserOtpService {
     windowSec: number,
   ): Promise<void> {
     const client = this.redisService?.getClient?.();
-    if (!client) return;
+    if (!client) {
+      await this.enforceInMemory(bucket, max, windowSec);
+      return;
+    }
     const key = `user-otp-rl:${bucket}`;
     try {
       const count = await client.incr(key);
       if (count === 1) await client.expire(key, windowSec);
       if (count > max) {
         const ttl = await client.ttl(key).catch(() => windowSec);
-        throw new HttpException(
-          {
-            code: 'OTP_RATE_LIMITED',
-            message: `Too many requests. Try again in ${Math.max(1, Math.ceil(ttl / 60))} minute(s).`,
-            retryAfterSeconds: ttl > 0 ? ttl : windowSec,
-          },
-          HttpStatus.TOO_MANY_REQUESTS,
-        );
+        throw this.rateLimited(ttl > 0 ? ttl : windowSec);
       }
     } catch (err) {
       if (err instanceof HttpException) throw err;
-      // A Redis blip must not block a legitimate deletion or recovery.
       this.logger.warn(
-        `OTP rate-limit check failed for ${bucket}: ${(err as Error)?.message}`,
+        `OTP rate-limit store unavailable for ${bucket.split(':').slice(0, 2).join(':')}, counting in memory: ${errorMessage(err)}`,
       );
+      await this.enforceInMemory(bucket, max, windowSec);
     }
+  }
+
+  /** The per-instance limiter used while the shared store cannot answer. */
+  private async enforceInMemory(
+    bucket: string,
+    max: number,
+    windowSec: number,
+  ): Promise<void> {
+    const shape = `${max}:${windowSec}`;
+    let limiter = this.memoryLimiters.get(shape);
+    if (!limiter) {
+      limiter = new RateLimiterMemory({ points: max, duration: windowSec });
+      this.memoryLimiters.set(shape, limiter);
+    }
+    try {
+      await limiter.consume(bucket);
+    } catch (err) {
+      // A rejection carrying `msBeforeNext` is a spent budget. Anything else is
+      // a bug in the limiter, and refusing is still the safe answer.
+      const waitMs =
+        err instanceof RateLimiterRes ? err.msBeforeNext : windowSec * 1000;
+      throw this.rateLimited(Math.max(1, Math.ceil(waitMs / 1000)));
+    }
+  }
+
+  private rateLimited(retryAfterSeconds: number): HttpException {
+    return new HttpException(
+      {
+        code: 'OTP_RATE_LIMITED',
+        message: `Too many requests. Try again in ${Math.max(1, Math.ceil(retryAfterSeconds / 60))} minute(s).`,
+        retryAfterSeconds,
+      },
+      HttpStatus.TOO_MANY_REQUESTS,
+    );
   }
 }

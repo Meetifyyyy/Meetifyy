@@ -1,5 +1,9 @@
 import { HttpException, ValidationPipe } from '@nestjs/common';
-import { Prisma, UserOtpPurpose } from '@prisma/client';
+import {
+  Prisma,
+  UserOtpPurpose,
+  UserSessionRevokedReason,
+} from '@prisma/client';
 import { AccountEmailService } from './account-email.service';
 import { VerifyPersonalEmailDto } from './account-email.dto';
 import { UserOtpService } from '../otp/user-otp.service';
@@ -14,6 +18,7 @@ import type { AuthenticatedUser } from '../common/types/authenticated-request';
 import type { ReauthService } from '../account-security/reauth.service';
 import type { EmailChangePolicyService } from '../account-security/email-change-policy.service';
 import type { RateLimitService } from '../common/rate-limit/rate-limit.service';
+import type { UserSessionService } from '../auth/session/user-session.service';
 
 /**
  * Changing the sign-in email: OTP to the new address only, password re-proven,
@@ -36,6 +41,10 @@ describe('AccountEmailService', () => {
   let intents: Map<string, { userId: string; newEmail: string }>;
   let record: jest.Mock;
   let consume: jest.Mock;
+  let revokeAllForUser: jest.Mock<
+    Promise<number>,
+    [string, UserSessionRevokedReason, string?]
+  >;
   let service: AccountEmailService;
 
   beforeEach(() => {
@@ -52,6 +61,10 @@ describe('AccountEmailService', () => {
     intents = new Map();
     record = jest.fn(() => Promise.resolve({ id: 'event-1' }));
     consume = jest.fn(() => Promise.resolve({ allowed: true }));
+    revokeAllForUser = jest.fn<
+      Promise<number>,
+      [string, UserSessionRevokedReason, string?]
+    >(() => Promise.resolve(2));
     updateUserById = jest.fn(() => Promise.resolve({ error: null }));
     verifyPassword = jest.fn((_u: AuthenticatedUser, password: string) =>
       Promise.resolve({ valid: password === 'right-password' }),
@@ -174,6 +187,7 @@ describe('AccountEmailService', () => {
       }),
       stub<RateLimitService>({ consume }),
       mailer,
+      stub<UserSessionService>({ revokeAllForUser }),
     );
   });
 
@@ -412,6 +426,60 @@ describe('AccountEmailService', () => {
         email: 'me@gla.ac.in',
         email_confirm: true,
       });
+      // Nothing changed, so nobody is signed out.
+      expect(revokeAllForUser).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('sessions after a changed sign-in email', () => {
+    it("ends every OTHER session and keeps the caller's own", async () => {
+      await service.requestOtp(ME, 'new@gmail.com');
+      await service.verify(ACTOR, code(), {
+        currentPassword: 'right-password',
+        sessionId: 'session-current',
+      });
+
+      expect(revokeAllForUser).toHaveBeenCalledTimes(1);
+      expect(revokeAllForUser).toHaveBeenCalledWith(
+        ME,
+        UserSessionRevokedReason.USER_LOGOUT_ALL,
+        'session-current',
+      );
+    });
+
+    it('ends them only once the change is applied, never on a refused code', async () => {
+      await service.requestOtp(ME, 'new@gmail.com');
+      await errorCode(
+        service.verify(ACTOR, wrongCode(), {
+          currentPassword: 'right-password',
+          sessionId: 'session-current',
+        }),
+      );
+      expect(revokeAllForUser).not.toHaveBeenCalled();
+    });
+
+    it("spares nothing when the caller's session cannot be identified, as a password change does", async () => {
+      await service.requestOtp(ME, 'new@gmail.com');
+      await service.verify(ACTOR, code(), {
+        currentPassword: 'right-password',
+      });
+      expect(revokeAllForUser).toHaveBeenCalledWith(
+        ME,
+        UserSessionRevokedReason.USER_LOGOUT_ALL,
+        undefined,
+      );
+    });
+
+    it('does not turn a completed change into an error when revocation fails', async () => {
+      revokeAllForUser.mockRejectedValueOnce(new Error('db down'));
+      await service.requestOtp(ME, 'new@gmail.com');
+      await expect(
+        service.verify(ACTOR, code(), {
+          currentPassword: 'right-password',
+          sessionId: 'session-current',
+        }),
+      ).resolves.toEqual({ email: 'new@gmail.com' });
+      expect(users.get(ME)?.email).toBe('new@gmail.com');
     });
   });
 
@@ -481,6 +549,7 @@ describe('AccountEmailService', () => {
       }),
       stub<RateLimitService>({}),
       stub<AddressMailer>({}),
+      stub<UserSessionService>({}),
     );
     await expect(s.getStatus(ME)).resolves.toEqual({
       email: 'Me@gla.ac.in',

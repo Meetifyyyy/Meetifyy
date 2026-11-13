@@ -17,6 +17,7 @@ import { requestBody, type GuardRequest } from '../types/authenticated-request';
 import { clientIp } from './client-ip.util';
 import { normalizeEmail } from '../validation/email-format.util';
 import { RATE_LIMIT_POLICIES_KEY } from './rate-limit.decorator';
+import { USER_REFRESH_COOKIE } from '../../auth/session/user-session-cookies';
 import {
   RATE_LIMIT_POLICIES,
   type RateLimitPolicy,
@@ -145,6 +146,18 @@ export class RateLimitPolicyGuard implements CanActivate {
         // same way the service will resolve it.
         const normalized = normalizeEmail(raw);
         return normalized || null;
+      }
+
+      case 'credential': {
+        // The refresh cookie first, then the body: the same precedence the
+        // refresh route uses, so the budget follows the token the route will
+        // actually try. The raw value is hashed by the service before it
+        // reaches Redis. No token means nothing to count here, and the route's
+        // per-IP backstop still applies.
+        const cookie = request?.cookies?.[USER_REFRESH_COOKIE];
+        if (typeof cookie === 'string' && cookie) return cookie;
+        const fromBody = requestBody(request).refreshToken;
+        return typeof fromBody === 'string' && fromBody ? fromBody : null;
       }
 
       case 'resource':

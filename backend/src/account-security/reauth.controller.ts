@@ -67,9 +67,14 @@ export class ReauthController {
     });
   }
 
-  /** Per-code attempt ceiling and per-IP verify limit: UserOtpService. */
+  /**
+   * Per-code attempt ceiling and per-IP verify limit live in UserOtpService;
+   * the per-user budget here bounds one account cycling through fresh codes.
+   */
   @Post('code/verify')
   @HttpCode(200)
+  @UseGuards(RateLimitPolicyGuard)
+  @RateLimit('auth.otp.verify.user')
   async withCode(@Req() req: AuthenticatedRequest, @Body() dto: ReauthCodeDto) {
     return this.reauth.withCode(
       req.user,

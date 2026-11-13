@@ -74,6 +74,10 @@ export class AccountDeletionController {
 
   /** Step 2. Verifies the code, then enters the 30-day window. */
   @Post('delete/confirm')
+  // Per-code and per-IP attempt limits live in UserOtpService; this bounds one
+  // account cycling through fresh codes.
+  @UseGuards(RateLimitPolicyGuard)
+  @RateLimit('auth.otp.verify.user')
   async confirmDeletion(@Req() req: AuthenticatedRequest, @Body() dto: OtpDto) {
     return this.deletion.confirmDeletion(req.user.id, dto.otp, {
       ip: clientIp(req),
@@ -99,6 +103,8 @@ export class AccountDeletionController {
   /** Step 2. Verifies the code, then cancels the deletion. */
   @AllowPendingDeletion()
   @Post('recover/confirm')
+  @UseGuards(RateLimitPolicyGuard)
+  @RateLimit('auth.otp.verify.user')
   async confirmRecovery(@Req() req: AuthenticatedRequest, @Body() dto: OtpDto) {
     return this.deletion.confirmRecovery(req.user.id, dto.otp, {
       ip: clientIp(req),

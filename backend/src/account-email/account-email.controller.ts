@@ -27,7 +27,11 @@ export class AccountEmailController {
 
   @Get()
   async getStatus(@Req() req: AuthenticatedRequest) {
-    return this.accountEmail.getStatus(req.user.id);
+    return this.accountEmail.getStatus(
+      req.user.id,
+      false,
+      currentSessionId(req),
+    );
   }
 
   @Post('otp')
@@ -48,10 +52,13 @@ export class AccountEmailController {
   /**
    * Code attempts are capped per code and per IP (UserOtpService). The legacy
    * password body spends `auth.verifypassword.user` in the service, so a
-   * grant-carrying verify does not eat into the password budget.
+   * grant-carrying verify does not eat into the password budget. The per-user
+   * budget bounds one account cycling through fresh codes.
    */
   @Post('verify')
   @HttpCode(200)
+  @UseGuards(RateLimitPolicyGuard)
+  @RateLimit('auth.otp.verify.user')
   async verify(
     @Req() req: AuthenticatedRequest,
     @Body() dto: VerifyPersonalEmailDto,

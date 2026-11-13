@@ -19,3 +19,19 @@ export const RATE_LIMIT_POLICIES_KEY = 'rateLimit:policies';
  */
 export const RateLimit = (...policies: RateLimitPolicyName[]) =>
   SetMetadata(RATE_LIMIT_POLICIES_KEY, policies);
+
+export const SKIP_ANONYMOUS_GLOBAL_LIMIT_KEY = 'rateLimit:skipAnonymousGlobal';
+
+/**
+ * Exempts a route from the global tier that counts anonymous callers per IP.
+ *
+ * For a route whose callers are anonymous BY DEFINITION yet are real, signed-in
+ * people: session refresh arrives with an expired access token, so the global
+ * guard cannot name the user and would pool every device behind a shared
+ * address (a campus) into one 120/min bucket on top of the route's own budget.
+ * The route must declare its own limits with `@RateLimit` — this removes a
+ * limit, it does not replace one. A request that DOES carry a valid token is
+ * still counted per user.
+ */
+export const SkipAnonymousGlobalLimit = () =>
+  SetMetadata(SKIP_ANONYMOUS_GLOBAL_LIMIT_KEY, true);

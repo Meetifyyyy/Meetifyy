@@ -33,7 +33,10 @@ import {
   loginAccountKey,
 } from '../common/guards/login-ratelimit.guard';
 import { RateLimitService } from '../common/rate-limit/rate-limit.service';
-import { RateLimit } from '../common/rate-limit/rate-limit.decorator';
+import {
+  RateLimit,
+  SkipAnonymousGlobalLimit,
+} from '../common/rate-limit/rate-limit.decorator';
 import { clientIp } from '../common/rate-limit/client-ip.util';
 import { RateLimitPolicyGuard } from '../common/rate-limit/rate-limit-policy.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -570,7 +573,8 @@ export class AuthController {
   @Post('session/refresh')
   @HttpCode(HttpStatus.OK)
   @UseGuards(RateLimitPolicyGuard)
-  @RateLimit('auth.session.refresh')
+  @SkipAnonymousGlobalLimit()
+  @RateLimit('auth.session.refresh', 'auth.session.refresh.ip')
   async refreshSession(
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,

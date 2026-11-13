@@ -15,7 +15,9 @@ type UserPurposeKey = { userId: string; purpose: UserOtpPurpose };
 import {
   OTP_MAX_ATTEMPTS,
   OTP_RESEND_COOLDOWN_MS,
+  OTP_SEND_LIMIT_PER_HOUR,
   OTP_TTL_MS,
+  OTP_VERIFY_LIMIT_PER_IP,
 } from './user-otp.constants';
 
 /**
@@ -166,8 +168,9 @@ describe('UserOtpService', () => {
       },
     };
 
-    // No Redis: the IP and hourly limits fail open by design, which leaves the
-    // database-backed guards (cooldown, attempt ceiling) under test here.
+    // No Redis: the IP and hourly limits are counted in memory (see the
+    // 'rate limits without Redis' suite), so the database-backed guards
+    // (cooldown, attempt ceiling) are what the rest of this suite exercises.
     service = new UserOtpService(
       stub<PrismaService>(prisma),
       stub<RedisService>({ getClient: () => null }),
@@ -217,9 +220,9 @@ describe('UserOtpService', () => {
 
     it('produces different codes across issuances', async () => {
       const seen = new Set<string>();
+      // A different user each time: one user's sends are capped per hour.
       for (let i = 0; i < 12; i++) {
-        clearCooldown();
-        seen.add((await service.issue(USER, DELETION)).code);
+        seen.add((await service.issue(`user-gen-${i}`, DELETION)).code);
       }
       // A constant or near-constant generator would collapse this set.
       expect(seen.size).toBeGreaterThan(6);
@@ -545,6 +548,106 @@ describe('UserOtpService', () => {
       const state = await service.getBoundChallenge(USER, COLLEGE);
       expect(state).toMatchObject({ target: 'a@college.edu', collegeId: 'c1' });
       expect(JSON.stringify(state)).not.toContain(bound().codeHash);
+    });
+  });
+
+  describe('rate limits without Redis', () => {
+    /** A Redis client whose every command fails, as during an outage. */
+    const brokenClient = () => ({
+      incr: jest.fn(() => Promise.reject(new Error('Command timed out'))),
+      expire: jest.fn(() => Promise.reject(new Error('Command timed out'))),
+      ttl: jest.fn(() => Promise.reject(new Error('Command timed out'))),
+    });
+
+    const serviceWith = (client: object | null) =>
+      new UserOtpService(
+        stub<PrismaService>(prisma),
+        stub<RedisService>({ getClient: () => client as never }),
+      );
+
+    const code = (e: unknown) =>
+      ((e as HttpException).getResponse() as { code?: string }).code;
+
+    const variants: Array<[string, () => object | null]> = [
+      ['no Redis client', () => null],
+      ['a Redis outage', brokenClient],
+    ];
+
+    it.each(variants)(
+      'caps code sends per hour with %s instead of dropping the limit',
+      async (_name, client) => {
+        const svc = serviceWith(client());
+        for (let i = 0; i < OTP_SEND_LIMIT_PER_HOUR; i++) {
+          await svc.issue(USER, DELETION);
+          clearCooldown();
+        }
+        const err = await svc.issue(USER, DELETION).catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(HttpException);
+        expect((err as HttpException).getStatus()).toBe(429);
+        expect(code(err)).toBe('OTP_RATE_LIMITED');
+      },
+    );
+
+    it.each(variants)(
+      'caps verification attempts per IP with %s',
+      async (_name, client) => {
+        const svc = serviceWith(client());
+        await svc.issue(USER, DELETION);
+        for (let i = 0; i < OTP_VERIFY_LIMIT_PER_IP; i++) {
+          // Wrong codes: each is refused by the code check, never by the limit.
+          const err = await svc
+            .verify(USER, DELETION, '000000', { ip: '203.0.113.5' })
+            .catch((e: unknown) => e);
+          expect(code(err)).toBe('OTP_INVALID');
+        }
+        const limited = await svc
+          .verify(USER, DELETION, '000000', { ip: '203.0.113.5' })
+          .catch((e: unknown) => e);
+        expect((limited as HttpException).getStatus()).toBe(429);
+        expect(code(limited)).toBe('OTP_RATE_LIMITED');
+        expect(
+          (
+            (limited as HttpException).getResponse() as {
+              retryAfterSeconds: number;
+            }
+          ).retryAfterSeconds,
+        ).toBeGreaterThan(0);
+      },
+    );
+
+    it('does not refuse an ordinary first request while Redis is down', async () => {
+      const svc = serviceWith(brokenClient());
+      await expect(svc.issue(USER, DELETION)).resolves.toBeDefined();
+    });
+
+    it('keeps separate in-memory budgets per address', async () => {
+      const svc = serviceWith(null);
+      await svc.issue(USER, DELETION);
+      for (let i = 0; i < OTP_VERIFY_LIMIT_PER_IP; i++) {
+        await svc
+          .verify(USER, DELETION, '000000', { ip: '203.0.113.5' })
+          .catch(() => undefined);
+      }
+      const other = await svc
+        .verify(USER, DELETION, '000000', { ip: '203.0.113.6' })
+        .catch((e: unknown) => e);
+      expect(code(other)).toBe('OTP_INVALID');
+    });
+
+    it('uses the shared counter, and not the in-memory one, while Redis answers', async () => {
+      const incr = jest.fn(() => Promise.resolve(OTP_SEND_LIMIT_PER_HOUR + 1));
+      const client = {
+        incr,
+        expire: jest.fn(() => Promise.resolve(1)),
+        ttl: jest.fn(() => Promise.resolve(1200)),
+      };
+      const svc = serviceWith(client);
+      const err = await svc.issue(USER, DELETION).catch((e: unknown) => e);
+      expect(code(err)).toBe('OTP_RATE_LIMITED');
+      expect(
+        (err as HttpException).getResponse() as { retryAfterSeconds: number },
+      ).toMatchObject({ retryAfterSeconds: 1200 });
+      expect(incr).toHaveBeenCalledTimes(1);
     });
   });
 });

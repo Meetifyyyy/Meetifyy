@@ -26,6 +26,7 @@ import { LegalConsentService } from '../legal/legal-consent.service';
 import { LEGAL_ACKNOWLEDGEMENT_REQUIRED_CODE } from '../legal/legal.constants';
 import { config } from '../../config';
 import { errorMessage } from '../utils/error.util';
+import { LruCache } from '../utils/lru-cache.util';
 import { isRecord } from '../utils/type-guards.util';
 import { stringClaim } from '../utils/jwt-claims.util';
 import type {
@@ -35,11 +36,6 @@ import type {
 
 interface CachedTokenUser {
   userPayload: AuthenticatedUser;
-  expiresAt: number;
-}
-
-interface CachedAccountStatus {
-  status: string;
   expiresAt: number;
 }
 
@@ -80,7 +76,20 @@ export const LEGAL_ACK_ERROR_CODE = LEGAL_ACKNOWLEDGEMENT_REQUIRED_CODE;
 export class JwtGuard implements CanActivate {
   private readonly logger = new Logger(JwtGuard.name);
   private static readonly tokenCache = new Map<string, CachedTokenUser>();
-  private static readonly revokedUsers = new Set<string>();
+  /**
+   * Users whose still-valid tokens must stop working at once (deleted accounts).
+   *
+   * Bounded, and entries expire: a token outlives the revocation only until its
+   * own expiry, so after the longest an access token can live (a week is
+   * Supabase's ceiling for the JWT expiry setting; this project issues an hour)
+   * the entry has nothing left to block. The set used to only grow.
+   */
+  private static readonly REVOKED_USER_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+  private static readonly MAX_REVOKED_USERS = 100_000;
+  private static readonly revokedUsers = new LruCache<string, true>(
+    JwtGuard.MAX_REVOKED_USERS,
+    JwtGuard.REVOKED_USER_TTL_MS,
+  );
   private static readonly CACHE_TTL_MS = 5 * 60 * 1000;
   private static readonly MAX_CACHE_SIZE = 10000;
   /**
@@ -88,11 +97,13 @@ export class JwtGuard implements CanActivate {
    * short deliberately: a suspension should take effect in seconds, not at the
    * next login. `clearAccountStatus` drops it immediately when an admin acts.
    */
-  private static readonly accountStatusCache = new Map<
-    string,
-    CachedAccountStatus
-  >();
   private static readonly STATUS_TTL_MS = 15 * 1000;
+  /** One entry per recently active user; expired ones are pruned at the cap. */
+  private static readonly MAX_STATUS_CACHE_SIZE = 20_000;
+  private static readonly accountStatusCache = new LruCache<string, string>(
+    JwtGuard.MAX_STATUS_CACHE_SIZE,
+    JwtGuard.STATUS_TTL_MS,
+  );
 
   /** Invalidate a cached status so a suspend/unsuspend applies at once. */
   public static clearAccountStatus(userId: string): void {
@@ -104,7 +115,12 @@ export class JwtGuard implements CanActivate {
    */
   public static revokeUser(userId: string): void {
     if (!userId) return;
-    JwtGuard.revokedUsers.add(userId);
+    // Dead entries go first, so the cap never pushes out a live revocation
+    // while expired ones are still held.
+    if (JwtGuard.revokedUsers.size >= JwtGuard.MAX_REVOKED_USERS) {
+      JwtGuard.revokedUsers.pruneExpired();
+    }
+    JwtGuard.revokedUsers.set(userId, true);
     for (const [token, cached] of JwtGuard.tokenCache.entries()) {
       if (cached.userPayload?.id === userId) {
         JwtGuard.tokenCache.delete(token);
@@ -226,7 +242,7 @@ export class JwtGuard implements CanActivate {
   }
 
   public static isUserRevoked(userId: string): boolean {
-    return JwtGuard.revokedUsers.has(userId);
+    return JwtGuard.revokedUsers.get(userId) === true;
   }
 
   /**
@@ -280,6 +296,50 @@ export class JwtGuard implements CanActivate {
     'PS384',
     'PS512',
   ];
+
+  private static claimMismatchWarned = false;
+
+  /** `jsonwebtoken` errors that mean the signature or structure is bad. */
+  private static isSignatureFailure(e: unknown): boolean {
+    return (
+      e instanceof jwt.JsonWebTokenError &&
+      !(e instanceof jwt.TokenExpiredError) &&
+      /^(invalid signature|jwt malformed|invalid token|invalid algorithm|jwt signature is required)/.test(
+        e.message,
+      )
+    );
+  }
+
+  /** Errors raised only once the signature has already verified. */
+  private static isClaimMismatch(e: unknown): boolean {
+    return (
+      e instanceof jwt.NotBeforeError ||
+      (e instanceof jwt.JsonWebTokenError &&
+        /^jwt (issuer|audience) invalid/.test(e.message))
+    );
+  }
+
+  /**
+   * Once per process: a genuine token failing a pin means this deployment's
+   * SUPABASE_URL (the issuer pin) is wrong, which is an operator problem, not
+   * an attack. Names the expected and actual issuer, never the token.
+   */
+  private static warnClaimMismatchOnce(
+    logger: Logger,
+    token: string,
+    e: unknown,
+  ): void {
+    if (JwtGuard.claimMismatchWarned) return;
+    JwtGuard.claimMismatchWarned = true;
+    const decoded = jwt.decode(token);
+    const actual =
+      isRecord(decoded) && typeof decoded.iss === 'string'
+        ? decoded.iss
+        : '(none)';
+    logger.warn(
+      `Token signed by our key failed a claim check (${errorMessage(e)}); expected issuer ${JwtGuard.expectedIssuer() ?? '(unset)'}, token issuer ${actual}. Check SUPABASE_URL. Falling back to remote validation.`,
+    );
+  }
 
   /** The `iss` every Supabase token from THIS project carries. */
   private static expectedIssuer(): string | null {
@@ -756,9 +816,8 @@ export class JwtGuard implements CanActivate {
 
   /** Cached account-status read, so this costs one query per user per window. */
   private async resolveAccountStatus(userId: string): Promise<string | null> {
-    const now = Date.now();
     const cached = JwtGuard.accountStatusCache.get(userId);
-    if (cached && cached.expiresAt > now) return cached.status;
+    if (cached) return cached;
 
     try {
       const row = await this.prisma.user.findUnique({
@@ -767,10 +826,12 @@ export class JwtGuard implements CanActivate {
       });
       const status = row?.accountStatus ?? null;
       if (status) {
-        JwtGuard.accountStatusCache.set(userId, {
-          status,
-          expiresAt: now + JwtGuard.STATUS_TTL_MS,
-        });
+        if (
+          JwtGuard.accountStatusCache.size >= JwtGuard.MAX_STATUS_CACHE_SIZE
+        ) {
+          JwtGuard.accountStatusCache.pruneExpired();
+        }
+        JwtGuard.accountStatusCache.set(userId, status);
       }
       return status;
     } catch (error) {
@@ -848,21 +909,42 @@ export class JwtGuard implements CanActivate {
       alg &&
       JwtGuard.ASYMMETRIC_ALGS.includes(alg as jwt.Algorithm)
     ) {
+      let key: KeyObject | null = null;
       try {
-        const key = await JwtGuard.getSigningKey(header.kid);
-        if (key) {
+        key = await JwtGuard.getSigningKey(header.kid);
+      } catch (e) {
+        // The lookup itself failed, which says nothing about the token.
+        this.logger.warn(
+          `JWKS key lookup failed (${errorMessage(e)}); falling back to remote`,
+        );
+      }
+      if (key) {
+        try {
           const issuer = JwtGuard.expectedIssuer();
           const payload = jwt.verify(token, key, {
             algorithms: JwtGuard.ASYMMETRIC_ALGS,
             ...(issuer ? { issuer } : {}),
           });
           return normalize(payload);
+        } catch (e) {
+          if (e instanceof jwt.TokenExpiredError) return null;
+          // The token names a key we HOLD and its SIGNATURE does not verify
+          // (invalid signature, malformed, wrong algorithm): it is forged, and
+          // asking Supabase only hands anyone with a made-up token an outbound
+          // call per request. An unknown `kid` (a rotation we have not fetched
+          // yet) or no JWKS at all reaches the remote check below.
+          if (JwtGuard.isSignatureFailure(e)) return null;
+          // A claim mismatch (issuer, not-before) is only reported AFTER the
+          // signature verified, so the token is genuine and it is our config
+          // that disagrees. Keep the remote check rather than lock everyone out.
+          if (JwtGuard.isClaimMismatch(e)) {
+            JwtGuard.warnClaimMismatchOnce(this.logger, token, e);
+          } else {
+            this.logger.warn(
+              `Local JWKS verify failed (${errorMessage(e)}); falling back to remote`,
+            );
+          }
         }
-      } catch (e) {
-        if (e instanceof jwt.TokenExpiredError) return null;
-        this.logger.warn(
-          `Local JWKS verify failed (${(e as Error).message}); falling back to remote`,
-        );
       }
     }
 
