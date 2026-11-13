@@ -110,6 +110,10 @@ function makeStore() {
         hit.forEach((p) => Object.assign(p, data));
         return Promise.resolve({ count: hit.length });
       },
+      count: ({ where }: { where: Where }) =>
+        Promise.resolve(
+          [...participants.values()].filter((p) => matches(p, where)).length,
+        ),
       upsert: ({
         where,
         update,
@@ -131,6 +135,8 @@ function makeStore() {
         return Promise.resolve({ ...participants.get(k(where))! });
       },
     },
+    // The group row lock a membership write takes first (lockGroupSeat).
+    $queryRaw: () => Promise.resolve([]),
     // Both forms Prisma takes: a batch, or a callback given the client.
     $transaction: (
       ops: Promise<unknown>[] | ((tx: unknown) => Promise<unknown>),

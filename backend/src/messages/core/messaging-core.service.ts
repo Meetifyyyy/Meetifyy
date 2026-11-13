@@ -55,7 +55,10 @@ import {
 import {
   assertGroupAuthority,
   assertGroupConversation,
+  groupFullError,
   isActiveParticipant,
+  isGroupFull,
+  lockGroupSeat,
   markParticipantLeft,
   CLEARED_LEFT_SNAPSHOT,
   membershipChangedAt,
@@ -2103,26 +2106,29 @@ export class MessagingCoreService {
     }
 
     const joinedAt = new Date();
-    await this.prisma.conversationParticipant.upsert({
-      where: {
-        userId_conversationId: {
+    await this.prisma.$transaction(async (tx) => {
+      await lockGroupSeat(tx, realConvId, targetUserId);
+      await tx.conversationParticipant.upsert({
+        where: {
+          userId_conversationId: {
+            userId: targetUserId,
+            conversationId: realConvId,
+          },
+        },
+        update: {
+          leftAt: null,
+          deletedAt: null,
+          joinedAt,
+          role: 'MEMBER',
+          ...CLEARED_LEFT_SNAPSHOT,
+        },
+        create: {
           userId: targetUserId,
           conversationId: realConvId,
+          role: 'MEMBER',
+          joinedAt,
         },
-      },
-      update: {
-        leftAt: null,
-        deletedAt: null,
-        joinedAt,
-        role: 'MEMBER',
-        ...CLEARED_LEFT_SNAPSHOT,
-      },
-      create: {
-        userId: targetUserId,
-        conversationId: realConvId,
-        role: 'MEMBER',
-        joinedAt,
-      },
+      });
     });
     await this.evictMembershipCaches(realConvId, [targetUserId]);
 
@@ -2559,6 +2565,10 @@ export class MessagingCoreService {
         message: 'This person is already in the group.',
       });
     }
+    // An invite into a full group could only end in a refusal when tapped.
+    if (await isGroupFull(this.prisma, realConvId, targetUserId)) {
+      throw groupFullError();
+    }
     const pubId = conv.publicId || conv.id;
     return {
       type: 'group_invite',
@@ -2932,25 +2942,31 @@ export class MessagingCoreService {
       // membership against any event about it that arrives late.
       const joinedAt = now;
       try {
-        await this.prisma.conversationParticipant.upsert({
-          where: {
-            userId_conversationId: { userId, conversationId: conversation.id },
-          },
-          create: {
-            userId,
-            conversationId: conversation.id,
-            role: 'MEMBER',
-            joinedAt,
-          },
-          // Re-joining after leaving reuses the row and clears the tombstone
-          // fields rather than inserting a duplicate.
-          update: {
-            leftAt: null,
-            deletedAt: null,
-            joinedAt,
-            role: 'MEMBER',
-            ...CLEARED_LEFT_SNAPSHOT,
-          },
+        await this.prisma.$transaction(async (tx) => {
+          await lockGroupSeat(tx, conversation.id, userId);
+          await tx.conversationParticipant.upsert({
+            where: {
+              userId_conversationId: {
+                userId,
+                conversationId: conversation.id,
+              },
+            },
+            create: {
+              userId,
+              conversationId: conversation.id,
+              role: 'MEMBER',
+              joinedAt,
+            },
+            // Re-joining after leaving reuses the row and clears the tombstone
+            // fields rather than inserting a duplicate.
+            update: {
+              leftAt: null,
+              deletedAt: null,
+              joinedAt,
+              role: 'MEMBER',
+              ...CLEARED_LEFT_SNAPSHOT,
+            },
+          });
         });
       } catch (err) {
         // Two concurrent joins can both miss the findUnique above and race into
@@ -2982,6 +2998,10 @@ export class MessagingCoreService {
 
     const retryAt = retryAfterDecline(prior, now);
     if (retryAt) throw requestDeclinedError(retryAt);
+    // No admin could approve it: say so now rather than leave it waiting.
+    if (await isGroupFull(this.prisma, conversation.id, userId)) {
+      throw groupFullError();
+    }
 
     // A new request, or a new one after an old answer: `createdAt` is when it
     // was asked, and the old answer is cleared. No expiry: it waits for an
@@ -3132,6 +3152,9 @@ export class MessagingCoreService {
 
     const joinedAt = new Date();
     const approved = await this.prisma.$transaction(async (tx) => {
+      // Full: the request stays pending (this transaction rolls back), so an
+      // admin can approve it once someone leaves.
+      await lockGroupSeat(tx, realConvId, targetUserId);
       const { count } = await tx.conversationJoinRequest.updateMany({
         where: {
           conversationId: realConvId,

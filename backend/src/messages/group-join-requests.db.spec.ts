@@ -1,4 +1,8 @@
-import { ConflictException, ForbiddenException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { stub } from '../common/testing/stub';
 import { allowAllRateLimit } from '../common/rate-limit/testing/rate-limit.mock';
@@ -8,6 +12,8 @@ import type { MentionsService } from '../mentions/mentions.service';
 import type { BlocksService } from '../users/blocks.service';
 import type { VerificationAccessService } from '../common/verification/verification-access.service';
 import { MessagingCoreService } from './core/messaging-core.service';
+import { GROUP_FULL } from './core/group-membership';
+import { MAX_GROUP_MEMBERS } from './core/message-limits';
 
 /**
  * Invite links and requests to join, against a real Postgres: the conditional
@@ -103,6 +109,7 @@ describeDb('group invites and join requests (database)', () => {
       stub<VerificationAccessService>({
         isEnforcementEnabled: () => false,
         getIneligibleUserIds: () => Promise.resolve([]),
+        assertUsersEligible: () => Promise.resolve(),
       }),
       allowAllRateLimit(),
     );
@@ -211,6 +218,84 @@ describeDb('group invites and join requests (database)', () => {
     }
     expect(await isMember(g.id, second)).toBe(false);
     expect(await isMember(g.id, third)).toBe(false);
+  });
+
+  it(`a group stops at ${MAX_GROUP_MEMBERS} members on every path, and frees a place when someone leaves`, async () => {
+    const g = await groupWith('ANYONE');
+    // Fill to one short of the ceiling. A former member does not count; one
+    // who only hid the chat does.
+    // Owner, admin and the hidden member make three more.
+    const fill = MAX_GROUP_MEMBERS - 4;
+    const filled: string[] = [];
+    for (let i = 0; i < fill; i += 1) filled.push(await user(`m${i}`));
+    const [gone, hidden] = [await user('gone'), await user('hidden')];
+    await prisma.conversationParticipant.createMany({
+      data: [
+        ...filled.map((userId) => ({ userId, conversationId: g.id })),
+        { userId: gone, conversationId: g.id, leftAt: new Date() },
+        { userId: hidden, conversationId: g.id, deletedAt: new Date() },
+      ],
+    });
+    const active = () =>
+      prisma.conversationParticipant.count({
+        where: { conversationId: g.id, leftAt: null },
+      });
+    expect(await active()).toBe(MAX_GROUP_MEMBERS - 1);
+
+    // Two people tap the link for the last place: one gets it.
+    const { code } = await service.createInviteLink(g.id, g.owner);
+    const [a, b] = [await user('a'), await user('b')];
+    const joins = await Promise.all([
+      settle(service.joinGroupByInvite(g.id, a, { code })),
+      settle(service.joinGroupByInvite(g.id, b, { code })),
+    ]);
+    expect(joins.filter((j) => j.ok)).toHaveLength(1);
+    const refused = joins.find((j) => !j.ok);
+    if (refused && !refused.ok) {
+      expect(
+        (refused.error as BadRequestException).getResponse(),
+      ).toMatchObject({ code: GROUP_FULL });
+    }
+    expect(await active()).toBe(MAX_GROUP_MEMBERS);
+    const late = joins[0].ok ? b : a;
+
+    // Full: an add, an approval and a new request are all refused.
+    await expect(
+      service.addGroupMember(g.id, g.owner, late),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    const asker = await user('asker');
+    await prisma.conversationJoinRequest.create({
+      data: { conversationId: g.id, userId: asker },
+    });
+    await expect(
+      service.acceptGroupJoinRequest(g.id, g.admin, asker),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await prisma.conversation.update({
+      where: { id: g.id },
+      data: { whoCanJoin: 'APPROVAL' },
+    });
+    await expect(
+      service.joinGroupByInvite(g.id, late, { code }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(
+      await prisma.conversationJoinRequest.count({
+        where: { conversationId: g.id, userId: late },
+      }),
+    ).toBe(0);
+    expect(await active()).toBe(MAX_GROUP_MEMBERS);
+
+    // Re-adding the member who hid the chat takes no new place.
+    await expect(
+      service.addGroupMember(g.id, g.owner, hidden),
+    ).resolves.toMatchObject({ success: true });
+
+    // Someone leaves: the request that was refused can now be approved,
+    // because the refusal left it pending.
+    await service.leaveGroup(g.id, filled[0]);
+    await expect(
+      service.acceptGroupJoinRequest(g.id, g.admin, asker),
+    ).resolves.toMatchObject({ changed: true });
+    expect(await active()).toBe(MAX_GROUP_MEMBERS);
   });
 
   it('a request is not a message: no history, no list preview, no unread count', async () => {

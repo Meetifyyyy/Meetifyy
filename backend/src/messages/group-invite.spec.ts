@@ -79,7 +79,12 @@ describe('group invites', () => {
     },
     deletedMessage: { findMany: jest.fn() },
     block: { findFirst: jest.fn() },
-    $transaction: jest.fn(),
+    // The group row lock a membership write takes first (lockGroupSeat).
+    $queryRaw: jest.fn().mockResolvedValue([]),
+    // Interactive transactions run on the same fake.
+    $transaction: jest.fn(
+      (fn: (tx: unknown) => Promise<unknown>): Promise<unknown> => fn(prisma),
+    ),
   });
   const buildBlocks = () => ({
     isBlocked: jest.fn().mockResolvedValue(false),

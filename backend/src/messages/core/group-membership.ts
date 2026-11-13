@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
-import { ConversationType } from '@prisma/client';
+import { ConversationType, type Prisma } from '@prisma/client';
 import type { PrismaService } from '../../prisma/prisma.service';
+import { MAX_GROUP_MEMBERS } from './message-limits';
 
 /**
  * Refuses a membership action — add, remove, leave — on anything but a group.
@@ -46,6 +47,72 @@ export function notAMemberError(
   message = 'You are no longer a member of this conversation',
 ): ForbiddenException {
   return new ForbiddenException({ code: NOT_A_MEMBER, message });
+}
+
+/**
+ * The machine-readable reason someone cannot be admitted to a group that is
+ * at its ceiling. The message reads on its own for builds that predate it.
+ */
+export const GROUP_FULL = 'GROUP_FULL';
+
+export function groupFullError(): BadRequestException {
+  return new BadRequestException({
+    code: GROUP_FULL,
+    message: `This group is full. A group can have up to ${MAX_GROUP_MEMBERS} members.`,
+  });
+}
+
+/**
+ * Refuses to found a group of more than MAX_GROUP_MEMBERS people, counting
+ * the creator and each person once.
+ */
+export function assertFoundingGroupSize(memberIds: readonly string[]): void {
+  if (new Set(memberIds).size > MAX_GROUP_MEMBERS) throw groupFullError();
+}
+
+/**
+ * Takes the group's row lock, then refuses to admit `userId` if the group is
+ * full. Run first in the transaction that writes the membership.
+ *
+ * The lock is what makes the ceiling hold: two joins that each counted 49
+ * members would otherwise both insert. With it, the second waits for the first
+ * to commit and its count, a new statement under READ COMMITTED, sees the
+ * first one's row. It is the lock a send and a removal take on the same row
+ * (markParticipantLeft), held only for this short transaction.
+ *
+ * Everyone not yet gone counts — a member who only hid the chat is still in
+ * it — except `userId`, so re-admitting someone already counted (a hidden
+ * member added again) is never refused.
+ */
+export async function lockGroupSeat(
+  tx: Prisma.TransactionClient,
+  conversationId: string,
+  userId: string,
+): Promise<void> {
+  await tx.$queryRaw`
+    SELECT "id" FROM "Conversation" WHERE "id" = ${conversationId}
+    FOR NO KEY UPDATE
+  `;
+  const others = await tx.conversationParticipant.count({
+    where: { conversationId, leftAt: null, userId: { not: userId } },
+  });
+  if (others >= MAX_GROUP_MEMBERS) throw groupFullError();
+}
+
+/**
+ * Whether the group has no place for `userId`, without a lock: for refusing
+ * early (an invite card, a join request) where nothing is written that the
+ * ceiling protects. The admitting write checks again under the lock.
+ */
+export async function isGroupFull(
+  prisma: Pick<PrismaService, 'conversationParticipant'>,
+  conversationId: string,
+  userId: string,
+): Promise<boolean> {
+  const others = await prisma.conversationParticipant.count({
+    where: { conversationId, leftAt: null, userId: { not: userId } },
+  });
+  return others >= MAX_GROUP_MEMBERS;
 }
 
 type GroupRole = 'OWNER' | 'ADMIN' | 'MEMBER';

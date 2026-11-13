@@ -193,16 +193,26 @@ export async function assertNewConversationWithinRateLimit(
 export const MAX_REFERENCE_ID_LENGTH = 128;
 
 /**
- * The most people a new group may be founded with (not counting its creator).
+ * The most people a group can hold, its owner included (owner decision D12,
+ * 2026-11-13).
  *
- * The array came straight from the client, bounded only by the 100 KB body
- * limit — about 2,500 ids — and a group fans an invitation and a notification
- * out to every one of them. There is no member ceiling to borrow: groups have
- * none once they exist. 256 is far past what a person picks by hand from a
- * list of people they follow, and is still a bound a founding fan-out can live
- * with; people join a larger group afterwards through its link or an admin.
+ * Groups used to have no ceiling once created: adds, invite links and approved
+ * requests could grow one without limit, and every message, read receipt and
+ * presence change fans out to every member. Every path that admits someone
+ * checks it under a lock on the group row (`lockGroupSeat`), so two joins
+ * racing for the last place cannot both get it. A group already past it (from
+ * before the ceiling) keeps everyone and admits no one until it is below it.
  */
-export const MAX_NEW_GROUP_MEMBERS = 256;
+export const MAX_GROUP_MEMBERS = 50;
+
+/**
+ * The longest list of people a request to found a group may name. The exact
+ * rule — at most MAX_GROUP_MEMBERS people once the creator is counted and
+ * duplicates are removed — is checked by `assertFoundingGroupSize`; this bound
+ * only stops an oversized list at validation, before any query. It allows the
+ * full ceiling because some clients include the creator in their own list.
+ */
+export const MAX_NEW_GROUP_MEMBERS = MAX_GROUP_MEMBERS;
 
 /** Longest group name, in characters. Matches the field in the web and native apps. */
 export const MAX_GROUP_NAME_LENGTH = 120;

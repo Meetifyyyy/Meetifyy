@@ -25,6 +25,7 @@ import {
   type Conversation,
 } from '@prisma/client';
 import {
+  assertFoundingGroupSize,
   assertGroupAuthority,
   groupAsSeenBy,
   membershipChangedAt,
@@ -2317,6 +2318,7 @@ export class MessagesService
     if (filteredUserIds.length === 0) {
       throw new ForbiddenException('Cannot start a conversation with yourself');
     }
+    assertFoundingGroupSize([...filteredUserIds, currentUserId]);
 
     // Any block in either direction with any invitee blocks the whole
     // conversation. `filterBlockedUsers` drops the blocked ids, so a shorter

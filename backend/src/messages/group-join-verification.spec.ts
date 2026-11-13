@@ -87,6 +87,8 @@ function makePrisma(
       delete: jest.fn(() => Promise.resolve({})),
       updateMany: jest.fn(() => Promise.resolve({ count: 1 })),
     },
+    // The group row lock a membership write takes first (lockGroupSeat).
+    $queryRaw: jest.fn(() => Promise.resolve([])),
     // Interactive: the approval runs its writes on the transaction client.
     $transaction: jest.fn(
       (fn: (tx: unknown) => Promise<unknown>): Promise<unknown> => fn(prisma),

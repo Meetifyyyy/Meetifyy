@@ -29,7 +29,7 @@ export class CreateGroupDto {
   @IsOptional()
   @IsArray()
   @ArrayMaxSize(MAX_NEW_GROUP_MEMBERS, {
-    message: `A new group can start with at most ${MAX_NEW_GROUP_MEMBERS} people.`,
+    message: `A group can have up to ${MAX_NEW_GROUP_MEMBERS} members.`,
   })
   @IsUUID('all', { each: true })
   userIds?: string[];

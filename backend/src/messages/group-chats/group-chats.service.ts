@@ -1,6 +1,7 @@
 import { Injectable, ForbiddenException, Optional } from '@nestjs/common';
 import type { Conversation } from '@prisma/client';
 import {
+  assertFoundingGroupSize,
   assertGroupAuthority,
   groupAsSeenBy,
   membershipChangedAt,
@@ -270,6 +271,13 @@ export class GroupChatsService extends MessagingCoreService {
     currentUserId: string,
     groupName: string,
   ) {
+    const filteredUserIds = (userIds || []).filter(
+      (id) => id && id !== currentUserId,
+    );
+    const allParticipantIds = [...new Set([...filteredUserIds, currentUserId])];
+    // Refused before the rate limit, so a list that is too long costs nothing.
+    assertFoundingGroupSize(allParticipantIds);
+
     // A group additionally fans invitations and notifications out to everyone
     // in the founding roster, so it spends both budgets.
     await assertNewConversationWithinRateLimit(
@@ -277,10 +285,6 @@ export class GroupChatsService extends MessagingCoreService {
       currentUserId,
       true,
     );
-    const filteredUserIds = (userIds || []).filter(
-      (id) => id && id !== currentUserId,
-    );
-    const allParticipantIds = [...new Set([...filteredUserIds, currentUserId])];
 
     // Everyone in the founding roster must be eligible. Once the group exists
     // a member whose verification later lapses only loses the ability to post

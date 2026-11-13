@@ -163,6 +163,8 @@ describe('requesting to join twice', () => {
               : null,
           ),
       ),
+      // Members other than the asker: room to spare.
+      count: jest.fn(() => Promise.resolve(2)),
     },
     groupInviteLink: {
       findUnique: jest.fn(() =>

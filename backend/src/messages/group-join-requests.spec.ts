@@ -89,8 +89,12 @@ describe('approving a request to join', () => {
           admin: 'approver' in opts ? opts.approver : admin,
         }),
         upsert,
+        // Members other than the requester: room to spare.
+        count: jest.fn(() => Promise.resolve(2)),
       },
       conversationJoinRequest: { findUnique, updateMany, delete: jest.fn() },
+      // The group row lock a membership write takes first (lockGroupSeat).
+      $queryRaw: jest.fn(() => Promise.resolve([])),
       $transaction: jest.fn(
         (fn: (tx: unknown) => Promise<unknown>): Promise<unknown> => fn(prisma),
       ),
