@@ -7,6 +7,7 @@ import type { NotificationsService } from '../notifications/notifications.servic
 import type { NotificationFactory } from '../notifications/notification.factory';
 import type { BlocksService } from '../users/blocks.service';
 import type { DomainEventService } from '../events/domain-event.service';
+import { joinTransaction } from './testing/join-transaction';
 
 /**
  * "I'm out" on the activity page, and the "Going" / "Not going" split it
@@ -108,6 +109,7 @@ describe('ActivitiesService — not going', () => {
           ),
         },
         $queryRaw: queryRaw,
+        $transaction: jest.fn(joinTransaction(queryRaw)),
       }),
       stub<NotificationsService>({
         updateNotificationLifecycleStatus,

@@ -152,6 +152,12 @@ interface FeedResponse {
   nextCursor: string | undefined;
 }
 
+/** The viewer's trusted context and the interests the "For You" ranking scores. */
+interface ForYouViewer {
+  viewer: UserAuthContext | null;
+  interests: string[];
+}
+
 /** An activity id is a 36-character UUID; a legacy cursor longer than this is not one. */
 const MAX_LEGACY_CURSOR_LENGTH = 64;
 
@@ -551,6 +557,30 @@ export class ActivitiesService implements OnModuleInit {
           collegeId: activeAffiliationCollegeId(u.collegeAffiliation),
         }
       : null;
+  }
+
+  /**
+   * The viewer plus the interests the "For You" ranking scores against, from
+   * one read: the ranking used to fetch the viewer and then, in a second
+   * sequential query, the same user's interests.
+   */
+  private async getForYouViewer(userId: string): Promise<ForYouViewer> {
+    const u = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        interests: true,
+        collegeAffiliation: { select: ACTIVE_AFFILIATION_SELECT },
+      },
+    });
+    if (!u) return { viewer: null, interests: [] };
+    return {
+      viewer: {
+        id: u.id,
+        collegeId: activeAffiliationCollegeId(u.collegeAffiliation),
+      },
+      interests: u.interests,
+    };
   }
 
   /**
@@ -984,7 +1014,13 @@ export class ActivitiesService implements OnModuleInit {
    * Ordering — not the rows — is what gets cached, which is what makes cursor
    * paging stable across pages while keeping the returned rows fresh.
    */
-  private async getForYouRankedIds(userId: string): Promise<string[]> {
+  private async getForYouRankedIds(
+    userId: string,
+    // A caller that has already started loading the viewer hands that read
+    // over, so one request does not load the same user twice. Resolved only
+    // after the cache check, so a cached ranking costs no user read here.
+    viewerProfile?: Promise<ForYouViewer>,
+  ): Promise<string[]> {
     const cacheKey = `activities:foryou:rank:${userId}`;
     if (this.redis) {
       try {
@@ -997,45 +1033,46 @@ export class ActivitiesService implements OnModuleInit {
 
     const now = new Date();
     const [
-      viewer,
+      { viewer, interests },
       excludedUserIds,
-      followingRows,
-      followerRows,
+      followRows,
       recentConvs,
       historyRows,
     ] = await Promise.all([
-      this.getViewer(userId),
+      viewerProfile ?? this.getForYouViewer(userId),
       this.blocksService.getExcludedUserIds(userId),
+      // Both directions in one read, split below: who the viewer follows and
+      // who follows the viewer.
       this.prisma.follow.findMany({
-        where: { followerId: userId },
-        select: { followingId: true },
+        where: { OR: [{ followerId: userId }, { followingId: userId }] },
+        select: { followerId: true, followingId: true },
       }),
-      this.prisma.follow.findMany({
-        where: { followingId: userId },
-        select: { followerId: true },
-      }),
-      this.prisma.conversationParticipant.findMany({
-        where: { userId, deletedAt: null },
-        select: { conversationId: true },
-        orderBy: { conversation: { updatedAt: 'desc' } },
+      // The people in the viewer's most recent conversations, read through the
+      // conversations themselves so it is one query rather than the list of
+      // conversations followed by a lookup of their participants.
+      this.prisma.conversation.findMany({
+        where: { participants: { some: { userId, deletedAt: null } } },
+        orderBy: { updatedAt: 'desc' },
         take: ActivitiesService.FOR_YOU_RECENT_CONVERSATIONS,
+        select: {
+          participants: {
+            where: { userId: { not: userId } },
+            select: { userId: true },
+          },
+        },
       }),
+      // The hosts of the activities the viewer has joined, via the membership
+      // row's activity, rather than the ids followed by a lookup of their hosts.
       this.prisma.crewActivityMember.findMany({
         where: { userId, status: 'MEMBER' },
-        select: { activityId: true },
+        select: { activity: { select: { creatorId: true } } },
         orderBy: { joinedAt: 'desc' },
         take: ActivitiesService.FOR_YOU_HISTORY_LIMIT,
       }),
     ]);
 
-    const interests = viewer
-      ? ((
-          await this.prisma.user.findUnique({
-            where: { id: userId },
-            select: { interests: true },
-          })
-        )?.interests ?? [])
-      : [];
+    const followingRows = followRows.filter((f) => f.followerId === userId);
+    const followerRows = followRows.filter((f) => f.followingId === userId);
 
     const followingIdsForPool = followingRows.map((f) => f.followingId);
     // The viewer's own activities are not something to discover.
@@ -1165,50 +1202,34 @@ export class ActivitiesService implements OnModuleInit {
     const followingIds = followingRows.map((f) => f.followingId);
     const followingSet = new Set(followingIds);
     const followerSet = new Set(followerRows.map((f) => f.followerId));
-    const convIds = recentConvs.map((c) => c.conversationId);
-    const historyIds = historyRows.map((h) => h.activityId);
 
     // Remaining signals, all batched over the bounded candidate set.
-    const [chatPartners, friendsAttending, pastHosts, declinedInvites] =
-      await Promise.all([
-        convIds.length > 0
-          ? this.prisma.conversationParticipant.findMany({
-              where: {
-                conversationId: { in: convIds },
-                userId: { not: userId },
-              },
-              select: { userId: true },
-            })
-          : Promise.resolve([] as { userId: string }[]),
-        followingIds.length > 0
-          ? this.prisma.crewActivityMember.findMany({
-              where: {
-                activityId: { in: candidateIds },
-                userId: { in: followingIds },
-                status: 'MEMBER',
-              },
-              select: { activityId: true, userId: true },
-            })
-          : Promise.resolve([] as { activityId: string; userId: string }[]),
-        historyIds.length > 0
-          ? this.prisma.crewActivity.findMany({
-              where: { id: { in: historyIds } },
-              select: { creatorId: true },
-            })
-          : Promise.resolve([] as { creatorId: string }[]),
-        this.prisma.activityInvitation.findMany({
-          where: {
-            inviteeId: userId,
-            status: 'DECLINED',
-            activityId: { in: candidateIds },
-          },
-          select: { activityId: true },
-        }),
-      ]);
+    const [friendsAttending, declinedInvites] = await Promise.all([
+      followingIds.length > 0
+        ? this.prisma.crewActivityMember.findMany({
+            where: {
+              activityId: { in: candidateIds },
+              userId: { in: followingIds },
+              status: 'MEMBER',
+            },
+            select: { activityId: true, userId: true },
+          })
+        : Promise.resolve([] as { activityId: string; userId: string }[]),
+      this.prisma.activityInvitation.findMany({
+        where: {
+          inviteeId: userId,
+          status: 'DECLINED',
+          activityId: { in: candidateIds },
+        },
+        select: { activityId: true },
+      }),
+    ]);
     const declinedSet = new Set(declinedInvites.map((d) => d.activityId));
 
-    const chatPartnerSet = new Set(chatPartners.map((p) => p.userId));
-    const pastHostSet = new Set(pastHosts.map((h) => h.creatorId));
+    const chatPartnerSet = new Set(
+      recentConvs.flatMap((c) => c.participants.map((p) => p.userId)),
+    );
+    const pastHostSet = new Set(historyRows.map((h) => h.activity.creatorId));
     const friendCountByActivity = new Map<string, number>();
     for (const row of friendsAttending) {
       friendCountByActivity.set(
@@ -1379,9 +1400,12 @@ export class ActivitiesService implements OnModuleInit {
     const offset =
       Number.isFinite(parsedOffset) && parsedOffset > 0 ? parsedOffset : 0;
 
-    const [rankedIds, viewer] = await Promise.all([
-      this.getForYouRankedIds(userId),
-      this.getViewer(userId),
+    // One read of the viewer serves both the ranking (on a cache miss) and
+    // the hydration policy below.
+    const viewerProfile = this.getForYouViewer(userId);
+    const [rankedIds, { viewer }] = await Promise.all([
+      this.getForYouRankedIds(userId, viewerProfile),
+      viewerProfile,
     ]);
 
     const pageIds = rankedIds.slice(offset, offset + limit);
@@ -2317,9 +2341,18 @@ export class ActivitiesService implements OnModuleInit {
       );
     }
 
-    // ── Atomic idempotent upsert with capacity enforcement — safe under concurrent requests ──
-    // If two requests race when capacity is nearly full, the atomic CTE evaluates
-    // the current member count directly in Postgres, preventing over-subscription (TOCTOU).
+    // ── Idempotent upsert with capacity enforcement, serialised per activity ──
+    // The count and the insert live in one statement, but under READ COMMITTED
+    // that is not enough: two joins for the last seat both take their snapshot
+    // before either commits, both count `maxMembers - 1`, and both insert. So
+    // the transaction first locks the activity row. The second join blocks on
+    // that lock until the first commits, and because the insert is a separate
+    // statement it takes a fresh snapshot afterwards and counts the first
+    // join's row. FOR NO KEY UPDATE is enough to make joins queue behind each
+    // other (it conflicts with itself and with any edit of the activity, such
+    // as lowering `maxMembers`) without blocking the foreign-key checks of
+    // unrelated writes (invitations, comments) that only need a KEY SHARE lock.
+    // The transaction holds just these two statements.
     //
     // `xmax = 0` is the standard Postgres test for "this row was genuinely
     // INSERTed rather than updated by the conflict path". It's what makes the
@@ -2333,39 +2366,44 @@ export class ActivitiesService implements OnModuleInit {
     // when the row was not already MEMBER, so it reads true exactly once — a
     // concurrent second join sees the committed MEMBER row and keeps the first
     // one's timestamp.
-    const upsertResult = await this.prisma.$queryRaw<
-      Array<{ inserted: boolean; becameMember?: boolean }>
-    >`
-      WITH current_count AS (
-        SELECT COUNT(*)::int AS cnt
-        FROM "CrewActivityMember"
-        WHERE "activityId" = ${activityId} AND "status" = 'MEMBER'
-      ),
-      act AS (
-        SELECT "maxMembers"
-        FROM "CrewActivity"
+    const upsertResult = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`
+        SELECT "id" FROM "CrewActivity"
         WHERE "id" = ${activityId} AND "deletedAt" IS NULL
-      )
-      INSERT INTO "CrewActivityMember" ("userId", "activityId", "status", "joinedAt")
-      SELECT ${userId}, ${activityId}, 'MEMBER', NOW()
-      FROM act, current_count
-      WHERE (
-        act."maxMembers" IS NULL
-        OR current_count.cnt < act."maxMembers"
-        OR EXISTS (
-          SELECT 1 FROM "CrewActivityMember"
-          WHERE "userId" = ${userId} AND "activityId" = ${activityId} AND "status" = 'MEMBER'
+        FOR NO KEY UPDATE
+      `;
+      return tx.$queryRaw<Array<{ inserted: boolean; becameMember?: boolean }>>`
+        WITH current_count AS (
+          SELECT COUNT(*)::int AS cnt
+          FROM "CrewActivityMember"
+          WHERE "activityId" = ${activityId} AND "status" = 'MEMBER'
+        ),
+        act AS (
+          SELECT "maxMembers"
+          FROM "CrewActivity"
+          WHERE "id" = ${activityId} AND "deletedAt" IS NULL
         )
-      )
-      ON CONFLICT ("userId", "activityId") DO UPDATE SET
-        "status" = 'MEMBER',
-        "joinedAt" = CASE
-          WHEN "CrewActivityMember"."status" = 'MEMBER'
-            THEN "CrewActivityMember"."joinedAt"
-          ELSE NOW()
-        END
-      RETURNING (xmax = 0) AS inserted, ("joinedAt" = NOW()) AS "becameMember"
-    `;
+        INSERT INTO "CrewActivityMember" ("userId", "activityId", "status", "joinedAt")
+        SELECT ${userId}, ${activityId}, 'MEMBER', NOW()
+        FROM act, current_count
+        WHERE (
+          act."maxMembers" IS NULL
+          OR current_count.cnt < act."maxMembers"
+          OR EXISTS (
+            SELECT 1 FROM "CrewActivityMember"
+            WHERE "userId" = ${userId} AND "activityId" = ${activityId} AND "status" = 'MEMBER'
+          )
+        )
+        ON CONFLICT ("userId", "activityId") DO UPDATE SET
+          "status" = 'MEMBER',
+          "joinedAt" = CASE
+            WHEN "CrewActivityMember"."status" = 'MEMBER'
+              THEN "CrewActivityMember"."joinedAt"
+            ELSE NOW()
+          END
+        RETURNING (xmax = 0) AS inserted, ("joinedAt" = NOW()) AS "becameMember"
+      `;
+    });
 
     if (!upsertResult || upsertResult.length === 0) {
       throw new ForbiddenException('Activity is full');

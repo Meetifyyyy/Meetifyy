@@ -18,6 +18,7 @@ import { RedisService } from '../redis/redis.service';
 import { getQueueToken } from '@nestjs/bullmq';
 import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
 import { affiliatedWith } from '../common/campus/testing/affiliation.fixture';
+import { joinTransaction } from './testing/join-transaction';
 
 /**
  * Endpoint-level enforcement: the same matrix as the policy spec, but driven
@@ -89,6 +90,7 @@ type PrismaFake = {
   };
   activityDiscussionMessage: { findMany: jest.Mock; create: jest.Mock };
   $queryRaw: jest.Mock<Promise<unknown>, [TemplateStringsArray, ...unknown[]]>;
+  $transaction: ReturnType<typeof joinTransaction>;
 };
 
 describe('Activity access enforcement (service level)', () => {
@@ -168,6 +170,10 @@ describe('Activity access enforcement (service level)', () => {
   beforeEach(async () => {
     activityRow = baseActivity('PUBLIC');
 
+    const queryRaw = jest.fn<
+      Promise<unknown>,
+      [TemplateStringsArray, ...unknown[]]
+    >(() => Promise.resolve([{ inserted: true }]));
     prisma = {
       crewActivity: {
         findUnique: jest.fn(({ include, where }: FindUniqueArgs) => {
@@ -240,10 +246,8 @@ describe('Activity access enforcement (service level)', () => {
           }),
         ),
       },
-      $queryRaw: jest.fn<
-        Promise<unknown>,
-        [TemplateStringsArray, ...unknown[]]
-      >(() => Promise.resolve([{ inserted: true }])),
+      $queryRaw: queryRaw,
+      $transaction: joinTransaction(queryRaw),
     };
 
     blockedIds = [];

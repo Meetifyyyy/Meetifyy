@@ -10,6 +10,7 @@ import { NotificationFactory } from '../notifications/notification.factory';
 import { BlocksService } from '../users/blocks.service';
 import { DomainEventService } from '../events/domain-event.service';
 import { RedisService } from '../redis/redis.service';
+import { joinTransaction } from './testing/join-transaction';
 import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
 
 /**
@@ -42,7 +43,13 @@ describe('Activities — blocks (H-21) and card presentation (M-19)', () => {
     _count: { members: 1 },
   };
 
-  const makePrisma = () => ({
+  // xmax = 0 → the row was genuinely INSERTed, i.e. a real join.
+  const makeQueryRaw = () =>
+    jest.fn((..._args: unknown[]) =>
+      Promise.resolve<unknown>([{ inserted: true }]),
+    );
+
+  const makePrisma = (queryRaw = makeQueryRaw()) => ({
     crewActivity: {
       findUnique: jest.fn(() => Promise.resolve(activity)),
       findFirst: jest.fn(() => Promise.resolve(activity)),
@@ -72,7 +79,8 @@ describe('Activities — blocks (H-21) and card presentation (M-19)', () => {
       create: jest.fn(),
       findUnique: jest.fn(),
     },
-    $queryRaw: jest.fn(() => Promise.resolve([{ inserted: true }])),
+    $queryRaw: queryRaw,
+    $transaction: joinTransaction(queryRaw),
   });
 
   beforeEach(async () => {

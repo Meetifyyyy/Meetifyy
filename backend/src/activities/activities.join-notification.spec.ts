@@ -11,6 +11,7 @@ import {
 import { BlocksService } from '../users/blocks.service';
 import { DomainEventService } from '../events/domain-event.service';
 import { RedisService } from '../redis/redis.service';
+import { joinTransaction } from './testing/join-transaction';
 import { getQueueToken } from '@nestjs/bullmq';
 import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
 
@@ -56,34 +57,40 @@ describe('Activity join → host notification', () => {
   // notification on, without coupling them to a timer.
   const flush = () => new Promise((resolve) => setImmediate(resolve));
 
-  const makePrisma = () => ({
-    crewActivity: {
-      findUnique: jest.fn(() => Promise.resolve(activityRow)),
-      findFirst: jest.fn(() => Promise.resolve(activityRow)),
-    },
-    crewActivityMember: {
-      findUnique: jest.fn(() => Promise.resolve(null)),
-      findMany: jest.fn(() => Promise.resolve([])),
-      deleteMany: jest.fn(() => Promise.resolve({ count: 1 })),
-    },
-    user: {
-      findUnique: jest.fn(({ where }: { where: { id: string } }) =>
-        Promise.resolve({
-          id: where.id,
-          collegeId: COLLEGE,
-          username: where.id === JOINER ? 'ananya' : 'host',
-          displayName: where.id === JOINER ? 'Ananya S' : 'Host',
-          avatar: 'avatars/ananya.webp',
-        }),
-      ),
-    },
-    activityInvitation: {
-      count: jest.fn(() => Promise.resolve(0)),
-      findMany: jest.fn(() => Promise.resolve([])),
-    },
+  const makePrisma = () => {
     // xmax = 0 → the row was genuinely INSERTed, i.e. a real join.
-    $queryRaw: jest.fn(() => Promise.resolve([{ inserted: true }])),
-  });
+    const queryRaw = jest.fn((..._args: unknown[]) =>
+      Promise.resolve<unknown>([{ inserted: true }]),
+    );
+    return {
+      crewActivity: {
+        findUnique: jest.fn(() => Promise.resolve(activityRow)),
+        findFirst: jest.fn(() => Promise.resolve(activityRow)),
+      },
+      crewActivityMember: {
+        findUnique: jest.fn(() => Promise.resolve(null)),
+        findMany: jest.fn(() => Promise.resolve([])),
+        deleteMany: jest.fn(() => Promise.resolve({ count: 1 })),
+      },
+      user: {
+        findUnique: jest.fn(({ where }: { where: { id: string } }) =>
+          Promise.resolve({
+            id: where.id,
+            collegeId: COLLEGE,
+            username: where.id === JOINER ? 'ananya' : 'host',
+            displayName: where.id === JOINER ? 'Ananya S' : 'Host',
+            avatar: 'avatars/ananya.webp',
+          }),
+        ),
+      },
+      activityInvitation: {
+        count: jest.fn(() => Promise.resolve(0)),
+        findMany: jest.fn(() => Promise.resolve([])),
+      },
+      $queryRaw: queryRaw,
+      $transaction: joinTransaction(queryRaw),
+    };
+  };
 
   beforeEach(async () => {
     activityRow = {

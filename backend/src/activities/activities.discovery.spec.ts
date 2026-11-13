@@ -27,6 +27,10 @@ describe('Crew discovery', () => {
   let pool: ActivityRow[];
   let follows: { followerId: string; followingId: string }[];
   let friendMemberships: { activityId: string; userId: string }[];
+  /** Hosts of the activities the viewer has joined before. */
+  let joinedHosts: string[];
+  /** The people in the viewer's recent conversations (everyone but the viewer). */
+  let chatPartners: string[];
 
   /** A crew activity row, as the discovery queries read it. */
   type ActivityRow = {
@@ -93,12 +97,15 @@ describe('Crew discovery', () => {
         }) => {
           if (typeof where?.userId === 'object' && where.userId.in)
             return Promise.resolve(friendMemberships);
+          // The viewer's own join history, read together with each activity's host.
           if (
             where?.userId === ME &&
             where?.status === 'MEMBER' &&
             !where.activityId
           )
-            return Promise.resolve([]);
+            return Promise.resolve(
+              joinedHosts.map((creatorId) => ({ activity: { creatorId } })),
+            );
           return Promise.resolve([]);
         },
       ),
@@ -115,15 +122,21 @@ describe('Crew discovery', () => {
       ),
     },
     follow: {
-      findMany: jest.fn(({ where }: { where: { followerId?: string } }) =>
+      // One read for both directions: every row the viewer is part of.
+      findMany: jest.fn((_args: { where: { OR: unknown[] } }) =>
         Promise.resolve(
-          where.followerId === ME
-            ? follows.filter((f) => f.followerId === ME)
-            : follows.filter((f) => f.followingId === ME),
+          follows.filter((f) => f.followerId === ME || f.followingId === ME),
         ),
       ),
     },
-    conversationParticipant: { findMany: jest.fn(() => Promise.resolve([])) },
+    conversation: {
+      findMany: jest.fn(() =>
+        Promise.resolve([
+          { participants: chatPartners.map((userId) => ({ userId })) },
+        ]),
+      ),
+    },
+    conversationParticipant: { findMany: jest.fn() },
     activityInvitation: {
       count: jest.fn(() => Promise.resolve(0)),
       findMany: jest.fn(() => Promise.resolve([] as { activityId: string }[])),
@@ -134,6 +147,8 @@ describe('Crew discovery', () => {
     pool = [];
     follows = [];
     friendMemberships = [];
+    joinedHosts = [];
+    chatPartners = [];
     blockedIds = [];
 
     prisma = makePrisma();
@@ -197,6 +212,31 @@ describe('Crew discovery', () => {
         { activityId: 'friends', userId: 'friend-2' },
       ];
       expect(await order()).toEqual(['friends', 'quiet']);
+    });
+
+    it('lifts an activity hosted by someone the viewer talks to', async () => {
+      pool = [act('plain'), act('chat')];
+      chatPartners = ['host-chat'];
+      expect(await order()).toEqual(['chat', 'plain']);
+    });
+
+    it('lifts an activity hosted by someone whose activity the viewer joined before', async () => {
+      pool = [act('plain'), act('again')];
+      joinedHosts = ['host-again'];
+      expect(await order()).toEqual(['again', 'plain']);
+    });
+
+    it('reads each signal once: one user, one follow and one conversation query', async () => {
+      pool = [act('a')];
+      await service.getForYouFeed(ME, 20);
+      // The viewer serves both the ranking and the hydration policy, and their
+      // interests come with them; follows go both ways in a single query; and
+      // recent conversations are read with their participants, never through a
+      // second lookup on ConversationParticipant.
+      expect(prisma.user.findUnique).toHaveBeenCalledTimes(1);
+      expect(prisma.follow.findMany).toHaveBeenCalledTimes(1);
+      expect(prisma.conversation.findMany).toHaveBeenCalledTimes(1);
+      expect(prisma.conversationParticipant.findMany).not.toHaveBeenCalled();
     });
 
     it('lifts an activity from the user’s own college', async () => {
