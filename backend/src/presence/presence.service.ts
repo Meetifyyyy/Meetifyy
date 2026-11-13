@@ -1,19 +1,24 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { RedisService } from '../redis/redis.service';
-import Redis from 'ioredis';
 import { PrismaService } from '../prisma/prisma.service';
 import { detach } from '../common/utils/detach.util';
 import { errorMessage } from '../common/utils/error.util';
+import {
+  MemoryPresenceStore,
+  OFFLINE_GRACE_MS,
+  RedisPresenceStore,
+  type PresenceStore,
+  type UserPresence,
+} from './presence-store';
 
-export interface UserPresence {
-  lastSeen: string;
-  status: 'online' | 'idle' | 'offline';
-  socketIds: string[];
-}
+export type { UserPresence } from './presence-store';
+
+/** Margin past the last socket's expiry before re-checking (see setOffline). */
+const RECHECK_MARGIN_MS = 1000;
 
 @Injectable()
 export class PresenceService {
-  private redis: Redis | null = null;
+  private readonly store: PresenceStore;
   private readonly logger = new Logger('PRESENCE');
   private socketValidator: ((socketId: string) => boolean) | null = null;
 
@@ -21,10 +26,12 @@ export class PresenceService {
     private readonly redisService: RedisService,
     private readonly prisma: PrismaService,
   ) {
-    this.redis = this.redisService.getClient();
-    if (this.redis) {
+    const redis = this.redisService.getClient();
+    if (redis) {
+      this.store = new RedisPresenceStore(redis);
       this.logger.log('Redis connected for Presence Service');
     } else {
+      this.store = new MemoryPresenceStore();
       this.logger.warn(
         'Redis not configured. Presence features will be mocked in-memory.',
       );
@@ -35,6 +42,12 @@ export class PresenceService {
     (userId: string, status: 'online' | 'offline', lastSeen: string) => void
   > = [];
 
+  /**
+   * Tells the service which sockets THIS process holds. It is used only to
+   * decide whether a disconnect needs a later re-check (see setOffline), never
+   * to judge another socket dead: on more than one replica that dropped every
+   * socket held elsewhere.
+   */
   registerSocketValidator(validator: (socketId: string) => boolean) {
     this.socketValidator = validator;
   }
@@ -63,27 +76,7 @@ export class PresenceService {
     });
   }
 
-  private cleanPresence(presence: UserPresence | null): UserPresence | null {
-    if (!presence) return null;
-    if (this.socketValidator && Array.isArray(presence.socketIds)) {
-      presence.socketIds = presence.socketIds.filter((id) =>
-        this.socketValidator!(id),
-      );
-      if (presence.socketIds.length === 0) {
-        presence.status = 'offline';
-      }
-    }
-    return presence;
-  }
-
-  // In-memory fallback if Redis is not configured
-  private memoryPresence = new Map<string, UserPresence>();
-
-  private getPresenceKey(userId: string): string {
-    return `presence:${userId}`;
-  }
-
-  private disconnectTimers = new Map<string, NodeJS.Timeout>();
+  private offlineChecks = new Map<string, NodeJS.Timeout>();
 
   /**
    * How long a `lastSeenAt` write is suppressed for after one succeeds.
@@ -114,8 +107,9 @@ export class PresenceService {
   private async touchLastSeen(userId: string): Promise<void> {
     if (!userId) return;
     try {
-      if (this.redis) {
-        const claimed = await this.redis.set(
+      const redis = this.redisService.getClient();
+      if (redis) {
+        const claimed = await redis.set(
           `lastseen:throttle:${userId}`,
           '1',
           'EX',
@@ -136,66 +130,23 @@ export class PresenceService {
     }
   }
 
+  /** On connect and on every heartbeat. */
   async setOnline(userId: string, socketId: string): Promise<void> {
     // Durable "was here" stamp, throttled. Deliberately not awaited: presence
     // is a realtime path and must not wait on a database write that is only
     // needed by reporting.
     void this.touchLastSeen(userId);
 
-    // Cancel any pending disconnect grace timer for this user
-    if (this.disconnectTimers.has(userId)) {
-      clearTimeout(this.disconnectTimers.get(userId));
-      this.disconnectTimers.delete(userId);
-    }
+    // The user is here, so a pending offline announcement is moot. One left on
+    // another replica finds this socket live and stays silent.
+    this.cancelOfflineCheck(userId);
     try {
-      const now = new Date().toISOString();
-      if (this.redis) {
-        const key = this.getPresenceKey(userId);
-        const data = await this.redis.get(key);
-        let presence: UserPresence | null = data
-          ? (JSON.parse(data) as UserPresence)
-          : null;
-
-        presence = this.cleanPresence(presence);
-        const previousStatus = presence?.status || 'offline';
-
-        if (!presence) {
-          presence = { lastSeen: now, status: 'online', socketIds: [] };
-        }
-
-        if (!presence.socketIds.includes(socketId)) {
-          presence.socketIds.push(socketId);
-        }
-
-        presence.lastSeen = now;
-        presence.status = 'online';
-
-        await this.redis.set(key, JSON.stringify(presence), 'EX', 90);
-
-        if (previousStatus !== 'online') {
-          this.logger.log(`Online user=${userId}`);
-          this.notifyStatusChange(userId, 'online', now);
-        }
-      } else {
-        let presence = this.memoryPresence.get(userId) || null;
-        presence = this.cleanPresence(presence);
-        const previousStatus = presence?.status || 'offline';
-
-        if (!presence) {
-          presence = { lastSeen: now, status: 'online', socketIds: [] };
-        }
-
-        if (!presence.socketIds.includes(socketId)) {
-          presence.socketIds.push(socketId);
-        }
-        presence.lastSeen = now;
-        presence.status = 'online';
-        this.memoryPresence.set(userId, presence);
-
-        if (previousStatus !== 'online') {
-          this.logger.log(`Online user=${userId}`);
-          this.notifyStatusChange(userId, 'online', now);
-        }
+      const now = Date.now();
+      // Announced only when viewers were last told otherwise: a second device,
+      // a heartbeat, or a reconnect inside the grace period says nothing.
+      if (await this.store.online(userId, socketId, now)) {
+        this.logger.log(`Online user=${userId}`);
+        this.notifyStatusChange(userId, 'online', new Date(now).toISOString());
       }
     } catch (err) {
       this.logger.error(`Failed to set online presence for ${userId}`, err);
@@ -204,159 +155,81 @@ export class PresenceService {
 
   async setOffline(userId: string, socketId: string): Promise<void> {
     try {
-      if (this.redis) {
-        const key = this.getPresenceKey(userId);
-        const data = await this.redis.get(key);
-        let presence: UserPresence | null = data
-          ? (JSON.parse(data) as UserPresence)
-          : null;
-
-        if (presence) {
-          presence.socketIds = presence.socketIds.filter(
-            (id) => id !== socketId,
-          );
-          presence = this.cleanPresence(presence);
-          if (presence) {
-            presence.lastSeen = new Date().toISOString();
-            if (presence.socketIds.length === 0) {
-              if (this.disconnectTimers.has(userId)) {
-                clearTimeout(this.disconnectTimers.get(userId));
-              }
-              const timer = setTimeout(
-                () =>
-                  detach('presence timeout', async () => {
-                    this.disconnectTimers.delete(userId);
-                    try {
-                      const currentData = await this.redis?.get(key);
-                      let currPresence: UserPresence | null = currentData
-                        ? (JSON.parse(currentData) as UserPresence)
-                        : null;
-                      currPresence = this.cleanPresence(currPresence);
-                      if (
-                        !currPresence ||
-                        currPresence.socketIds.length === 0
-                      ) {
-                        const now = new Date().toISOString();
-                        const updatedPresence: UserPresence = {
-                          lastSeen: now,
-                          status: 'offline',
-                          socketIds: [],
-                        };
-                        await this.redis?.set(
-                          key,
-                          JSON.stringify(updatedPresence),
-                          'EX',
-                          90,
-                        );
-                        this.logger.log(`Offline user=${userId}`);
-                        this.notifyStatusChange(userId, 'offline', now);
-                      }
-                    } catch {
-                      // One user failing to be marked offline must not abandon the rest of the sweep.
-                    }
-                  }),
-                2000,
-              );
-              this.disconnectTimers.set(userId, timer);
-            } else {
-              await this.redis.set(key, JSON.stringify(presence), 'EX', 90);
-            }
-          }
-        }
-      } else {
-        let presence = this.memoryPresence.get(userId) || null;
-        if (presence) {
-          presence.socketIds = presence.socketIds.filter(
-            (id) => id !== socketId,
-          );
-          presence = this.cleanPresence(presence);
-          if (presence) {
-            presence.lastSeen = new Date().toISOString();
-            if (presence.socketIds.length === 0) {
-              if (this.disconnectTimers.has(userId)) {
-                clearTimeout(this.disconnectTimers.get(userId));
-              }
-              const timer = setTimeout(() => {
-                this.disconnectTimers.delete(userId);
-                let currPresence = this.memoryPresence.get(userId) || null;
-                currPresence = this.cleanPresence(currPresence);
-                if (!currPresence || currPresence.socketIds.length === 0) {
-                  const now = new Date().toISOString();
-                  const updatedPresence: UserPresence = {
-                    lastSeen: now,
-                    status: 'offline',
-                    socketIds: [],
-                  };
-                  this.memoryPresence.set(userId, updatedPresence);
-                  this.logger.log(`Offline user=${userId}`);
-                  this.notifyStatusChange(userId, 'offline', now);
-                }
-              }, 2000);
-              this.disconnectTimers.set(userId, timer);
-            } else {
-              this.memoryPresence.set(userId, presence);
-            }
-          }
-        }
+      const now = Date.now();
+      const after = await this.store.offline(userId, socketId, now);
+      if (!after) return;
+      if (after.live.length === 0) {
+        this.scheduleOfflineCheck(userId, OFFLINE_GRACE_MS);
+        return;
+      }
+      // Other sockets still count as live. One this process holds reports its
+      // own disconnect. Any other belongs to another replica, or was left
+      // behind by a process that stopped without saying goodbye; the second
+      // kind is never refreshed, so once every one of them would have expired
+      // it is checked again, or the user would stay online to viewers forever.
+      const elsewhere = after.live.some((id) => !this.socketValidator?.(id));
+      if (elsewhere) {
+        this.scheduleOfflineCheck(
+          userId,
+          Math.max(OFFLINE_GRACE_MS, after.latest - now + RECHECK_MARGIN_MS),
+        );
       }
     } catch (err) {
       this.logger.error(`Failed to set offline presence for ${userId}`, err);
     }
   }
 
+  private cancelOfflineCheck(userId: string): void {
+    const timer = this.offlineChecks.get(userId);
+    if (timer) {
+      clearTimeout(timer);
+      this.offlineChecks.delete(userId);
+    }
+  }
+
+  private scheduleOfflineCheck(userId: string, delayMs: number): void {
+    this.cancelOfflineCheck(userId);
+    const timer = setTimeout(
+      () =>
+        detach('presence offline check', async () => {
+          this.offlineChecks.delete(userId);
+          const now = Date.now();
+          // True once per real change, on whichever replica asks first.
+          if (await this.store.confirmOffline(userId, now)) {
+            this.logger.log(`Offline user=${userId}`);
+            this.notifyStatusChange(
+              userId,
+              'offline',
+              new Date(now).toISOString(),
+            );
+          }
+        }),
+      delayMs,
+    );
+    timer.unref?.();
+    this.offlineChecks.set(userId, timer);
+  }
+
   async getPresence(userId: string): Promise<UserPresence | null> {
     try {
-      if (this.redis) {
-        const key = this.getPresenceKey(userId);
-        const data = await this.redis.get(key);
-        let presence: UserPresence | null = data
-          ? (JSON.parse(data) as UserPresence)
-          : null;
-        presence = this.cleanPresence(presence);
-        if (presence && presence.socketIds.length === 0) {
-          presence.status = 'offline';
-        }
-        return presence;
-      } else {
-        let presence = this.memoryPresence.get(userId) || null;
-        presence = this.cleanPresence(presence);
-        if (presence && presence.socketIds.length === 0) {
-          presence.status = 'offline';
-        }
-        return presence;
-      }
+      const [presence] = await this.store.read([userId], Date.now());
+      return presence ?? null;
     } catch (err) {
       this.logger.error(`Failed to get presence for ${userId}`, err);
       return null;
     }
   }
 
+  /** One round trip for the whole list. */
   async getPresenceMany(userIds: string[]): Promise<Map<string, UserPresence>> {
     const result = new Map<string, UserPresence>();
     if (!userIds || userIds.length === 0) return result;
     try {
-      if (this.redis) {
-        const keys = userIds.map((uId) => this.getPresenceKey(uId));
-        const values = await this.redis.mget(...keys);
-        userIds.forEach((uId, idx) => {
-          const val = values[idx];
-          if (val) {
-            try {
-              let pres: UserPresence | null = JSON.parse(val) as UserPresence;
-              pres = this.cleanPresence(pres);
-              if (pres) result.set(uId, pres);
-            } catch {
-              // A presence record that will not parse is treated as absent.
-            }
-          }
-        });
-      } else {
-        userIds.forEach((uId) => {
-          let pres = this.memoryPresence.get(uId) || null;
-          pres = this.cleanPresence(pres);
-          if (pres) result.set(uId, pres);
-        });
-      }
+      const presences = await this.store.read(userIds, Date.now());
+      userIds.forEach((userId, index) => {
+        const presence = presences[index];
+        if (presence) result.set(userId, presence);
+      });
     } catch (err) {
       this.logger.error(`Failed to get batch presence`, err);
     }
@@ -366,20 +239,12 @@ export class PresenceService {
   /**
    * Fully removes a user's presence entry — called on account deletion so the
    * user no longer appears online in any presence query after deletion.
-   * Also cancels any pending disconnect grace timer.
+   * Also cancels any pending offline check.
    */
   async removePresence(userId: string): Promise<void> {
-    // Cancel any pending disconnect timer first.
-    if (this.disconnectTimers.has(userId)) {
-      clearTimeout(this.disconnectTimers.get(userId));
-      this.disconnectTimers.delete(userId);
-    }
+    this.cancelOfflineCheck(userId);
     try {
-      if (this.redis) {
-        await this.redis.del(this.getPresenceKey(userId));
-      } else {
-        this.memoryPresence.delete(userId);
-      }
+      await this.store.remove(userId);
       this.logger.log(`Removed presence for deleted user=${userId}`);
     } catch (err) {
       this.logger.warn(

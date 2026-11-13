@@ -321,6 +321,9 @@ export class RealtimeGateway
     // Register this gateway as the emit target for InstantMatchService
     setRealtimeGatewayRef(this);
 
+    // Which sockets this replica holds. Presence uses it only to decide
+    // whether a disconnect needs a later re-check, never to judge a socket
+    // held elsewhere dead.
     this.presenceService.registerSocketValidator((socketId: string) => {
       const s = this.server?.sockets?.sockets?.get(socketId);
       return Boolean(s && s.connected);
