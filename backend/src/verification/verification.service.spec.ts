@@ -1,5 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { VerificationService } from './verification.service';
+import {
+  LIVE_CAPTURE_LIMITS,
+  VerificationService,
+} from './verification.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { VerificationStatus } from '@prisma/client';
@@ -30,6 +33,7 @@ describe('VerificationService', () => {
       create: jest.fn(),
       findFirst: jest.fn(),
       findMany: jest.fn((): Promise<unknown[]> => Promise.resolve([])),
+      count: jest.fn((): Promise<number> => Promise.resolve(0)),
     },
     $transaction: jest.fn(),
   };
@@ -63,12 +67,16 @@ describe('VerificationService', () => {
     const selfieId = 'selfie-1';
     const idCardId = 'id-1';
 
-    /** A document that passes every validity check. */
-    const goodDoc = (key: string) => ({
-      id: key,
+    /**
+     * A document that passes every validity check: a fresh live capture of the
+     * kind its id stands for, as only the capture endpoint stores one.
+     */
+    const goodDoc = (id: string) => ({
+      id,
       ownerId: userId,
       mimeType: 'image/jpeg',
-      objectKey: `verification/${key}.jpg`,
+      objectKey: `verification/live-${id === selfieId ? 'selfie' : 'id'}-${'a'.repeat(32)}.jpg`,
+      createdAt: new Date(),
     });
 
     /** Both documents valid, and the status claim succeeds. */
@@ -148,6 +156,65 @@ describe('VerificationService', () => {
       await expect(
         service.submitVerification(userId, selfieId, idCardId),
       ).rejects.toThrow('uploaded through the verification flow');
+    });
+
+    describe('the documents must be live captures, as for live-request', () => {
+      /** Serves `selfieId` and `idCardId` with `override` applied to one of them. */
+      const serve = (
+        target: string,
+        override: Partial<ReturnType<typeof goodDoc>>,
+      ) =>
+        mockPrisma.media.findUnique.mockImplementation(
+          ({ where }: MediaLookup) =>
+            Promise.resolve({
+              ...goodDoc(where.id),
+              ...(where.id === target ? override : {}),
+            }),
+        );
+
+      it('refuses a generic upload that merely sits under verification/', async () => {
+        // What `POST /api/media/upload` used to store for folder=verification:
+        // a random name, no re-encode, no freshness, no camera.
+        happyPath();
+        serve(selfieId, { objectKey: `verification/${'b'.repeat(32)}.jpg` });
+        await expect(
+          service.submitVerification(userId, selfieId, idCardId),
+        ).rejects.toThrow('must be taken with the camera');
+        expect(mockPrisma.user.updateMany).not.toHaveBeenCalled();
+      });
+
+      it('refuses a capture of the wrong kind in either slot', async () => {
+        happyPath();
+        // The ID slot holds a selfie capture.
+        serve(idCardId, {
+          objectKey: `verification/live-selfie-${'a'.repeat(32)}.jpg`,
+        });
+        await expect(
+          service.submitVerification(userId, selfieId, idCardId),
+        ).rejects.toThrow('That photo is not a id card');
+        expect(mockPrisma.user.updateMany).not.toHaveBeenCalled();
+      });
+
+      it('refuses a capture older than the live window', async () => {
+        happyPath();
+        serve(selfieId, {
+          createdAt: new Date(Date.now() - LIVE_CAPTURE_LIMITS.maxAgeMs - 1000),
+        });
+        await expect(
+          service.submitVerification(userId, selfieId, idCardId),
+        ).rejects.toThrow('taken too long ago');
+        expect(mockPrisma.user.updateMany).not.toHaveBeenCalled();
+      });
+
+      it('refuses a capture already attached to an earlier attempt', async () => {
+        happyPath();
+        // Once: clearAllMocks keeps implementations, and later tests need 0.
+        mockPrisma.verificationRequest.count.mockResolvedValueOnce(1);
+        await expect(
+          service.submitVerification(userId, selfieId, idCardId),
+        ).rejects.toThrow('already submitted');
+        expect(mockPrisma.user.updateMany).not.toHaveBeenCalled();
+      });
     });
 
     it('should throw ConflictException if user is already pending', async () => {

@@ -69,9 +69,16 @@ export class VerificationController {
   }
 
   /**
-   * Legacy two-document submission (selfie + ID card), still sent by installed
-   * apps built before the live choice. Kept until those builds are retired
-   * through the version gate; the website and new builds use live-request.
+   * Two-document submission (selfie + ID card), the shape builds before the live
+   * choice sent. Both documents must be live captures, fresh and unused, exactly
+   * as for live-request; it is no longer a way to attach a generic upload.
+   *
+   * Those older builds uploaded their photos through `/api/media/upload` with
+   * folder=verification, which is now refused, so they cannot complete a
+   * submission and see that route's message instead. No build since the live
+   * flow calls this route; it stays only so a client that does capture two
+   * photos can still use it, and can go once the version gate retires the old
+   * builds.
    */
   @Post('request')
   async submitVerification(

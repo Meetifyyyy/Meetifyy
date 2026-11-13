@@ -194,6 +194,32 @@ export class VerificationService {
     if (!kind) throw new BadRequestException('Unknown verification method');
     const label = kind === 'selfie' ? 'selfie' : 'ID photo';
 
+    await this.assertFreshLiveCapture(mediaId, userId, kind, label);
+
+    return this.createAttempt(userId, {
+      method,
+      selfieMediaId: kind === 'selfie' ? mediaId : null,
+      idCardMediaId: kind === 'id' ? mediaId : null,
+    });
+  }
+
+  /**
+   * The conditions every submitted document must meet, whichever route it
+   * arrives by: the caller's own, a live capture of the expected kind (proven
+   * by its key, which only captureDocument writes), fresh, and not already
+   * attached to an attempt.
+   *
+   * Shared so the legacy two-document route cannot be a way round them. It once
+   * checked only ownership, image type and the `verification/` prefix, and a
+   * generic upload landed under that prefix too, so a file picked from the
+   * gallery, re-encoded by nothing and taken any time, passed it.
+   */
+  private async assertFreshLiveCapture(
+    mediaId: string,
+    userId: string,
+    kind: VerificationCaptureKind,
+    label: string,
+  ) {
     const media = await this.assertUsableDocument(mediaId, userId, label);
     const match = LIVE_CAPTURE_KEY.exec(media.objectKey ?? '');
     if (!match) {
@@ -219,12 +245,7 @@ export class VerificationService {
         `That ${label} was already submitted. Please take a new one.`,
       );
     }
-
-    return this.createAttempt(userId, {
-      method,
-      selfieMediaId: kind === 'selfie' ? mediaId : null,
-      idCardMediaId: kind === 'id' ? mediaId : null,
-    });
+    return media;
   }
 
   /**
@@ -285,8 +306,8 @@ export class VerificationService {
     }
 
     await Promise.all([
-      this.assertUsableDocument(selfieMediaId, userId, 'selfie'),
-      this.assertUsableDocument(idCardMediaId, userId, 'id card'),
+      this.assertFreshLiveCapture(selfieMediaId, userId, 'selfie', 'selfie'),
+      this.assertFreshLiveCapture(idCardMediaId, userId, 'id', 'id card'),
     ]);
 
     return this.createAttempt(userId, {

@@ -98,16 +98,18 @@ describe('verification media privacy', () => {
 });
 
 /**
- * A verification document's declared type comes from the same untrusted
- * multipart body as its bytes. The submission check downstream trusts the
- * recorded mimetype, and a human reviewer makes an identity decision from the
- * rendered image, so the two have to actually agree.
+ * Identity documents have exactly one way in: the verification capture, which
+ * decodes and re-encodes the image, enforces the account's verification state
+ * and writes the `verification/live-*` key a submission checks. The generic
+ * upload used to accept `folder=verification` after only a byte sniff, which
+ * stored a document under the same prefix that skipped all of that.
  */
-describe('verification upload content validation', () => {
+describe('generic upload and the verification folder', () => {
   const jpegBytes = Buffer.concat([
     Buffer.from([0xff, 0xd8, 0xff]),
     Buffer.alloc(32),
   ]);
+
   const notAnImage = Buffer.concat([
     Buffer.from('this is plain text, not a jpeg'),
     Buffer.alloc(32),
@@ -115,12 +117,14 @@ describe('verification upload content validation', () => {
 
   let service: StorageService;
   let uploaded: string[];
+  let rowsCreated: number;
 
   const file = (mimetype: string, buffer: Buffer) =>
     stub<Express.Multer.File>({ mimetype, buffer, size: buffer.length });
 
   beforeEach(() => {
     uploaded = [];
+    rowsCreated = 0;
     service = new StorageService(
       stub<StorageProvider>({
         upload: jest.fn((k: string) => {
@@ -132,37 +136,35 @@ describe('verification upload content validation', () => {
       }),
       stub<PrismaService>({
         media: {
-          create: jest.fn(({ data }: { data: object }) =>
-            Promise.resolve({ id: 'm1', ...data }),
-          ),
+          create: jest.fn(({ data }: { data: object }) => {
+            rowsCreated += 1;
+            return Promise.resolve({ id: 'm1', ...data });
+          }),
         },
       }),
       stub<ConfigService>({ get: jest.fn(() => undefined) }),
     );
   });
 
-  it('rejects bytes that do not match the declared image type', async () => {
+  it('refuses folder=verification even for a genuine image', async () => {
     await expect(
-      service.uploadFile('u1', file('image/jpeg', notAnImage), 'verification'),
-    ).rejects.toThrow('do not match its type');
-    // Nothing reached storage.
+      service.uploadFile('u1', file('image/jpeg', jpegBytes), 'verification'),
+    ).rejects.toThrow(/verification flow/);
+    // Nothing reached storage and no row was registered.
     expect(uploaded).toHaveLength(0);
+    expect(rowsCreated).toBe(0);
   });
 
-  it('rejects a non-image document outright', async () => {
+  it('refuses it with a variant key too, which would otherwise pick the object name', async () => {
     await expect(
-      service.uploadFile('u1', file('video/mp4', jpegBytes), 'verification'),
-    ).rejects.toThrow('must be images');
-  });
-
-  it('accepts a genuine image and stores it private', async () => {
-    const result = await service.uploadFile(
-      'u1',
-      file('image/jpeg', jpegBytes),
-      'verification',
-    );
-    expect(uploaded).toHaveLength(1);
-    expect(result.media.visibility).toBe('private');
+      service.uploadFile(
+        'u1',
+        file('image/jpeg', jpegBytes),
+        'verification',
+        'verification/live-selfie-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_thumb.webp',
+      ),
+    ).rejects.toThrow(/verification flow/);
+    expect(uploaded).toHaveLength(0);
   });
 
   it('leaves the ordinary upload paths alone', async () => {

@@ -11,6 +11,7 @@ import sharp from 'sharp';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
 import { config } from '../config';
+import { LruCache } from '../common/utils/lru-cache.util';
 import {
   baseMimeType,
   extensionForMime,
@@ -153,27 +154,6 @@ export class StorageService {
         "That file's contents do not match its type.",
       );
     }
-    // Identity documents get their bytes checked, not just their label.
-    //
-    // The declared mimetype arrives in the same untrusted multipart body as the
-    // content, so on its own it proves nothing — and the verification flow is
-    // exactly where "this is a JPEG" needs to be true, because a reviewer makes
-    // an identity decision from it and the submission check downstream trusts
-    // the recorded type. The same signature check already guards support
-    // attachments; it is applied here rather than to every folder because the
-    // video and audio types the post/chat paths accept have no signature in it.
-    if (this.isAlwaysPrivateKey(`${safeFolder}/x`)) {
-      if (!file.mimetype?.startsWith('image/')) {
-        throw new BadRequestException('Verification documents must be images');
-      }
-      const sniffed = sniffMimeType(file.buffer);
-      if (sniffed !== file.mimetype) {
-        throw new BadRequestException(
-          "That file's contents do not match its type.",
-        );
-      }
-    }
-
     const ext = this.extensionForMime(file.mimetype);
     const randomHex = randomBytes(16).toString('hex');
     const key = explicitKey ?? `${safeFolder}/${randomHex}.${ext}`;
@@ -317,16 +297,6 @@ export class StorageService {
     placeholder?: unknown,
   ) {
     const safeFolder = this.normalizeFolder(folder);
-    // Identity documents never upload straight to storage. A presigned PUT
-    // bypasses the server entirely: the bytes are never checked against the
-    // declared type, and the recorded mimeType is whatever the client claimed.
-    // No client has ever used this path for verification; it is closed so a
-    // hand-written request cannot use it either.
-    if (this.isAlwaysPrivateKey(`${safeFolder}/x`)) {
-      throw new BadRequestException(
-        'Verification photos must be taken through the verification flow',
-      );
-    }
     if (typeof contentType !== 'string' || !this.isAllowedMimeType(contentType))
       throw new BadRequestException('Unsupported content type');
     /*
@@ -731,10 +701,20 @@ export class StorageService {
     return signed[key] || null;
   }
 
-  private signedUrlCache = new Map<
+  /**
+   * Signed URLs already issued, so a feed rendering the same private image in
+   * several places signs it once.
+   *
+   * Bounded: it used to be a plain Map that only ever grew, one entry per key
+   * ever signed for the life of the process. Each entry's `expiresAt` is the
+   * moment its URL should stop being handed out; the same span is the LRU's own
+   * TTL, so an entry nobody reads again is also dropped by the cache itself.
+   */
+  private static readonly SIGNED_URL_CACHE_MAX_ENTRIES = 5_000;
+  private readonly signedUrlCache = new LruCache<
     string,
     { url: string; expiresAt: number }
-  >();
+  >(StorageService.SIGNED_URL_CACHE_MAX_ENTRIES);
 
   async getSignedUrls(
     keys: string[],
@@ -759,10 +739,17 @@ export class StorageService {
         uncachedKeys,
         expiresIn,
       );
-      const cacheExpiresAt = now + Math.max(expiresIn - 60, 300) * 1000;
+      const cacheTtlMs = Math.max(expiresIn - 60, 300) * 1000;
+      // Sweep the dead ones out first so that, at the cap, the entry pushed out
+      // is the least recently used live one only when nothing has expired.
+      this.signedUrlCache.pruneExpired();
       for (const [key, url] of Object.entries(freshUrls)) {
         result[key] = url;
-        this.signedUrlCache.set(key, { url, expiresAt: cacheExpiresAt });
+        this.signedUrlCache.set(
+          key,
+          { url, expiresAt: Date.now() + cacheTtlMs },
+          cacheTtlMs,
+        );
       }
     }
 
@@ -793,6 +780,13 @@ export class StorageService {
     const conversationKeysToCheck: string[] = [];
 
     for (const key of keys) {
+      // Identity documents and support attachments are never the owner's to
+      // hold a link to: only a reviewer, through getReviewerSignedUrl behind the
+      // admin guard, reads them. Checked before the ownership test below, and
+      // before the public-URL shortcut, which an unregistered key would
+      // otherwise fall into.
+      if (this.isAlwaysPrivateKey(key)) continue;
+
       const item = mediaMap.get(key);
       const isThumbnailKey = /_thumb\.[a-z0-9]+$/i.test(key);
 
@@ -967,8 +961,21 @@ export class StorageService {
       // 'defaults' (platform assets) and 'support' (anonymous support
       // attachments, stored by uploadSupportAttachment) are written only by
       // server code, never through the user-writable upload routes.
-      'verification',
     ];
+    // Named rather than left to the generic rejection below, so a client that
+    // still sends it is told what to do instead of being shown a folder list.
+    //
+    // Identity documents exist only as `verification/live-*` objects written by
+    // storeVerificationCapture, which re-encodes the image, enforces the
+    // account's verification state and is what a submission checks the key
+    // against. Any other way in (this pass-through, or a presigned PUT that the
+    // server never sees) would store a document that skips all of that yet
+    // still sits under the prefix the submission trusts.
+    if (folder === 'verification') {
+      throw new BadRequestException(
+        'Verification photos must be taken through the verification flow',
+      );
+    }
     if (!allowedFolders.includes(folder)) {
       throw new BadRequestException(
         `Invalid upload folder. Allowed: ${allowedFolders.join(', ')}`,

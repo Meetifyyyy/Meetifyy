@@ -28,6 +28,7 @@ type DbMedia = {
   mimeType: string;
   objectKey: string;
   visibility?: string;
+  createdAt: Date;
 };
 type DbRequest = {
   id: string;
@@ -239,7 +240,28 @@ describe('account verification — end to end', () => {
               user: db.users[r.userId] ?? null,
             })),
         ),
-      count: () => Promise.resolve(Object.keys(db.requests).length),
+      // Honours the `OR` the reuse check sends, so a capture already attached
+      // to an attempt counts and an unrelated one does not.
+      count: ({
+        where,
+      }: {
+        where?: {
+          OR?: Array<{ selfieMediaId?: string; idCardMediaId?: string }>;
+        };
+      } = {}) =>
+        Promise.resolve(
+          Object.values(db.requests).filter(
+            (r) =>
+              !where?.OR ||
+              where.OR.some(
+                (c) =>
+                  (c.selfieMediaId !== undefined &&
+                    r.selfieMediaId === c.selfieMediaId) ||
+                  (c.idCardMediaId !== undefined &&
+                    r.idCardMediaId === c.idCardMediaId),
+              ),
+          ).length,
+        ),
       create: ({ data }: { data: RequestCreateData }) => {
         // Stands in for the partial unique index
         // (userId) WHERE status = 'PENDING'. Without modelling it here the
@@ -309,14 +331,16 @@ describe('account verification — end to end', () => {
         [SELFIE]: {
           id: SELFIE,
           ownerId: USER,
-          mimeType: 'image/webp',
-          objectKey: 'verification/selfie.webp',
+          mimeType: 'image/jpeg',
+          objectKey: `verification/live-selfie-${'a'.repeat(32)}.jpg`,
+          createdAt: new Date(),
         },
         [ID_CARD]: {
           id: ID_CARD,
           ownerId: USER,
-          mimeType: 'image/webp',
-          objectKey: 'verification/idcard.webp',
+          mimeType: 'image/jpeg',
+          objectKey: `verification/live-id-${'b'.repeat(32)}.jpg`,
+          createdAt: new Date(),
         },
       },
       requests: {},
@@ -388,6 +412,16 @@ describe('account verification — end to end', () => {
   });
 
   const http = () => request(app.getHttpServer());
+  /** A new live capture owned by the user, as the capture endpoint would store one. */
+  const addCapture = (id: string, kind: 'selfie' | 'id', hex: string) => {
+    db.media[id] = {
+      id,
+      ownerId: USER,
+      mimeType: 'image/jpeg',
+      objectKey: `verification/live-${kind}-${hex.repeat(32)}.jpg`,
+      createdAt: new Date(),
+    };
+  };
   const submit = () =>
     http()
       .post('/api/verification/request')
@@ -418,10 +452,10 @@ describe('account verification — end to end', () => {
     // 3. The reviewer can see both documents, via signed URLs.
     const queue = await http().get('/admin/verification/requests').expect(200);
     expect((queue.body as QueueBody).requests[0].selfieMedia!.url).toBe(
-      'signed://verification/selfie.webp',
+      `signed://verification/live-selfie-${'a'.repeat(32)}.jpg`,
     );
     expect((queue.body as QueueBody).requests[0].idCardMedia!.url).toBe(
-      'signed://verification/idcard.webp',
+      `signed://verification/live-id-${'b'.repeat(32)}.jpg`,
     );
 
     // 4. Approve.
@@ -452,15 +486,12 @@ describe('account verification — end to end', () => {
     expect(db.auditLogs[0].action).toBe('VERIFICATION_REJECT');
     expect(JSON.stringify(db.auditLogs[0])).not.toContain('unreadable');
 
-    db.media['media-selfie-2'] = {
-      id: 'media-selfie-2',
-      ownerId: USER,
-      mimeType: 'image/webp',
-      objectKey: 'verification/selfie-2.webp',
-    };
+    // A rejected attempt's captures are spent; the retry needs two new ones.
+    addCapture('media-selfie-2', 'selfie', 'c');
+    addCapture('media-id-2', 'id', 'd');
     await http()
       .post('/api/verification/request')
-      .send({ selfieMediaId: 'media-selfie-2', idCardMediaId: ID_CARD })
+      .send({ selfieMediaId: 'media-selfie-2', idCardMediaId: 'media-id-2' })
       .expect(201);
 
     expect(db.users[USER].verificationStatus).toBe(VerificationStatus.PENDING);
@@ -496,8 +527,42 @@ describe('account verification — end to end', () => {
 
   it('refuses a second submission while one is already pending', async () => {
     await submit().expect(201);
-    await submit().expect(409);
+    // Fresh captures, so it is the pending request that stops it.
+    addCapture('media-selfie-2', 'selfie', 'c');
+    addCapture('media-id-2', 'id', 'd');
+    await http()
+      .post('/api/verification/request')
+      .send({ selfieMediaId: 'media-selfie-2', idCardMediaId: 'media-id-2' })
+      .expect(409);
     expect(Object.keys(db.requests)).toHaveLength(1);
+  });
+
+  it('refuses to attach the same captures to a second attempt', async () => {
+    await submit().expect(201);
+    await submit().expect(400);
+    expect(Object.keys(db.requests)).toHaveLength(1);
+  });
+
+  it('refuses a generic upload, a stale capture and a swapped pair on the legacy route', async () => {
+    // Under the prefix the route used to trust, but not a live capture.
+    db.media[SELFIE].objectKey = `verification/${'e'.repeat(32)}.jpg`;
+    await submit().expect(400);
+
+    db.media[SELFIE].objectKey =
+      `verification/live-selfie-${'a'.repeat(32)}.jpg`;
+    db.media[SELFIE].createdAt = new Date(Date.now() - 31 * 60 * 1000);
+    await submit().expect(400);
+
+    db.media[SELFIE].createdAt = new Date();
+    await http()
+      .post('/api/verification/request')
+      .send({ selfieMediaId: ID_CARD, idCardMediaId: SELFIE })
+      .expect(400);
+
+    expect(Object.keys(db.requests)).toHaveLength(0);
+    expect(db.users[USER].verificationStatus).toBe(
+      VerificationStatus.UNVERIFIED,
+    );
   });
 
   it('refuses to re-decide a rejected request', async () => {

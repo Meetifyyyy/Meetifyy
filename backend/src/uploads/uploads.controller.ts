@@ -20,6 +20,7 @@ import { isAllowedUploadType } from './mime-extension';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { RateLimit } from '../common/rate-limit/rate-limit.decorator';
 import { RateLimitPolicyGuard } from '../common/rate-limit/rate-limit-policy.guard';
+import { UploadConcurrencyGuard } from './upload-concurrency.guard';
 import { OptionalJwtGuard } from '../common/guards/optional-jwt.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response, Request } from 'express';
@@ -162,7 +163,12 @@ export class UploadsController {
    * POST /api/media/upload
    * Pass-through upload endpoint that validates and stores the file.
    */
-  @UseGuards(JwtGuard)
+  // Order matters: JwtGuard supplies the user the policy keys on, the policy
+  // runs before a slot is taken, and the concurrency cap runs before
+  // FileInterceptor buffers the body. Budget is the presign policy's: this is
+  // the fallback for the same uploads.
+  @UseGuards(JwtGuard, RateLimitPolicyGuard, UploadConcurrencyGuard)
+  @RateLimit('media.presigned')
   @Post('upload')
   @UseInterceptors(
     FileInterceptor('file', {
