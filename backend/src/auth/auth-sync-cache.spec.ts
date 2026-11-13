@@ -71,8 +71,8 @@ const PROFILE_ROW = {
   whoCanSeeLastSeen: 'everyone',
   readReceipts: true,
   followingList: ['ann'],
-  followersList: [],
-  postBookmarkIds: [],
+  followersCount: 0,
+  followingCount: 0,
   activityBookmarkIds: [],
   unreadNotifCount: 0,
 };
@@ -92,6 +92,12 @@ describe('Auth sync cache', () => {
    * one inherits a subscription it did not register.
    */
   let activeModule: TestingModule | null = null;
+
+  /** The text of the profile query, as the first `$queryRaw` call sent it. */
+  const profileSql = () => {
+    const calls = queryRaw.mock.calls as unknown[][];
+    return (calls[0][0] as readonly string[]).join('?');
+  };
 
   const build = async ({ withRedis = true } = {}) => {
     queryRaw = jest.fn().mockResolvedValue([{ ...PROFILE_ROW }]);
@@ -208,47 +214,78 @@ describe('Auth sync cache', () => {
 
   describe('bookmark ids', () => {
     /**
-     * The client treats `meta.postBookmarkIds` / `meta.activityBookmarkIds` as
-     * the complete set: an id missing from it renders as "not saved". A
-     * `take: 200` copy of these reads once sat in AuthService (unused, but one
-     * call away from being wired in), and would have shown every bookmark
-     * past the 200th as un-bookmarked.
+     * The client treats `meta.activityBookmarkIds` as the complete set: an id
+     * missing from it renders as "not saved". A `take: 200` copy of these
+     * reads once sat in AuthService (unused, but one call away from being
+     * wired in), and would have shown every bookmark past the 200th as
+     * un-bookmarked.
      */
-    it('returns every bookmark id, not the newest N', async () => {
+    it('returns every activity bookmark id, not the newest N', async () => {
       const module = await build();
       await module.init();
-      const posts = Array.from({ length: 1200 }, (_, i) => `p${i}`);
       const activities = Array.from({ length: 450 }, (_, i) => `a${i}`);
       queryRaw.mockResolvedValue([
-        {
-          ...PROFILE_ROW,
-          postBookmarkIds: posts,
-          activityBookmarkIds: activities,
-        },
+        { ...PROFILE_ROW, activityBookmarkIds: activities },
       ]);
 
       const profile = await service.syncProfile(AUTH_USER);
 
-      expect(profile.meta.postBookmarkIds).toEqual(posts);
       expect(profile.meta.activityBookmarkIds).toEqual(activities);
     });
 
-    it('reads the bookmark sets without a row limit', async () => {
+    it('reads the activity bookmark set without a row limit', async () => {
       const module = await build();
       await module.init();
 
       await service.syncProfile(AUTH_USER);
 
-      const calls = queryRaw.mock.calls as unknown[][];
-      const strings = calls[0][0] as readonly string[];
-      const sql = strings.join('?');
-      for (const table of ['"PostBookmark"', '"ActivityBookmark"']) {
-        const at = sql.indexOf(table);
-        expect(at).toBeGreaterThan(-1);
-        // The subselect for this set runs to the closing COALESCE default.
-        const subselect = sql.slice(at, sql.indexOf("'[]'::json", at));
-        expect(subselect).not.toMatch(/\bLIMIT\b/i);
-      }
+      const sql = profileSql();
+      const at = sql.indexOf('"ActivityBookmark"');
+      expect(at).toBeGreaterThan(-1);
+      // The subselect for this set runs to the closing COALESCE default.
+      const subselect = sql.slice(at, sql.indexOf("'[]'::json", at));
+      expect(subselect).not.toMatch(/\bLIMIT\b/i);
+    });
+
+    /**
+     * ID-16: post bookmark ids are no longer read. Nothing in any build since
+     * 2026-09-20 used them; older builds fetched 50 bookmarks when the field
+     * was missing, so it is still sent, empty.
+     */
+    it('sends post bookmark ids empty, without reading them', async () => {
+      const module = await build();
+      await module.init();
+
+      const profile = await service.syncProfile(AUTH_USER);
+
+      expect(profile.meta.postBookmarkIds).toEqual([]);
+      expect(profileSql()).not.toContain('"PostBookmark"');
+    });
+  });
+
+  describe('follower and following counts (ID-16)', () => {
+    it('counts followers instead of listing every one of them', async () => {
+      const module = await build();
+      await module.init();
+      queryRaw.mockResolvedValue([
+        {
+          ...PROFILE_ROW,
+          followersCount: 10_000,
+          followingCount: 12,
+          followingList: ['ann'],
+        },
+      ]);
+
+      const profile = await service.syncProfile(AUTH_USER);
+
+      expect(profile.followersCount).toBe(10_000);
+      expect(profile.followingCount).toBe(12);
+      // Kept, empty, for the installed builds' header fallback.
+      expect(profile.followersList).toEqual([]);
+      // Still a list: follow state and presence read it.
+      expect(profile.followingList).toEqual(['ann']);
+      // The old followers list joined each follower's username.
+      expect(profileSql()).not.toContain('u_fol ON f."followerId"');
     });
   });
 

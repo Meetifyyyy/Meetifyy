@@ -24,6 +24,7 @@ import { requestFeedTop } from '@features/feed/utils/feedScrollMemory';
 import styles from './Header.module.css';
 import wordmark from '@assets/images/meetifyy_wordmark.svg';
 import dashboardStyles from './DashboardLayout.module.css';
+import { ownFollowCounts } from '@shared/utils/followCounts';
 
 /** Match the .mobileDrawer transform transitions in Header.module.css. */
 const DRAWER_ENTER_MS = 340;
@@ -124,8 +125,9 @@ export default function Header({ variant = 'dashboard', wide = false }) {
    *
    * Reading the profile query is what the desktop sidebar card already does.
    * It is the canonical store both of those writers target, so the counts
-   * now track follows immediately and survive a reload. The auth lists stay
-   * as a first-paint fallback for the moment before the query resolves.
+   * now track follows immediately and survive a reload. Before the query
+   * resolves, the session's own counts (sent since ID-16, which stopped
+   * listing every follower) cover first paint; see `ownFollowCounts`.
    */
   //
   // Not on mount, though: the header is on every screen, and this put a
@@ -218,17 +220,8 @@ export default function Header({ variant = 'dashboard', wide = false }) {
   }, [drawerOpen, profileWanted]);
   const { profile: ownProfile } = useProfile(username, { enabled: profileWanted });
 
-  const followersCount =
-    ownProfile?.stats?.followers
-    ?? ownProfile?.followersCount
-    ?? currentUser?.followersList?.length
-    ?? 0;
-
-  const followingCount =
-    ownProfile?.stats?.following
-    ?? ownProfile?.followingCount
-    ?? currentUser?.followingList?.length
-    ?? 0;
+  const { followers: followersCount, following: followingCount } =
+    ownFollowCounts(ownProfile, currentUser);
 
   return (
     <header className={`${styles.header} ${isHomePage ? styles.homeHeader : ''} ${activeTab === 'messages' ? styles.headerMessages : ''} ${!isHomePage ? styles.hideOnMobile : ''}`}>

@@ -13,19 +13,14 @@ import { describe, it, expect } from 'vitest';
  * These pin the resolution order now that the live profile query is the
  * primary source, with the auth lists kept for first paint.
  */
-const followers = (profile, currentUser) =>
-  profile?.stats?.followers
-  ?? profile?.followersCount
-  ?? currentUser?.followersList?.length
-  ?? 0;
+import { ownFollowCounts } from '../../utils/followCounts';
+import { withFollowApplied } from '../useFollowMutation';
 
-const following = (profile, currentUser) =>
-  profile?.stats?.following
-  ?? profile?.followingCount
-  ?? currentUser?.followingList?.length
-  ?? 0;
+// The real resolution order (the header uses the same helper).
+const followers = (profile, currentUser) => ownFollowCounts(profile, currentUser).followers;
+const following = (profile, currentUser) => ownFollowCounts(profile, currentUser).following;
 
-/** Exactly what /auth/sync returns: lists, no counts, no stats. */
+/** What /auth/sync returned before ID-16: lists, no counts, no stats. */
 const authUser = (over = {}) => ({
   id: 'u1', username: 'gyu',
   followersList: ['a', 'b', 'c'],
@@ -98,5 +93,48 @@ describe('staying in sync', () => {
     const live = { stats: { followers: 11, following: 9 } };
     expect(followers(live, stale)).toBe(11);
     expect(following(live, stale)).toBe(9);
+  });
+});
+
+describe('the session counts (ID-16)', () => {
+  /** What /auth/sync returns now: counts, an empty followers list. */
+  const session = (over = {}) => ({
+    id: 'u1', username: 'gyu',
+    followersList: [],
+    followersCount: 10_000,
+    followingList: ['x', 'y'],
+    followingCount: 2,
+    ...over,
+  });
+
+  it('covers first paint with the counts, not the empty list', () => {
+    expect(followers(undefined, session())).toBe(10_000);
+    expect(following(undefined, session())).toBe(2);
+  });
+
+  it('still gives way to the live profile', () => {
+    expect(followers({ stats: { followers: 9_999 } }, session())).toBe(9_999);
+  });
+
+  it('keeps the following count in step with a follow and an unfollow', () => {
+    const followed = withFollowApplied(session(), 'Asha', true);
+    expect(followed.followingList).toEqual(['x', 'y', 'Asha']);
+    expect(following(undefined, followed)).toBe(3);
+
+    const unfollowed = withFollowApplied(followed, 'asha', false);
+    expect(unfollowed.followingList).toEqual(['x', 'y']);
+    expect(following(undefined, unfollowed)).toBe(2);
+  });
+
+  it('changes nothing when the follow state already matches', () => {
+    const user = session();
+    expect(withFollowApplied(user, 'x', true)).toBe(user);
+    expect(withFollowApplied(user, 'nobody', false)).toBe(user);
+  });
+
+  it('invents no count for a session from a server that sends none', () => {
+    const followed = withFollowApplied(authUser(), 'new', true);
+    expect(followed).not.toHaveProperty('followingCount');
+    expect(following(undefined, followed)).toBe(6);
   });
 });

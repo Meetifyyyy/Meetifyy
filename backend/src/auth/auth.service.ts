@@ -201,8 +201,8 @@ interface ProfileRow {
   readReceipts: boolean | null;
   showCollegeOnProfile: boolean | null;
   followingList: string[] | null;
-  followersList: string[] | null;
-  postBookmarkIds: string[] | null;
+  followersCount: number | null;
+  followingCount: number | null;
   activityBookmarkIds: string[] | null;
   unreadNotifCount: number | null;
 }
@@ -291,9 +291,18 @@ function buildExistingProfile(
     college,
     settings,
     followingList: row.followingList || [],
-    followersList: row.followersList || [],
+    // Counted, not listed (ID-16). The list of every follower's username grew
+    // with the account (170 KB at 10,000 followers) on every session start,
+    // and was only ever read for its length. Kept as an empty array because
+    // installed builds read `followersList?.length` as the last fallback in
+    // the header until their own profile loads.
+    followersList: [] as string[],
+    followersCount: Number(row.followersCount ?? 0),
+    followingCount: Number(row.followingCount ?? 0),
     meta: {
-      postBookmarkIds: row.postBookmarkIds || [],
+      // Nothing has read this since 2026-09-20; builds before that fetched
+      // 50 bookmarks when it was missing, so it stays, empty (ID-16).
+      postBookmarkIds: [] as string[],
       activityBookmarkIds: row.activityBookmarkIds || [],
       unreadNotifCount: Number(row.unreadNotifCount || 0),
     },
@@ -576,19 +585,32 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
            WHERE f."followerId" = u."id"),
           '[]'::json
         ) AS "followingList",
-        COALESCE(
-          (SELECT JSON_AGG(u_fol."username") 
-           FROM "Follow" f 
-           JOIN "User" u_fol ON f."followerId" = u_fol."id" 
-           WHERE f."followingId" = u."id"),
-          '[]'::json
-        ) AS "followersList",
-        COALESCE(
-          (SELECT JSON_AGG(pb."postId") 
-           FROM "PostBookmark" pb 
-           WHERE pb."userId" = u."id"),
-          '[]'::json
-        ) AS "postBookmarkIds",
+        -- Counted by the same rules as the profile page's own counts
+        -- (UsersService.getProfile): active, not deleted, no block either way.
+        (SELECT COUNT(*)::int
+         FROM "Follow" f
+         JOIN "User" fu ON fu."id" = f."followerId"
+         WHERE f."followingId" = u."id"
+           AND fu."deletedAt" IS NULL
+           AND fu."accountStatus" = 'ACTIVE'
+           AND NOT EXISTS (
+             SELECT 1 FROM "Block" b
+             WHERE (b."blockerId" = u."id" AND b."blockedId" = fu."id")
+                OR (b."blockerId" = fu."id" AND b."blockedId" = u."id")
+           )
+        ) AS "followersCount",
+        (SELECT COUNT(*)::int
+         FROM "Follow" f
+         JOIN "User" fu ON fu."id" = f."followingId"
+         WHERE f."followerId" = u."id"
+           AND fu."deletedAt" IS NULL
+           AND fu."accountStatus" = 'ACTIVE'
+           AND NOT EXISTS (
+             SELECT 1 FROM "Block" b
+             WHERE (b."blockerId" = u."id" AND b."blockedId" = fu."id")
+                OR (b."blockerId" = fu."id" AND b."blockedId" = u."id")
+           )
+        ) AS "followingCount",
         COALESCE(
           (SELECT JSON_AGG(ab."activityId") 
            FROM "ActivityBookmark" ab 

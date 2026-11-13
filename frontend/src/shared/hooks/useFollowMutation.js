@@ -15,6 +15,30 @@ import { requestToggle, isTogglePending } from '../utils/serialToggle';
 import { PROFILE_KEYS, persistCachedProfile } from './useProfile';
 
 /**
+ * The signed-in user after following (or unfollowing) `targetUsername`, or
+ * the same object when nothing changes.
+ *
+ * Keeps `followingCount`, which the session carries since ID-16, in step with
+ * `followingList`, so neither goes stale before the next sync. A server that
+ * predates the count sends none, and none is invented here.
+ */
+export function withFollowApplied(currentUser, targetUsername, isFollowing) {
+  const cleanTarget = targetUsername?.toLowerCase();
+  const currentList = Array.isArray(currentUser?.followingList) ? currentUser.followingList : [];
+  const listed = currentList.some((u) => u?.toLowerCase() === cleanTarget);
+  if (isFollowing === listed) return currentUser;
+
+  const followingList = isFollowing
+    ? [...currentList, targetUsername]
+    : currentList.filter((u) => u?.toLowerCase() !== cleanTarget);
+  const next = { ...currentUser, followingList };
+  if (typeof currentUser.followingCount === 'number') {
+    next.followingCount = Math.max(0, currentUser.followingCount + (isFollowing ? 1 : -1));
+  }
+  return next;
+}
+
+/**
  * The follow state the server reports after a follow or unfollow.
  *
  * `requested: true` is a private account holding the viewer's request: no
@@ -126,18 +150,10 @@ export function useFollowMutation(targetUsername) {
     queryClient.setQueriesData({ queryKey: ['followers'] }, updateUserListData);
     queryClient.setQueriesData({ queryKey: ['following'] }, updateUserListData);
 
-    // Synchronize AuthContext's currentUser.followingList immediately
+    // Synchronize AuthContext's currentUser immediately
     if (currentUser && targetUsername) {
-      const currentList = Array.isArray(currentUser.followingList) ? currentUser.followingList : [];
-      let nextList = currentList;
-      if (isFollowing && !currentList.some(u => u?.toLowerCase() === cleanTarget)) {
-        nextList = [...currentList, targetUsername];
-      } else if (!isFollowing) {
-        nextList = currentList.filter(u => u?.toLowerCase() !== cleanTarget);
-      }
-      if (nextList !== currentList) {
-        updateCurrentUser({ ...currentUser, followingList: nextList });
-      }
+      const next = withFollowApplied(currentUser, targetUsername, isFollowing);
+      if (next !== currentUser) updateCurrentUser(next);
     }
 
     // Target profile by username

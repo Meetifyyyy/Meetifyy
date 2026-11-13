@@ -49,8 +49,8 @@ const ROW = {
   college_name: null,
   settings_id: null,
   followingList: [],
-  followersList: [],
-  postBookmarkIds: [],
+  followersCount: 0,
+  followingCount: 0,
   activityBookmarkIds: [],
   unreadNotifCount: 0,
 };

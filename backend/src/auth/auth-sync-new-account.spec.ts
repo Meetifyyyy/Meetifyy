@@ -58,8 +58,8 @@ const CREATED_ROW = {
   whoCanSeeLastSeen: 'everyone',
   readReceipts: true,
   followingList: [],
-  followersList: [],
-  postBookmarkIds: [],
+  followersCount: 0,
+  followingCount: 0,
   activityBookmarkIds: [],
   unreadNotifCount: 0,
 };
