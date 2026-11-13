@@ -949,6 +949,14 @@ export class MessagesService
         );
     }
 
+    // The send changed everyone's list (last message, unread counts), so their
+    // cached first pages go. Done here rather than in formatMessageResponse:
+    // that formatter also renders catch-up pages and idempotent replays, which
+    // change nothing, and evicting there cost the reader one DEL per row.
+    this.invalidateUserConversationsCache([senderId, ...recipientIds]).catch(
+      () => {},
+    );
+
     return this.formatMessageResponse(
       message,
       realConvId,
@@ -1035,12 +1043,6 @@ export class MessagesService
       chatType,
       isInstantMatch: chatType === 'instant',
     };
-
-    // H-3 fix: Pass the affected user IDs to trigger targeted O(1) invalidation
-    // rather than the fallback O(N) global scan.
-    this.invalidateUserConversationsCache([senderId, ...recipientIds]).catch(
-      () => {},
-    );
 
     return msgRes;
   }

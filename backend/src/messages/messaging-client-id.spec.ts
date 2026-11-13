@@ -178,6 +178,20 @@ describe('MessagingCoreService — one message per client id', () => {
     );
   });
 
+  it('clears the inbox cache of everyone a send reaches; a retry clears nothing', async () => {
+    // These routes used to evict nothing, so the sender's and recipient's
+    // cached lists kept the old preview and order until they expired.
+    const evict = jest.spyOn(service, 'invalidateUserConversationsCache');
+    await service.sendMessage(ME, CONV, { text: 'hi', clientId: 'c-7' });
+    expect(evict).toHaveBeenCalledTimes(1);
+    expect(evict).toHaveBeenCalledWith([ME, 'them']);
+
+    evict.mockClear();
+    findFirst.mockImplementation(() => Promise.resolve(row('new-msg')));
+    await service.sendMessage(ME, CONV, { text: 'hi', clientId: 'c-7' });
+    expect(evict).not.toHaveBeenCalled();
+  });
+
   it('still sends normally without a client id', async () => {
     const res = await service.sendMessage(ME, CONV, { text: 'hi' });
     expect(res.id).toBe('new-msg');

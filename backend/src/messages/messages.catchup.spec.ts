@@ -183,6 +183,17 @@ describe('MessagesService — reconnect catch-up', () => {
     expect(ids).toEqual(table.map((r) => r.id));
   });
 
+  it('leaves the conversation list cache alone: a catch-up page changes nothing', async () => {
+    // Each row of a page used to evict the reader's cached list (up to 200
+    // DELs per page), so every reconnect forced a list rebuild.
+    const evict = jest.spyOn(service, 'invalidateUserConversationsCache');
+    for (let i = 0; i < 30; i += 1) {
+      table.push(row(`m${String(i).padStart(2, '0')}`, 'c1', 40 + i));
+    }
+    expect(await drain(at(30))).toHaveLength(30);
+    expect(evict).not.toHaveBeenCalled();
+  });
+
   it('re-reads a short window before `since`, for messages committed late', async () => {
     // Stamped 5s before the last sync but committed after it.
     table.push(row('late', 'c1', 25), row('new', 'c1', 40));

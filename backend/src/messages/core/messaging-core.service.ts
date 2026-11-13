@@ -62,6 +62,7 @@ import {
   notAMemberError,
 } from './group-membership';
 import { announceRevived, revivedMemberIds } from './conversation-revive';
+import { conversationListFirstPageKeys } from '../conversation-list-cache';
 import { previewText, UNSENT_PREVIEW } from './message-preview';
 import {
   everyoneSpan,
@@ -93,6 +94,7 @@ import {
   type JoinRequestActivityItem,
 } from './group-invite-access';
 import { rateLimitException } from '../../common/rate-limit/rate-limit.response';
+import { readReceiptAudiences } from './read-receipt-fanout';
 
 function isJsonObject(value: Prisma.JsonValue): value is Prisma.JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -805,6 +807,17 @@ export class MessagingCoreService {
         );
     }
 
+    // The DM and group REST sends land here, and the cached inbox shows each
+    // thread's latest message: without this the sender's and recipients'
+    // lists kept the old preview and order until the cache expired. A replay
+    // of a send that already landed changes nothing, so it evicts nothing.
+    if (!existing) {
+      void this.invalidateUserConversationsCache([
+        senderId,
+        ...recipientIds,
+      ]).catch(() => {});
+    }
+
     return {
       id: message.id,
       conversationId: pubId,
@@ -1212,22 +1225,10 @@ export class MessagingCoreService {
       const readerParticipant = participants.find((p) => p.userId === userId);
       if (readerParticipant?.user?.settings?.readReceipts === false) return;
 
-      for (const p of participants) {
-        if (p.userId === userId) continue;
-        const others = participants.filter((item) => item.userId !== p.userId);
-        const otherReadTimestamps = others
-          .filter(
-            (item) =>
-              item.user?.settings?.readReceipts !== false &&
-              item.lastReadAt != null,
-          )
-          .map((item) => new Date(item.lastReadAt!).getTime());
-
-        const isAllRead =
-          otherReadTimestamps.length > 0 &&
-          otherReadTimestamps.length === others.length;
-        const minOtherReadAt = isAllRead ? Math.min(...otherReadTimestamps) : 0;
-
+      // One event per distinct answer, not one per member: members told the
+      // same thing share a publish (see readReceiptAudiences). What each
+      // member receives is unchanged.
+      for (const audience of readReceiptAudiences(participants, userId)) {
         void this.domainEventService.emit(
           'conversation:seen',
           {
@@ -1235,12 +1236,10 @@ export class MessagingCoreService {
             realConvId,
             readerId: userId,
             lastReadAt: now.toISOString(),
-            isAllRead,
-            minOtherReadAt: minOtherReadAt
-              ? new Date(minOtherReadAt).toISOString()
-              : null,
+            isAllRead: audience.isAllRead,
+            minOtherReadAt: audience.minOtherReadAt,
           },
-          [p.userId],
+          audience.userIds,
         );
       }
     } catch (err) {
@@ -1738,8 +1737,20 @@ export class MessagingCoreService {
    * client (MessagesService, GroupChatsService); DmService has no list cache
    * of its own and inherits the no-op.
    */
-  async invalidateUserConversationsCache(_userIds?: string[]): Promise<void> {
-    /* no-op — see subclass overrides */
+  async invalidateUserConversationsCache(userIds?: string[]): Promise<void> {
+    // DmService inherits this, and the cached unified list (MessagesService)
+    // includes DMs: as a no-op, a send, read, mute, pin or delete through
+    // /api/dm left that list stale for its whole TTL. Every subclass has a
+    // Redis service through sendLockService, so the targeted eviction lives
+    // here; subclasses that also support a full flush still override it.
+    const client = this.sendLockService()?.getClient();
+    if (!client || !userIds || userIds.length === 0) return;
+    try {
+      await client.del(...userIds.flatMap(conversationListFirstPageKeys));
+    } catch {
+      // The pages expire with their TTL; a failed eviction must not fail the
+      // write that triggered it.
+    }
   }
 
   /**
