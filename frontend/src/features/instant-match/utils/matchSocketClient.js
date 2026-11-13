@@ -186,12 +186,27 @@ class MatchSocketClient {
         return;
       }
 
-      // Held until the socket connects. If the transport is torn down first
-      // the entry fails loudly instead of hanging forever.
-      this.pending.push({
-        run: send,
-        fail: (error) => resolve({ ok: false, error }),
-      });
+      // Held until the socket connects, but not for longer than an answer
+      // would be waited for (IM-22). A held action had no timer at all: the
+      // in-flight guard disabled start, cancel and respond until the socket
+      // came back, and then a join the person had since abandoned replayed
+      // and started a search they no longer wanted. If the transport is torn
+      // down first, the entry fails loudly instead of hanging forever.
+      const entry = {
+        run: () => {
+          clearTimeout(entry.timer);
+          send();
+        },
+        fail: (error) => {
+          clearTimeout(entry.timer);
+          resolve({ ok: false, error });
+        },
+        timer: setTimeout(() => {
+          this.pending = this.pending.filter((e) => e !== entry);
+          resolve({ ok: false, error: 'You are offline — try again when connected', timeout: true });
+        }, ACK_TIMEOUT_MS),
+      };
+      this.pending.push(entry);
     });
   }
 

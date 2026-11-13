@@ -81,6 +81,17 @@ const initialFormData = {
 // subset searching for the same thing as this user.
 const initialStats = { count: 0, sameActivity: 0, avgWaitSecs: 0 };
 
+/** After "Time's up", ask the server if its expiry push has not arrived by
+ *  then (its sweep runs every 10 s). */
+const TIMED_OUT_RESYNC_MS = 12_000;
+
+/** Read receipts for messages landing in an open chat are sent at most this
+ *  often, as one request for the burst. */
+const READ_RECEIPT_DEBOUNCE_MS = 1_000;
+
+const pageVisible = () =>
+  typeof document === 'undefined' || document.visibilityState !== 'hidden';
+
 /** Client-side mirror of the server's validation. Catches mistakes before a
  *  round trip; the backend re-checks everything regardless. */
 export function validateRequest(formData) {
@@ -176,6 +187,9 @@ export function InstantMatchProvider({ children }) {
   });
 
   const statusRef = useRef(status);
+  const resyncInFlightRef = useRef(false);
+  const timedOutResyncRef = useRef(null);
+  const readReceiptTimerRef = useRef(null);
   const isVerifiedRef = useRef(isVerified);
   isVerifiedRef.current = isVerified;
   statusRef.current = status;
@@ -229,7 +243,17 @@ export function InstantMatchProvider({ children }) {
    * the real state instead of stranding the user on a dead screen.
    */
   const resync = useCallback(async () => {
-    const res = await matchSocketClient.sync();
+    // One at a time (IM-25): a cold start used to send two — the request held
+    // for the connection, then the connection listener's own — and a resume
+    // landing with a reconnect would add a third.
+    if (resyncInFlightRef.current) return;
+    resyncInFlightRef.current = true;
+    let res;
+    try {
+      res = await matchSocketClient.sync();
+    } finally {
+      resyncInFlightRef.current = false;
+    }
     if (!res.ok) {
       setRestoring(false);
       return;
@@ -286,6 +310,15 @@ export function InstantMatchProvider({ children }) {
       if (isUp) resync();
     });
 
+    // Coming back to the app re-reads the state (IM-21). A match or a pass
+    // pushed while the app was in the background (an Android WebView is
+    // suspended there) was lost until the next reconnect, so the person sat
+    // on "searching" while actually matched.
+    const onVisible = () => {
+      if (pageVisible() && matchSocketClient.connected) resync();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
     const offStats = matchSocketClient.on('queue:stats', (stats) => {
       if (stats && typeof stats.count === 'number') setQueueStats(stats);
     });
@@ -326,7 +359,10 @@ export function InstantMatchProvider({ children }) {
 
       // The conversation list has a new chat in it now. Refetch rather than
       // invalidate-and-wait so the chat route finds it already cached.
-      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      // One request (FEF-22): invalidating already refetched the active list,
+      // and the refetch that followed cancelled it and asked again. Inactive
+      // copies are only marked stale.
+      queryClient.invalidateQueries({ queryKey: ['conversations'], refetchType: 'none' });
       queryClient.refetchQueries({ queryKey: ['conversations'], type: 'active' });
 
       // Hold the celebration briefly, then hand over to the chat.
@@ -379,6 +415,7 @@ export function InstantMatchProvider({ children }) {
     resync();
 
     return () => {
+      document.removeEventListener('visibilitychange', onVisible);
       offStatus(); offStats(); offFound(); offAccepted(); offDeclined(); offResumed();
     };
   }, [currentUser?.id, isVerified, queryClient, resync, refreshChat]);
@@ -484,10 +521,32 @@ export function InstantMatchProvider({ children }) {
    */
   const markInstantChatRead = useCallback(() => {
     setUnreadCount(0);
-    const convId = chatRef.current?.conversationId;
-    if (!convId) return;
-    messagesApi.markAsRead(convId).catch(() => {});
+    // One request per burst, and only while the chat can actually be seen
+    // (FEF-23): every incoming message used to send its own POST, including
+    // while the app was hidden, marking read what nobody had read. Coming
+    // back to the open chat marks it then (the visibility listener below).
+    window.clearTimeout(readReceiptTimerRef.current);
+    readReceiptTimerRef.current = window.setTimeout(() => {
+      readReceiptTimerRef.current = null;
+      const convId = chatRef.current?.conversationId;
+      if (!convId || !pageVisible()) return;
+      messagesApi.markAsRead(convId).catch(() => {});
+    }, READ_RECEIPT_DEBOUNCE_MS);
   }, []);
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (pageVisible() && chatOverlayOpenRef.current && chatRef.current?.isActive) {
+        markInstantChatRead();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.clearTimeout(readReceiptTimerRef.current);
+      window.clearTimeout(timedOutResyncRef.current);
+    };
+  }, [markInstantChatRead]);
 
   /**
    * Incoming messages, counted only when they belong to the live session, came
@@ -749,7 +808,15 @@ export function InstantMatchProvider({ children }) {
    */
   const handleMatchTimeout = useCallback(() => {
     setStatus((prev) => (prev === 'match_found' ? 'timed_out' : prev));
-  }, []);
+    // The server's sweep (every 10 s) settles a timed-out match and tells us.
+    // If that push is lost, ask (IM-24): "Time's up" waited for an event
+    // that might never come, until the next reconnect.
+    window.clearTimeout(timedOutResyncRef.current);
+    timedOutResyncRef.current = window.setTimeout(() => {
+      timedOutResyncRef.current = null;
+      if (statusRef.current === 'timed_out') resync();
+    }, TIMED_OUT_RESYNC_MS);
+  }, [resync]);
 
   const dismissError = useCallback(() => setError(null), []);
 
