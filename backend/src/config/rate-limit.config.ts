@@ -48,8 +48,10 @@ import { IS_PRODUCTION, APP_ENV, int, oneOf, str } from './env';
  *     a campus of devices renewing on the hour limited and blocked itself.
  *     OTP send/verify and the account re-auth/email-verify/delete-confirm
  *     routes gained per-user budgets, and the OTP limiter fails closed.
+ * v16: Instant Match chat-state reads and queue cancels got per-user budgets
+ *     (E-7, IM-20); both were unlimited, and chat-state is a database read.
  */
-export const POLICY_VERSION = 15;
+export const POLICY_VERSION = 16;
 
 export type RateLimitAlgorithm = 'fixed-window' | 'token-bucket';
 
@@ -817,6 +819,26 @@ export const RATE_LIMIT_POLICIES = {
     duration: 60,
     dimension: 'user',
     onRedisFailure: 'closed',
+    message: 'Slow down a moment.',
+  },
+
+  /** The Instant Match chat's own state: read on mount, every reconnect,
+   *  every return to the app and when a countdown ends. Was unlimited, and
+   *  each read is a database query; generous enough for a flapping phone. */
+  'im.chatstate.user': {
+    points: 30,
+    duration: 60,
+    dimension: 'user',
+    onRedisFailure: 'open',
+    message: 'Slow down a moment.',
+  },
+
+  /** Cancelling a search. Was unlimited; each cancel rewrites the queue. */
+  'im.cancel.user': {
+    points: 20,
+    duration: 60,
+    dimension: 'user',
+    onRedisFailure: 'open',
     message: 'Slow down a moment.',
   },
 

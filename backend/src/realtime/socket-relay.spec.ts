@@ -445,10 +445,24 @@ describe('RealtimeGateway relay delivery', () => {
     expect(calls).toEqual(['to(user-1).except(sock-1).emit(message:new)']);
   });
 
-  it('broadcasts the queue change to everyone', () => {
+  it('tells only the sockets that read the roster that the queue moved', () => {
     const { gateway, calls } = gatewayWithServer();
     gateway.emitQueueChanged();
-    expect(calls).toEqual(['emit(queue:changed)']);
+    expect(calls).toEqual(['to(im:roster).emit(queue:changed)']);
+  });
+
+  it('sends grouped queue stats to each person, skipping an empty group', () => {
+    const { gateway, calls } = gatewayWithServer();
+    const stats = { count: 3, sameActivity: 2, avgWaitSecs: 40 };
+    gateway.emitQueueStatsMany([
+      { userIds: ['u1', 'u2'], stats },
+      { userIds: [], stats },
+      { userIds: ['u3'], stats: { ...stats, sameActivity: 1 } },
+    ]);
+    expect(calls).toEqual([
+      'to(u1,u2).emit(queue:stats)',
+      'to(u3).emit(queue:stats)',
+    ]);
   });
 });
 

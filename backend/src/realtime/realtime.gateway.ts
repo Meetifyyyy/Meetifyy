@@ -152,6 +152,9 @@ function readDomainEvent(raw: unknown): RoutableDomainEvent | null {
   };
 }
 
+/** Sockets that have read the Instant Match roster: who `queue:changed` is for. */
+const IM_ROSTER_ROOM = 'im:roster';
+
 /** Ack text per policy, so a socket rejection reads like the REST one. */
 const RATE_LIMIT_MESSAGES: Record<string, string> = Object.fromEntries(
   Object.entries(RATE_LIMIT_POLICIES).map(([name, spec]) => [
@@ -2265,6 +2268,10 @@ export class RealtimeGateway
     const userId = client.data.userId;
     if (!userId)
       return { status: 'error', error: 'Unauthenticated', code: 401 };
+    const limited = await this.limitEvent(userId, [
+      { policy: 'im.cancel.user', identifier: userId },
+    ]);
+    if (limited) return limited;
     try {
       await this.instantMatchService.cancelQueue(userId);
       return { status: 'ok' };
@@ -2384,6 +2391,8 @@ export class RealtimeGateway
 
     try {
       const people = await this.instantMatchService.getSearchingNow(userId);
+      // From now on this socket is told when the roster moves.
+      void client.join(IM_ROSTER_ROOM);
       return { status: 'ok', people };
     } catch (err) {
       return this.instantMatchAck(err, 'Could not load who is searching');
@@ -2404,6 +2413,10 @@ export class RealtimeGateway
     const userId = client.data.userId;
     if (!userId)
       return { status: 'error', error: 'Unauthenticated', code: 401 };
+    const limited = await this.limitEvent(userId, [
+      { policy: 'im.chatstate.user', identifier: userId },
+    ]);
+    if (limited) return limited;
     try {
       const state = await this.instantMatchService.getChatStateFor(userId);
       return { status: 'ok', state };
@@ -2495,18 +2508,42 @@ export class RealtimeGateway
   }
 
   /**
+   * One `queue:stats` per group of people (each person's own room), all in a
+   * single relay publish. Was one publish per waiter, on every queue change.
+   * An empty group is skipped: an emit with no rooms reaches every socket.
+   */
+  emitQueueStatsMany(groups: Array<{ userIds: string[]; stats: QueueStats }>) {
+    const ops: RelayOp[] = groups
+      .filter((g) => g.userIds.length > 0)
+      .map((g) => ({
+        kind: 'emit',
+        rooms: g.userIds,
+        event: 'queue:stats',
+        payload: g.stats,
+      }));
+    if (ops.length > 0) this.relay.send(ops);
+  }
+
+  /**
    * Somebody joined, left, matched or expired out of the queue.
    *
-   * Broadcast rather than aimed at a room, because the people who care are
-   * whoever currently has the browse list on screen and the server has no way
-   * to know who that is. It is deliberately payload-free: the roster is
-   * viewer-scoped (blocks, cooldowns), so the only correct thing to push
-   * everyone is the fact that it moved — each client re-reads its own.
-   * Clients with the list closed have no listener registered and drop it.
+   * Sent to the sockets that have read the roster (`queue:list` joins them to
+   * IM_ROSTER_ROOM), not to every socket in the app: it was a broadcast to
+   * everyone, on every queue change, for the few with the list on screen.
+   * Installed apps keep working unchanged — they read the roster when they
+   * open it, which is what puts them in the room. It is deliberately
+   * payload-free: the roster is viewer-scoped (blocks, cooldowns), so the
+   * only correct thing to push is the fact that it moved — each client
+   * re-reads its own.
    */
   emitQueueChanged() {
     this.relay.send([
-      { kind: 'emit', rooms: [], event: 'queue:changed', payload: {} },
+      {
+        kind: 'emit',
+        rooms: [IM_ROSTER_ROOM],
+        event: 'queue:changed',
+        payload: {},
+      },
     ]);
   }
 

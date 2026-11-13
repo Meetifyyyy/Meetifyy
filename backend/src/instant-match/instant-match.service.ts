@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { detach } from '../common/utils/detach.util';
 import { RedisService } from '../redis/redis.service';
 import { BlocksService } from '../users/blocks.service';
 import { VerificationAccessService } from '../common/verification/verification-access.service';
@@ -252,6 +253,11 @@ export interface InstantMatchEmitter {
   ): void;
   emitSearchResumed(userId: string): void;
   emitQueueStats(userId: string, stats: QueueStats): void;
+  /** The same stats to many people at once: one group per activity, all in
+   *  one relay publish (IM-17). */
+  emitQueueStatsMany(
+    groups: Array<{ userIds: string[]; stats: QueueStats }>,
+  ): void;
   /** The set of people waiting has changed. Carries nothing: it is a
    *  "re-read the roster" ping, and the read it triggers is per-viewer. */
   emitQueueChanged(): void;
@@ -461,7 +467,7 @@ export class InstantMatchService implements OnModuleInit {
     );
 
     // Everyone waiting in this bucket now sees a different queue depth.
-    await this.broadcastQueueStats();
+    this.requestQueueBroadcast();
 
     if (!matchNow) return;
 
@@ -490,7 +496,7 @@ export class InstantMatchService implements OnModuleInit {
     });
     if (!removed) return;
     this.logger.log(`queue:cancel user=${userId}`);
-    await this.broadcastQueueStats();
+    this.requestQueueBroadcast();
   }
 
   // ─── Matching ───────────────────────────────────────────────────────────────
@@ -646,7 +652,7 @@ export class InstantMatchService implements OnModuleInit {
       );
 
       // Both are out of the queue now — refresh the depth for everyone left.
-      await this.broadcastQueueStats();
+      this.requestQueueBroadcast();
       return;
     }
   }
@@ -1213,7 +1219,7 @@ export class InstantMatchService implements OnModuleInit {
       `match:requested ${session.id} ${requesterId} -> ${targetUserId}`,
     );
 
-    await this.broadcastQueueStats();
+    this.requestQueueBroadcast();
   }
 
   // ─── Responding ─────────────────────────────────────────────────────────────
@@ -1562,7 +1568,7 @@ export class InstantMatchService implements OnModuleInit {
     const removed = await this.prisma.matchQueueEntry.deleteMany({
       where: { expiresAt: { lt: now } },
     });
-    if (removed.count > 0) await this.broadcastQueueStats();
+    if (removed.count > 0) this.requestQueueBroadcast();
 
     // Bounded (IM-18): after an outage the backlog is worked off a tick at a
     // time instead of in one unbounded pass.
@@ -1731,7 +1737,7 @@ export class InstantMatchService implements OnModuleInit {
       if (resumed === 'already') return true;
       if (!resumed) return false;
       realtimeGatewayRef?.emitSearchResumed(userId);
-      await this.broadcastQueueStats();
+      this.requestQueueBroadcast();
       return true;
     } catch (err) {
       this.logger.error(`Failed to re-queue ${userId}`, err);
@@ -1750,12 +1756,31 @@ export class InstantMatchService implements OnModuleInit {
    * no longer exists, and read as "nobody is here" on a busy evening.
    */
   async getQueueStats(activity?: string | null): Promise<QueueStats> {
-    const entries = await this.prisma.matchQueueEntry.findMany({
-      where: { expiresAt: { gt: new Date() } },
-      select: { joinedAt: true, activity: true },
-    });
-
-    return this.summarise(entries, activity);
+    // One row per activity, not one per waiter (IM-17, FEAT-15): this runs on
+    // every state read and resync of anyone searching. EXTRACT(EPOCH) of a
+    // timestamp without time zone is its nominal seconds, and the column
+    // holds UTC, so the sum is real epoch seconds.
+    const groups = await this.prisma.$queryRaw<
+      Array<{ activity: string; n: number; joinedSecs: number }>
+    >`
+      SELECT "activity",
+        COUNT(*)::int AS "n",
+        COALESCE(SUM(EXTRACT(EPOCH FROM "joinedAt")), 0)::float8 AS "joinedSecs"
+      FROM "MatchQueueEntry"
+      WHERE "expiresAt" > ${new Date()}
+      GROUP BY "activity"
+    `;
+    const count = groups.reduce((sum, g) => sum + g.n, 0);
+    if (count === 0) return { count: 0, sameActivity: 0, avgWaitSecs: 60 };
+    const joinedSecs = groups.reduce((sum, g) => sum + g.joinedSecs, 0);
+    const avgWaitSecs = Math.max(
+      30,
+      Math.round(Date.now() / 1000 - joinedSecs / count),
+    );
+    const sameActivity = activity
+      ? (groups.find((g) => g.activity === activity)?.n ?? 0)
+      : 0;
+    return { count, sameActivity, avgWaitSecs };
   }
 
   /**
@@ -1843,13 +1868,48 @@ export class InstantMatchService implements OnModuleInit {
     return { count: entries.length, sameActivity, avgWaitSecs };
   }
 
+  /** Joins, cancels, matches and expiries inside this window share one
+   *  broadcast (IM-17). */
+  private static readonly QUEUE_BROADCAST_COALESCE_MS = 500;
+  private queueBroadcastTimer: NodeJS.Timeout | null = null;
+
+  /**
+   * Asks for fresh queue stats to be pushed to everyone waiting. Nothing
+   * waits for it: a join, a pass or an accept used to hold its reply for a
+   * read of the whole queue and one publish per waiter — twice for a join that
+   * matched — which on a busy queue outlasted the app's 10-second timeout.
+   * Requests inside one window share a single broadcast.
+   */
+  private requestQueueBroadcast(): void {
+    if (!realtimeGatewayRef || this.queueBroadcastTimer) return;
+    this.queueBroadcastTimer = setTimeout(
+      () =>
+        detach('instant-match queue broadcast', () =>
+          this.flushQueueBroadcast(),
+        ),
+      InstantMatchService.QUEUE_BROADCAST_COALESCE_MS,
+    );
+    this.queueBroadcastTimer.unref?.();
+  }
+
+  /** Runs a requested broadcast now (its timer, or a spec). */
+  private async flushQueueBroadcast(): Promise<void> {
+    if (this.queueBroadcastTimer) {
+      clearTimeout(this.queueBroadcastTimer);
+      this.queueBroadcastTimer = null;
+    }
+    await this.broadcastQueueStats();
+  }
+
   /**
    * Pushes fresh stats to everyone currently waiting, so a join, cancel,
    * match or expiry updates every searching screen at once.
    *
    * The headline count is global, so any change moves the number for every
    * waiter — not just for the bucket that changed. One read serves the whole
-   * broadcast; each user's `sameActivity` is computed from it in memory.
+   * broadcast, and the people waiting for the same activity get the same
+   * numbers, so they go out as one group each, all in ONE relay publish
+   * (IM-17: it used to be one publish per waiter).
    */
   private async broadcastQueueStats(): Promise<void> {
     if (!realtimeGatewayRef) return;
@@ -1859,19 +1919,20 @@ export class InstantMatchService implements OnModuleInit {
         select: { userId: true, joinedAt: true, activity: true },
       });
 
-      // Per-activity totals once, rather than per recipient.
-      const byActivity = new Map<string, number>();
+      const byActivity = new Map<string, string[]>();
       for (const e of waiting) {
-        byActivity.set(e.activity, (byActivity.get(e.activity) ?? 0) + 1);
+        const ids = byActivity.get(e.activity) ?? [];
+        ids.push(e.userId);
+        byActivity.set(e.activity, ids);
       }
 
       const base = this.summarise(waiting);
-      for (const { userId, activity } of waiting) {
-        realtimeGatewayRef.emitQueueStats(userId, {
-          ...base,
-          sameActivity: byActivity.get(activity) ?? 0,
-        });
-      }
+      realtimeGatewayRef.emitQueueStatsMany(
+        [...byActivity.values()].map((userIds) => ({
+          userIds,
+          stats: { ...base, sameActivity: userIds.length },
+        })),
+      );
 
       // The same five moments that move the counts — a join, a cancel, a
       // match, an expiry, a re-queue — are exactly the moments the roster

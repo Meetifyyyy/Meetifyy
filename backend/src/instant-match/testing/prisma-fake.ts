@@ -571,6 +571,37 @@ export class PrismaFake {
   /** Makes the next write of that kind fail, once (failure-path specs). */
   failNext: { sessionUpdate?: Error; messageDelete?: Error } = {};
 
+  /**
+   * The one raw read the service makes: queue stats grouped by activity
+   * (`getQueueStats`). Computed from the fake queue the way the SQL does.
+   */
+  $queryRaw(strings: TemplateStringsArray, ...values: unknown[]) {
+    const sql = strings.join('?');
+    if (
+      !sql.includes('FROM "MatchQueueEntry"') ||
+      !sql.includes('GROUP BY "activity"')
+    ) {
+      throw new Error('prisma-fake: unsupported raw query');
+    }
+    const now = values[0] as Date;
+    const groups = new Map<
+      string,
+      { activity: string; n: number; joinedSecs: number }
+    >();
+    for (const e of this.queue) {
+      if (!(e.expiresAt > now)) continue;
+      const g = groups.get(e.activity) ?? {
+        activity: e.activity,
+        n: 0,
+        joinedSecs: 0,
+      };
+      g.n += 1;
+      g.joinedSecs += e.joinedAt.getTime() / 1000;
+      groups.set(e.activity, g);
+    }
+    return Promise.resolve([...groups.values()]);
+  }
+
   /** Advisory locks: every call is recorded; the fake runs one thing at a
    *  time, so there is nothing to wait for. */
   advisoryLocks: string[] = [];
@@ -640,6 +671,7 @@ export function createEmitterMock() {
     emitMatchDeclined: jest.fn<void, Args<'emitMatchDeclined'>>(),
     emitSearchResumed: jest.fn<void, Args<'emitSearchResumed'>>(),
     emitQueueStats: jest.fn<void, Args<'emitQueueStats'>>(),
+    emitQueueStatsMany: jest.fn<void, Args<'emitQueueStatsMany'>>(),
     emitInstantMatchChatEnded: jest.fn<
       void,
       Args<'emitInstantMatchChatEnded'>

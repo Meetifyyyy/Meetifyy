@@ -145,18 +145,45 @@ describe('InstantMatchService', () => {
       ).resolves.toBeUndefined();
     });
 
+    /** Who got which stats in the broadcasts so far. */
+    const statsByUser = () =>
+      new Map(
+        emitter.emitQueueStatsMany.mock.calls.flatMap(([groups]) =>
+          groups.flatMap((g) => g.userIds.map((id) => [id, g.stats] as const)),
+        ),
+      );
+
     it('pushes the new queue depth to every waiter, not just the joiner', async () => {
       await service.joinQueue(joinDto('alice', { activity: 'chat' }));
-      emitter.emitQueueStats.mockClear();
+      await service['flushQueueBroadcast']();
+      emitter.emitQueueStatsMany.mockClear();
       await service.joinQueue(
         joinDto('bob', { activity: 'chat', campus: 'campus-b' }),
       );
+      await service['flushQueueBroadcast']();
 
       // The headline count is everyone searching, so a join anywhere changes
       // the number on every searching screen — including alice's.
-      const notified = emitter.emitQueueStats.mock.calls.map((c) => c[0]);
+      const notified = [...statsByUser().keys()];
       expect(notified).toContain('bob');
       expect(notified).toContain('alice');
+    });
+
+    it('answers a join before the broadcast, and shares one broadcast among joins close together', async () => {
+      jest.useFakeTimers();
+      try {
+        await service.joinQueue(joinDto('alice', { activity: 'chat' }));
+        await service.joinQueue(joinDto('carol', { activity: 'gaming' }));
+        // Both joins have answered; nobody has been told yet.
+        expect(emitter.emitQueueStatsMany).not.toHaveBeenCalled();
+        await jest.advanceTimersByTimeAsync(500);
+        expect(emitter.emitQueueStatsMany).toHaveBeenCalledTimes(1);
+        // One group per activity, in that one call.
+        const [groups] = emitter.emitQueueStatsMany.mock.calls[0];
+        expect(groups.map((g) => g.userIds)).toEqual([['alice'], ['carol']]);
+      } finally {
+        jest.useRealTimers();
+      }
     });
 
     it('tells each waiter how many share their own activity', async () => {
@@ -164,14 +191,14 @@ describe('InstantMatchService', () => {
       await service.joinQueue(
         joinDto('carol', { activity: 'gaming', campus: 'campus-b' }),
       );
-      emitter.emitQueueStats.mockClear();
+      await service['flushQueueBroadcast']();
+      emitter.emitQueueStatsMany.mockClear();
       await service.joinQueue(
         joinDto('bob', { activity: 'chat', campus: 'campus-b' }),
       );
+      await service['flushQueueBroadcast']();
 
-      const byUser = new Map(
-        emitter.emitQueueStats.mock.calls.map((c) => [c[0], c[1]]),
-      );
+      const byUser = statsByUser();
       // Three people searching in total; two of them for 'chat'.
       expect(byUser.get('alice')).toMatchObject({ count: 3, sameActivity: 2 });
       expect(byUser.get('carol')).toMatchObject({ count: 3, sameActivity: 1 });
@@ -1245,11 +1272,42 @@ describe('InstantMatchService', () => {
 
     it('tells everyone the queue moved whenever it does', async () => {
       await service.joinQueue(joinDto('bob'));
+      await service['flushQueueBroadcast']();
       expect(emitter.emitQueueChanged).toHaveBeenCalled();
 
       emitter.emitQueueChanged.mockClear();
       await service.cancelQueue('bob');
+      await service['flushQueueBroadcast']();
       expect(emitter.emitQueueChanged).toHaveBeenCalled();
+    });
+
+    it('reads queue stats as one row per activity, with the same numbers', async () => {
+      const t = Date.now();
+      prisma.seedQueueEntry('alice', {
+        activity: 'chat',
+        joinedAt: new Date(t - 120_000),
+      });
+      prisma.seedQueueEntry('bob', {
+        activity: 'chat',
+        joinedAt: new Date(t - 60_000),
+      });
+      prisma.seedQueueEntry('carol', {
+        activity: 'gaming',
+        joinedAt: new Date(t - 300_000),
+      });
+      prisma.seedQueueEntry('dave', {
+        activity: 'gaming',
+        expiresAt: new Date(t - 1),
+      });
+
+      const stats = await service.getQueueStats('chat');
+      expect(stats).toMatchObject({ count: 3, sameActivity: 2 });
+      expect(stats.avgWaitSecs).toBeGreaterThanOrEqual(159);
+      expect(stats.avgWaitSecs).toBeLessThanOrEqual(161);
+      await expect(service.getQueueStats('study')).resolves.toMatchObject({
+        count: 3,
+        sameActivity: 0,
+      });
     });
   });
 

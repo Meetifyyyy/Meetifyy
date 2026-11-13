@@ -228,6 +228,54 @@ describeDb('Instant Match (database)', () => {
     ).toBe(0);
   });
 
+  it('queue stats from one grouped query match the queue', async () => {
+    const [a, b, c, d] = await users(4);
+    const t = Date.now();
+    await prisma.matchQueueEntry.createMany({
+      data: [
+        {
+          userId: a,
+          campus: 'x',
+          activity: 'chat',
+          timePreference: 'now',
+          joinedAt: new Date(t - 120_000),
+          expiresAt: new Date(t + 60_000),
+        },
+        {
+          userId: b,
+          campus: 'x',
+          activity: 'chat',
+          timePreference: 'now',
+          joinedAt: new Date(t - 60_000),
+          expiresAt: new Date(t + 60_000),
+        },
+        {
+          userId: c,
+          campus: 'x',
+          activity: 'gaming',
+          timePreference: 'now',
+          joinedAt: new Date(t - 300_000),
+          expiresAt: new Date(t + 60_000),
+        },
+        // Expired: not counted.
+        {
+          userId: d,
+          campus: 'x',
+          activity: 'gaming',
+          timePreference: 'now',
+          joinedAt: new Date(t - 900_000),
+          expiresAt: new Date(t - 1_000),
+        },
+      ],
+    });
+
+    const stats = await service.getQueueStats('chat');
+    expect(stats).toMatchObject({ count: 3, sameActivity: 2 });
+    // (120 + 60 + 300) / 3 = 160 s, give or take the time the test takes.
+    expect(stats.avgWaitSecs).toBeGreaterThanOrEqual(159);
+    expect(stats.avgWaitSecs).toBeLessThanOrEqual(163);
+  });
+
   it('migration 41 clears stored requests of answered matches and keeps pending ones', async () => {
     const [a, b, c, d] = await users(4);
     const withGps = {
