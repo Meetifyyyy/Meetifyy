@@ -1423,8 +1423,11 @@ describe('InstantMatchService', () => {
 
       expect(forAlice.feedback?.declinedByMe).toBe(1);
       expect(forBob.feedback?.declinedByThem).toBe(1);
-      // Being passed on is the milder signal of the two.
-      expect(forBob.score).toBeGreaterThan(forAlice.score);
+      // The pairing is scored from both sides and judged by the harsher view
+      // — here alice's, who passed — so it scores the same whoever searches
+      // (phase 1). It used to score higher when bob searched, which offered
+      // bob to the person who had just passed on him.
+      expect(forBob.score).toBe(forAlice.score);
     });
 
     it('does not invent a pass for a decline recorded before attribution existed', async () => {

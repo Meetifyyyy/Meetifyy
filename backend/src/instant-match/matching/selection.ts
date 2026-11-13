@@ -39,6 +39,8 @@ export interface Rankable {
 export interface OrderOptions {
   /** ms epoch of the searcher's own join, for the threshold ladder. */
   searcherJoinedAt: number;
+  /** How many could be matched at all: a thin pool relaxes faster. */
+  poolSize?: number;
   now?: number;
   /** Defaults to `Math.random`. Inject for reproducible ordering. */
   rng?: () => number;
@@ -66,9 +68,10 @@ export function thresholdFor(
   searcherJoinedAt: number,
   candidateJoinedAt: number,
   now: number,
+  poolSize?: number,
 ): number {
   const waited = Math.max(now - searcherJoinedAt, now - candidateJoinedAt);
-  return relaxedThreshold(waited);
+  return relaxedThreshold(waited, poolSize);
 }
 
 /** Longer waits are drawn more often, but never exclusively — see
@@ -117,7 +120,12 @@ export function orderCandidates<T extends Rankable>(
   const eligible = candidates
     .map((item) => ({
       item,
-      threshold: thresholdFor(options.searcherJoinedAt, item.joinedAt, now),
+      threshold: thresholdFor(
+        options.searcherJoinedAt,
+        item.joinedAt,
+        now,
+        options.poolSize,
+      ),
     }))
     .filter((entry) => entry.item.score >= entry.threshold)
     // Best first; ties toward whoever has been waiting longest, so the pool a

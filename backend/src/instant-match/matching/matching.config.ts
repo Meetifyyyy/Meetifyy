@@ -257,6 +257,17 @@ export const THRESHOLD = {
   start: 62,
   floor: 0,
   relaxFullMs: 3 * 60 * 1000,
+  /**
+   * A thin pool relaxes faster (phase 1 of the learning plan). With one or
+   * two people searching for the same thing, holding out three minutes for a
+   * better match that is not coming only makes both wait; the bar falls in
+   * half the time with two or fewer candidates, and in three quarters with
+   * five or fewer. A busy pool keeps the full three minutes. First match wins.
+   */
+  thinPool: [
+    { atMost: 2, factor: 0.5 },
+    { atMost: 5, factor: 0.75 },
+  ],
 } as const;
 
 /** How many waiting entries one join attempt ranks. */

@@ -47,6 +47,8 @@ import {
   SIGNALS,
   SideContext,
   SignalInput,
+  flipFeedback,
+  flipSocial,
   timeRank,
 } from './signals';
 
@@ -263,11 +265,56 @@ export function scorePair(
  * and is never traded away, so the end state is "any same-activity partner
  * beats nobody", which on a quiet campus is the right answer.
  */
-export function relaxedThreshold(waitedMs: number): number {
+export function relaxedThreshold(waitedMs: number, poolSize?: number): number {
   if (!Number.isFinite(waitedMs) || waitedMs <= 0) return THRESHOLD.start;
-  const progress = Math.min(1, waitedMs / THRESHOLD.relaxFullMs);
+  const progress = Math.min(1, waitedMs / relaxFullMsFor(poolSize));
   const span = THRESHOLD.start - THRESHOLD.floor;
   return THRESHOLD.start - span * progress;
+}
+
+/** How long the bar takes to fall, given how many could be matched. */
+export function relaxFullMsFor(poolSize?: number): number {
+  if (poolSize === undefined || !Number.isFinite(poolSize)) {
+    return THRESHOLD.relaxFullMs;
+  }
+  const rung = THRESHOLD.thinPool.find((r) => poolSize <= r.atMost);
+  return THRESHOLD.relaxFullMs * (rung?.factor ?? 1);
+}
+
+/** A two-sided score: the pairing, judged by the side that likes it less. */
+export interface MutualScore {
+  /** The detail of the lower of the two views; its `score` is the score. */
+  detail: MatchScore;
+  /** Each side's own view, 0–100. */
+  ab: number;
+  ba: number;
+}
+
+/**
+ * Score a pairing from both sides and keep the lower view.
+ *
+ * Both people have to accept, so the pairing is only as good as the less
+ * enthusiastic side finds it. The two views differ only where history is
+ * personal (passes, follows); everything else is symmetric. Using one side
+ * made the result depend on who happened to search: someone who had passed
+ * on you was offered to you again whenever you were the one searching.
+ */
+export function scoreMutual(
+  a: SideContext,
+  b: SideContext,
+  options: ScoreOptions = {},
+): MutualScore {
+  const ab = scorePair(a, b, options);
+  const ba = scorePair(b, a, {
+    ...options,
+    feedback: flipFeedback(options.feedback),
+    social: flipSocial(options.social),
+  });
+  return {
+    detail: ba.score < ab.score ? ba : ab,
+    ab: ab.score,
+    ba: ba.score,
+  };
 }
 
 /**

@@ -1038,6 +1038,16 @@ model MatchSession {
   /// request's snapshotA (migration 41 cleared the older rows).
   snapshotA      Json?
   snapshotB      Json?
+  /// What the pairing was judged on when it was proposed: each signal's
+  /// value (0..1, never the raw input) and weight, the intent, the bar it had
+  /// to clear and how it was chosen (`matching/features.ts`). With the outcome
+  /// columns, the training row for a learned ranker. Null on older sessions.
+  features       Json?
+  /// Messages each side sent in the chat, counted when it ended (counts only,
+  /// never content). Null when the chat never opened or ended before this
+  /// was recorded.
+  aMessageCount  Int?
+  bMessageCount  Int?
   userA          User                   @relation("MatchUserA", fields: [userAId], references: [id])
   userB          User                   @relation("MatchUserB", fields: [userBId], references: [id])
 

@@ -394,6 +394,41 @@ export const SIGNALS_BY_KEY: ReadonlyMap<SignalKey, SignalDefinition> = new Map(
   SIGNALS.map((s) => [s.key, s]),
 );
 
+/** The same history, from the other person's side. */
+export function flipFeedback(
+  feedback: PairFeedback | null | undefined,
+): PairFeedback | null {
+  if (!feedback) return null;
+  return {
+    ...feedback,
+    declinedByMe: feedback.declinedByThem,
+    declinedByThem: feedback.declinedByMe,
+  };
+}
+
+/** The same follow edges, from the other person's side. */
+export function flipSocial(
+  social: PairSocial | null | undefined,
+): PairSocial | null {
+  if (!social) return null;
+  return { following: social.followedBy, followedBy: social.following };
+}
+
+/**
+ * Whether this pairing should not be offered at all right now.
+ *
+ * Checked from both sides by `isHardSkippedEitherWay`: three passes by either
+ * person stop the pairing, whoever happens to be searching.
+ */
+export function isHardSkippedEitherWay(
+  feedback: PairFeedback | null | undefined,
+  now: number,
+): boolean {
+  return (
+    isHardSkipped(feedback, now) || isHardSkipped(flipFeedback(feedback), now)
+  );
+}
+
 /**
  * Whether this pairing should not be offered at all right now.
  *

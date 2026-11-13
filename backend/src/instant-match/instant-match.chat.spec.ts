@@ -56,6 +56,9 @@ describe('Instant Match chat lifecycle', () => {
       matchReason: 'study',
       snapshotA: null,
       snapshotB: null,
+      features: null,
+      aMessageCount: null,
+      bMessageCount: null,
       ...over,
     };
     prisma.sessions.push(row);

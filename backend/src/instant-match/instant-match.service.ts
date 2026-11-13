@@ -20,14 +20,15 @@ import {
   activeAffiliationCollegeId,
 } from '../common/campus/campus-access.service';
 import { MediaCleanupService } from '../uploads/media-cleanup.service';
-import { MatchScore, explainPair, scorePair } from './matching/engine';
+import { MatchScore, explainPair, scoreMutual } from './matching/engine';
+import { proposalFeatures } from './matching/features';
 import { orderCandidates } from './matching/selection';
 import { ROSTER, rosterVisibility } from './matching/roster';
 import {
   PairFeedback,
   PairSocial,
   SideContext,
-  isHardSkipped,
+  isHardSkippedEitherWay,
 } from './matching/signals';
 import { CANDIDATE_SCAN_LIMIT, FEEDBACK } from './matching/matching.config';
 import {
@@ -56,6 +57,11 @@ const RECENT_MATCH_WINDOW_MS = 24 * 60 * 60 * 1000;
 /** Pending sessions expired per sweep tick (every 10 s); a backlog after an
  *  outage is worked off over a few ticks rather than in one pass. */
 const EXPIRE_BATCH = 100;
+
+/** The sweep re-tries matching for people waiting at least this long… */
+const REMATCH_AFTER_MS = 30_000;
+/** …the longest-waiting this many per tick (every 10 s). */
+const REMATCH_BATCH = 20;
 
 export interface MatchCandidateDto {
   id: string;
@@ -516,12 +522,13 @@ export class InstantMatchService implements OnModuleInit {
    * a concurrent match, in which case we fall through to the next candidate
    * instead of giving up and leaving the user waiting a full sweep cycle.
    */
-  async tryMatch(userId: string): Promise<void> {
+  /** Returns whether a pairing was made. */
+  async tryMatch(userId: string): Promise<boolean> {
     const myEntry = await this.prisma.matchQueueEntry.findUnique({
       where: { userId },
     });
-    if (!myEntry) return;
-    if (myEntry.expiresAt.getTime() <= Date.now()) return;
+    if (!myEntry) return false;
+    if (myEntry.expiresAt.getTime() <= Date.now()) return false;
 
     const excludedIds = await this.getExcludedUserIds(userId);
 
@@ -552,13 +559,13 @@ export class InstantMatchService implements OnModuleInit {
       take: CANDIDATE_SCAN_LIMIT,
     });
 
-    if (candidates.length === 0) return;
+    if (candidates.length === 0) return false;
 
     const me = await this.prisma.user.findUnique({
       where: { id: userId },
       select: USER_CARD_SELECT,
     });
-    if (!me) return;
+    if (!me) return false;
 
     const now = Date.now();
     const candidateIds = candidates.map((c) => c.userId);
@@ -576,57 +583,47 @@ export class InstantMatchService implements OnModuleInit {
       relations.campusByUser.get(userId) ?? null,
     );
 
-    const scored = candidates
-      // A pairing this user has already passed on three times is not a
-      // ranking problem any more; stop offering it for a while. Bounded and
-      // separate from the score, so it can be reasoned about on its own.
-      .filter(
-        (candidate) =>
-          !isHardSkipped(relations.feedback.get(candidate.userId), now),
-      )
-      .map((candidate) => {
-        const detail = scorePair(
-          myContext,
-          this.toScoringContext(
-            candidate,
-            candidate.user,
-            relations.sharedCommunityIds.get(candidate.userId) ?? null,
-            relations.campusByUser.get(candidate.userId) ?? null,
-          ),
-          {
-            feedback: relations.feedback.get(candidate.userId) ?? null,
-            social: relations.social.get(candidate.userId) ?? null,
-            now,
-          },
-        );
-        return {
-          candidate,
-          detail,
-          score: detail.score,
-          joinedAt: candidate.joinedAt.getTime(),
-        };
-      });
+    // A pairing either person has passed on three times is not a ranking
+    // problem any more; it is not offered for a while (`isHardSkippedEitherWay`).
+    const scored = this.scoreCandidates(
+      myContext,
+      candidates,
+      relations,
+      now,
+    ).filter((row) => !row.skipped);
 
     // Threshold, tie bands and exploration all live in `orderCandidates`; the
     // service's job is only to try the order it is given, in order, falling
     // through whenever a claim loses its race.
     const ordered = orderCandidates(scored, {
       searcherJoinedAt: myEntry.joinedAt.getTime(),
+      poolSize: scored.length,
       now,
       rng: this.rankingOptions.rng,
       deterministic: this.rankingOptions.deterministic,
     });
 
-    if (ordered.length === 0) return;
+    if (ordered.length === 0) return false;
 
     const timer = getAcceptTimerSecs(myEntry.activity, myEntry.timePreference);
 
-    for (const { item, picked } of ordered) {
+    for (const { item, picked, threshold } of ordered) {
       const { candidate, detail, score } = item;
-      const claim = await this.claimPair(myEntry, candidate, timer);
+      const claim = await this.claimPair(myEntry, candidate, timer, {
+        features: proposalFeatures({
+          source: 'ranker',
+          mutual: item.mutual,
+          threshold,
+          picked,
+          waitedMs:
+            now -
+            Math.min(myEntry.joinedAt.getTime(), candidate.joinedAt.getTime()),
+          poolSize: scored.length,
+        }),
+      });
       // The searcher was taken (or holds a match): nobody else is worth a
       // transaction (IM-18). Otherwise this candidate was lost — try the next.
-      if (claim.outcome === 'searcher-gone') return;
+      if (claim.outcome === 'searcher-gone') return false;
       if (claim.outcome !== 'claimed') continue;
       const { session } = claim;
 
@@ -663,8 +660,48 @@ export class InstantMatchService implements OnModuleInit {
 
       // Both are out of the queue now — refresh the depth for everyone left.
       this.requestQueueBroadcast();
-      return;
+      return true;
     }
+    return false;
+  }
+
+  /**
+   * Scores every candidate for one searcher, from both sides (`scoreMutual`),
+   * with the skip rule applied both ways. Shared by `tryMatch` and
+   * `explainRankingFor`, so the explanation is exactly what matching does.
+   */
+  private scoreCandidates(
+    myContext: SideContext,
+    candidates: WaitingCandidate[],
+    relations: Relations,
+    now: number,
+  ) {
+    return candidates.map((candidate) => {
+      const feedback = relations.feedback.get(candidate.userId) ?? null;
+      const mutual = scoreMutual(
+        myContext,
+        this.toScoringContext(
+          candidate,
+          candidate.user,
+          relations.sharedCommunityIds.get(candidate.userId) ?? null,
+          relations.campusByUser.get(candidate.userId) ?? null,
+        ),
+        {
+          feedback,
+          social: relations.social.get(candidate.userId) ?? null,
+          now,
+        },
+      );
+      return {
+        candidate,
+        feedback,
+        mutual,
+        detail: mutual.detail,
+        score: mutual.detail.score,
+        joinedAt: candidate.joinedAt.getTime(),
+        skipped: isHardSkippedEitherWay(feedback, now),
+      };
+    });
   }
 
   /**
@@ -728,42 +765,29 @@ export class InstantMatchService implements OnModuleInit {
       relations.campusByUser.get(userId) ?? null,
     );
 
-    const rows = candidates.map((candidate) => {
-      const feedback = relations.feedback.get(candidate.userId) ?? null;
-      const detail = scorePair(
-        myContext,
-        this.toScoringContext(
-          candidate,
-          candidate.user,
-          relations.sharedCommunityIds.get(candidate.userId) ?? null,
-          relations.campusByUser.get(candidate.userId) ?? null,
-        ),
-        {
-          feedback,
-          social: relations.social.get(candidate.userId) ?? null,
-          now,
-        },
-      );
-      return {
-        userId: candidate.userId,
-        username: candidate.user.username,
-        score: detail.score,
-        skipped: isHardSkipped(feedback, now),
-        feedback,
-        detail,
-        explanation: explainPair(detail),
-        joinedAt: candidate.joinedAt.getTime(),
-      };
-    });
+    const rows = this.scoreCandidates(
+      myContext,
+      candidates,
+      relations,
+      now,
+    ).map((row) => ({
+      userId: row.candidate.userId,
+      username: row.candidate.user.username,
+      score: row.score,
+      skipped: row.skipped,
+      feedback: row.feedback,
+      detail: row.detail,
+      explanation: explainPair(row.detail),
+      joinedAt: row.joinedAt,
+    }));
 
-    const ordered = orderCandidates(
-      rows.filter((r) => !r.skipped),
-      {
-        searcherJoinedAt: myEntry.joinedAt.getTime(),
-        now,
-        deterministic: true,
-      },
-    );
+    const pool = rows.filter((r) => !r.skipped);
+    const ordered = orderCandidates(pool, {
+      searcherJoinedAt: myEntry.joinedAt.getTime(),
+      poolSize: pool.length,
+      now,
+      deterministic: true,
+    });
 
     return {
       queued: true,
@@ -1016,9 +1040,12 @@ export class InstantMatchService implements OnModuleInit {
       requestedByA = false,
       activity,
       exactDeadline = false,
+      features,
     }: {
       requestedByA?: boolean;
       activity?: string;
+      /** What the pairing was judged on, for the learning plan. */
+      features?: Prisma.InputJsonObject;
       /** No grace on top of the timer: the deadline the people see is the
        *  deadline the server enforces. */
       exactDeadline?: boolean;
@@ -1085,6 +1112,7 @@ export class InstantMatchService implements OnModuleInit {
             ) as unknown as Prisma.InputJsonValue,
             // A direct request is the requester's yes, given up front.
             aAccepted: requestedByA,
+            ...(features ? { features } : {}),
           },
           select: { id: true, expiresAt: true },
         });
@@ -1219,7 +1247,39 @@ export class InstantMatchService implements OnModuleInit {
     // What they are up for is the activity, but the wait is the same for every
     // request: 30 seconds, then it is withdrawn and both go back to searching.
     const timer = REQUEST_WINDOW_SECS;
+    // Judged the way the ranker would have judged it, and recorded: a direct
+    // request is the strongest "I want this person" a learner can see.
+    const relations = await this.collectRelations(requesterId, [targetUserId]);
+    const requestScore = scoreMutual(
+      this.toScoringContext(
+        mine,
+        me,
+        relations.myCommunityIds,
+        relations.campusByUser.get(requesterId) ?? null,
+      ),
+      this.toScoringContext(
+        theirs,
+        them,
+        relations.sharedCommunityIds.get(targetUserId) ?? null,
+        relations.campusByUser.get(targetUserId) ?? null,
+      ),
+      {
+        feedback: relations.feedback.get(targetUserId) ?? null,
+        social: relations.social.get(targetUserId) ?? null,
+        now,
+      },
+    );
+
     const claim = await this.claimPair(mine, theirs, timer, {
+      features: proposalFeatures({
+        source: 'request',
+        mutual: requestScore,
+        threshold: null,
+        picked: null,
+        waitedMs:
+          now - Math.min(mine.joinedAt.getTime(), theirs.joinedAt.getTime()),
+        poolSize: 1,
+      }),
       requestedByA: true,
       exactDeadline: true,
       // What they are up for is what was asked for: it is the activity both
@@ -1641,6 +1701,40 @@ export class InstantMatchService implements OnModuleInit {
     const chatsEnded = await this.expireStaleChats();
     if (chatsEnded > 0)
       this.logger.log(`instant-match:chats-expired ${chatsEnded}`);
+
+    const rematched = await this.rematchLongWaiters();
+    if (rematched > 0)
+      this.logger.log(`instant-match:sweep-matched ${rematched}`);
+  }
+
+  /**
+   * Re-tries matching for the people who have waited longest (phase 1).
+   *
+   * The bar a pairing has to clear falls while someone waits, but nothing
+   * re-ran matching for them: a person whose bar had already reached zero was
+   * only paired when somebody else happened to join. The sweep now tries the
+   * longest waiters each tick, bounded, each on its own.
+   */
+  private async rematchLongWaiters(): Promise<number> {
+    const now = Date.now();
+    const waiters = await this.prisma.matchQueueEntry.findMany({
+      where: {
+        joinedAt: { lt: new Date(now - REMATCH_AFTER_MS) },
+        expiresAt: { gt: new Date(now) },
+      },
+      orderBy: { joinedAt: 'asc' },
+      take: REMATCH_BATCH,
+      select: { userId: true },
+    });
+    let matched = 0;
+    for (const { userId } of waiters) {
+      try {
+        if (await this.tryMatch(userId)) matched += 1;
+      } catch (err) {
+        this.logger.error(`match:sweep-retry failed ${userId}`, err);
+      }
+    }
+    return matched;
   }
 
   /**
@@ -1902,7 +1996,8 @@ export class InstantMatchService implements OnModuleInit {
 
     const ranked = pool
       .map((e) => {
-        const detail = scorePair(
+        // Two-sided, as matching scores it.
+        const { detail } = scoreMutual(
           me,
           this.toScoringContext(
             e,
@@ -2400,14 +2495,23 @@ export class InstantMatchService implements OnModuleInit {
         data,
       });
       if (claimed.count !== 1) return null;
-      const fresh = await tx.matchSession.findUnique({
+      const found = await tx.matchSession.findUnique({
         where: { id: sessionId },
       });
-      if (!fresh) return null;
-      const media = fresh.conversationId
-        ? await this.tearDownConversation(tx, fresh.conversationId)
-        : [];
-      return { fresh, media };
+      if (!found) return null;
+      if (!found.conversationId) return { fresh: found, media: [] };
+      const { owed, sentBy } = await this.tearDownConversation(
+        tx,
+        found.conversationId,
+      );
+      const fresh = await tx.matchSession.update({
+        where: { id: sessionId },
+        data: {
+          aMessageCount: sentBy.get(found.userAId) ?? 0,
+          bMessageCount: sentBy.get(found.userBId) ?? 0,
+        },
+      });
+      return { fresh, media: owed };
     });
     if (!result) return null;
     this.mediaCleanup?.drainSoon(result.media);
@@ -2451,7 +2555,19 @@ export class InstantMatchService implements OnModuleInit {
   private async tearDownConversation(
     tx: Prisma.TransactionClient,
     conversationId: string,
-  ): Promise<string[]> {
+  ): Promise<{ owed: string[]; sentBy: Map<string, number> }> {
+    // How many messages each side sent, read before they go: whether a match
+    // became a conversation is the outcome the learning plan cares about most,
+    // and it cannot be read afterwards. Counts only, never content.
+    const senders = await tx.message.findMany({
+      where: { conversationId },
+      select: { senderId: true },
+    });
+    const sentBy = new Map<string, number>();
+    for (const { senderId } of senders) {
+      sentBy.set(senderId, (sentBy.get(senderId) ?? 0) + 1);
+    }
+
     const attached = await tx.message.findMany({
       where: { conversationId, attachmentMediaId: { not: null } },
       select: { attachmentMediaId: true },
@@ -2492,7 +2608,7 @@ export class InstantMatchService implements OnModuleInit {
     // Reactions, receipts and deleted-message rows cascade from Message;
     // anything that does not is scoped to a message id that no longer exists.
     await tx.message.deleteMany({ where: { conversationId } });
-    return owed;
+    return { owed, sentBy };
   }
 
   /** Tells both sides, each from their own point of view. Fire-and-forget:
@@ -2778,6 +2894,14 @@ class PairClaimLost extends Error {
     super('pair claim lost');
   }
 }
+
+/** A waiting queue row with its owner's card, as the ranker reads it. */
+type WaitingCandidate = Prisma.MatchQueueEntryGetPayload<{
+  include: { user: { select: typeof USER_CARD_SELECT } };
+}>;
+
+/** Everything the ranker knows about one searcher's relationships. */
+type Relations = Awaited<ReturnType<InstantMatchService['collectRelations']>>;
 
 type ClaimResult =
   | { outcome: 'claimed'; session: { id: string; expiresAt: Date } }

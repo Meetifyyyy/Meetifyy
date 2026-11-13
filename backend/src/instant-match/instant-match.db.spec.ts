@@ -132,6 +132,9 @@ describeDb('Instant Match (database)', () => {
     });
     expect(session.status).toBe('PENDING');
     expect(session.snapshotA).toMatchObject({ gps: { latitude: 12.97 } });
+    // What it was judged on, stored as JSONB (migration 42), without the GPS.
+    expect(session.features).toMatchObject({ v: 1, source: 'ranker' });
+    expect(JSON.stringify(session.features)).not.toContain('12.97');
 
     await service.respondToMatch(a, session.id, 'accept');
     await service.respondToMatch(b, session.id, 'accept');
@@ -214,6 +217,17 @@ describeDb('Instant Match (database)', () => {
 
     const result = await service.leaveChatSession(b);
     expect(result.ended).toBe(true);
+    // Counted before the messages went (migration 42).
+    await expect(
+      prisma.matchSession.findUniqueOrThrow({
+        where: { id: s.id },
+        select: { aMessageCount: true, bMessageCount: true },
+      }),
+    ).resolves.toEqual(
+      s.userAId === a
+        ? { aMessageCount: 2, bMessageCount: 0 }
+        : { aMessageCount: 0, bMessageCount: 2 },
+    );
     await new Promise((resolve) => setTimeout(resolve, 200));
 
     expect(

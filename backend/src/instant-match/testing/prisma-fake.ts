@@ -281,6 +281,9 @@ export class PrismaFake {
       matchReason: null,
       snapshotA: null,
       snapshotB: null,
+      features: null,
+      aMessageCount: null,
+      bMessageCount: null,
       ...overrides,
     };
     this.sessions.push(session);
@@ -304,19 +307,32 @@ export class PrismaFake {
         where,
         include,
         select,
-      }: FindArgs & { include?: { user?: { select?: Row } } }) => {
+        orderBy,
+        take,
+      }: FindArgs & {
+        include?: { user?: { select?: Row } };
+        orderBy?: { joinedAt?: 'asc' | 'desc' };
+        take?: number;
+      }) => {
+        const rows = this.queue.filter((e) =>
+          matchesWhere(e, where, this.users),
+        );
+        if (orderBy?.joinedAt) {
+          const dir = orderBy.joinedAt === 'asc' ? 1 : -1;
+          rows.sort(
+            (x, y) => dir * (x.joinedAt.getTime() - y.joinedAt.getTime()),
+          );
+        }
         return Promise.resolve(
-          this.queue
-            .filter((e) => matchesWhere(e, where, this.users))
-            .map((e) => {
-              const row: Row = select ? project(e, select) : { ...e };
-              if (include?.user)
-                row.user = project(
-                  this.users.get(e.userId)!,
-                  include.user.select,
-                );
-              return row;
-            }),
+          rows.slice(0, take ?? rows.length).map((e) => {
+            const row: Row = select ? project(e, select) : { ...e };
+            if (include?.user)
+              row.user = project(
+                this.users.get(e.userId)!,
+                include.user.select,
+              );
+            return row;
+          }),
         );
       },
       upsert: ({
@@ -408,6 +424,9 @@ export class PrismaFake {
           endedAt: null,
           declinedById: null,
           matchReason: null,
+          features: null,
+          aMessageCount: null,
+          bMessageCount: null,
           ...data,
         };
         this.sessions.push(row);
