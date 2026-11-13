@@ -23,7 +23,8 @@ describe('BlocksService', () => {
     const prisma = {
       block: {
         findMany: jest.fn(({ where }: { where: BlockWhere }) => {
-          // getBlockedByUserIds asks for one direction; the mutual read uses OR.
+          // Every read asks for both directions at once; the single-direction
+          // shape below only answers a regression back to per-direction reads.
           if (where.OR) {
             const userId = where.OR[0].blockerId;
             return Promise.resolve(
@@ -263,7 +264,6 @@ describe('BlocksService — getBlockDirection', () => {
 
   const clearCaches = () => {
     BlocksService['cache'].clear();
-    BlocksService['outgoingCache'].clear();
   };
 
   beforeEach(clearCaches);
@@ -320,6 +320,71 @@ describe('BlocksService — getBlockDirection', () => {
       isBlocked: false,
       blockedByMe: false,
       blockedByThem: false,
+    });
+  });
+
+  describe('one read answers every question about a user', () => {
+    const readsOf = (service: BlocksService) =>
+      (service as unknown as { prisma: { block: { findMany: jest.Mock } } })
+        .prisma.block.findMany;
+
+    it('a cold getBlockDirection issues exactly one Block read', async () => {
+      const service = build([{ blockerId: B, blockedId: A }]);
+      const direction = await service.getBlockDirection(A, B);
+      expect(direction).toEqual({
+        isBlocked: true,
+        blockedByMe: false,
+        blockedByThem: true,
+      });
+      expect(readsOf(service)).toHaveBeenCalledTimes(1);
+    });
+
+    it('the profile-view sequence (mutual list, direction, presence check) reads Block once', async () => {
+      const service = build([
+        { blockerId: A, blockedId: 'c' },
+        { blockerId: 'd', blockedId: A },
+      ]);
+      expect(await service.getExcludedUserIds(A)).toEqual(
+        expect.arrayContaining(['c', 'd']),
+      );
+      expect(await service.getBlockDirection(A, B)).toEqual({
+        isBlocked: false,
+        blockedByMe: false,
+        blockedByThem: false,
+      });
+      expect(await service.isBlocked(A, B)).toBe(false);
+      expect(await service.hasBlocked(A, 'c')).toBe(true);
+      expect(await service.getBlockedByUserIds(A)).toEqual(['c']);
+      expect(readsOf(service)).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the directions apart: only the rows where the viewer is the blocker are "mine"', async () => {
+      const service = build([{ blockerId: 'x', blockedId: A }]);
+      expect(await service.getBlockedByUserIds(A)).toEqual([]);
+      expect(await service.getExcludedUserIds(A)).toEqual(['x']);
+      expect(await service.getBlockDirection(A, 'x')).toEqual({
+        isBlocked: true,
+        blockedByMe: false,
+        blockedByThem: true,
+      });
+    });
+
+    it('never asks about the other user: their own list is not fetched', async () => {
+      const service = build([{ blockerId: A, blockedId: B }]);
+      await service.getBlockDirection(A, B);
+      const asked = readsOf(service).mock.calls.map(
+        ([args]: [{ where: BlockWhere }]) => JSON.stringify(args.where),
+      );
+      expect(asked).toHaveLength(1);
+      expect(asked[0]).not.toContain(B);
+    });
+
+    it('an invalidation drops all three lists together', async () => {
+      const service = build([{ blockerId: A, blockedId: B }]);
+      await service.getBlockDirection(A, B);
+      await service.invalidateBlockCache(A, B);
+      await service.getBlockedByUserIds(A);
+      expect(readsOf(service)).toHaveBeenCalledTimes(2);
     });
   });
 });

@@ -61,6 +61,8 @@ import {
   authorVisibilitySql,
   authorAudienceAmong,
   authorVisibilityWhere,
+  authorPrivacySelect,
+  accountContentVisibleTo,
   canSeeAuthorPosts,
 } from './author-visibility';
 import type Redis from 'ioredis';
@@ -1309,7 +1311,7 @@ export class PostsService {
       ),
       candidates AS (
         SELECT p.id, p."authorId", p."communityId", p."createdAt",
-               p."likeCount", p."commentCount"
+               p."likeCount", p."commentCount", u."interests" AS "authorInterests"
         FROM "Post" p
         JOIN "User" u ON u.id = p."authorId"
         LEFT JOIN "Community" c ON c.id = p."communityId"
@@ -1337,32 +1339,71 @@ export class PostsService {
           ${excludedUserIds.length > 0 ? Prisma.sql`AND p."authorId" NOT IN (${Prisma.join(excludedUserIds)})` : Prisma.empty}
         ORDER BY p."createdAt" DESC, p.id DESC
         LIMIT ${PostsService.RANK_CANDIDATES}
+      ),
+      -- The viewer's own rows, read through the (followerId) and (userId)
+      -- index prefixes, so scoring never scans Follow or UserAffinity whole.
+      -- Both keys are unique per target, so joining them cannot add rows.
+      my_follows AS MATERIALIZED (
+        SELECT f."followingId" FROM "Follow" f WHERE f."followerId" = ${userId}
+      ),
+      my_affinity AS MATERIALIZED (
+        SELECT ua."targetId", ua."score"
+        FROM "UserAffinity" ua WHERE ua."userId" = ${userId}
+      ),
+      -- Per distinct author rather than per post: an author with several posts
+      -- in the window is looked up once. CollegeAffiliation.userId is unique.
+      author_interests AS (
+        -- The author's interests that the viewer shares, counted in one pass
+        -- over all candidate authors. A NULL element equals a NULL element, as
+        -- it did under INTERSECT, which this replaces.
+        SELECT t."authorId", COUNT(*) AS "shared"
+        FROM (
+          SELECT DISTINCT ca."authorId", lower(trim(i)) AS v
+          FROM candidates ca
+          CROSS JOIN LATERAL unnest(ca."authorInterests") i
+        ) t
+        CROSS JOIN me
+        WHERE t.v = ANY(me."interests")
+          OR (t.v IS NULL AND array_position(me."interests", NULL) IS NOT NULL)
+        GROUP BY t."authorId"
+      ),
+      author_signals AS (
+        SELECT ca."authorId",
+          -- Same campus: the author holds an active affiliation to it.
+          (me."collegeId" IS NOT NULL AND aa."userId" IS NOT NULL) AS "sameCampus",
+          COALESCE(ai."shared", 0) AS "sharedInterests"
+        FROM (SELECT DISTINCT "authorId" FROM candidates) ca
+        CROSS JOIN me
+        LEFT JOIN "CollegeAffiliation" aa
+          ON aa."userId" = ca."authorId" AND aa."revokedAt" IS NULL
+          AND aa."collegeId" = me."collegeId"
+        LEFT JOIN author_interests ai ON ai."authorId" = ca."authorId"
+      ),
+      -- The post's hashtags that match the viewer's interests, counted in one
+      -- pass over the candidates' PostHashtag rows (primary key prefix).
+      tag_hits AS (
+        SELECT ph."postId", COUNT(*) AS "hits"
+        FROM me
+        CROSS JOIN candidates cd
+        JOIN "PostHashtag" ph ON ph."postId" = cd.id
+        JOIN "Hashtag" h ON h.id = ph."hashtagId"
+        WHERE lower(h.name) = ANY(me."interests")
+        GROUP BY ph."postId"
       )
       SELECT
         cd.id,
         cd."authorId",
         cd."createdAt",
-        EXISTS (
-          SELECT 1 FROM "Follow" f
-          WHERE f."followerId" = me.id AND f."followingId" = cd."authorId"
-        ) AS "followsAuthor",
+        (mf."followingId" IS NOT NULL) AS "followsAuthor",
         (cd."authorId" = me.id) AS "isOwn",
         (
           1.0 / power(EXTRACT(EPOCH FROM (now() - cd."createdAt")) / 3600.0 + 2, 1.5)
         ) * (
           1
           -- Relationship: whose post it is.
-          + CASE WHEN EXISTS (
-              SELECT 1 FROM "Follow" f
-              WHERE f."followerId" = me.id AND f."followingId" = cd."authorId"
-            ) THEN 3.0 ELSE 0 END
+          + CASE WHEN mf."followingId" IS NOT NULL THEN 3.0 ELSE 0 END
           + CASE WHEN cd."communityId" IS NOT NULL THEN 1.5 ELSE 0 END
-          -- Same campus: the author holds an active affiliation to it.
-          + CASE WHEN me."collegeId" IS NOT NULL AND EXISTS (
-              SELECT 1 FROM "CollegeAffiliation" aa
-              WHERE aa."userId" = cd."authorId" AND aa."revokedAt" IS NULL
-                AND aa."collegeId" = me."collegeId"
-            ) THEN 1.0 ELSE 0 END
+          + CASE WHEN asg."sameCampus" THEN 1.0 ELSE 0 END
           -- How much the viewer actually interacts with the author (0..1,
           -- precomputed by the ranking worker). The close-friends signal: the
           -- people you like, comment on and message rise above the people you
@@ -1370,27 +1411,19 @@ export class PostsService {
           + 3.0 * COALESCE(ua."score", 0)
           -- Interest: the post's hashtags against the viewer's interests,
           -- then the author's interests against the viewer's.
-          + 1.5 * LEAST((
-              SELECT COUNT(*) FROM "PostHashtag" ph
-              JOIN "Hashtag" h ON h.id = ph."hashtagId"
-              WHERE ph."postId" = cd.id AND lower(h.name) = ANY(me."interests")
-            ), 2) / 2.0
-          + 1.0 * LEAST((
-              SELECT COUNT(*) FROM (
-                SELECT DISTINCT lower(trim(i)) FROM unnest(au."interests") i
-                INTERSECT SELECT unnest(me."interests")
-              ) x
-            ), 3) / 3.0
+          + 1.5 * LEAST(COALESCE(th."hits", 0), 2) / 2.0
+          + 1.0 * LEAST(asg."sharedInterests", 3) / 3.0
           -- Engagement, log-damped and capped; comments are worth more than
           -- likes. The cap is what keeps "friends first": no amount of
           -- popularity outweighs the 3.0 a close friend's post carries.
           + LEAST(0.35 * ln(1 + cd."likeCount" + 2 * cd."commentCount"), 1.5)
         ) * 100 AS "score"
       FROM candidates cd
-      JOIN "User" au ON au.id = cd."authorId"
+      JOIN author_signals asg ON asg."authorId" = cd."authorId"
       CROSS JOIN me
-      LEFT JOIN "UserAffinity" ua
-        ON ua."userId" = me.id AND ua."targetId" = cd."authorId"
+      LEFT JOIN my_follows mf ON mf."followingId" = cd."authorId"
+      LEFT JOIN my_affinity ua ON ua."targetId" = cd."authorId"
+      LEFT JOIN tag_hits th ON th."postId" = cd.id
     `;
 
     const ids = arrangeRankedFeed(
@@ -2445,7 +2478,17 @@ export class PostsService {
   async getPostMeta(postId: string, userId: string) {
     const meta = await this.prisma.post.findUnique({
       where: { id: postId, deletedAt: null },
-      select: { updatedAt: true, authorId: true, communityId: true },
+      select: {
+        updatedAt: true,
+        authorId: true,
+        communityId: true,
+        // What the access decision below needs, read with the post instead of
+        // in a second round trip: the author's privacy fields for a personal
+        // post, the community's access fields for one in a community. Only one
+        // of them is consulted, exactly as `assertCanViewPost` chooses.
+        author: { select: authorPrivacySelect(userId) },
+        community: { select: PostsService.communityAccessSelect(userId) },
+      },
     });
     if (!meta) return null;
     if (userId) {
@@ -2454,7 +2497,14 @@ export class PostsService {
         throw new NotFoundException('Post not found');
       }
     }
-    await this.assertCanViewPost(userId, meta);
+    // The same rule as `assertCanViewPost`, applied to the rows already in
+    // hand. A missing author or community row refuses, so it fails closed.
+    const visible = meta.communityId
+      ? !!meta.community &&
+        (await this.canViewCommunity(userId, meta.community))
+      : !!meta.author &&
+        accountContentVisibleTo(userId, meta.authorId, meta.author);
+    if (!visible) throw new NotFoundException('Post not found');
     return { updatedAt: meta.updatedAt };
   }
 
@@ -2630,21 +2680,20 @@ export class PostsService {
    * level (bounded by real thread depth — a handful of queries), which supports
    * arbitrary nesting without a recursive CTE. Does NOT validate the post — the
    * caller is responsible for that.
+   *
+   * The comments come back shaped but without `canDelete`: that needs the
+   * post's community, which the caller already holds from its own read of the
+   * post, and the caller may be able to answer it together with other rows
+   * (see `withCanDelete`). Looking the community up here cost a second read of
+   * the post row the caller had just made.
    */
-  private async fetchCommentPage(
+  private async loadCommentPage(
     postId: string,
     userId: string,
     limit: number,
     cursorDate?: Date,
     cursorId?: string,
   ) {
-    // Comments inherit their moderation context from the post they sit under.
-    const parentPost = await this.prisma.post.findUnique({
-      where: { id: postId },
-      select: { communityId: true },
-    });
-    const postCommunityId = parentPost?.communityId ?? null;
-
     // Roots are ordered oldest-first with an id tiebreaker so equal-createdAt
     // roots can't straddle a page boundary (forward keyset: strictly "after"
     // the cursor).
@@ -2729,34 +2778,69 @@ export class PostsService {
         : [];
     const likedSet = new Set(commentLikes.map((l) => l.commentId));
 
-    const shaped = this.shapeComments(all, likedSet);
     // The shaped list is already flat: rows carry `parentId`, not nested
     // `replies`, so the walk over `replies` that used to be here only ever
     // visited this list, in this order.
-    const flat = shaped;
+    const flat = this.shapeComments(all, likedSet);
+    return { flat, nextCursor };
+  }
 
-    // A scrubbed placeholder is already gone, so it is never deletable — and it
-    // carries `authorId: null`, which must not reach the authorizer: for a
-    // moderator it looks authors up with `userId: { in: [...] }`, and Prisma
-    // rejects a null there, failing the whole page. Only live comments are asked.
+  /**
+   * Adds `canDelete` to a loaded comment page, for a post in `communityId`.
+   *
+   * A scrubbed placeholder is already gone, so it is never deletable — and it
+   * carries `authorId: null`, which must not reach the authorizer: for a
+   * moderator it looks authors up with `userId: { in: [...] }`, and Prisma
+   * rejects a null there, failing the whole page. Only live comments are asked.
+   *
+   * `extraItems` are asked in the same `canDeleteEach` call and answered in
+   * the same order, after the comments. The authorizer decides each item on its
+   * own, so batching changes the number of queries, never an answer.
+   */
+  private async withCanDelete<
+    C extends { id: string; isDeleted: boolean; authorId: string | null },
+  >(
+    flat: C[],
+    userId: string,
+    communityId: string | null,
+    extraItems: Array<{ authorId: string; communityId: string | null }> = [],
+  ) {
     const live = flat.filter(
-      (c): c is Extract<(typeof flat)[number], { authorId: string }> =>
-        !c.isDeleted,
+      (c): c is C & { authorId: string } => !c.isDeleted && c.authorId !== null,
     );
-    const liveDeletable = await this.contentDeletionAuthorizer.canDeleteEach(
-      userId,
+    const answers = await this.contentDeletionAuthorizer.canDeleteEach(userId, [
       // A comment has no community of its own — moderation rights come from
       // the post it sits under.
-      live.map((c) => ({ authorId: c.authorId, communityId: postCommunityId })),
-    );
-    const deletableById = new Map(live.map((c, i) => [c.id, liveDeletable[i]]));
-    // In place, as before: `comments` below is this same array.
+      ...live.map((c) => ({ authorId: c.authorId, communityId })),
+      ...extraItems,
+    ]);
+    const deletableById = new Map(live.map((c, i) => [c.id, answers[i]]));
+    // In place, as before: the page is this same array.
     const comments = flat.map((c) =>
       Object.assign(c, {
         canDelete: c.isDeleted ? false : (deletableById.get(c.id) ?? false),
       }),
     );
+    return { comments, extraAnswers: answers.slice(live.length) };
+  }
 
+  /** A comment page ready to send, for a post whose community is known. */
+  private async fetchCommentPage(
+    postId: string,
+    userId: string,
+    communityId: string | null,
+    limit: number,
+    cursorDate?: Date,
+    cursorId?: string,
+  ) {
+    const { flat, nextCursor } = await this.loadCommentPage(
+      postId,
+      userId,
+      limit,
+      cursorDate,
+      cursorId,
+    );
+    const { comments } = await this.withCanDelete(flat, userId, communityId);
     return { comments, nextCursor };
   }
 
@@ -2781,6 +2865,9 @@ export class PostsService {
       select: {
         id: true,
         authorId: true,
+        // Handed to the comment page, which needs it for `canDelete` and
+        // would otherwise read this same post row a second time to get it.
+        communityId: true,
         community: {
           select: PostsService.communityAccessSelect(userId),
         },
@@ -2821,7 +2908,14 @@ export class PostsService {
       }
     }
 
-    return this.fetchCommentPage(postId, userId, limit, cursorDate, cursorId);
+    return this.fetchCommentPage(
+      postId,
+      userId,
+      post.communityId,
+      limit,
+      cursorDate,
+      cursorId,
+    );
   }
 
   async getPostById(postId: string, userId: string) {
@@ -2908,7 +3002,9 @@ export class PostsService {
         // Root-paginated first page — no longer silently capped at 50 flat rows;
         // subsequent pages load via getComments(). Each page is a set of complete
         // threads so the client can concatenate and rebuild the tree safely.
-        this.fetchCommentPage(postId, userId, PostsService.COMMENT_PAGE_ROOTS),
+        // Read alongside the post; `canDelete` is added once the post's own
+        // community is known, in the same authorizer call as the post's.
+        this.loadCommentPage(postId, userId, PostsService.COMMENT_PAGE_ROOTS),
         userId
           ? this.prisma.postLike.findUnique({
               where: { userId_postId: { userId, postId } },
@@ -2938,7 +3034,6 @@ export class PostsService {
       throw new NotFoundException('Post not found');
     }
 
-    const shapedComments = commentPage.comments;
     const commentsNextCursor = commentPage.nextCursor;
     const isLiked = !!postLike;
     const isBookmarked = !!postBookmark;
@@ -2962,14 +3057,18 @@ export class PostsService {
           )
         : null;
 
-    const [canDeleteThis] = await this.contentDeletionAuthorizer.canDeleteEach(
+    // One authorizer call for the comments and the post: in a community each
+    // call reads the community and the viewer's membership, and the two
+    // answers do not depend on each other. Reached only after the refusals
+    // above, so a post the viewer may not see costs none of it.
+    const {
+      comments: shapedComments,
+      extraAnswers: [canDeleteThis],
+    } = await this.withCanDelete(
+      commentPage.flat,
       userId,
-      [
-        {
-          authorId: post.authorId,
-          communityId: post.communityId ?? null,
-        },
-      ],
+      post.communityId ?? null,
+      [{ authorId: post.authorId, communityId: post.communityId ?? null }],
     );
 
     return {

@@ -50,19 +50,26 @@ const BLOCK_INVALIDATE_CHANNEL = 'meetifyy:blocks_invalidate';
  */
 let blockCacheSubscribed = false;
 
-interface CachedBlocks {
-  ids: string[];
-  expiresAt: number;
-}
-
 /**
- * Directional cache: ids this user has blocked, WITHOUT the ids of users who
- * blocked them. Kept separate from the mutual cache because almost every
+ * Everything one read of a user's block rows can answer, kept together.
+ *
+ * Both directions come back from the same query, so the mutual list, the
+ * "who I blocked" list and the "who blocked me" list are derived from one
+ * fetch and expire together. They used to be cached separately, which is why a
+ * single profile view paid for three Block reads: the mutual list, then the
+ * viewer's outgoing list, then the profile owner's outgoing list.
+ *
+ * The directions stay separate lists rather than one merged set: almost every
  * caller wants the mutual answer, and mixing the two behind one key is how
  * "they blocked me" ends up mislabelled as "I blocked them".
  */
-interface CachedOutgoingBlocks {
-  ids: string[];
+interface CachedBlocks {
+  /** Users this user blocked AND users who blocked them. */
+  excluded: string[];
+  /** Users this user has blocked. */
+  outgoing: string[];
+  /** Users who have blocked this user. */
+  incoming: string[];
   expiresAt: number;
 }
 
@@ -75,12 +82,6 @@ export class BlocksService implements OnModuleInit, OnModuleDestroy {
    * service shares one map (Nest can instantiate per-module providers).
    */
   private static readonly cache = new Map<string, CachedBlocks>();
-
-  /** @see CachedOutgoingBlocks */
-  private static readonly outgoingCache = new Map<
-    string,
-    CachedOutgoingBlocks
-  >();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -109,7 +110,6 @@ export class BlocksService implements OnModuleInit, OnModuleDestroy {
         const userIds = JSON.parse(message) as string[];
         for (const id of userIds) {
           BlocksService.cache.delete(id);
-          BlocksService.outgoingCache.delete(id);
         }
       } catch {
         // Malformed payload — ignore.
@@ -135,9 +135,21 @@ export class BlocksService implements OnModuleInit, OnModuleDestroy {
    * public for the few callers that need the raw set to build a bespoke query.
    */
   async getExcludedUserIds(userId: string): Promise<string[]> {
+    return (await this.loadBlocks(userId)).excluded;
+  }
+
+  /**
+   * The user's block rows in both directions, from the cache or one query.
+   *
+   * Every public read below goes through here, so a request that asks several
+   * different questions about the same user (the mutual list, the direction of
+   * a block with one other user, "did I block them") pays for one Block read,
+   * not one per question.
+   */
+  private async loadBlocks(userId: string): Promise<CachedBlocks> {
     const now = Date.now();
     const cached = BlocksService.cache.get(userId);
-    if (cached && cached.expiresAt > now) return cached.ids;
+    if (cached && cached.expiresAt > now) return cached;
 
     const blocks = await this.prisma.block.findMany({
       where: {
@@ -149,18 +161,25 @@ export class BlocksService implements OnModuleInit, OnModuleDestroy {
       },
     });
 
-    const excludedIds = new Set<string>();
+    const excluded = new Set<string>();
+    const outgoing: string[] = [];
+    const incoming: string[] = [];
     for (const block of blocks) {
       if (block.blockerId === userId) {
-        excludedIds.add(block.blockedId);
+        excluded.add(block.blockedId);
+        outgoing.push(block.blockedId);
       } else {
-        excludedIds.add(block.blockerId);
+        excluded.add(block.blockerId);
+        incoming.push(block.blockerId);
       }
     }
 
-    const result = Array.from(excludedIds);
-    this.setCache(userId, result);
-    return result;
+    return this.setCache(userId, {
+      excluded: Array.from(excluded),
+      outgoing,
+      incoming,
+      expiresAt: Date.now() + BLOCK_CACHE_TTL_MS,
+    });
   }
 
   /**
@@ -246,30 +265,7 @@ export class BlocksService implements OnModuleInit, OnModuleDestroy {
    * is irrelevant to who can see whom.
    */
   async getBlockedByUserIds(userId: string): Promise<string[]> {
-    const now = Date.now();
-    const cached = BlocksService.outgoingCache.get(userId);
-    if (cached && cached.expiresAt > now) return cached.ids;
-
-    const rows = await this.prisma.block.findMany({
-      where: { blockerId: userId },
-      select: { blockedId: true },
-    });
-    const ids = rows.map((r) => r.blockedId);
-
-    if (BlocksService.outgoingCache.size >= BLOCK_CACHE_MAX_ENTRIES) {
-      for (const [k, v] of BlocksService.outgoingCache) {
-        if (v.expiresAt <= now) BlocksService.outgoingCache.delete(k);
-      }
-      if (BlocksService.outgoingCache.size >= BLOCK_CACHE_MAX_ENTRIES) {
-        const oldest = BlocksService.outgoingCache.keys().next().value;
-        if (oldest) BlocksService.outgoingCache.delete(oldest);
-      }
-    }
-    BlocksService.outgoingCache.set(userId, {
-      ids,
-      expiresAt: now + BLOCK_CACHE_TTL_MS,
-    });
-    return ids;
+    return (await this.loadBlocks(userId)).outgoing;
   }
 
   /** Directional: did `blockerId` block `blockedId`? */
@@ -282,16 +278,17 @@ export class BlocksService implements OnModuleInit, OnModuleDestroy {
   /**
    * Both directions for one pair, in one place, so callers stop hand-rolling it.
    *
-   * `blockedByThem` is looked up, not derived. It used to be computed as
-   * "related by a block, and I am not the blocker" — which is right in the
-   * ordinary case and WRONG whenever both users have blocked each other: there
-   * `blockedByMe` is true, so the derivation concluded `blockedByThem` was
-   * false and reported a mutual block as one-way. Any caller that refuses on
-   * `blockedByThem` would then have let each side reach the other precisely
-   * when both had asked not to be reached.
+   * `blockedByThem` is read from the rows where the OTHER user is the blocker,
+   * not inferred from "related by a block and I am not the blocker". That
+   * inference is right in the ordinary case and WRONG whenever both users have
+   * blocked each other: there `blockedByMe` is true, so it concluded
+   * `blockedByThem` was false and reported a mutual block as one-way. Any
+   * caller that refuses on `blockedByThem` would then have let each side reach
+   * the other precisely when both had asked not to be reached.
    *
-   * The extra lookup is a primary-key hit on a cached list, which is a small
-   * price for a flag whose whole job is to be exact.
+   * Everything comes from the viewer's own rows, which hold both directions, so
+   * the other user's list is never fetched: "they blocked me" is a row in my
+   * incoming set, the same fact their outgoing list would state.
    */
   async getBlockDirection(
     userId: string,
@@ -304,15 +301,12 @@ export class BlocksService implements OnModuleInit, OnModuleDestroy {
     if (!userId || !otherUserId || userId === otherUserId) {
       return { isBlocked: false, blockedByMe: false, blockedByThem: false };
     }
-    const [mutual, outgoing, theirOutgoing] = await Promise.all([
-      this.getExcludedUserIds(userId),
-      this.getBlockedByUserIds(userId),
-      this.getBlockedByUserIds(otherUserId),
-    ]);
-    const isBlocked = mutual.includes(otherUserId);
-    const blockedByMe = outgoing.includes(otherUserId);
-    const blockedByThem = theirOutgoing.includes(userId);
-    return { isBlocked, blockedByMe, blockedByThem };
+    const { excluded, outgoing, incoming } = await this.loadBlocks(userId);
+    return {
+      isBlocked: excluded.includes(otherUserId),
+      blockedByMe: outgoing.includes(otherUserId),
+      blockedByThem: incoming.includes(otherUserId),
+    };
   }
 
   /**
@@ -370,7 +364,7 @@ export class BlocksService implements OnModuleInit, OnModuleDestroy {
     return { count };
   }
 
-  private setCache(userId: string, ids: string[]) {
+  private setCache(userId: string, entry: CachedBlocks): CachedBlocks {
     if (BlocksService.cache.size >= BLOCK_CACHE_MAX_ENTRIES) {
       const now = Date.now();
       for (const [k, v] of BlocksService.cache) {
@@ -381,10 +375,8 @@ export class BlocksService implements OnModuleInit, OnModuleDestroy {
         if (oldest) BlocksService.cache.delete(oldest);
       }
     }
-    BlocksService.cache.set(userId, {
-      ids,
-      expiresAt: Date.now() + BLOCK_CACHE_TTL_MS,
-    });
+    BlocksService.cache.set(userId, entry);
+    return entry;
   }
 
   /**
@@ -398,8 +390,6 @@ export class BlocksService implements OnModuleInit, OnModuleDestroy {
   async invalidateBlockCache(userIdA: string, userIdB: string): Promise<void> {
     BlocksService.cache.delete(userIdA);
     BlocksService.cache.delete(userIdB);
-    BlocksService.outgoingCache.delete(userIdA);
-    BlocksService.outgoingCache.delete(userIdB);
 
     if (!this.redis) return;
     try {

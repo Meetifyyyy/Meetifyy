@@ -75,8 +75,10 @@ describe('PostsService — single-post access', () => {
   const build = () => {
     const prisma = {
       post: {
+        // `author` rides on the post read, as the real select returns it:
+        // getPostMeta takes the author's privacy fields from here.
         findUnique: jest.fn((_args?: unknown) =>
-          Promise.resolve({ ...postRow, community }),
+          Promise.resolve({ ...postRow, community, author }),
         ),
         findFirst: jest.fn((_args?: unknown) =>
           Promise.resolve({
@@ -355,6 +357,58 @@ describe('PostsService — single-post access', () => {
             isAuthorPrivacyLookup(a),
           ),
         ).toBe(false);
+      });
+    });
+
+    describe('getPostMeta reads the access inputs with the post', () => {
+      it('makes one post read and no separate author or community lookup', async () => {
+        author = privateAuthor([VIEWER]);
+        const { service, prisma } = build();
+        await expect(service.getPostMeta(POST, VIEWER)).resolves.toHaveProperty(
+          'updatedAt',
+        );
+        expect(prisma.post.findUnique).toHaveBeenCalledTimes(1);
+        expect(prisma.user.findUnique).not.toHaveBeenCalled();
+        expect(prisma.community.findUnique).not.toHaveBeenCalled();
+        expect(prisma.post.findUnique.mock.calls[0][0]).toMatchObject({
+          where: { id: POST, deletedAt: null },
+          select: {
+            author: {
+              select: {
+                settings: { select: { privateProfile: true } },
+                followers: { where: { followerId: VIEWER } },
+              },
+            },
+            community: { select: { members: { where: { userId: VIEWER } } } },
+          },
+        });
+      });
+
+      it('refuses when the post read carries no author row (fails closed)', async () => {
+        author = null;
+        const { service } = build();
+        await expect(service.getPostMeta(POST, VIEWER)).rejects.toBeInstanceOf(
+          NotFoundException,
+        );
+      });
+
+      it('refuses a community post whose community row is missing', async () => {
+        postRow = { ...postRow, communityId: COMMUNITY };
+        community = null;
+        const { service } = build();
+        await expect(service.getPostMeta(POST, VIEWER)).rejects.toBeInstanceOf(
+          NotFoundException,
+        );
+      });
+
+      it("decides a community post by the community alone, even for a private author's stranger", async () => {
+        postRow = { ...postRow, communityId: COMMUNITY };
+        community = communityRow();
+        author = privateAuthor();
+        const { service } = build();
+        await expect(service.getPostMeta(POST, VIEWER)).resolves.toHaveProperty(
+          'updatedAt',
+        );
       });
     });
 
