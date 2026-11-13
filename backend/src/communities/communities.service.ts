@@ -672,6 +672,14 @@ export class CommunitiesService implements OnModuleInit {
           ) AS "interests"
         FROM "User" vu WHERE vu."id" = ${userId} LIMIT 1
       ),
+      -- Read by user (a handful of rows) and anti-joined below. Written as a
+      -- correlated NOT EXISTS against CommunityMember the planner cannot tell
+      -- that me."id" is a single value, and scanned the whole table instead.
+      my_communities AS (
+        SELECT cm."communityId" AS "id"
+        FROM "CommunityMember" cm, me
+        WHERE cm."userId" = me."id"
+      ),
       eligible AS (
         SELECT c."id", c."name", c."description", c."memberCount", c."createdAt",
           c."isPrivate"
@@ -679,8 +687,7 @@ export class CommunitiesService implements OnModuleInit {
         WHERE c."deletedAt" IS NULL
           AND c."isCampusCommunity" = false
           AND NOT EXISTS (
-            SELECT 1 FROM "CommunityMember" cm
-            WHERE cm."communityId" = c."id" AND cm."userId" = me."id"
+            SELECT 1 FROM my_communities mc WHERE mc."id" = c."id"
           )
           AND NOT EXISTS (
             SELECT 1 FROM "CommunityJoinRequest" jr
@@ -695,13 +702,19 @@ export class CommunitiesService implements OnModuleInit {
         ORDER BY f."createdAt" DESC
         LIMIT 200
       ),
-      friends_arm AS (
-        SELECT cm."communityId" AS "id"
+      -- Where the viewer's follows are members: read once, used by the friends
+      -- arm and by the per-candidate friend signals below.
+      follow_members AS (
+        SELECT cm."communityId" AS "id", cm."userId" AS "friendId", cm."joinedAt"
         FROM my_follows mf
         JOIN "CommunityMember" cm ON cm."userId" = mf."id"
-        JOIN eligible e ON e."id" = cm."communityId"
+      ),
+      friends_arm AS (
+        SELECT fm."id"
+        FROM follow_members fm
+        JOIN eligible e ON e."id" = fm."id"
         WHERE e."isPrivate" = false
-        GROUP BY cm."communityId"
+        GROUP BY fm."id"
         ORDER BY COUNT(*) DESC
         LIMIT ${POOL}
       ),
@@ -716,13 +729,18 @@ export class CommunitiesService implements OnModuleInit {
         ORDER BY e."memberCount" DESC
         LIMIT ${POOL}
       ),
-      active_arm AS (
-        SELECT p."communityId" AS "id"
+      -- Posts in the window per eligible community: read once, used by the
+      -- active arm and by the per-candidate recentPosts signal below.
+      recent_posts AS (
+        SELECT p."communityId" AS "id", COUNT(*)::int AS "recentPosts"
         FROM "Post" p
         JOIN eligible e ON e."id" = p."communityId"
         WHERE p."deletedAt" IS NULL AND p."createdAt" >= ${since}
         GROUP BY p."communityId"
-        ORDER BY COUNT(*) DESC
+      ),
+      active_arm AS (
+        SELECT rp."id" FROM recent_posts rp
+        ORDER BY rp."recentPosts" DESC
         LIMIT ${POOL}
       ),
       popular_arm AS (
@@ -736,47 +754,72 @@ export class CommunitiesService implements OnModuleInit {
         UNION SELECT "id" FROM active_arm
         UNION SELECT "id" FROM popular_arm
       ),
+      pool_rows AS (
+        SELECT e."id", e."memberCount", e."isPrivate", e."name", e."description",
+          e."createdAt"
+        FROM pool JOIN eligible e ON e."id" = pool."id"
+      ),
+      -- The per-candidate aggregates are grouped once over the whole pool and
+      -- joined below. As correlated subqueries in the select list they ran once
+      -- per candidate, each pass re-reading the viewer's follows, the
+      -- candidate's members and CollegeAffiliation. Private communities are
+      -- filtered out of the membership-derived ones here (see above), so their
+      -- rows are never read at all.
+      friend_rows AS (
+        SELECT fm."id", fm."friendId", fm."joinedAt"
+        FROM follow_members fm
+        JOIN pool_rows pr ON pr."id" = fm."id"
+        WHERE pr."isPrivate" = false
+      ),
+      friend_counts AS (
+        SELECT fr."id", COUNT(*)::int AS "friendCount"
+        FROM friend_rows fr
+        GROUP BY fr."id"
+      ),
+      -- The most recently joined friend, by display name. Members who joined in
+      -- the same instant (a bulk import) are ordered by id so the pick is stable.
+      friend_sample AS (
+        SELECT DISTINCT ON (fr."id") fr."id", u."displayName"
+        FROM friend_rows fr
+        JOIN "User" u ON u."id" = fr."friendId"
+        ORDER BY fr."id", fr."joinedAt" DESC, fr."friendId"
+      ),
+      campus_counts AS (
+        -- Verified members of the viewer's campus (active affiliation).
+        SELECT cm."communityId" AS "id", COUNT(*)::int AS "campusMemberCount"
+        FROM me
+        JOIN "CollegeAffiliation" ca
+          ON ca."collegeId" = me."collegeId" AND ca."revokedAt" IS NULL
+        JOIN "CommunityMember" cm ON cm."userId" = ca."userId"
+        JOIN pool_rows pr ON pr."id" = cm."communityId"
+        WHERE pr."isPrivate" = false AND me."collegeId" IS NOT NULL
+        GROUP BY cm."communityId"
+      ),
       signals AS (
         SELECT
           e."id",
           e."memberCount",
-          -- The three membership-derived signals are blanked for private
-          -- communities (see above); the CASE also keeps their subqueries from
-          -- running for those rows.
-          CASE WHEN e."isPrivate" THEN 0 ELSE (
-            SELECT COUNT(*)::int FROM my_follows mf
-            JOIN "CommunityMember" cm
-              ON cm."userId" = mf."id" AND cm."communityId" = e."id"
-          ) END AS "friendCount",
-          CASE WHEN e."isPrivate" THEN NULL ELSE (
-            SELECT u."displayName" FROM my_follows mf
-            JOIN "CommunityMember" cm
-              ON cm."userId" = mf."id" AND cm."communityId" = e."id"
-            JOIN "User" u ON u."id" = mf."id"
-            ORDER BY cm."joinedAt" DESC
-            LIMIT 1
-          ) END AS "friendSampleName",
-          CASE WHEN e."isPrivate" OR me."collegeId" IS NULL THEN 0 ELSE (
-            -- Verified members of the viewer's campus (active affiliation).
-            SELECT COUNT(*)::int FROM "CommunityMember" cm
-            JOIN "CollegeAffiliation" ca
-              ON ca."userId" = cm."userId" AND ca."revokedAt" IS NULL
-            WHERE cm."communityId" = e."id" AND ca."collegeId" = me."collegeId"
-          ) END AS "campusMemberCount",
+          -- The three membership-derived signals stay blanked for private
+          -- communities (see above), here as well as in the CTEs feeding them.
+          CASE WHEN e."isPrivate" THEN 0
+            ELSE COALESCE(fc."friendCount", 0) END AS "friendCount",
+          CASE WHEN e."isPrivate" THEN NULL
+            ELSE fs."displayName" END AS "friendSampleName",
+          CASE WHEN e."isPrivate" OR me."collegeId" IS NULL THEN 0
+            ELSE COALESCE(cc."campusMemberCount", 0) END AS "campusMemberCount",
           COALESCE(EXISTS (
             SELECT 1 FROM unnest(me."interests") i
             WHERE e."name" ILIKE '%' || i || '%'
                OR e."description" ILIKE '%' || i || '%'
           ), false) AS "interestMatch",
-          (
-            SELECT COUNT(*)::int FROM "Post" p
-            WHERE p."communityId" = e."id" AND p."deletedAt" IS NULL
-              AND p."createdAt" >= ${since}
-          ) AS "recentPosts",
+          COALESCE(rp."recentPosts", 0) AS "recentPosts",
           EXTRACT(EPOCH FROM (now() - e."createdAt")) / 86400.0 AS "ageDays"
-        FROM pool
-        JOIN eligible e ON e."id" = pool."id"
+        FROM pool_rows e
         CROSS JOIN me
+        LEFT JOIN friend_counts fc ON fc."id" = e."id"
+        LEFT JOIN friend_sample fs ON fs."id" = e."id"
+        LEFT JOIN campus_counts cc ON cc."id" = e."id"
+        LEFT JOIN recent_posts rp ON rp."id" = e."id"
       )
       SELECT
         s."id",
@@ -968,6 +1011,66 @@ export class CommunitiesService implements OnModuleInit {
     }
 
     /**
+     * The viewer's own membership.
+     *
+     * Taken from the loaded strip when the strip is complete — that is the
+     * overwhelmingly common case and it costs nothing. The strip is capped at
+     * MEMBER_STRIP_LIMIT, though, and when it comes back full it may be a
+     * window onto a larger membership: a genuine member outside that window
+     * was previously reported as `isJoined: false` with a null role, and shown
+     * a Join button for a community they were already in. So when the strip is
+     * full AND the viewer is not in it, and only then, ask the database.
+     *
+     * The row also carries the moderator-notice timestamps, so the notice
+     * below costs no query of its own either way.
+     *
+     * Resolved ahead of the batch below rather than after it. The two are
+     * independent and ran back to back before, so the page pays the same; what
+     * it buys is that whether the viewer is in is known when the online count
+     * is decided.
+     */
+    const rawMembers = members;
+    let viewerMembership: {
+      role: string;
+      moderatorPromotedAt: Date | null;
+      moderatorNoticeAckedAt: Date | null;
+    } | null = null;
+
+    if (userId) {
+      const fromStrip = rawMembers.find((m) => m.userId === userId);
+      if (fromStrip) {
+        viewerMembership = {
+          role: fromStrip.role,
+          moderatorPromotedAt: fromStrip.moderatorPromotedAt ?? null,
+          moderatorNoticeAckedAt: fromStrip.moderatorNoticeAckedAt ?? null,
+        };
+      } else if (rawMembers.length >= MEMBER_STRIP_LIMIT) {
+        viewerMembership = await this.prisma.communityMember.findUnique({
+          where: { userId_communityId: { userId, communityId: id } },
+          select: {
+            role: true,
+            moderatorPromotedAt: true,
+            moderatorNoticeAckedAt: true,
+          },
+        });
+      }
+    }
+
+    const isOwner = Boolean(
+      userId && community.ownerId && community.ownerId === userId,
+    );
+    const isJoined = !!viewerMembership || isOwner;
+
+    /**
+     * The online count is thrown away for a viewer who cannot read the roster
+     * (`canViewPosts` below), and for a private community that is exactly
+     * "not joined". It is the one read in the batch that grows with the
+     * community (every member id, then their presence), so it is not issued
+     * for the outsider who lands on a private community's join-request page.
+     */
+    const onlineCountHidden = community.isPrivate && !isJoined;
+
+    /**
      * Everything this viewer needs on top of the shared community body.
      *
      * The four reads below used to run strictly one after another — block
@@ -980,7 +1083,7 @@ export class CommunitiesService implements OnModuleInit {
      * Making them unconditional so they could join it measured SLOWER on the
      * common case (a small community whose viewer is already in the loaded
      * strip): it turns two reads that usually cost nothing into two the
-     * database always serves. They are resolved below instead, from the strip
+     * database always serves. They are resolved separately, from the strip
      * when the strip can answer, and from the database only when it cannot.
      */
     const loadedMemberIds: string[] = members
@@ -1015,59 +1118,16 @@ export class CommunitiesService implements OnModuleInit {
           ? this.presenceService.getPresenceMany(loadedMemberIds)
           : Promise.resolve(new Map<string, UserPresence>()),
         needsCollege ? this.resolveCollegeId(userId!) : Promise.resolve(null),
-        this.countOnlineMembers(id, community.ownerId),
+        onlineCountHidden
+          ? Promise.resolve(0)
+          : this.countOnlineMembers(id, community.ownerId),
       ]);
-
-    /**
-     * The viewer's own membership.
-     *
-     * Taken from the loaded strip when the strip is complete — that is the
-     * overwhelmingly common case and it costs nothing. The strip is capped at
-     * MEMBER_STRIP_LIMIT, though, and when it comes back full it may be a
-     * window onto a larger membership: a genuine member outside that window
-     * was previously reported as `isJoined: false` with a null role, and shown
-     * a Join button for a community they were already in. So when the strip is
-     * full AND the viewer is not in it, and only then, ask the database.
-     *
-     * The row also carries the moderator-notice timestamps, so the notice
-     * below costs no query of its own either way.
-     */
-    const rawMembers = members;
-    let viewerMembership: {
-      role: string;
-      moderatorPromotedAt: Date | null;
-      moderatorNoticeAckedAt: Date | null;
-    } | null = null;
-
-    if (userId) {
-      const fromStrip = rawMembers.find((m) => m.userId === userId);
-      if (fromStrip) {
-        viewerMembership = {
-          role: fromStrip.role,
-          moderatorPromotedAt: fromStrip.moderatorPromotedAt ?? null,
-          moderatorNoticeAckedAt: fromStrip.moderatorNoticeAckedAt ?? null,
-        };
-      } else if (rawMembers.length >= MEMBER_STRIP_LIMIT) {
-        viewerMembership = await this.prisma.communityMember.findUnique({
-          where: { userId_communityId: { userId, communityId: id } },
-          select: {
-            role: true,
-            moderatorPromotedAt: true,
-            moderatorNoticeAckedAt: true,
-          },
-        });
-      }
-    }
 
     if (visibleIdList) {
       const visibleIds = new Set(visibleIdList);
       members = members.filter((m) => visibleIds.has(m.userId));
     }
 
-    const isOwner = Boolean(
-      userId && community.ownerId && community.ownerId === userId,
-    );
-    const isJoined = !!viewerMembership || isOwner;
     const userRole = isOwner ? 'OWNER' : viewerMembership?.role || null;
 
     // Eligibility check for Campus communities

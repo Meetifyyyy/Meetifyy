@@ -163,6 +163,13 @@ describe('CommunitiesService — discovery recommendations', () => {
       return call[0].join('?').replace(/\s+/g, ' ');
     };
 
+    /** The body of one named CTE in the ranking query. */
+    const cteBody = (name: string): string => {
+      const sql = rankingSql();
+      const start = sql.indexOf(`${name} AS (`);
+      return sql.slice(start, sql.indexOf(' ), ', start) + 3);
+    };
+
     // The SQL itself is not executed here, so these pin the guards' presence;
     // what they select is only provable against a real Postgres.
     it('selects isPrivate in the eligible set', async () => {
@@ -179,33 +186,131 @@ describe('CommunitiesService — discovery recommendations', () => {
       await service.getCommunityRecommendations('me', 3);
 
       expect(rankingSql()).toMatch(
-        /friends_arm AS \(.*JOIN eligible e ON e\."id" = cm\."communityId" WHERE e\."isPrivate" = false GROUP BY/,
+        /friends_arm AS \(.*JOIN eligible e ON e\."id" = fm\."id" WHERE e\."isPrivate" = false GROUP BY/,
       );
     });
 
     it.each([
-      ['friendCount', '0'],
-      ['friendSampleName', 'NULL'],
-    ])('blanks %s for a private community', async (column, blank) => {
+      [
+        'friendCount',
+        'CASE WHEN e."isPrivate" THEN 0 ELSE COALESCE(fc."friendCount", 0) END AS "friendCount"',
+      ],
+      [
+        'friendSampleName',
+        'CASE WHEN e."isPrivate" THEN NULL ELSE fs."displayName" END AS "friendSampleName"',
+      ],
+      [
+        'campusMemberCount',
+        'CASE WHEN e."isPrivate" OR me."collegeId" IS NULL THEN 0 ELSE COALESCE(cc."campusMemberCount", 0) END AS "campusMemberCount"',
+      ],
+    ])('blanks %s for a private community', async (_column, blanked) => {
       setup(scoredPool(1));
       await service.getCommunityRecommendations('me', 3);
 
-      expect(rankingSql()).toContain(
-        `CASE WHEN e."isPrivate" THEN ${blank} ELSE (`,
-      );
-      expect(rankingSql()).toMatch(new RegExp(`\\) END AS "${column}"`));
+      expect(rankingSql()).toContain(blanked);
     });
 
-    it('blanks campusMemberCount for a private community', async () => {
+    it.each([
+      ['friend_rows', 'WHERE pr."isPrivate" = false )'],
+      [
+        'campus_counts',
+        'WHERE pr."isPrivate" = false AND me."collegeId" IS NOT NULL GROUP BY',
+      ],
+    ])(
+      'never reads the members of a private community in %s',
+      async (cte, guard) => {
+        setup(scoredPool(1));
+        await service.getCommunityRecommendations('me', 3);
+
+        expect(cteBody(cte)).toContain(guard);
+      },
+    );
+
+    it("counts campus members by active affiliation in the viewer's college", async () => {
       setup(scoredPool(1));
       await service.getCommunityRecommendations('me', 3);
 
-      expect(rankingSql()).toContain(
-        'CASE WHEN e."isPrivate" OR me."collegeId" IS NULL THEN 0 ELSE (',
+      expect(cteBody('campus_counts')).toContain(
+        'JOIN "CollegeAffiliation" ca ON ca."collegeId" = me."collegeId" AND ca."revokedAt" IS NULL',
       );
-      expect(rankingSql()).toMatch(/\) END AS "campusMemberCount"/);
+    });
+  });
+
+  describe('per-candidate aggregates', () => {
+    const rankingSql = (): string => {
+      const call = queryRaw.mock.calls[0] as unknown as [readonly string[]];
+      return call[0].join('?').replace(/\s+/g, ' ');
+    };
+
+    it.each([
+      ['friend_counts', 'GROUP BY fr."id"'],
+      ['friend_sample', 'DISTINCT ON (fr."id")'],
+      ['campus_counts', 'GROUP BY cm."communityId"'],
+      ['recent_posts', 'GROUP BY p."communityId"'],
+    ])(
+      'computes %s once as a grouped CTE and joins it to the pool',
+      async (cte, grouping) => {
+        setup(scoredPool(1));
+        await service.getCommunityRecommendations('me', 3);
+
+        expect(rankingSql()).toContain(`${cte} AS (`);
+        expect(rankingSql()).toContain(grouping);
+        // Joined by community id, not looked up per candidate.
+        expect(rankingSql()).toMatch(
+          new RegExp(`LEFT JOIN ${cte} \\w+ ON \\w+\\."id" = e\\."id"`),
+        );
+      },
+    );
+
+    it('has no correlated subquery in the signals select list', async () => {
+      setup(scoredPool(1));
+      await service.getCommunityRecommendations('me', 3);
+
+      const signals = rankingSql()
+        .split('signals AS (')[1]
+        .split(') SELECT s."id"')[0];
+      // The only subquery left is the interest match over the viewer's own
+      // (in-memory) interests; no table is read per candidate.
+      expect(signals).not.toMatch(
+        /FROM "(CommunityMember|CollegeAffiliation|Post|Follow|User)"/,
+      );
+      expect(signals).not.toMatch(/FROM my_follows/);
+      expect(signals).toContain('unnest(me."interests")');
     });
 
+    it("reads the viewer's memberships once, by user, and the window's posts once", async () => {
+      setup(scoredPool(1));
+      await service.getCommunityRecommendations('me', 3);
+
+      expect(rankingSql().match(/FROM "Post" p/g)).toHaveLength(1);
+      expect(
+        rankingSql().match(/FROM my_follows mf JOIN "CommunityMember"/g),
+      ).toHaveLength(1);
+      expect(rankingSql()).toContain(
+        'my_communities AS ( SELECT cm."communityId" AS "id" FROM "CommunityMember" cm, me WHERE cm."userId" = me."id" )',
+      );
+    });
+
+    it('keeps the scoring formula', async () => {
+      setup(scoredPool(1));
+      await service.getCommunityRecommendations('me', 3);
+
+      const sql = rankingSql();
+      for (const term of [
+        '3.0 * ln(1 + s."friendCount")',
+        'CASE WHEN s."interestMatch" THEN 2.0 ELSE 0 END',
+        '1.0 * ln(1 + s."campusMemberCount")',
+        '1.5 * ln(1 + s."recentPosts")',
+        '0.4 * ln(1 + s."memberCount")',
+        'CASE WHEN s."ageDays" < 14 THEN 0.5 ELSE 0 END',
+        'ORDER BY "score" DESC, s."id"',
+      ]) {
+        expect(sql).toContain(term);
+      }
+    });
+  });
+
+  describe('private communities (response)', () => {
     it('still returns a private community, with no friend or campus signal', async () => {
       // The query hands back zero / NULL for a private row; the response keeps
       // every key and carries those values through.
