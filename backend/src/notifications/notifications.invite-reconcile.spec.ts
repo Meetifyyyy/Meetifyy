@@ -21,7 +21,12 @@ describe('invite notification reconciliation on read', () => {
   let service: NotificationsService;
   /** The Prisma surface; the notification page is re-pointed per case. */
   let mockPrisma: {
-    notification: { findMany: jest.Mock; update: jest.Mock; count: jest.Mock };
+    notification: {
+      findMany: jest.Mock;
+      update: jest.Mock;
+      updateMany: jest.Mock;
+      count: jest.Mock;
+    };
     activityInvitation: { findMany: jest.Mock };
     user: { findUnique: jest.Mock };
     block: { findFirst: jest.Mock };
@@ -31,12 +36,15 @@ describe('invite notification reconciliation on read', () => {
   const future = new Date(Date.now() + 60 * 60 * 1000);
   const past = new Date(Date.now() - 60 * 60 * 1000);
 
+  /** The row version this read saw; the repair is conditional on it. */
+  const READ_VERSION = new Date('2026-11-13T09:00:00.000Z');
   const notifRow = (lifecycleStatus?: string) => ({
     id: 'notif-1',
     recipientId: 'user-1',
     type: 'ACTIVITY_INVITE',
     entityId: 'act-1',
     createdAt: new Date(),
+    updatedAt: READ_VERSION,
     metadata: {
       activityId: 'act-1',
       invitationId: 'inv-1',
@@ -65,6 +73,7 @@ describe('invite notification reconciliation on read', () => {
       notification: {
         findMany: jest.fn(() => Promise.resolve([notifRow('PENDING')])),
         update: jest.fn(() => Promise.resolve({})),
+        updateMany: jest.fn(() => Promise.resolve({ count: 1 })),
         count: jest.fn(() => Promise.resolve(0)),
       },
       activityInvitation: {
@@ -125,14 +134,15 @@ describe('invite notification reconciliation on read', () => {
     await service.getNotifications('user-1', 20);
     await new Promise((r) => setImmediate(r));
 
-    expect(mockPrisma.notification.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { id: 'notif-1' },
-        data: {
-          metadata: expect.objectContaining({ lifecycleStatus: 'ACCEPTED' }),
-        },
-      }),
-    );
+    // Only if the row is still the version this read judged: a re-invite or
+    // a lifecycle change in between must not be overwritten with old values.
+    expect(mockPrisma.notification.updateMany).toHaveBeenCalledWith({
+      where: { id: 'notif-1', updatedAt: READ_VERSION, deletedAt: null },
+      data: {
+        metadata: expect.objectContaining({ lifecycleStatus: 'ACCEPTED' }),
+      },
+    });
+    expect(mockPrisma.notification.update).not.toHaveBeenCalled();
   });
 
   it('leaves a genuinely pending invite pending, and writes nothing', async () => {
@@ -140,6 +150,7 @@ describe('invite notification reconciliation on read', () => {
     expect(await statusOf()).toBe('PENDING');
     await new Promise((r) => setImmediate(r));
     expect(mockPrisma.notification.update).not.toHaveBeenCalled();
+    expect(mockPrisma.notification.updateMany).not.toHaveBeenCalled();
   });
 
   it('expires a pending invite whose activity has already started', async () => {

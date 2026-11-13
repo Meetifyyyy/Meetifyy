@@ -25,7 +25,6 @@ import Redis from 'ioredis';
 import { detach } from '../common/utils/detach.util';
 import { stringField } from '../common/utils/type-guards.util';
 import { isJsonObject } from '../common/utils/json.util';
-import { errorMessage } from '../common/utils/error.util';
 import { PushDispatcherService } from '../push/push-dispatcher.service';
 import { MessagePushJob } from '../push/push.types';
 
@@ -412,63 +411,41 @@ export class NotificationsService implements OnModuleInit {
         if (dto.type === NotificationType.SYSTEM && !prefs.system) return null;
       }
 
-      // 2. Aggregation Logic
+      // 2. Likes gather on one row per (recipient, entity, type): "A and 3
+      // others liked your post". Written under a lock on that triple
+      // (writeLike), so two likes at once can neither lose a count nor start
+      // two rows (FEAT-26).
+      let likeRow: { row: Notification; becameUnread: boolean } | null = null;
       if (
-        dto.type === NotificationType.LIKE ||
-        dto.type === NotificationType.COMMENT_LIKE
+        (dto.type === NotificationType.LIKE ||
+          dto.type === NotificationType.COMMENT_LIKE) &&
+        dto.actorId &&
+        dto.entityId
       ) {
-        // Fix BUG-22: Remove readAt: null filter fromaggregation logic
-        const existing = await this.prisma.notification.findFirst({
-          where: {
-            recipientId: dto.recipientId,
-            entityId: dto.entityId,
-            type: dto.type,
-            deletedAt: null,
-          },
+        const like = await this.writeLike({
+          ...dto,
+          actorId: dto.actorId,
+          entityId: dto.entityId,
         });
-
-        if (existing) {
-          // Check if actor is already part of it to prevent same-actor spam
-          const existingMetadata = isJsonObject(existing.metadata)
-            ? existing.metadata
-            : {};
-          if (existing.actorId !== dto.actorId) {
-            // Aggregate
-            const storedCount = existingMetadata.aggregatedCount;
-            const currentCount =
-              typeof storedCount === 'number' && storedCount ? storedCount : 1;
-            const metadata = {
-              ...existingMetadata,
-              aggregatedCount: currentCount + 1,
-            };
-            const updated = await this.prisma.notification.update({
-              where: { id: existing.id },
-              data: {
-                actorId: dto.actorId, // Make latest actor primary
-                metadata,
-                readAt: null, // Reset unread status
-                updatedAt: new Date(),
-              },
-            });
-            void this.domainEventService.emit('notification:new', updated, [
-              dto.recipientId,
-            ]);
-            // After the row is written; a push failure cannot reach here.
-            this.pushDispatcher?.enqueueForNotification(updated);
-            // A row that was still unread is already counted.
-            if (existing.readAt !== null) {
-              await this.countBecameUnread(dto.recipientId);
-            }
-            return updated;
+        if (like.kind === 'duplicate') return like.row; // same person again
+        if (like.kind === 'aggregated') {
+          void this.domainEventService.emit('notification:new', like.row, [
+            dto.recipientId,
+          ]);
+          // After the row is written; a push failure cannot reach here.
+          this.pushDispatcher?.enqueueForNotification(like.row);
+          if (like.becameUnread) {
+            await this.countBecameUnread(dto.recipientId);
           }
-          return existing; // Ignore duplicate like from same user
+          return like.row;
         }
+        likeRow = like;
       }
 
       // 3. Create or update Notification. `becameUnread` is whether the row
       // goes from not counted (absent, read, or deleted) to counted.
-      let notification;
-      let becameUnread = true;
+      let notification: Notification | undefined = likeRow?.row;
+      let becameUnread = likeRow?.becameUnread ?? true;
       if (dto.type === NotificationType.FOLLOW && dto.actorId && dto.entityId) {
         const existingNotif = await this.prisma.notification.findFirst({
           where: {
@@ -657,6 +634,115 @@ export class NotificationsService implements OnModuleInit {
   }
 
   /**
+   * A like, written to the recipient's one live like row for this entity.
+   *
+   * Everything happens in one transaction holding an advisory lock on
+   * (recipient, type, entity), so likes on the same post take turns: the
+   * count is read and raised by one writer at a time, and the first two likes
+   * cannot each find no row and start one. Whether the row goes from read to
+   * unread is decided by a conditional UPDATE, so a read landing at the same
+   * moment (markAsRead, not under this lock) still counts once.
+   *
+   * `aggregated`: added to the live row. `duplicate`: this person is already
+   * its latest liker. `created`: no live row, so this person's own keyed row
+   * was created or revived (the caller announces it as any new row).
+   */
+  private async writeLike(
+    dto: CreateNotificationDto & { actorId: string; entityId: string },
+  ): Promise<
+    | {
+        kind: 'aggregated' | 'created';
+        row: Notification;
+        becameUnread: boolean;
+      }
+    | { kind: 'duplicate'; row: Notification }
+  > {
+    const lockKey = `notification:like:${dto.recipientId}:${dto.type}:${dto.entityId}`;
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+      const live = await tx.notification.findFirst({
+        where: {
+          recipientId: dto.recipientId,
+          entityId: dto.entityId,
+          type: dto.type,
+          deletedAt: null,
+        },
+      });
+
+      if (live?.actorId === dto.actorId) {
+        return { kind: 'duplicate' as const, row: live };
+      }
+      if (live) {
+        const metadata = isJsonObject(live.metadata) ? live.metadata : {};
+        const stored = metadata.aggregatedCount;
+        const count = typeof stored === 'number' && stored ? stored : 1;
+        const data = {
+          actorId: dto.actorId, // the latest liker leads the row
+          metadata: { ...metadata, aggregatedCount: count + 1 },
+          readAt: null,
+          updatedAt: new Date(),
+        };
+        const fromRead = await tx.notification.updateMany({
+          where: { id: live.id, deletedAt: null, readAt: { not: null } },
+          data,
+        });
+        const fromUnread =
+          fromRead.count > 0
+            ? fromRead
+            : await tx.notification.updateMany({
+                where: { id: live.id, deletedAt: null },
+                data,
+              });
+        // Withdrawn (an unlike) since the read: start afresh below.
+        if (fromUnread.count > 0) {
+          const row = await tx.notification.findUniqueOrThrow({
+            where: { id: live.id },
+          });
+          return {
+            kind: 'aggregated' as const,
+            row,
+            becameUnread: fromRead.count > 0,
+          };
+        }
+      }
+
+      const key = {
+        recipientId: dto.recipientId,
+        actorId: dto.actorId,
+        entityId: dto.entityId,
+        type: dto.type,
+      };
+      const prior = await tx.notification.findUnique({
+        where: { recipientId_actorId_entityId_type: key },
+        select: { readAt: true, deletedAt: true },
+      });
+      const fields = {
+        title: dto.title,
+        body: dto.body,
+        metadata: dto.metadata ?? Prisma.DbNull,
+        expiresAt: dto.expiresAt,
+      };
+      const row = await tx.notification.upsert({
+        where: { recipientId_actorId_entityId_type: key },
+        update: {
+          ...fields,
+          deletedAt: null,
+          readAt: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+        create: { ...key, entityType: dto.entityType, ...fields },
+      });
+      return {
+        kind: 'created' as const,
+        row,
+        becameUnread:
+          !prior || prior.readAt !== null || prior.deletedAt !== null,
+      };
+    });
+  }
+
+  /**
    * The recipient's notification feed.
    *
    * `type` narrows it to a single kind. The Invitations tab uses it to page
@@ -770,7 +856,7 @@ export class NotificationsService implements OnModuleInit {
    * needing a repair migration.
    */
   private async reconcileInviteNotifications<
-    T extends Pick<Notification, 'id' | 'type' | 'metadata'>,
+    T extends Pick<Notification, 'id' | 'type' | 'metadata' | 'updatedAt'>,
   >(userId: string, notifications: T[]): Promise<T[]> {
     const inviteActivityId = (n: T) =>
       n.type === NotificationType.ACTIVITY_INVITE
@@ -796,7 +882,11 @@ export class NotificationsService implements OnModuleInit {
     });
     const byActivity = new Map(invitations.map((i) => [i.activityId, i]));
 
-    const corrections: Array<{ id: string; metadata: Prisma.JsonObject }> = [];
+    const corrections: Array<{
+      id: string;
+      updatedAt: Date;
+      metadata: Prisma.JsonObject;
+    }> = [];
 
     const reconciled = notifications.map((notif): T => {
       const activityId = inviteActivityId(notif);
@@ -810,27 +900,37 @@ export class NotificationsService implements OnModuleInit {
       if (authoritative === metadata.lifecycleStatus) return notif;
 
       const nextMetadata = { ...metadata, lifecycleStatus: authoritative };
-      corrections.push({ id: notif.id, metadata: nextMetadata });
+      corrections.push({
+        id: notif.id,
+        updatedAt: notif.updatedAt,
+        metadata: nextMetadata,
+      });
       return { ...notif, metadata: nextMetadata };
     });
 
     // Write-back is best effort and off the response path: the caller already
-    // has the correct value, this only stops the same repair happening again.
+    // has the correct value, this only stops the stored copy disagreeing with
+    // it (updateNotificationLifecycleStatus guards on that copy).
+    //
+    // Compare-and-swap on `updatedAt`, as that method does. The corrected
+    // metadata is the whole object as it was READ, so a plain update could
+    // land after a re-invite (which resets the row to PENDING with a new
+    // invitation id) or a lifecycle change, and put the old values back. If
+    // the row changed since this read, the repair stands down; the next read
+    // recomputes from the invitation anyway.
     if (corrections.length > 0) {
-      setImmediate(() => {
-        Promise.all(
-          corrections.map((c) =>
-            this.prisma.notification.update({
-              where: { id: c.id },
-              data: { metadata: c.metadata },
-            }),
+      setImmediate(() =>
+        detach('invite notification repair', () =>
+          Promise.all(
+            corrections.map((c) =>
+              this.prisma.notification.updateMany({
+                where: { id: c.id, updatedAt: c.updatedAt, deletedAt: null },
+                data: { metadata: c.metadata },
+              }),
+            ),
           ),
-        ).catch((err: unknown) =>
-          this.logger.warn(
-            `Invite notification repair failed: ${errorMessage(err)}`,
-          ),
-        );
-      });
+        ),
+      );
     }
 
     return reconciled;

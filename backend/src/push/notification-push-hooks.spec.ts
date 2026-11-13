@@ -90,7 +90,14 @@ function build(dispatcher: DispatcherDouble = dispatcherDouble()) {
     user: { findUnique: jest.fn().mockResolvedValue(actor) },
     // A follow row asks whether the recipient follows back.
     follow: { findUnique: jest.fn().mockResolvedValue(null) },
+    // A like is written in a transaction under an advisory lock; the fake
+    // transaction is this same client.
+    $executeRaw: jest.fn().mockResolvedValue(1),
+    $transaction: jest.fn(
+      (fn: (tx: unknown) => Promise<unknown>): Promise<unknown> => fn(tx()),
+    ),
   };
+  const tx = (): unknown => prisma;
   const blocks = {
     isBlocked: jest.fn().mockResolvedValue(false),
     getExcludedUserIds: jest.fn().mockResolvedValue([]),

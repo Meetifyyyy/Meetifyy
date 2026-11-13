@@ -252,6 +252,94 @@ describeDb('notifications (database + Redis)', () => {
     ]);
   });
 
+  it('five likes at once gather on one row, counted once, with all five', async () => {
+    const [r, ...likers] = await users(6);
+    await warm(r);
+    await Promise.all(
+      likers.map((actor) =>
+        service.createNotification(note(r, actor, NotificationType.LIKE, 'p7')),
+      ),
+    );
+    const rows = await prisma.notification.findMany({
+      where: { recipientId: r, type: NotificationType.LIKE, deletedAt: null },
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].metadata).toMatchObject({ aggregatedCount: 5 });
+    expect(await cached(r)).toBe(1);
+    expect(await truth(r)).toBe(1);
+  });
+
+  it('a read landing with a like leaves the bell equal to the table', async () => {
+    const [r, a, b, c] = await users(4);
+    await warm(r);
+    const first = await service.createNotification(
+      note(r, a, NotificationType.LIKE, 'p8'),
+    );
+    await service.createNotification(
+      note(r, b, NotificationType.COMMENT, 'q8'),
+    );
+    await Promise.all([
+      service.markAsRead(first?.id ?? '', r),
+      service.createNotification(note(r, c, NotificationType.LIKE, 'p8')),
+    ]);
+    expect(await cached(r)).toBe(await truth(r));
+  });
+
+  it('an invite repair stands down when the row changed after the read', async () => {
+    const [host, guest] = await users(2);
+    const activity = await prisma.crewActivity.create({
+      data: { creatorId: host, title: 'Hike' },
+    });
+    const invite = (invitationId: string) =>
+      service.createActivityInviteNotifications({
+        activityId: activity.id,
+        inviterId: host,
+        invitations: [{ inviteeId: guest, invitationId }],
+        activityTitle: 'Hike',
+        inviter: { id: host, name: 'Host', username: 'host' },
+      });
+    await prisma.activityInvitation.create({
+      data: {
+        activityId: activity.id,
+        inviterId: host,
+        inviteeId: guest,
+        status: 'ACCEPTED',
+      },
+    });
+    await invite('first');
+    // The read this repair is based on: stored PENDING, truth ACCEPTED.
+    const snapshot = await prisma.notification.findMany({
+      where: { recipientId: guest, type: NotificationType.ACTIVITY_INVITE },
+    });
+    // Then a re-invite rewrites the row before the repair lands.
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await invite('second');
+    await service['reconcileInviteNotifications'](guest, snapshot);
+    await settle();
+    const [row] = await prisma.notification.findMany({
+      where: { recipientId: guest, type: NotificationType.ACTIVITY_INVITE },
+    });
+    // The re-invite's values stand; the stale repair did not put the old back.
+    expect(row.metadata).toMatchObject({
+      invitationId: 'second',
+      lifecycleStatus: 'PENDING',
+    });
+
+    // With nothing in between, the repair does land.
+    const fresh = await prisma.notification.findMany({
+      where: { recipientId: guest, type: NotificationType.ACTIVITY_INVITE },
+    });
+    await service['reconcileInviteNotifications'](guest, fresh);
+    await settle();
+    const [repaired] = await prisma.notification.findMany({
+      where: { recipientId: guest, type: NotificationType.ACTIVITY_INVITE },
+    });
+    expect(repaired.metadata).toMatchObject({
+      invitationId: 'second',
+      lifecycleStatus: 'ACCEPTED',
+    });
+  });
+
   it('announces an activity invite once per invitee', async () => {
     const [host, one, two] = await users(3);
     await service.createActivityInviteNotifications({
