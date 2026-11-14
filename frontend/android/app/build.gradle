@@ -44,8 +44,10 @@ android {
         applicationId "app.meetifyy"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        // Play refuses an upload whose versionCode is not higher than every
+        // earlier upload, on any track. 1 = closed testing 1.0 (2026-11-10).
+        versionCode 2
+        versionName "1.1"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -95,6 +97,28 @@ android {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
+        /*
+         * The Play closed-testing build (scripts/build-apk.mjs testing). Named
+         * playtest because the Android plugin reserves names starting with "test".
+         *
+         * Compiled and signed exactly like a release, because Play requires the
+         * release key and testers should run what production will run. But it
+         * talks to the DEVELOPMENT API, so testers never touch production data.
+         * - Firebase: src/playtest/google-services.json, the meetifyy-dev project
+         *   with an Android app registered as app.meetifyy. The dev API sends
+         *   push through meetifyy-dev, and Firebase refuses a token from another
+         *   project, so a test build carrying the production file got no push.
+         * - App Links: meetifyy.app, like release, by the owner's decision
+         *   (2026-11-14): it is the store app. A production link opened in it
+         *   looks the content up on the development API.
+         * Same application ID as release, as Play requires for one listing.
+         * Never upload it to the production track.
+         */
+        playtest {
+            initWith release
+            // Capacitor and its plugins only build debug and release.
+            matchingFallbacks = ['release']
+        }
     }
 }
 
@@ -121,19 +145,20 @@ apply from: 'capacitor.build.gradle'
 /*
  * Firebase (push notifications), per build type. See docs/FEATURES_AND_FLOWS.md.
  *
- * Debug builds talk to the development API and release builds to production,
- * so each needs ITS OWN environment's Firebase project:
- *   src/debug/google-services.json    the development Firebase project
- *   src/release/google-services.json  the production Firebase project
+ * Debug and playtest builds talk to the development API and release builds to
+ * production, so each needs ITS OWN environment's Firebase project:
+ *   src/debug/google-services.json    the development project (app.meetifyy.dev)
+ *   src/playtest/google-services.json the development project (app.meetifyy)
+ *   src/release/google-services.json  the production project
  * The google-services plugin reads the build-type directory first. A single
- * app/google-services.json would serve both and is deliberately not looked
+ * app/google-services.json would serve them all and is deliberately not looked
  * for here.
  *
  * Absent files are fine: the build still succeeds, the plugin is either not
  * applied or warns for that variant, and the app reports push as unavailable
  * (PushSupportPlugin.status) instead of calling into an uninitialised Firebase.
  */
-def googleServicesFiles = ['src/debug/google-services.json', 'src/release/google-services.json']
+def googleServicesFiles = ['src/debug/google-services.json', 'src/playtest/google-services.json', 'src/release/google-services.json']
     .collect { file(it) }
     .findAll { it.exists() && it.text.trim() }
 if (!googleServicesFiles.isEmpty()) {

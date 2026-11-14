@@ -10,9 +10,10 @@
  *
  * The testing variant exists so Play Console's closed-testing users exercise
  * the development backend, not production. It is signed with the release key
- * (Play requires it) but built with --mode development. It must NEVER be
- * promoted to the production track: upload a separate `release` build, with a
- * higher versionCode, for that.
+ * (Play requires it) but built with --mode development, as its own Gradle
+ * build type (`playtest`) that uses the development Firebase project.
+ * It must NEVER be promoted to the production track: upload a separate
+ * `release` build, with a higher versionCode, for that.
  *
  * Two variants, two directories, because mixing them up is easy and expensive:
  * a debug APK is signed with a throwaway key every machine generates for
@@ -59,9 +60,38 @@ const outDir = isTesting
   : resolve(root, 'local/apk', isRelease ? 'release' : isPerf ? 'perf' : 'dev');
 // Only the real release reads .env.production; testing deliberately does not.
 const viteMode = isRelease ? 'production' : 'development';
-const gradleTask = isTesting ? 'bundleRelease' : isRelease ? 'assembleRelease' : 'assembleDebug';
-const gradleVariant = isTesting ? 'release' : isPerf ? 'debug' : variant;
+const gradleTask = isTesting ? 'bundlePlaytest' : isRelease ? 'assembleRelease' : 'assembleDebug';
+const gradleVariant = isTesting ? 'playtest' : isPerf ? 'debug' : variant;
 const artefactExt = isTesting ? '.aab' : '.apk';
+
+/**
+ * The test build's Firebase project must be the development one: the dev API
+ * sends push through meetifyy-dev, and Firebase refuses tokens issued for
+ * another project. Missing → it builds without push (said loudly); production's
+ * file, or one without app.meetifyy registered, → refuse.
+ */
+if (isTesting) {
+  const gsPath = resolve(android, 'app/src/playtest/google-services.json');
+  if (!existsSync(gsPath)) {
+    console.warn(
+      '\n! No app/src/playtest/google-services.json: this test build will have NO push.\n' +
+        '  Add an Android app "app.meetifyy" to the meetifyy-dev Firebase project and put\n' +
+        '  its google-services.json there.\n',
+    );
+  } else {
+    const gs = JSON.parse(readFileSync(gsPath, 'utf8'));
+    const projectId = gs.project_info?.project_id || '';
+    const packages = (gs.client || []).map((c) => c.client_info?.android_client_info?.package_name);
+    if (/prod/i.test(projectId) || !packages.includes('app.meetifyy')) {
+      console.error(
+        `app/src/playtest/google-services.json is project "${projectId}" for ${packages.join(', ') || 'no app'}; ` +
+          'the test build needs the DEVELOPMENT project with app.meetifyy registered.',
+      );
+      process.exit(1);
+    }
+    console.log(`▸ Firebase: ${projectId} (development) for app.meetifyy`);
+  }
+}
 
 /**
  * Sentry source-map upload for DEBUG builds from the developer's own login.

@@ -504,7 +504,9 @@ the image, so they keep them.
 Android: `google-services.json` per build type, never one shared file:
 
 ```
-frontend/android/app/src/debug/google-services.json    <- development Firebase project
+frontend/android/app/src/debug/google-services.json    <- development Firebase project (app.meetifyy.dev)
+frontend/android/app/src/playtest/google-services.json <- development Firebase project (app.meetifyy):
+                                                          the Play test build talks to the dev API
 frontend/android/app/src/release/google-services.json  <- production Firebase project
 ```
 

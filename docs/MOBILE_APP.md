@@ -128,7 +128,7 @@ actually broken.
 | `npm run mobile:sync` | `build:mobile && cap sync` — never run `cap sync` alone, it copies whatever is in `dist-mobile/` and silently ships the previous bundle. |
 | `npm run mobile:apk` | Debug APK via `scripts/build-apk.mjs` (development mode, dev API). |
 | `npm run mobile:apk:release` | Release APK (Meetifyy key, prod API, `.env.production`). |
-| `npm run mobile:aab:testing` | App bundle for store testing. |
+| `npm run mobile:aab:testing` | App bundle for Play closed testing: Gradle build type `playtest`, release-signed, **development API** and the meetifyy-dev Firebase project (`src/playtest/google-services.json`, app `app.meetifyy`). Never for the production track. Raise `versionCode` in `android/app/build.gradle` before each upload: Play refuses one that is not higher than every earlier upload. |
 | `npm run mobile:icons` | Regenerates launcher icons from the Meetifyy mark. |
 | `npm run mobile:android` / `mobile:ios` | Sync and open the native IDE project. |
 | `npm run preview:mobile` | Serve the built mobile bundle in a browser. |
