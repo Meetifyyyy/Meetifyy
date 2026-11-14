@@ -188,7 +188,10 @@ the dotenv file without sourcing it (values may contain `$`, spaces or `#`).
 Admin JWT secrets, `SESSION_SECRET` and `OTP_HASH_SECRET` are generated only
 when absent and otherwise reused from the env file or the app's existing
 secrets, because regenerating them signs out admins (JWT), every user
-(`SESSION_SECRET`) or invalidates codes in flight (`OTP_HASH_SECRET`). Never run
+(`SESSION_SECRET`) or invalidates codes in flight (`OTP_HASH_SECRET`). Push
+settings are applied only when the run supplies push credentials, and are
+otherwise left as they are
+([FEATURES_AND_FLOWS.md](FEATURES_AND_FLOWS.md#push-configuration)). Never run
 it unasked.
 
 ---

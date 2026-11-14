@@ -35,6 +35,12 @@ REDIS_NAME="${REDIS_NAME:-meetifyy-prod-redis}"
 
 ENV_FILE=""
 SYNC_ONLY="false"
+# Push values come only from --env-file or the prompts, never from whatever the
+# calling shell happens to export: an inherited PUSH_GENERATE_VAPID=true would
+# rotate the production key on a routine sync.
+PUSH_ENABLED="" VAPID_PUBLIC_KEY="" VAPID_PRIVATE_KEY="" VAPID_SUBJECT=""
+FCM_PROJECT_ID="" FCM_SERVICE_ACCOUNT_JSON="" FCM_SERVICE_ACCOUNT_FILE=""
+PUSH_GENERATE_VAPID="false"
 
 usage() {
   cat <<'USAGE'
@@ -151,6 +157,16 @@ if [ -n "$ENV_FILE" ]; then
   REDIS_URL="$(get_env REDIS_URL)"
   SUPER_ADMIN_EMAIL="$(get_env SUPER_ADMIN_EMAIL)"
   SUPER_ADMIN_PASSWORD="$(get_env SUPER_ADMIN_PASSWORD)"
+  # Push notifications: optional, and applied only when credentials are given
+  # (see "Push notifications" below). The service account can be given as its
+  # JSON (raw on one line, or base64) or as a path to the downloaded file.
+  PUSH_ENABLED="$(get_env PUSH_ENABLED)"
+  VAPID_PUBLIC_KEY="$(get_env VAPID_PUBLIC_KEY)"
+  VAPID_PRIVATE_KEY="$(get_env VAPID_PRIVATE_KEY)"
+  VAPID_SUBJECT="$(get_env VAPID_SUBJECT)"
+  FCM_PROJECT_ID="$(get_env FCM_PROJECT_ID)"
+  FCM_SERVICE_ACCOUNT_JSON="$(get_env FCM_SERVICE_ACCOUNT_JSON)"
+  FCM_SERVICE_ACCOUNT_FILE="$(get_env FCM_SERVICE_ACCOUNT_FILE)"
 
   # Azure identifiers are not part of the app's runtime config, so the env file
   # normally has no reason to carry them. Ask only for what is missing.
@@ -208,6 +224,13 @@ else
   read -rp "Enter Production Sentry DSN (optional, press Enter to skip): " SENTRY_DSN
   read -rp "Enter Production Super Admin Email: " SUPER_ADMIN_EMAIL
   read -rsp "Enter Production Super Admin Password: " SUPER_ADMIN_PASSWORD; echo
+  echo "Push notifications (optional):"
+  read -rp "  Set up push now? A NEW VAPID key pair is generated; browsers subscribed with an older one must subscribe again. [y/N]: " PUSH_SETUP
+  if [ "${PUSH_SETUP:-}" = "y" ] || [ "${PUSH_SETUP:-}" = "Y" ]; then
+    read -rp "  Path to the meetifyy-prod Firebase service account JSON (blank: website push only): " FCM_SERVICE_ACCOUNT_FILE
+    PUSH_GENERATE_VAPID="true"
+    PUSH_ENABLED="true"
+  fi
 fi
 
 R2_BUCKET_NAME="${R2_BUCKET_NAME:-meetifyy-prod}"
@@ -219,6 +242,121 @@ gen_secret() { node -e "console.log(require('crypto').randomBytes(64).toString('
 ADMIN_JWT_ACCESS_SECRET="${ADMIN_JWT_ACCESS_SECRET:-$(gen_secret)}"
 ADMIN_JWT_REFRESH_SECRET="${ADMIN_JWT_REFRESH_SECRET:-$(gen_secret)}"
 ADMIN_JWT_PENDING_SECRET="${ADMIN_JWT_PENDING_SECRET:-$(gen_secret)}"
+
+# ── Push notifications (optional) ───────────────────────────────────────────
+#
+# Applied only when this run supplies push credentials: a VAPID key pair (web
+# push) and/or the Firebase service account (Android). A run without them —
+# the usual --sync-secrets after rotating some other key, with an env file that
+# still holds the example's PUSH_ENABLED=false and blank keys — leaves the
+# app's push settings exactly as they are. The production VAPID private key may
+# exist only in the Container App's secrets, and blanking it or switching push
+# off would silently stop every notification.
+#
+# A VAPID pair is generated only by the interactive path. Generating one during
+# a sync would replace the key every subscribed browser was registered with.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PUSH_ENABLED="${PUSH_ENABLED:-}"
+VAPID_PUBLIC_KEY="${VAPID_PUBLIC_KEY:-}"
+VAPID_PRIVATE_KEY="${VAPID_PRIVATE_KEY:-}"
+VAPID_SUBJECT="${VAPID_SUBJECT:-}"
+FCM_PROJECT_ID="${FCM_PROJECT_ID:-}"
+FCM_SERVICE_ACCOUNT_JSON="${FCM_SERVICE_ACCOUNT_JSON:-}"
+FCM_SERVICE_ACCOUNT_FILE="${FCM_SERVICE_ACCOUNT_FILE:-}"
+
+if [ "${PUSH_GENERATE_VAPID:-}" = "true" ]; then
+  VAPID_KEYS_JSON="$(cd "$SCRIPT_DIR/backend" && npx --no-install web-push generate-vapid-keys --json)" \
+    || { echo "Could not generate a VAPID key pair (run npm install in backend/ first)." >&2; exit 1; }
+  VAPID_PUBLIC_KEY="$(KEYS="$VAPID_KEYS_JSON" node -e 'process.stdout.write(JSON.parse(process.env.KEYS).publicKey)')"
+  VAPID_PRIVATE_KEY="$(KEYS="$VAPID_KEYS_JSON" node -e 'process.stdout.write(JSON.parse(process.env.KEYS).privateKey)')"
+  unset VAPID_KEYS_JSON
+fi
+
+if [ -n "$FCM_SERVICE_ACCOUNT_FILE" ] && [ -z "$FCM_SERVICE_ACCOUNT_JSON" ]; then
+  [ -f "$FCM_SERVICE_ACCOUNT_FILE" ] \
+    || { echo "FCM_SERVICE_ACCOUNT_FILE not found: $FCM_SERVICE_ACCOUNT_FILE" >&2; exit 1; }
+  FCM_SERVICE_ACCOUNT_JSON="$(base64 -w0 "$FCM_SERVICE_ACCOUNT_FILE")"
+fi
+
+PUSH_APPLY="false"
+if [ -n "$VAPID_PUBLIC_KEY$VAPID_PRIVATE_KEY$FCM_SERVICE_ACCOUNT_JSON" ]; then
+  PUSH_APPLY="true"
+  # The same checks the API makes at boot, made here instead, so a bad value
+  # stops this script rather than a new revision that will not start. Values
+  # travel through the environment, never the command line. On success it
+  # prints the Firebase project id read from the service account.
+  FCM_PROJECT_ID="$(PE="$PUSH_ENABLED" VPUB="$VAPID_PUBLIC_KEY" VPRIV="$VAPID_PRIVATE_KEY" \
+    VSUB="$VAPID_SUBJECT" FPID="$FCM_PROJECT_ID" FJSON="$FCM_SERVICE_ACCOUNT_JSON" node -e '
+    const e = process.env, problems = [];
+    if (e.PE && e.PE !== "true" && e.PE !== "false") problems.push("PUSH_ENABLED must be true or false");
+    if (Boolean(e.VPUB) !== Boolean(e.VPRIV)) {
+      problems.push("VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY must be given together");
+    } else if (e.VPUB && (e.VPUB.length !== 87 || e.VPRIV.length !== 43)) {
+      problems.push("VAPID keys have the wrong length (public 87, private 43): truncated or swapped?");
+    }
+    if (e.VSUB && !/^(mailto:|https:\/\/)/.test(e.VSUB)) problems.push("VAPID_SUBJECT must start with mailto: or https://");
+    let projectId = e.FPID || "";
+    if (e.FJSON) {
+      const text = e.FJSON.trimStart().startsWith("{") ? e.FJSON : Buffer.from(e.FJSON, "base64").toString("utf8");
+      let sa = null;
+      try { sa = JSON.parse(text); } catch { problems.push("FCM service account is not valid JSON (raw or base64)"); }
+      if (sa) {
+        if (!sa.project_id || !sa.client_email || !sa.private_key) {
+          problems.push("FCM service account needs project_id, client_email and private_key");
+        } else {
+          if (projectId && projectId !== sa.project_id) problems.push("FCM_PROJECT_ID does not match the service account project_id");
+          projectId = sa.project_id;
+          // Mirrors the API isolation guard: production never holds a
+          // development or staging Firebase project.
+          const other = /(^|[-_.@])(dev|development|staging)([-_.@]|$)/i;
+          if (other.test(sa.project_id) || other.test(sa.client_email)) {
+            problems.push("the service account belongs to a non-production Firebase project (" + sa.project_id + ")");
+          }
+        }
+      }
+    }
+    if (problems.length) {
+      for (const p of problems) console.error("Push: " + p);
+      process.exit(1);
+    }
+    process.stdout.write(projectId);
+  ')" || exit 1
+  PUSH_ENABLED="${PUSH_ENABLED:-true}"
+  [ -z "$VAPID_PUBLIC_KEY" ] || VAPID_SUBJECT="${VAPID_SUBJECT:-mailto:support@meetifyy.app}"
+fi
+
+# Stores the push secrets first, then points the variables at them: a secretref
+# naming a secret that does not exist stops the container from starting.
+# Only the parts this run supplied are touched.
+apply_push() {
+  if [ "$PUSH_APPLY" != "true" ]; then
+    echo "    Push: no push credentials in this run; the app's push settings are left as they are."
+    return 0
+  fi
+  local secrets=() envs=("PUSH_ENABLED=${PUSH_ENABLED}")
+  if [ -n "$VAPID_PRIVATE_KEY" ]; then
+    secrets+=("vapid-private-key=${VAPID_PRIVATE_KEY}")
+    envs+=("VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY}" "VAPID_SUBJECT=${VAPID_SUBJECT}"
+           "VAPID_PRIVATE_KEY=secretref:vapid-private-key")
+  fi
+  if [ -n "$FCM_SERVICE_ACCOUNT_JSON" ]; then
+    secrets+=("fcm-service-account=${FCM_SERVICE_ACCOUNT_JSON}")
+    envs+=("FCM_PROJECT_ID=${FCM_PROJECT_ID}" "FCM_SERVICE_ACCOUNT_JSON=secretref:fcm-service-account")
+  fi
+  az containerapp secret set \
+    --name "$APP_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
+    --secrets "${secrets[@]}" >/dev/null
+  az containerapp update \
+    --name "$APP_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
+    --set-env-vars "${envs[@]}" >/dev/null
+  # Reports what was set by name only; never echo a key or the service account.
+  local web="unchanged" android="unchanged"
+  [ -z "$VAPID_PRIVATE_KEY" ] || web="set"
+  [ -z "$FCM_SERVICE_ACCOUNT_JSON" ] || android="set (${FCM_PROJECT_ID})"
+  echo "    Push: PUSH_ENABLED=${PUSH_ENABLED}; web push ${web}; Android ${android}."
+}
 
 # Session encryption and OTP hashing.
 #
@@ -325,6 +463,8 @@ if [ "$SYNC_ONLY" = "true" ]; then
     --name "$APP_NAME" \
     --resource-group "$RESOURCE_GROUP" \
     --set-env-vars "BREVO_API_KEY=secretref:brevo-api-key" >/dev/null
+
+  apply_push
 
   # Updating a secret does NOT restart the app, and a running replica keeps the
   # value it started with. Without this restart the new credentials sit in the
@@ -677,6 +817,9 @@ az containerapp update \
   --name "$APP_NAME" \
   --resource-group "$RESOURCE_GROUP" \
   --set-env-vars "BREVO_API_KEY=secretref:brevo-api-key" > /dev/null
+
+echo "==> 6b. Push notifications..."
+apply_push
 
 echo "==> 7. Creating GitHub Actions Service Principal for Production..."
 SP_JSON=$(az ad sp create-for-rbac \

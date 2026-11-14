@@ -246,8 +246,8 @@ Status (last recorded 2026-11-14): live in both environments.
 - **Android in production:** push needs a release APK built with
   `src/release/google-services.json`.
 
-The deploy workflows and `setup-azure-*.sh` still do not map these
-variables (see "Push configuration").
+`setup-azure-prod.sh` now sets these up; `setup-azure-dev.sh` does not (see
+"Push configuration").
 
 ### How it works
 
@@ -479,12 +479,27 @@ check it: generate each environment's keypair separately and never copy one.
 No `VITE_` variable is needed (the public key comes from the API). Never put
 the private key or service account in a `VITE_` variable.
 
-At the time of writing the deploy workflows and `setup-azure-*.sh` did not map
-these secrets; adding them is a separate, reviewed change: create the Container
-App secrets per environment, then add
+Each environment holds the private key and the service account as Container
+App secrets `vapid-private-key` and `fcm-service-account`, referenced as
 `VAPID_PRIVATE_KEY=secretref:vapid-private-key` and
-`FCM_SERVICE_ACCOUNT_JSON=secretref:fcm-service-account` to that environment's
-env list.
+`FCM_SERVICE_ACCOUNT_JSON=secretref:fcm-service-account`. Deploys change only
+the image, so they keep them.
+
+- **`setup-azure-prod.sh` sets them up** from `--env-file`, with or without
+  `--sync-secrets`. The service account can be given as `FCM_SERVICE_ACCOUNT_FILE`
+  (a path to the downloaded JSON) instead of pasting it.
+- **It changes push only when that run supplies push credentials.** An env
+  file with blank keys, like the example's, leaves the app's push settings as
+  they are, `PUSH_ENABLED` included, because production's VAPID private key
+  may exist only in Azure.
+- **It checks everything before touching Azure:**
+  - the two VAPID keys come together, at the right lengths;
+  - the subject starts with `mailto:` or `https://`;
+  - the service account parses, matches `FCM_PROJECT_ID`, and is not a
+    `dev`/`staging` project.
+- **Only the interactive path generates a VAPID pair.** A new pair means
+  browsers subscribed with the old public key must subscribe again.
+- **`setup-azure-dev.sh` does not set push up.** Dev's values were set by hand.
 
 Android: `google-services.json` per build type, never one shared file:
 
