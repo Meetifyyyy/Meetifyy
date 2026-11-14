@@ -22,7 +22,11 @@ jest.mock('../auth/auth.service', () => ({ clearAuthSyncCache: jest.fn() }));
 describe('UsersService.updateProfile', () => {
   const USER = 'user-1';
 
-  const build = (mediaOwner: string | null = USER) => {
+  const build = (
+    mediaOwner: string | null = USER,
+    /** Confession handles that exist (FEAT-11). */
+    handles: ReadonlySet<string> = new Set(),
+  ) => {
     const upsert = jest.fn(
       (args: {
         update: Record<string, unknown>;
@@ -49,16 +53,28 @@ describe('UsersService.updateProfile', () => {
     Object.assign(service, {
       prisma: {
         user: {
-          findUnique: jest.fn(() =>
-            Promise.resolve({
-              email: 'sam@college.edu',
-              username: 'sam',
-              displayName: 'Sam',
-              avatar: '/api/media/avatars/old.webp',
-              cover: null,
-            }),
+          // By id: Sam's row. By username: who holds it (only Sam does).
+          findUnique: jest.fn((args?: { where?: { username?: string } }) =>
+            args?.where?.username !== undefined
+              ? Promise.resolve(
+                  args.where.username === 'sam' ? { id: USER } : null,
+                )
+              : Promise.resolve({
+                  email: 'sam@college.edu',
+                  username: 'sam',
+                  displayName: 'Sam',
+                  avatar: '/api/media/avatars/old.webp',
+                  cover: null,
+                }),
           ),
           upsert,
+        },
+        confessionProfile: {
+          findUnique: jest.fn((args: { where: { handleKey: string } }) =>
+            Promise.resolve(
+              handles.has(args.where.handleKey) ? { id: 'p' } : null,
+            ),
+          ),
         },
         // Who uploaded each requested key (ownership of attached images).
         media: {
@@ -187,6 +203,24 @@ describe('UsersService.updateProfile', () => {
       expect(upsert).not.toHaveBeenCalled();
     },
   );
+  describe('renaming (FEAT-11)', () => {
+    it('refuses somebody\'s confession handle as "not available", revealing nothing more', async () => {
+      const { service, upsert } = build(USER, new Set(['nightowl']));
+      await expect(
+        service.updateProfile(USER, { username: 'nightowl' }),
+      ).rejects.toThrow('Username not available');
+      expect(upsert).not.toHaveBeenCalled();
+    });
+
+    it('still renames to a free username', async () => {
+      const { service, upsert } = build(USER, new Set(['nightowl']));
+      await expect(
+        service.updateProfile(USER, { username: 'sam.r' }),
+      ).resolves.toBeDefined();
+      expect(update(upsert)).toMatchObject({ username: 'sam.r' });
+    });
+  });
+
   describe('gender', () => {
     it('accepts an enum value and clearing it', async () => {
       const { service, upsert } = build();

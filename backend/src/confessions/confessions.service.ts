@@ -17,6 +17,7 @@ import {
   CONFESSION_AUTO_HIDE_REPORTERS,
   DUPLICATE_WINDOW_MS,
   checkHandle,
+  type HandleProblem,
   confessionHash,
   confessionLengthOk,
   handleKey,
@@ -188,12 +189,24 @@ export class ConfessionsService {
     };
   }
 
-  private async ownUsername(userId: string): Promise<string | null> {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { username: true },
+  /**
+   * Why a handle cannot be used, or null.
+   *
+   * Beyond the format and the reserved words, no handle may be anyone's real
+   * username (FEAT-11): not the caller's, which would de-anonymise them, and
+   * not another student's, which would pin these confessions on them in front
+   * of the whole campus. Usernames are stored lower-case, so this is one
+   * lookup on the unique username index (and the reverse rule, no username
+   * equal to a handle, is `isConfessionHandle`).
+   */
+  private async handleProblem(handle: string): Promise<HandleProblem | null> {
+    const problem = checkHandle(handle, null);
+    if (problem) return problem;
+    const owner = await this.prisma.user.findUnique({
+      where: { username: handleKey(handle) },
+      select: { id: true },
     });
-    return user?.username ?? null;
+    return owner ? 'reserved' : null;
   }
 
   async checkAvailability(
@@ -201,7 +214,7 @@ export class ConfessionsService {
     rawHandle: string | undefined,
   ): Promise<HandleAvailability> {
     const handle = (rawHandle ?? '').trim();
-    const problem = checkHandle(handle, await this.ownUsername(userId));
+    const problem = await this.handleProblem(handle);
     if (problem) return { handle, available: false, reason: problem };
     const existing = await this.prisma.confessionProfile.findUnique({
       where: { handleKey: handleKey(handle) },
@@ -217,7 +230,7 @@ export class ConfessionsService {
     rawHandle: string,
   ): Promise<{ profile: ConfessionProfileDto }> {
     const handle = rawHandle.trim();
-    const problem = checkHandle(handle, await this.ownUsername(userId));
+    const problem = await this.handleProblem(handle);
     if (problem) {
       throw new BadRequestException({
         statusCode: 400,

@@ -58,6 +58,7 @@ import {
   isReservedUsername,
   RESERVED_USERNAME_MESSAGE,
 } from '../common/users/reserved-usernames';
+import { isConfessionHandle } from '../common/users/confession-handle';
 import { conversationListFirstPageKeys } from '../messages/conversation-list-cache';
 import {
   ACTIVE_AFFILIATION_SELECT,
@@ -1956,7 +1957,12 @@ export class UsersService {
       // a user could register an ordinary handle and then rename themselves to
       // `admin`, `support` or `deleted` — the list existed but this path
       // walked straight past it.
-      if (isReservedUsername(trimmedUsername)) {
+      // Nor somebody's confession handle (FEAT-11), answered the same way so
+      // the reply does not reveal that the handle exists.
+      if (
+        isReservedUsername(trimmedUsername) ||
+        (await isConfessionHandle(this.prisma, trimmedUsername))
+      ) {
         throw new BadRequestException(RESERVED_USERNAME_MESSAGE);
       }
 

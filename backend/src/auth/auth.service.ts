@@ -17,6 +17,7 @@ import {
   isReservedUsername,
   RESERVED_USERNAME_MESSAGE,
 } from '../common/users/reserved-usernames';
+import { isConfessionHandle } from '../common/users/confession-handle';
 import { SupabaseService } from '../supabase/supabase.service';
 import { DefaultAssetsService } from '../uploads/default-assets.service';
 import { DomainValidatorService } from '../common/services/domain-validator.service';
@@ -763,7 +764,11 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
               .trim()
               .toLowerCase()
               .replace(/[^a-z0-9_.]/g, '_');
-            if (clean.length >= 3 && !isReservedUsername(clean)) {
+            if (
+              clean.length >= 3 &&
+              !isReservedUsername(clean) &&
+              !(await isConfessionHandle(this.prisma, clean.slice(0, 30)))
+            ) {
               clean = clean.slice(0, 30);
               const existing = await this.prisma.user.findUnique({
                 where: { username: clean },
@@ -917,7 +922,12 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     // refused: the email is already confirmed, so rejecting would strand a
     // real account with no profile row. It gets the neutral fallback instead,
     // which the healer below will not "upgrade" back to a reserved name.
-    if (isReservedUsername(username)) {
+    // The same for somebody's confession handle (FEAT-11): taking its name
+    // would make its confessions look like this person's.
+    if (
+      isReservedUsername(username) ||
+      (await isConfessionHandle(this.prisma, username))
+    ) {
       username = `user_${user.id.slice(0, 8)}`;
     }
 
@@ -1400,7 +1410,11 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     // after the code was confirmed — stranding a verified address with no
     // profile. The birthday stays optional for older clients that omit it.
     if (input.birthday) validateBirthday(input.birthday);
-    if (input.username && isReservedUsername(input.username)) {
+    if (
+      input.username &&
+      (isReservedUsername(input.username) ||
+        (await isConfessionHandle(this.prisma, input.username)))
+    ) {
       throw new BadRequestException(RESERVED_USERNAME_MESSAGE);
     }
 
@@ -1551,7 +1565,10 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
 
     // Shared with the profile-rename path, which used to skip this check
     // entirely — see common/users/reserved-usernames.ts.
-    if (isReservedUsername(trimmed)) {
+    if (
+      isReservedUsername(trimmed) ||
+      (await isConfessionHandle(this.prisma, trimmed))
+    ) {
       return { available: false, reason: RESERVED_USERNAME_MESSAGE };
     }
 

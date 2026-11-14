@@ -92,8 +92,14 @@ function reactionRow(
 function build(opts: { events?: DomainEventService } = {}) {
   const profileFindUnique = jest.fn();
   const profileCreate = jest.fn();
-  const userFindUnique = jest.fn(() =>
-    Promise.resolve({ username: 'real.name' }),
+  /** Usernames that exist: the caller's own and another student's. */
+  const usernames = new Set(['real.name', 'asha.k']);
+  const userFindUnique = jest.fn((args: { where: { username?: string } }) =>
+    Promise.resolve(
+      args.where.username !== undefined && usernames.has(args.where.username)
+        ? { id: `id-${args.where.username}` }
+        : null,
+    ),
   );
   const confessionFindMany = jest.fn(() =>
     Promise.resolve([] as ReturnType<typeof row>[]),
@@ -236,6 +242,15 @@ describe('ConfessionsService — profile', () => {
     await expect(
       t.service.checkAvailability('u1', 'REAL.name'),
     ).resolves.toMatchObject({ available: false, reason: 'reserved' });
+    // FEAT-11: nor another student's username, which would pin these
+    // confessions on them. One lookup on the username index, lower-cased.
+    await expect(
+      t.service.checkAvailability('u1', 'Asha.K'),
+    ).resolves.toMatchObject({ available: false, reason: 'reserved' });
+    expect(t.userFindUnique).toHaveBeenLastCalledWith({
+      where: { username: 'asha.k' },
+      select: { id: true },
+    });
     await expect(
       t.service.checkAvailability('u1', 'NightOwl'),
     ).resolves.toEqual({ handle: 'NightOwl', available: true, reason: null });
@@ -255,6 +270,9 @@ describe('ConfessionsService — profile', () => {
     ).resolves.toMatchObject({ code: 'handle_invalid', reason: 'invalid' });
     await expect(
       codeOf(t.service.createProfile('u1', 'Staff')),
+    ).resolves.toMatchObject({ code: 'handle_invalid', reason: 'reserved' });
+    await expect(
+      codeOf(t.service.createProfile('u1', 'asha.k')),
     ).resolves.toMatchObject({ code: 'handle_invalid', reason: 'reserved' });
     expect(t.profileCreate).not.toHaveBeenCalled();
   });

@@ -60,6 +60,9 @@ describe('the public auth proxies', () => {
       findFirst: jest.Mock<Promise<{ id: string } | null>, [unknown]>;
       findUnique: jest.Mock<Promise<{ email: string } | null>, [unknown]>;
     };
+    confessionProfile: {
+      findUnique: jest.Mock<Promise<{ id: string } | null>, [unknown]>;
+    };
   };
   let anonAuth: ReturnType<typeof makeAnonAuth>;
   let adminAuth: ReturnType<typeof makeAdminAuth>;
@@ -76,6 +79,11 @@ describe('the public auth proxies', () => {
           .mockResolvedValue({ id: 'u1' }),
         findUnique: jest
           .fn<Promise<{ email: string } | null>, [unknown]>()
+          .mockResolvedValue(null),
+      },
+      confessionProfile: {
+        findUnique: jest
+          .fn<Promise<{ id: string } | null>, [unknown]>()
           .mockResolvedValue(null),
       },
     };
@@ -206,6 +214,22 @@ describe('the public auth proxies', () => {
             }),
           ).rejects.toBeInstanceOf(BadRequestException);
         }
+        expect(anonAuth.signUp).not.toHaveBeenCalled();
+      });
+
+      it('refuses somebody\'s confession handle as "not available", revealing nothing more (FEAT-11)', async () => {
+        prisma.confessionProfile.findUnique.mockResolvedValue({ id: 'p' });
+        await expect(
+          service.signUpWithEmail({
+            email: 'a@b.edu',
+            password: 'a-good-password',
+            username: 'NightOwl',
+          }),
+        ).rejects.toThrow('Username not available');
+        expect(prisma.confessionProfile.findUnique).toHaveBeenCalledWith({
+          where: { handleKey: 'nightowl' },
+          select: { id: true },
+        });
         expect(anonAuth.signUp).not.toHaveBeenCalled();
       });
 

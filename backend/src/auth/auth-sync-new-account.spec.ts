@@ -84,6 +84,12 @@ describe('AuthService.syncProfile — a new account', () => {
   let upsert: jest.Mock<Promise<unknown>, [UserWriteArgs]>;
   let update: jest.Mock<Promise<unknown>, [UserWriteArgs]>;
 
+  /** Confession handles that exist (FEAT-11). */
+  let handles: Set<string>;
+  const handleFindUnique = jest.fn((args: { where: { handleKey: string } }) =>
+    Promise.resolve(handles.has(args.where.handleKey) ? { id: 'p' } : null),
+  );
+
   const build = (client: object = {}) => {
     update = jest.fn<Promise<unknown>, [UserWriteArgs]>().mockResolvedValue({});
     const prisma = {
@@ -93,6 +99,7 @@ describe('AuthService.syncProfile — a new account', () => {
         upsert,
         update,
       },
+      confessionProfile: { findUnique: handleFindUnique },
     };
     return new AuthService(
       stub<PrismaService>(prisma),
@@ -109,6 +116,7 @@ describe('AuthService.syncProfile — a new account', () => {
   };
 
   beforeEach(() => {
+    handles = new Set();
     clearAuthSyncCacheLocal();
     upsert = jest
       .fn<Promise<unknown>, [UserWriteArgs]>()
@@ -137,6 +145,16 @@ describe('AuthService.syncProfile — a new account', () => {
     });
 
     expect(upsert).toHaveBeenCalledTimes(1);
+    const args = upsert.mock.calls[0][0];
+    expect(args.create?.username).toBe(`user_${USER_ID.slice(0, 8)}`);
+  });
+
+  it("never takes somebody's confession handle as the username (FEAT-11)", async () => {
+    handles.add('nightowl');
+    await build().syncProfile({
+      ...VERIFIED_SIGNUP,
+      user_metadata: { ...VERIFIED_SIGNUP.user_metadata, username: 'NightOwl' },
+    });
     const args = upsert.mock.calls[0][0];
     expect(args.create?.username).toBe(`user_${USER_ID.slice(0, 8)}`);
   });
@@ -186,6 +204,13 @@ describe('AuthService.syncProfile — a new account', () => {
 
     it('leaves a chosen handle that merely starts with user_ alone', async () => {
       existing('user_manager');
+      await build(adminClient('ravi')).syncProfile(VERIFIED_SIGNUP);
+      expect(usernameWrites()).toHaveLength(0);
+    });
+
+    it("will not heal a fallback into somebody's confession handle (FEAT-11)", async () => {
+      handles.add('ravi');
+      existing('user_0a1b2c3d');
       await build(adminClient('ravi')).syncProfile(VERIFIED_SIGNUP);
       expect(usernameWrites()).toHaveLength(0);
     });
@@ -254,6 +279,9 @@ describe('AuthService — signup without a college', () => {
           findUnique: jest.fn().mockResolvedValue(null),
           upsert,
           update,
+        },
+        confessionProfile: {
+          findUnique: jest.fn(() => Promise.resolve(null)),
         },
       }),
       stub<SupabaseService>({ isConfigured: true, client: {} }),
