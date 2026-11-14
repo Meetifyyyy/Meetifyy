@@ -2,6 +2,19 @@ import type { ConfigService } from '@nestjs/config';
 import type Redis from 'ioredis';
 import { stub } from '../common/testing/stub';
 import { RedisService } from './redis.service';
+import { Logger } from '@nestjs/common';
+import { config } from '../config';
+
+/**
+ * Built with no Redis URL (D-11): the constructor otherwise opens real
+ * connections to whatever REDIS_URL names on the machine running jest. The
+ * tests set the client fields themselves.
+ */
+beforeEach(() => {
+  jest.replaceProperty(config.redis, 'url', '');
+  jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+});
+afterEach(() => jest.restoreAllMocks());
 
 describe('RedisService heartbeat', () => {
   function connection(status: Redis['status']) {
