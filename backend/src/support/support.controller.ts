@@ -87,8 +87,13 @@ export class SupportController {
   }
 
   @Get('help/search')
-  searchHelp(@Query('q') query?: string) {
-    return this.help.searchPublicContent(query ?? '');
+  @UseGuards(RateLimitPolicyGuard)
+  @RateLimit('help.search.ip')
+  searchHelp(@Query('q') query?: unknown) {
+    // `?q=a&q=b` arrives as an array; only a string is a search.
+    return this.help.searchPublicContent(
+      typeof query === 'string' ? query : '',
+    );
   }
 
   @Get('help/articles/:slug')

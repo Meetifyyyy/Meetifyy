@@ -2,6 +2,8 @@ import { VerificationUploadCollectorService } from './verification-upload-collec
 import { stub } from '../common/testing/stub';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { StorageService } from '../uploads/uploads.service';
+import { config } from '../config';
+import { positiveOr } from '../config/features.config';
 
 /**
  * Submitted verification documents are retained indefinitely. This collector
@@ -35,7 +37,11 @@ describe('VerificationUploadCollectorService', () => {
   let service: VerificationUploadCollectorService;
 
   beforeEach(() => {
-    delete process.env.VERIFICATION_ABANDONED_UPLOAD_HOURS;
+    jest.replaceProperty(
+      config.features,
+      'verificationAbandonedUploadHours',
+      24,
+    );
     prisma = {
       media: {
         findMany: jest.fn((_query: CandidateQuery): Promise<MediaRow[]> =>
@@ -53,7 +59,7 @@ describe('VerificationUploadCollectorService', () => {
     );
   });
 
-  afterAll(() => delete process.env.VERIFICATION_ABANDONED_UPLOAD_HOURS);
+  afterEach(() => jest.restoreAllMocks());
 
   const where = () => prisma.media.findMany.mock.calls[0][0].where;
 
@@ -78,21 +84,24 @@ describe('VerificationUploadCollectorService', () => {
   });
 
   it('lets an operator tune the grace period', async () => {
-    process.env.VERIFICATION_ABANDONED_UPLOAD_HOURS = '2';
+    jest.replaceProperty(
+      config.features,
+      'verificationAbandonedUploadHours',
+      2,
+    );
     const before = Date.now();
     await service.sweep();
     const cutoff = where().createdAt.lt.getTime();
     expect(before - cutoff).toBeLessThan(3 * HOUR);
   });
 
-  it('ignores a nonsense grace value rather than sweeping everything', async () => {
-    process.env.VERIFICATION_ABANDONED_UPLOAD_HOURS = 'not-a-number';
-    const before = Date.now();
-    await service.sweep();
-    // Falls back to the default instead of a cutoff of "now".
-    expect(before - where().createdAt.lt.getTime()).toBeGreaterThanOrEqual(
-      24 * HOUR - 5000,
-    );
+  it('ignores a nonsense grace value rather than sweeping everything', () => {
+    // Parsed in config (ID-28): anything not a positive number means the
+    // default, never a cutoff of "now".
+    for (const raw of ['not-a-number', '', '0', '-3']) {
+      expect(positiveOr(Number(raw), 24)).toBe(24);
+    }
+    expect(positiveOr(Number('2'), 24)).toBe(2);
   });
 
   it('removes the object and then the row', async () => {

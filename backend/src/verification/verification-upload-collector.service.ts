@@ -10,6 +10,7 @@ import { RedisService } from '../redis/redis.service';
 import { runOnOneReplica } from '../redis/run-on-one-replica';
 import { traceBackground } from '../observability/background-trace';
 import { StorageService } from '../uploads/uploads.service';
+import { config } from '../config';
 
 /**
  * Collects verification uploads that were never submitted.
@@ -55,9 +56,7 @@ export class VerificationUploadCollectorService
    * genuinely abandoned file is still abandoned tomorrow.
    */
   private get graceMs(): number {
-    const raw = Number(process.env.VERIFICATION_ABANDONED_UPLOAD_HOURS);
-    const hours = Number.isFinite(raw) && raw > 0 ? raw : 24;
-    return hours * 60 * 60 * 1000;
+    return config.features.verificationAbandonedUploadHours * 60 * 60 * 1000;
   }
 
   constructor(

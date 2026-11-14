@@ -26,6 +26,7 @@ import { VerificationAccessService } from '../verification/verification-access.s
 import { DomainEventService } from '../../events/domain-event.service';
 import { IS_VERIFIED_ONLY_KEY } from '../decorators/verified-only.decorator';
 import { stub } from '../testing/stub';
+import { config } from '../../config';
 
 /**
  * Builds a minimal ExecutionContext double that simulates either an HTTP or
@@ -72,7 +73,8 @@ describe('VerificationGuard', () => {
     user: { findUnique: jest.fn() },
   };
 
-  const originalEnv = process.env.FEATURE_VERIFICATION_ENABLED;
+  // The gate's switch, read from config (ID-28) rather than process.env.
+  let enforced: jest.ReplaceProperty<boolean>;
 
   beforeEach(async () => {
     const module = await Test.createTestingModule({
@@ -91,11 +93,15 @@ describe('VerificationGuard', () => {
     reflector = module.get<Reflector>(Reflector);
     jest.clearAllMocks();
     // Default: feature flag enabled
-    delete process.env.FEATURE_VERIFICATION_ENABLED;
+    enforced = jest.replaceProperty(
+      config.features,
+      'verificationEnforced',
+      true,
+    );
   });
 
   afterEach(() => {
-    process.env.FEATURE_VERIFICATION_ENABLED = originalEnv;
+    enforced.restore();
   });
 
   // ── Helper: makes Reflector return the given isVerifiedOnly value ─────────
@@ -123,7 +129,7 @@ describe('VerificationGuard', () => {
 
   describe('when FEATURE_VERIFICATION_ENABLED=false', () => {
     beforeEach(() => {
-      process.env.FEATURE_VERIFICATION_ENABLED = 'false';
+      enforced.replaceValue(false);
     });
 
     it('skips DB check and passes any user through', async () => {
@@ -397,7 +403,7 @@ describe('VerificationGuard', () => {
       app.use(cookieParser());
       await app.init();
       module.get(VerificationAccessService).invalidateAll();
-      delete process.env.FEATURE_VERIFICATION_ENABLED;
+      enforced.replaceValue(true);
     });
 
     afterEach(async () => {

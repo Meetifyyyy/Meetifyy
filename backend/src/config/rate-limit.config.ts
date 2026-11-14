@@ -50,8 +50,12 @@ import { IS_PRODUCTION, APP_ENV, int, oneOf, str } from './env';
  *     routes gained per-user budgets, and the OTP limiter fails closed.
  * v16: Instant Match chat-state reads and queue cancels got per-user budgets
  *     (E-7, IM-20); both were unlimited, and chat-state is a database read.
+ * v17: the public help search got a per-IP budget (E-12, ID-36); it scanned
+ *     article bodies for any caller with only the global tier. The admin
+ *     per-account sign-in budget keeps its numbers but is now spent only by a
+ *     failed attempt (E-11, ADM-4).
  */
-export const POLICY_VERSION = 16;
+export const POLICY_VERSION = 17;
 
 export type RateLimitAlgorithm = 'fixed-window' | 'token-bucket';
 
@@ -877,6 +881,17 @@ export const RATE_LIMIT_POLICIES = {
   },
 
   /** Unauthenticated support intake, per IP. Value unchanged. */
+  /**
+   * Public help-centre search. Unauthenticated, and each call scans article
+   * bodies; a person searching never comes near this.
+   */
+  'help.search.ip': {
+    points: 30,
+    duration: 60,
+    dimension: 'ip',
+    onRedisFailure: 'open',
+    message: 'Too many searches. Please wait a moment and try again.',
+  },
   'support.request.ip': {
     points: 5,
     duration: 3600,

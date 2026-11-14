@@ -3,6 +3,7 @@ import { VerificationAccessService } from './verification-access.service';
 import { stub } from '../testing/stub';
 import type { PrismaService } from '../../prisma/prisma.service';
 import type { DomainEventService } from '../../events/domain-event.service';
+import { config } from '../../config';
 
 /**
  * Latency characterisation for the verification gate.
@@ -23,7 +24,7 @@ describe('VerificationAccessService — latency profile', () => {
     ];
 
   beforeEach(() => {
-    delete process.env.FEATURE_VERIFICATION_ENABLED;
+    jest.replaceProperty(config.features, 'verificationEnforced', true);
     queries = 0;
     const delay = () => new Promise((r) => setTimeout(r, DB_LATENCY_MS));
     const prisma = {
@@ -136,7 +137,7 @@ describe('VerificationAccessService — latency profile', () => {
   });
 
   it('adds no query at all when enforcement is disabled', async () => {
-    process.env.FEATURE_VERIFICATION_ENABLED = 'false';
+    jest.replaceProperty(config.features, 'verificationEnforced', false);
     for (let i = 0; i < 100; i++) await service.isUserEligible(`u${i}`);
     await service.getEligibilityMap(['a', 'b', 'c']);
     expect(queries).toBe(0);

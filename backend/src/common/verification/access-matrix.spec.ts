@@ -23,6 +23,7 @@ import { MessagesController } from '../../messages/messages.controller';
 import { GroupChatsController } from '../../messages/group-chats/group-chats.controller';
 import { GroupInvitesController } from '../../messages/group-chats/group-invites.controller';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
+import { config } from '../../config';
 
 /**
  * The access-control matrix: every account state against a gated action, over
@@ -93,7 +94,7 @@ describe('verification access matrix', () => {
   };
 
   beforeEach(() => {
-    delete process.env.FEATURE_VERIFICATION_ENABLED;
+    jest.replaceProperty(config.features, 'verificationEnforced', true);
     prisma = {
       user: { findUnique: jest.fn(), findMany: jest.fn() },
       conversationParticipant: { findMany: jest.fn(() => Promise.resolve([])) },
@@ -166,7 +167,7 @@ describe('verification access matrix', () => {
   });
 
   it('opens everything when the feature flag is off', async () => {
-    process.env.FEATURE_VERIFICATION_ENABLED = 'false';
+    jest.replaceProperty(config.features, 'verificationEnforced', false);
     asUser(VerificationStatus.UNVERIFIED);
     await expect(
       guard.canActivate(context({ type: 'http', userId: 'u1' })),

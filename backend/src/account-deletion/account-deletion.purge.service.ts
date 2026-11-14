@@ -17,6 +17,7 @@ import {
   PURGE_TRANSACTION_MAX_WAIT_MS,
   PURGE_TRANSACTION_TIMEOUT_MS,
 } from './account-deletion.constants';
+import { config } from '../config';
 
 export interface PurgeSweepResult {
   claimed: number;
@@ -698,8 +699,9 @@ export class AccountDeletionPurgeService {
    * anyway — `syncUser` refuses a DELETED row.
    */
   private deleteSupabaseIdentity(userId: string): void {
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    // Through config (ID-28), which validated both at boot.
+    const supabaseUrl = config.auth.supabase.url;
+    const serviceRoleKey = config.auth.supabase.serviceRoleKey;
     if (!supabaseUrl || !serviceRoleKey) {
       this.logger.warn(
         `Supabase env not configured — auth identity for ${userId} not removed`,

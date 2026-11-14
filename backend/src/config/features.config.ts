@@ -7,6 +7,11 @@ import { IS_DEVELOPMENT, IS_PRODUCTION, bool, oneOf, str } from './env';
  * `process.env.NODE_ENV === 'development'` — so a staging box can turn a
  * development affordance on without pretending to be a development build.
  */
+/** `value` when it is a positive number, otherwise `fallback`. */
+export function positiveOr(value: number, fallback: number): number {
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
 export const featuresConfigValues = {
   /** `/dev/email/*` preview endpoints. Never available in production. */
   enableDevEndpoints: IS_PRODUCTION
@@ -30,6 +35,21 @@ export const featuresConfigValues = {
    * with no client change, which is the escape hatch if ranking misbehaves.
    */
   feedRanking: bool('FEATURE_FEED_RANKING', { default: 'true' }),
+  /**
+   * The verification gate. Anything but the literal `false` keeps it on: the
+   * exact rule the guard always applied, so moving the read here (ID-28)
+   * changes no deployment's behaviour, and an unexpected value cannot fail
+   * boot.
+   */
+  verificationEnforced: str('FEATURE_VERIFICATION_ENABLED') !== 'false',
+  /**
+   * Hours an unsubmitted verification upload is left alone before the
+   * collector removes it. Anything not a positive number means 24, as before.
+   */
+  verificationAbandonedUploadHours: positiveOr(
+    Number(str('VERIFICATION_ABANDONED_UPLOAD_HOURS')),
+    24,
+  ),
   // NOTE: `relaxedRateLimits` was removed deliberately. It defaulted to true
   // outside production, so every rate limit in the application was inert in
   // local development, dev, staging and CI — production was the only

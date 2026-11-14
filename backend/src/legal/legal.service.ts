@@ -348,6 +348,9 @@ export class LegalService {
     const rows = await this.prisma.legalAcknowledgement.findMany({
       where: { userId },
       orderBy: { acknowledgedAt: 'desc' },
+      // Bounded (ID-37): one row per document version accepted, so this is
+      // far above any real history, and a ceiling all the same.
+      take: 200,
       select: {
         documentType: true,
         versionNumber: true,

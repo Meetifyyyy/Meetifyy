@@ -12,6 +12,7 @@ import { PresenceService } from '../presence/presence.service';
 import { AcademicsService } from '../academics/academics.service';
 import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
 import { VerificationAccessService } from '../common/verification/verification-access.service';
+import { config } from '../config';
 
 /**
  * `/api/users/connections` is the recipient list behind every Invite selector
@@ -88,11 +89,11 @@ describe('UsersService — selector eligibility', () => {
     }).compile();
 
     service = moduleRef.get(UsersService);
-    delete process.env.FEATURE_VERIFICATION_ENABLED;
+    jest.replaceProperty(config.features, 'verificationEnforced', true);
   });
 
   afterEach(() => {
-    delete process.env.FEATURE_VERIFICATION_ENABLED;
+    jest.replaceProperty(config.features, 'verificationEnforced', true);
   });
 
   /**
@@ -176,7 +177,7 @@ describe('UsersService — selector eligibility', () => {
   });
 
   it('lifts the restriction when enforcement is disabled', async () => {
-    process.env.FEATURE_VERIFICATION_ENABLED = 'false';
+    jest.replaceProperty(config.features, 'verificationEnforced', false);
     await service.getConnections('me');
     expect(whereOf().verificationStatus).toBeUndefined();
   });

@@ -14,6 +14,9 @@ const PUBLISHED = HelpContentStatus.PUBLISHED;
 /** Keeps one runaway article body from becoming a 200 KB search response. */
 const EXCERPT_LENGTH = 220;
 const SEARCH_LIMIT = 25;
+/** Longest search term considered, and most keywords matched (ID-36). */
+const SEARCH_QUERY_MAX = 100;
+const SEARCH_KEYWORDS_MAX = 10;
 
 @Injectable()
 export class HelpService {
@@ -111,7 +114,9 @@ export class HelpService {
    * the article titled "Resetting your password".
    */
   async searchPublicContent(rawQuery: string) {
-    const query = (rawQuery ?? '').trim();
+    // Bounded (ID-36): no question is longer than this, and an unbounded term
+    // is an unbounded pattern for every article body.
+    const query = (rawQuery ?? '').trim().slice(0, SEARCH_QUERY_MAX);
 
     // One character matches almost everything and is never a real search.
     if (query.length < 2) {
@@ -136,6 +141,7 @@ export class HelpService {
               hasSome: query
                 .split(/\s+/)
                 .filter(Boolean)
+                .slice(0, SEARCH_KEYWORDS_MAX)
                 .map((w) => w.toLowerCase()),
             },
           },

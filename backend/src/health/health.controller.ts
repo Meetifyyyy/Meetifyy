@@ -1,4 +1,5 @@
 import { Controller, Get } from '@nestjs/common';
+import { config } from '../config';
 
 @Controller('health')
 export class HealthController {
@@ -20,7 +21,7 @@ export class HealthController {
   check() {
     return {
       status: 'ok',
-      commit: process.env.GIT_COMMIT_SHA || null,
+      commit: config.app.observability.gitCommitSha || null,
       timestamp: new Date().toISOString(),
     };
   }

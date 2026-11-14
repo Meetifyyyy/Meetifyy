@@ -3,6 +3,7 @@ import { VerificationStatus } from '@prisma/client';
 import { VerificationAccessService } from './verification-access.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DomainEventService } from '../../events/domain-event.service';
+import { config } from '../../config';
 
 /**
  * The rule: a user may appear in a Share or Invite selector only if their
@@ -33,11 +34,11 @@ describe('selector eligibility', () => {
     }).compile();
     service = moduleRef.get(VerificationAccessService);
     service.invalidateAll();
-    delete process.env.FEATURE_VERIFICATION_ENABLED;
+    jest.replaceProperty(config.features, 'verificationEnforced', true);
   });
 
   afterEach(() => {
-    delete process.env.FEATURE_VERIFICATION_ENABLED;
+    jest.replaceProperty(config.features, 'verificationEnforced', true);
   });
 
   describe('the canonical rule', () => {
@@ -79,7 +80,7 @@ describe('selector eligibility', () => {
       // The kill switch has to behave identically here and in every runtime
       // check: a deployment with verification disabled must not still produce
       // empty selectors.
-      process.env.FEATURE_VERIFICATION_ENABLED = 'false';
+      jest.replaceProperty(config.features, 'verificationEnforced', false);
       expect(service.eligibleUserWhere()).toEqual({});
     });
 
@@ -109,7 +110,7 @@ describe('selector eligibility', () => {
     });
 
     it('collapses to TRUE when enforcement is off, so it stays composable', () => {
-      process.env.FEATURE_VERIFICATION_ENABLED = 'false';
+      jest.replaceProperty(config.features, 'verificationEnforced', false);
       expect(service.eligibleUserSqlPredicate()).toBe('TRUE');
     });
 

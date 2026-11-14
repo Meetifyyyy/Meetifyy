@@ -2,6 +2,7 @@ import { Injectable, ForbiddenException, Logger } from '@nestjs/common';
 import { AccountStatus, VerificationStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DomainEventService } from '../../events/domain-event.service';
+import { config } from '../../config';
 
 /** Machine-readable code the client keys its "verify your account" prompt off. */
 export const VERIFICATION_REQUIRED_CODE = 'VERIFICATION_REQUIRED';
@@ -105,7 +106,7 @@ export class VerificationAccessService {
    * deployment with verification disabled must not still block DMs.
    */
   isEnforcementEnabled(): boolean {
-    return process.env.FEATURE_VERIFICATION_ENABLED !== 'false';
+    return config.features.verificationEnforced;
   }
 
   /**

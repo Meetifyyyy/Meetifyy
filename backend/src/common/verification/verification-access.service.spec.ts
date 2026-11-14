@@ -4,6 +4,7 @@ import { VerificationAccessService } from './verification-access.service';
 import { stub } from '../testing/stub';
 import type { PrismaService } from '../../prisma/prisma.service';
 import type { DomainEventService } from '../../events/domain-event.service';
+import { config } from '../../config';
 
 /** The Prisma surface the eligibility checks read. */
 const makePrisma = () => ({
@@ -14,7 +15,6 @@ const makePrisma = () => ({
 });
 
 describe('VerificationAccessService', () => {
-  const originalFlag = process.env.FEATURE_VERIFICATION_ENABLED;
   let prisma: ReturnType<typeof makePrisma>;
   let domainEvents: { emit: jest.Mock };
   let service: VerificationAccessService;
@@ -44,7 +44,7 @@ describe('VerificationAccessService', () => {
   };
 
   beforeEach(() => {
-    delete process.env.FEATURE_VERIFICATION_ENABLED;
+    jest.replaceProperty(config.features, 'verificationEnforced', true);
     prisma = makePrisma();
     domainEvents = { emit: jest.fn(async () => {}) };
     service = new VerificationAccessService(
@@ -55,11 +55,7 @@ describe('VerificationAccessService', () => {
     service.invalidateAll();
   });
 
-  afterAll(() => {
-    if (originalFlag === undefined)
-      delete process.env.FEATURE_VERIFICATION_ENABLED;
-    else process.env.FEATURE_VERIFICATION_ENABLED = originalFlag;
-  });
+  afterEach(() => jest.restoreAllMocks());
 
   it('treats VERIFIED as the only eligible status', () => {
     expect(service.isEligibleStatus(VerificationStatus.VERIFIED)).toBe(true);
@@ -174,7 +170,7 @@ describe('VerificationAccessService', () => {
   });
 
   it('is a no-op everywhere when the feature flag is off', async () => {
-    process.env.FEATURE_VERIFICATION_ENABLED = 'false';
+    jest.replaceProperty(config.features, 'verificationEnforced', false);
     seed([{ id: 'sender', verificationStatus: VerificationStatus.UNVERIFIED }]);
     await expect(
       service.assertUsersEligible(['sender', 'recipient'], 'sender'),
@@ -225,7 +221,7 @@ describe('VerificationAccessService — status cache', () => {
   };
 
   beforeEach(() => {
-    delete process.env.FEATURE_VERIFICATION_ENABLED;
+    jest.replaceProperty(config.features, 'verificationEnforced', true);
     prisma = makePrisma();
     service = new VerificationAccessService(
       stub<PrismaService>(prisma),

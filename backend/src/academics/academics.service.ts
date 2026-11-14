@@ -8,6 +8,16 @@ import {
   findCourse,
   formatAcademicSummary,
 } from './academic-catalog';
+import { ShortLivedValue } from '../common/utils/short-lived-value.util';
+
+/** One approved college, as the public list shows it. */
+export interface CollegeSummary {
+  id: string;
+  name: string;
+  shortName?: string | null;
+  domains: string[];
+  logoUrl: string | null;
+}
 
 /** Shape persisted on the user record. */
 export interface AcademicSelection {
@@ -38,15 +48,19 @@ export class AcademicsService {
   /**
    * Fetches active approved colleges and their domains from the database.
    */
-  async getColleges(): Promise<
-    Array<{
-      id: string;
-      name: string;
-      shortName?: string | null;
-      domains: string[];
-      logoUrl: string | null;
-    }>
-  > {
+  async getColleges(): Promise<CollegeSummary[]> {
+    if (!this.prisma) return [];
+    return this.colleges.get(() => this.readColleges());
+  }
+
+  /**
+   * Public, unauthenticated, and loaded by every signup and directory screen
+   * (ID-37), so it is read at most once a minute per replica. A newly approved
+   * college appears within that minute.
+   */
+  private readonly colleges = new ShortLivedValue<CollegeSummary[]>(60_000);
+
+  private async readColleges(): Promise<CollegeSummary[]> {
     if (!this.prisma) return [];
     const colleges = await this.prisma.college.findMany({
       where: {
