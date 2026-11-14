@@ -75,7 +75,14 @@ export class AdminAuthService implements OnModuleInit {
   }
 
   /**
-   * Seed/sync Super Admin account on startup
+   * Creates the Super Admin from the environment on startup, and keeps its
+   * password in step with it (there is no in-app password change, so the
+   * environment is how the password is set and rotated).
+   *
+   * It never re-enables an admin disabled in the database (SEC-14, ADM-3).
+   * Setting `isActive = false` is the only kill switch there is, and this
+   * used to undo it on the next restart or deploy. Turning the account back
+   * on is now a deliberate act in the database.
    */
   async seedDefaultSuperAdmin() {
     try {
@@ -92,14 +99,18 @@ export class AdminAuthService implements OnModuleInit {
       const existing = await this.prisma.superAdmin.findUnique({
         where: { email },
       });
+      if (existing && !existing.isActive) {
+        this.logger.warn(
+          `Super Admin ${email} is disabled in the database; leaving it disabled.`,
+        );
+        return;
+      }
       if (existing) {
         const isSamePassword = await bcrypt.compare(
           pass,
           existing.passwordHash,
         );
-        if (isSamePassword && existing.isActive) {
-          return;
-        }
+        if (isSamePassword) return;
       }
 
       // Cost 12, not 10. bcrypt's factor is the only thing standing between a
@@ -111,10 +122,8 @@ export class AdminAuthService implements OnModuleInit {
 
       await this.prisma.superAdmin.upsert({
         where: { email },
-        update: {
-          passwordHash,
-          isActive: true,
-        },
+        // Only the password: an existing admin here is an active one.
+        update: { passwordHash },
         create: {
           email,
           passwordHash,

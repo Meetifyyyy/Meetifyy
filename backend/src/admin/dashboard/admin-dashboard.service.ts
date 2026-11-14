@@ -3,17 +3,50 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { config } from '../../config';
 import { RedisService } from '../../redis/redis.service';
 import { stringField } from '../../common/utils/type-guards.util';
+import { ShortLivedValue } from '../../common/utils/short-lived-value.util';
+
+/** The dashboard's headline counts. */
+export interface DashboardStats {
+  totalUsers: number;
+  activeToday: number;
+  newToday: number;
+  verifiedStudents: number;
+  totalColleges: number;
+  totalPosts: number;
+  totalCommunities: number;
+  totalActivities: number;
+  pendingReports: number;
+  openSupportTickets: number;
+}
+
+/** Registrations per local day, oldest first. */
+export interface DashboardCharts {
+  registrations: Array<{ date: string; registrations: number }>;
+}
 
 @Injectable()
 export class AdminDashboardService {
   private readonly logger = new Logger(AdminDashboardService.name);
+
+  /**
+   * The counts are polled every 30 s by every open dashboard tab, and the chart
+   * every 2 minutes (ADM-13, ADM-14). Kept for exactly those windows, so the
+   * database does each once per window per replica whatever the number of
+   * tabs; the numbers are no staler than a single tab already showed.
+   */
+  private readonly stats = new ShortLivedValue<DashboardStats>(30_000);
+  private readonly charts = new ShortLivedValue<DashboardCharts>(120_000);
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly redisService: RedisService,
   ) {}
 
-  async getStats() {
+  getStats(): Promise<DashboardStats> {
+    return this.stats.get(() => this.computeStats());
+  }
+
+  private async computeStats(): Promise<DashboardStats> {
     const now = new Date();
     const startOfToday = new Date(
       now.getFullYear(),
@@ -187,7 +220,11 @@ export class AdminDashboardService {
    *
    * Both now derive from the same local-midnight boundary that getStats uses.
    */
-  async getCharts() {
+  getCharts(): Promise<DashboardCharts> {
+    return this.charts.get(() => this.computeCharts());
+  }
+
+  private async computeCharts(): Promise<DashboardCharts> {
     const DAYS = 30;
     const now = new Date();
     const startOfToday = new Date(
@@ -199,10 +236,18 @@ export class AdminDashboardService {
     const windowStart = new Date(startOfToday);
     windowStart.setDate(windowStart.getDate() - (DAYS - 1));
 
-    const users = await this.prisma.user.findMany({
-      where: { createdAt: { gte: windowStart }, deletedAt: null },
-      select: { createdAt: true },
-    });
+    // Counted per day in the database (ADM-14): this used to load every
+    // registration of the last 30 days into Node to bucket them. The day is
+    // the server's LOCAL calendar day, the same boundary getStats uses:
+    // timestamps are stored in UTC, so each is read as UTC and converted to
+    // this process's time zone before taking its date.
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    const days = await this.prisma.$queryRaw<Array<{ day: string; n: number }>>`
+      SELECT to_char(("createdAt" AT TIME ZONE 'UTC') AT TIME ZONE ${zone}, 'YYYY-MM-DD') AS day,
+             count(*)::int AS n
+      FROM "User"
+      WHERE "createdAt" >= ${windowStart} AND "deletedAt" IS NULL
+      GROUP BY 1`;
 
     const countsByDay = new Map<string, number>();
     for (let i = 0; i < DAYS; i++) {
@@ -211,10 +256,8 @@ export class AdminDashboardService {
       countsByDay.set(AdminDashboardService.localDayKey(d), 0);
     }
 
-    for (const u of users) {
-      const key = AdminDashboardService.localDayKey(u.createdAt);
-      const current = countsByDay.get(key);
-      if (current !== undefined) countsByDay.set(key, current + 1);
+    for (const { day, n } of days) {
+      if (countsByDay.has(day)) countsByDay.set(day, n);
     }
 
     return {

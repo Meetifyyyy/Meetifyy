@@ -14,30 +14,6 @@ import { RedisService } from '../../redis/redis.service';
  * chart pinned to zero.
  */
 describe('AdminDashboardService - registrations chart', () => {
-  let service: AdminDashboardService;
-  let findMany: jest.Mock<
-    Promise<{ createdAt: Date }[]>,
-    [{ where: { deletedAt?: unknown } }]
-  >;
-
-  const build = async (createdAt: Date[]) => {
-    findMany = jest
-      .fn<
-        Promise<{ createdAt: Date }[]>,
-        [{ where: { deletedAt?: unknown } }]
-      >()
-      .mockResolvedValue(createdAt.map((d) => ({ createdAt: d })));
-    const moduleRef = await Test.createTestingModule({
-      providers: [
-        AdminDashboardService,
-        { provide: PrismaService, useValue: { user: { findMany } } },
-        { provide: RedisService, useValue: { getClient: () => null } },
-      ],
-    }).compile();
-    service = moduleRef.get(AdminDashboardService);
-    return service.getCharts();
-  };
-
   /** Local midnight n days ago, matching how the service builds its buckets. */
   const daysAgo = (n: number) => {
     const d = new Date();
@@ -48,6 +24,35 @@ describe('AdminDashboardService - registrations chart', () => {
 
   const localKey = (d: Date) =>
     `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+  let service: AdminDashboardService;
+  let queryRaw: jest.Mock<
+    Promise<Array<{ day: string; n: number }>>,
+    [TemplateStringsArray, ...unknown[]]
+  >;
+
+  /**
+   * The database answers with a count per local day (ADM-14); this stands in
+   * for it. The SQL's own grouping is checked on Postgres in
+   * admin-dashboard.charts.db.spec.ts.
+   */
+  const build = async (createdAt: Date[]) => {
+    const perDay = new Map<string, number>();
+    for (const d of createdAt)
+      perDay.set(localKey(d), (perDay.get(localKey(d)) ?? 0) + 1);
+    queryRaw = jest.fn((_sql: TemplateStringsArray, ..._values: unknown[]) =>
+      Promise.resolve([...perDay].map(([day, n]) => ({ day, n }))),
+    );
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        AdminDashboardService,
+        { provide: PrismaService, useValue: { $queryRaw: queryRaw } },
+        { provide: RedisService, useValue: { getClient: () => null } },
+      ],
+    }).compile();
+    service = moduleRef.get(AdminDashboardService);
+    return service.getCharts();
+  };
 
   it('returns exactly 30 days', async () => {
     const { registrations } = await build([]);
@@ -104,7 +109,16 @@ describe('AdminDashboardService - registrations chart', () => {
     // The chart used to count soft-deleted users while the "Total Users" card
     // beside it did not, so the two disagreed.
     await build([]);
-    expect(findMany.mock.calls[0][0].where.deletedAt).toBeNull();
+    expect(queryRaw.mock.calls[0][0].join('?')).toContain(
+      '"deletedAt" IS NULL',
+    );
+  });
+
+  it('is counted once per two minutes, however many tabs ask', async () => {
+    await build([daysAgo(0)]);
+    await service.getCharts();
+    await service.getCharts();
+    expect(queryRaw).toHaveBeenCalledTimes(1);
   });
 
   it('keys buckets by local date, matching how getStats defines "today"', async () => {

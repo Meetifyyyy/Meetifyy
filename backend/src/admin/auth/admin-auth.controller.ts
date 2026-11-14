@@ -32,10 +32,19 @@ import {
 import { RateLimit } from '../../common/rate-limit/rate-limit.decorator';
 import { RateLimitPolicyGuard } from '../../common/rate-limit/rate-limit-policy.guard';
 import { clientIp } from '../../common/rate-limit/client-ip.util';
+import { RateLimitService } from '../../common/rate-limit/rate-limit.service';
+import {
+  rateLimitException,
+  requestIdOf,
+} from '../../common/rate-limit/rate-limit.response';
+import { normalizeEmail } from '../../common/validation/email-format.util';
 
 @Controller('admin/auth')
 export class AdminAuthController {
-  constructor(private readonly authService: AdminAuthService) {}
+  constructor(
+    private readonly authService: AdminAuthService,
+    private readonly rateLimit: RateLimitService,
+  ) {}
 
   private setAuthCookies(
     res: Response,
@@ -54,14 +63,40 @@ export class AdminAuthController {
   // Stricter than user login and blocked for longer: these credentials are the
   // highest-value target in the system and the console is public-facing.
   @UseGuards(RateLimitPolicyGuard)
-  @RateLimit('admin.login.ip', 'admin.login.account')
+  @RateLimit('admin.login.ip')
   async login(@Body() dto: AdminLoginDto, @Req() req: AdminRequest) {
     // `req.ip` rather than the raw header: this address is written to the login
     // audit trail, and the header is caller-controlled — an attacker could
     // forge every entry attributing their attempts to someone else.
     const ip = clientIp(req) || '0.0.0.0';
     const userAgent = req.headers['user-agent'] || 'Unknown';
-    return this.authService.login(dto, ip, userAgent);
+
+    // The per-account budget is only CHECKED on the way in and spent by a
+    // failed attempt (ADM-4), the same as user login. Charged up front, as it
+    // was, five requests from anywhere locked the owner out for half an hour,
+    // and a correct sign-in counted against them too. The per-IP budget above
+    // still counts every attempt.
+    const account = normalizeEmail(dto.email) || null;
+    if (account) {
+      const decision = await this.rateLimit.check(
+        'admin.login.account',
+        account,
+      );
+      if (!decision.allowed) {
+        throw rateLimitException(decision, requestIdOf(req));
+      }
+    }
+    try {
+      return await this.authService.login(dto, ip, userAgent);
+    } catch (error) {
+      if (account) {
+        // Never changes the error the caller sees.
+        await this.rateLimit
+          .penalize('admin.login.account', account)
+          .catch(() => undefined);
+      }
+      throw error;
+    }
   }
 
   @Post('verify-otp')

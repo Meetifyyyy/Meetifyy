@@ -11,6 +11,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { RedisService } from '../../redis/redis.service';
 import { EmailUsageService } from '../../email/email-usage.service';
 import { SlowRequestRetentionService } from '../../observability/slow-request-retention.service';
+import { ShortLivedValue } from '../../common/utils/short-lived-value.util';
 
 /**
  * Infrastructure and resource usage, measured rather than asserted.
@@ -66,6 +67,13 @@ function surfaceFilter(surface: SlowRequestSurface) {
   return {};
 }
 
+/** What the infrastructure page shows. */
+export interface InfrastructureReport {
+  generatedAt: string;
+  services: ServiceReport[];
+  unconfigured: Array<{ name: string; requires: string[] }>;
+}
+
 @Injectable()
 export class AdminAnalyticsService {
   private readonly logger = new Logger(AdminAnalyticsService.name);
@@ -78,12 +86,22 @@ export class AdminAnalyticsService {
     private readonly retention: SlowRequestRetentionService,
   ) {}
 
+  /**
+   * The probes run once per 30 s per replica, shared by every open analytics
+   * tab (ADM-15). Each run calls Redis, R2 (up to 20 list pages), the email
+   * providers and Azure; the page polls every minute and shows `generatedAt`,
+   * so a reader can see how fresh the panel is.
+   */
+  private readonly infrastructure = new ShortLivedValue<InfrastructureReport>(
+    30_000,
+  );
+
   /** Every service panel, probed concurrently so one slow provider can't stall the page. */
-  async getInfrastructure(): Promise<{
-    generatedAt: string;
-    services: ServiceReport[];
-    unconfigured: Array<{ name: string; requires: string[] }>;
-  }> {
+  getInfrastructure(): Promise<InfrastructureReport> {
+    return this.infrastructure.get(() => this.probeInfrastructure());
+  }
+
+  private async probeInfrastructure(): Promise<InfrastructureReport> {
     const [database, redis, storage, emailReports, azure] = await Promise.all([
       this.probeDatabase(),
       this.probeRedis(),
