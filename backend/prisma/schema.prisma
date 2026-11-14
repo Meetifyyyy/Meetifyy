@@ -2302,5 +2302,8 @@ model ConfessionReaction {
 
   @@id([confessionId, profileId])
   @@index([profileId])
+  /// The per-kind totals (a page's counts, and every reaction's answer) are
+  /// read from this index alone, without visiting each reaction row (E-10).
+  @@index([confessionId, reaction])
   @@map("ConfessionRelate")
 }

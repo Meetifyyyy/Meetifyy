@@ -238,4 +238,12 @@ describeDb('confession reactions (database)', () => {
     ).toBe(0);
     expect(await storedTotal(id)).toBe(0);
   });
+
+  it('migration 46: per-kind totals have an index of their own', async () => {
+    const rows = await prisma.$queryRaw<Array<{ indexdef: string }>>`
+      SELECT indexdef FROM pg_indexes
+      WHERE indexname = 'ConfessionRelate_confessionId_reaction_idx'`;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].indexdef).toMatch(/\("confessionId", reaction\)$/);
+  });
 });
