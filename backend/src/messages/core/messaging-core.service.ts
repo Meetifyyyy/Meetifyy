@@ -98,6 +98,7 @@ import {
 } from './group-invite-access';
 import { rateLimitException } from '../../common/rate-limit/rate-limit.response';
 import { readReceiptAudiences } from './read-receipt-fanout';
+import { messageTime } from '../../common/utils/message-time.util';
 
 function isJsonObject(value: Prisma.JsonValue): value is Prisma.JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -831,10 +832,7 @@ export class MessagingCoreService {
       senderAvatar: presentUserAvatar(message.sender) || '',
       createdAt: message.createdAt,
       timestamp: message.createdAt,
-      time: new Date(message.createdAt).toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
+      time: messageTime(message.createdAt),
       type: message.type ? message.type.toLowerCase() : 'chat',
       state: message.state || 'SENT',
       isUnsent,
@@ -1094,12 +1092,7 @@ export class MessagingCoreService {
         from: currentUserId && m.senderId === currentUserId ? 'me' : 'them',
         createdAt: m.createdAt,
         timestamp: m.createdAt,
-        time: m.createdAt
-          ? new Date(m.createdAt).toLocaleTimeString([], {
-              hour: '2-digit',
-              minute: '2-digit',
-            })
-          : '',
+        time: m.createdAt ? messageTime(m.createdAt) : '',
         type: m.type ? m.type.toLowerCase() : 'chat',
         payload: isUnsent ? { text: 'This message was unsent' } : payload,
         text: isUnsent ? 'This message was unsent' : stringOrEmpty(fields.text),
@@ -2417,10 +2410,7 @@ export class MessagingCoreService {
       senderAvatar: presentUserAvatar(message.sender) || '',
       createdAt: message.createdAt,
       timestamp: message.createdAt,
-      time: new Date(message.createdAt).toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
+      time: messageTime(message.createdAt),
       type: 'system',
       payload: options.event ? { text, event: options.event } : { text },
       text,

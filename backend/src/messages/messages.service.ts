@@ -96,6 +96,7 @@ import {
   groupDetailsVersionKey,
 } from './conversation-list-cache';
 import { announceRevived, revivedMemberIds } from './core/conversation-revive';
+import { messageTime } from '../common/utils/message-time.util';
 
 /** The questions MessagesService asks the Instant Match domain. Kept small so
  *  the coupling between the two stays visible: may this user write into this
@@ -1036,10 +1037,7 @@ export class MessagesService
       senderAvatar: presentUserAvatar(message.sender) || '',
       createdAt: message.createdAt,
       timestamp: message.createdAt,
-      time: new Date(message.createdAt).toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
+      time: messageTime(message.createdAt),
       type: message.type ? message.type.toLowerCase() : 'chat',
       state: message.state || 'SENT',
       isUnsent,
@@ -1541,12 +1539,7 @@ export class MessagesService
         from: currentUserId && m.senderId === currentUserId ? 'me' : 'them',
         createdAt: m.createdAt,
         timestamp: m.createdAt,
-        time: m.createdAt
-          ? new Date(m.createdAt).toLocaleTimeString([], {
-              hour: '2-digit',
-              minute: '2-digit',
-            })
-          : '',
+        time: m.createdAt ? messageTime(m.createdAt) : '',
         type: m.type ? m.type.toLowerCase() : 'chat',
         payload: isUnsent ? { text: 'This message was unsent' } : payload,
         text: isUnsent ? 'This message was unsent' : stringOrEmpty(fields.text),
@@ -2797,10 +2790,7 @@ export class MessagesService
       senderAvatar: message.sender?.avatar || '',
       createdAt: message.createdAt,
       timestamp: message.createdAt,
-      time: new Date(message.createdAt).toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
+      time: messageTime(message.createdAt),
       type: 'system',
       payload: options.event ? { text, event: options.event } : { text },
       text,
