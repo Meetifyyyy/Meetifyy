@@ -641,9 +641,11 @@ model Message {
   sender            User              @relation(fields: [senderId], references: [id], onDelete: Cascade)
   reactions         MessageReaction[]
 
+  // One index serves every read of a conversation's messages: the chat page in
+  // both directions, the catch-up sync, previews, cascades. Nothing sets
+  // deletedAt, so a deletedAt column in the key bought nothing (migration 47).
+  // Also: partial indexes on replyToId and attachmentMediaId (migration 39).
   @@index([conversationId, createdAt(sort: Desc), id(sort: Desc)])
-  @@index([conversationId, createdAt, senderId])
-  @@index([conversationId, deletedAt, createdAt(sort: Desc), id(sort: Desc)])
   @@unique([senderId, clientMessageId])
 }
 
@@ -782,12 +784,14 @@ model Notification {
   recipient   User                    @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
 
   @@unique([recipientId, actorId, entityId, type])
-  @@index([recipientId, readAt])
-  @@index([recipientId, deletedAt, readAt])
-  @@index([recipientId, deletedAt, createdAt(sort: Desc)])
-  @@index([recipientId, deletedAt, type, createdAt(sort: Desc)])
-  @@index([createdAt])
-  @@index([type])
+  // The list and the Invitations tab, read in the order they are shown, so a
+  // page stops after its rows. deletedAt is left out of the key on purpose: an
+  // IS NULL condition cannot give an index its order (migration 47).
+  @@index([recipientId, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([recipientId, type, createdAt(sort: Desc), id(sort: Desc)])
+  // Also: idx_notif_recipient_unread, a partial index on unread live rows for
+  // the bell count and mark-all-read (migration 01), and partial indexes on
+  // actorId and entityId (migration 39). Prisma cannot express them.
 }
 
 model PostBookmark {
