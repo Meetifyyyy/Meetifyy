@@ -235,13 +235,19 @@ Browser push for the website, native push for the Android app; one backend
 path delivers both. Push is **off** until a deployment is configured and
 `PUSH_ENABLED=true` is set.
 
-Status (last recorded 2026-10-19/26): the code, migration and tests exist and
-migration 18 is on `main`. End-to-end delivery to a real browser or phone had
-not been observed: it needs VAPID keys, Firebase projects and
-`google-services.json` per environment, and on the test phone the app's
-notification permission was not granted. The notification icon was verified
-in the status bar and shade with a shell-posted notification. Check the
-deployment's configuration before assuming push is live.
+Status (last recorded 2026-11-14): live in both environments.
+- **Development:** a like on a phone running the debug APK (Firebase project
+  `meetifyy-dev`) arrived end to end. The development website itself never
+  receives push, by design: its service worker is blocked on non-production
+  hosts so a cached app cannot bypass Cloudflare Access.
+- **Production:** push was switched on with a fresh VAPID key pair and the
+  `meetifyy-prod` service account, both as Container App secrets. A like
+  reached desktop Chrome on meetifyy.app.
+- **Android in production:** push needs a release APK built with
+  `src/release/google-services.json`.
+
+The deploy workflows and `setup-azure-*.sh` still do not map these
+variables (see "Push configuration").
 
 ### How it works
 
